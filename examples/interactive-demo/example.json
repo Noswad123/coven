@@ -1,0 +1,6 @@
+{
+  "id": "interactive-demo",
+  "name": "Interactive Coven Demo Agent",
+  "description": "Build a workspace-aware interactive terminal demo agent that explains what the Coven built, who did what, why decisions were made, which checkpoints were approved, and what QA verified.",
+  "seed_message": "Seeded example: interactive Coven demo agent with Gavin, Srikanth, Jamal, Kris, and Juan"
+}

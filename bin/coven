@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${COVEN_HOME:-}" ]]; then
+  coven_home="$COVEN_HOME"
+else
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+  coven_home="$(cd -- "$script_dir/.." && pwd)"
+fi
+
+runner="$coven_home/runner/coven.py"
+if [[ ! -x "$runner" ]]; then
+  printf '[ERROR] Missing coven runner: %s\n' "$runner" >&2
+  exit 1
+fi
+
+export COVEN_HOME="$coven_home"
+export COVEN_COMMAND="$coven_home/bin/coven"
+
+exec "$runner" "$@"

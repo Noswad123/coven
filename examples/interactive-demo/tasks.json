@@ -1,0 +1,38 @@
+[
+  {
+    "id": "plan-checkpoint",
+    "title": "Define the interactive demo plan and acceptance criteria",
+    "owner": "gavin",
+    "notes": "Starter example task for the interactive Coven demo agent."
+  },
+  {
+    "id": "architecture",
+    "title": "Choose the workspace-aware demo agent architecture",
+    "owner": "srikanth",
+    "notes": "Starter example task for the interactive Coven demo agent."
+  },
+  {
+    "id": "core-chatbot",
+    "title": "Implement the interactive demo agent run path",
+    "owner": "jamal",
+    "notes": "Starter example task for the interactive Coven demo agent."
+  },
+  {
+    "id": "ui-polish",
+    "title": "Polish the interactive terminal conversation experience",
+    "owner": "kris",
+    "notes": "Starter example task for the interactive Coven demo agent."
+  },
+  {
+    "id": "qa-verification",
+    "title": "Run interactive QA verification and record results",
+    "owner": "juan",
+    "notes": "Starter example task for the interactive Coven demo agent."
+  },
+  {
+    "id": "technical-review",
+    "title": "Perform final technical review before user delivery checkpoint",
+    "owner": "srikanth",
+    "notes": "Starter example task for the interactive Coven demo agent."
+  }
+]
