@@ -1,13 +1,11 @@
 # coven
 
-`coven` is a personal, magic-themed multi-agent workspace command. It was
-inspired by the D4RT `team` command, but it is intentionally allowed to diverge:
-features should be documented here and ported manually only when they are useful
-for this tool.
+`coven` is a personal, magic-themed multi-agent workspace command for creating,
+tracking, and running local multi-agent workspaces.
 
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent windows
-through the existing `d4rt tmux` runner.
+with tmux.
 
 ## Install
 
@@ -95,7 +93,7 @@ new-coven/
 ├── work/                       # in-progress artifacts
 ├── output/                     # final/demo artifacts
 └── tmux/
-    └── coven.toml              # manifest passed to d4rt tmux
+    └── coven.toml              # generated tmux workspace manifest
 ```
 
 ## Examples
@@ -144,8 +142,9 @@ standup, agents, send, approve, suggest, and review operations.
 
 ## Tmux lifecycle
 
-`coven` delegates tmux launching to `d4rt tmux` using the generated
-`tmux/coven.toml` manifest.
+`coven` launches and manages a tmux session for the generated workspace.
+Agent panes run `oc` when it is available and automatically fall back to
+`opencode` otherwise. Override this with `coven init --opencode-command ...`.
 
 ```bash
 coven plan
@@ -182,16 +181,6 @@ coven lead clear
 
 The lead is recorded in `state/lead.json`, shown in the dashboard/standup,
 logged, and sent to the lead's tmux pane when it is running.
-
-## Relationship to D4RT `team`
-
-`coven` is no longer trying to mirror the D4RT `team` command or keep the same
-file structure. Treat it as a separate personal tool:
-
-- document coven features in this README as they are added;
-- manually port useful ideas from D4RT `team` when desired;
-- keep coven-specific naming, files, examples, and workflow choices here;
-- avoid assuming feature parity unless it is explicitly documented.
 
 ## License
 

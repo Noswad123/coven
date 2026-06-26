@@ -15,7 +15,7 @@ from typing import Any
 
 
 DEFAULT_AGENTS = "gavin,srikanth,jamal,kris,juan"
-DEFAULT_OPENCODE_COMMAND = "zsh -ic 'oc --d4rt'"
+DEFAULT_OPENCODE_COMMAND = "oc"
 DEFAULT_EXAMPLE_ID = "interactive-demo"
 COVEN_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = Path(__file__).resolve().parents[3]
@@ -86,7 +86,10 @@ def cli_command() -> str:
 def normalize_opencode_command(command: str) -> str:
     command = command.strip()
     if command.startswith("oc ") or command == "oc":
-        return f"zsh -ic {q(command)}"
+        args = command[2:].strip()
+        suffix = f" {args}" if args else ""
+        fallback = f"if command -v oc >/dev/null 2>&1; then exec oc{suffix}; else exec opencode{suffix}; fi"
+        return f"zsh -ic {q(fallback)}"
     return command
 
 
@@ -1543,20 +1546,105 @@ def command_bootstrap(args: argparse.Namespace) -> int:
     return 0
 
 
-def run_d4rt_tmux(workspace: Path, action: str) -> int:
+def tmux_session_exists(session: str) -> bool:
+    result = subprocess.run(["tmux", "has-session", "-t", session], check=False, capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def run_tmux(args: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["tmux", *args], check=False, capture_output=capture, text=True)
+
+
+def fail_tmux(result: subprocess.CompletedProcess[str], message: str) -> None:
+    if result.returncode != 0:
+        fail(result.stderr.strip() or message)
+
+
+def focus_tmux_session(session: str) -> int:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        info(f"Coven tmux session ready: {session}")
+        return 0
+    if os.environ.get("TMUX"):
+        return run_tmux(["switch-client", "-t", session]).returncode
+    return run_tmux(["attach-session", "-t", session]).returncode
+
+
+def print_tmux_plan(workspace: Path, team: dict[str, Any]) -> int:
+    agents = team_agents(team)
+    session = team_session_name(team)
     manifest = workspace / "tmux" / "coven.toml"
     if not manifest.exists():
         fail(f"Missing tmux manifest: {manifest}")
-    command = [str(Path(os.environ.get("D4RT_TOOLS_HOME", "~/code/d4rt-tools")).expanduser() / "bin" / "d4rt"), "tmux", action, str(manifest)]
-    return subprocess.run(command, check=False).returncode
+    print(f"Coven tmux plan: {session}")
+    print(f"Workspace: {workspace}")
+    print(f"Manifest: {manifest}")
+    print("Windows:")
+    print("- orchestrator: dashboard, events, messages, shell")
+    for agent in agents:
+        print(f"- agent-{agent}: {agent}")
+    return 0
+
+
+def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
+    agents = team_agents(team)
+    session = team_session_name(team)
+    opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
+    cli = cli_command()
+
+    dashboard_command = "while true; do clear; cat dashboard.md; sleep 2; done"
+    result = run_tmux(["new-session", "-d", "-s", session, "-n", "orchestrator", "-c", str(workspace), dashboard_command], capture=True)
+    fail_tmux(result, f"Failed to create coven tmux session `{session}`")
+    run_tmux(["select-pane", "-t", f"{session}:orchestrator.0", "-T", "dashboard"])
+
+    monitor_panes = [
+        ("events", f"while true; do clear; {cli} events; sleep 2; done"),
+        ("messages", f"while true; do clear; {cli} messages; sleep 2; done"),
+        ("shell", "printf 'coven workspace: '; pwd; exec /bin/zsh"),
+    ]
+    for title, command in monitor_panes:
+        pane = run_tmux(["split-window", "-t", f"{session}:orchestrator", "-c", str(workspace), "-P", "-F", "#{pane_id}", command], capture=True)
+        fail_tmux(pane, f"Failed to create `{title}` pane")
+        pane_id = pane.stdout.strip()
+        if pane_id:
+            run_tmux(["select-pane", "-t", pane_id, "-T", title])
+    run_tmux(["select-layout", "-t", f"{session}:orchestrator", "tiled"])
+
+    for agent in agents:
+        command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command)
+        result = run_tmux(["new-window", "-t", session, "-n", f"agent-{agent}", "-c", str(workspace), command], capture=True)
+        fail_tmux(result, f"Failed to create agent window `{agent}`")
+
+    run_tmux(["select-window", "-t", f"{session}:orchestrator"])
+
+
+def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
+    session = team_session_name(team)
+    if action == "plan":
+        return print_tmux_plan(workspace, team)
+    if action == "down":
+        if not tmux_session_exists(session):
+            info(f"Coven tmux session is not running: {session}")
+            return 0
+        return run_tmux(["kill-session", "-t", session]).returncode
+    if action == "restart":
+        if tmux_session_exists(session):
+            result = run_tmux(["kill-session", "-t", session], capture=True)
+            fail_tmux(result, f"Failed to stop coven tmux session `{session}`")
+        create_coven_tmux_session(workspace, team)
+        return focus_tmux_session(session)
+    if action == "up":
+        if not tmux_session_exists(session):
+            create_coven_tmux_session(workspace, team)
+        return focus_tmux_session(session)
+    fail(f"Unsupported tmux action: {action}")
 
 
 def command_tmux(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
-    load_team(workspace)
+    team = load_team(workspace)
     action = "restart" if args.action == "up" and getattr(args, "replace", False) else args.action
     append_event(workspace, f"tmux.{action}.requested")
-    return run_d4rt_tmux(workspace, action)
+    return run_coven_tmux(workspace, team, action)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1677,7 +1765,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     task_list.set_defaults(func=command_task_list)
 
     for name, action in (("plan", "plan"), ("up", "up"), ("start", "up"), ("down", "down"), ("stop", "down"), ("restart", "restart")):
-        sub = subparsers.add_parser(name, help=f"Run d4rt tmux {action} for the coven workspace")
+        sub = subparsers.add_parser(name, help=f"Run coven tmux {action} for the coven workspace")
         sub.add_argument("workspace", nargs="?", default=".")
         if name in {"up", "start"}:
             sub.add_argument("--replace", action="store_true", help="Kill and recreate the coven tmux session before launching")
