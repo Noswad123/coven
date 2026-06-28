@@ -13,18 +13,18 @@ The demo agent should be able to answer questions like:
 - `who did what?`
 - `what was built?`
 - `why did you choose Python?`
-- `ask Juan what QA verified`
+- `ask Eric what QA verified`
 - `ask Kris about the UI`
 - `what checkpoints happened?`
 - `what files should I review?`
 
 The app should speak about these coven members with role-specific flavor:
 
-- Gavin — planner
+- Clippy — planner
 - Srikanth — tech lead
 - Jamal — senior developer
 - Kris aka Dr Oom — frontend/UI
-- Juan — QA
+- Eric — QA
 
 ## Model behavior
 

@@ -4,8 +4,8 @@
 tracking, and running local multi-agent workspaces.
 
 The source of truth for a coven workspace is local, inspectable files. The
-command creates those files, keeps lightweight state, and launches agent windows
-with tmux.
+command creates those files, keeps lightweight state, and launches agent panes
+with Herdr by default. Tmux remains available as an opt-in runtime.
 
 ## Install
 
@@ -93,7 +93,7 @@ new-coven/
 ├── work/                       # in-progress artifacts
 ├── output/                     # final/demo artifacts
 └── tmux/
-    └── coven.toml              # generated tmux workspace manifest
+    └── coven.toml              # generated tmux workspace manifest for optional tmux runtime
 ```
 
 ## Examples
@@ -121,7 +121,7 @@ coven next         # show the recommended next user action
 coven standup      # summarize agents, tasks, checkpoints, and lead
 coven events       # print event log, or use --raw for JSONL
 coven messages     # print message log, or use --raw for JSONL
-coven refresh      # regenerate generated prompts and tmux manifest
+coven refresh      # regenerate generated prompts and runtime manifests
 coven bootstrap    # paste starter prompts into running agent panes
 ```
 
@@ -140,10 +140,10 @@ coven send all "Pause and summarize current status."
 changes, skip, or quit. `coven console` is a small interactive shell for status,
 standup, agents, send, approve, suggest, and review operations.
 
-## Tmux lifecycle
+## Runtime lifecycle
 
-`coven` launches and manages a tmux session for the generated workspace.
-Agent panes run `oc` when it is available and automatically fall back to
+`coven` launches and manages a Herdr workspace for the generated coven by
+default. Agent panes run `oc` when it is available and automatically fall back to
 `opencode` otherwise. Override this with `coven init --opencode-command ...`.
 
 ```bash
@@ -156,6 +156,19 @@ coven restart
 # aliases
 coven start
 coven stop
+```
+
+To use tmux instead of Herdr for a workspace, initialize with tmux:
+
+```bash
+coven init ~/Projects/new-coven --multiplexer tmux
+```
+
+Or edit `coven.toml` later:
+
+```toml
+[runtime]
+multiplexer = "tmux" # or "herdr"
 ```
 
 Target a specific agent window:
@@ -180,7 +193,7 @@ coven lead clear
 ```
 
 The lead is recorded in `state/lead.json`, shown in the dashboard/standup,
-logged, and sent to the lead's tmux pane when it is running.
+logged, and sent to the lead's runtime pane when it is running.
 
 ## License
 

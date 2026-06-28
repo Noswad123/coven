@@ -9,14 +9,17 @@ import re
 import shlex
 import subprocess
 import sys
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
-DEFAULT_AGENTS = "gavin,srikanth,jamal,kris,juan"
+DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
 DEFAULT_EXAMPLE_ID = "interactive-demo"
+DEFAULT_MULTIPLEXER = "herdr"
+SUPPORTED_MULTIPLEXERS = {"herdr", "tmux"}
 COVEN_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = COVEN_DIR / "examples"
@@ -99,6 +102,13 @@ def read_json(path: Path, default: Any) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_toml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open("rb") as handle:
+        return tomllib.load(handle)
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
@@ -125,7 +135,23 @@ def load_team(workspace: Path) -> dict[str, Any]:
     path = workspace / "coven.json"
     if not path.exists():
         fail(f"Not a coven workspace: {workspace} (missing coven.json)")
-    return read_json(path, {})
+    team = read_json(path, {})
+    config = read_toml(workspace / "coven.toml")
+    runtime = config.get("runtime") if isinstance(config, dict) else None
+    if isinstance(runtime, dict):
+        for key in ("multiplexer", "opencode_command"):
+            value = runtime.get(key)
+            if isinstance(value, str) and value.strip():
+                team[key] = value.strip()
+    return team
+
+
+def runtime_multiplexer(team: dict[str, Any]) -> str:
+    value = os.environ.get("COVEN_MULTIPLEXER") or team.get("multiplexer") or DEFAULT_MULTIPLEXER
+    multiplexer = str(value).strip().lower()
+    if multiplexer not in SUPPORTED_MULTIPLEXERS:
+        fail(f"Unsupported multiplexer `{multiplexer}`. Choose one of: {', '.join(sorted(SUPPORTED_MULTIPLEXERS))}")
+    return multiplexer
 
 
 def write_if_missing(path: Path, content: str, *, force: bool) -> bool:
@@ -194,11 +220,11 @@ def agent_role(agent: str) -> str:
         "architect": "Break goals into plans, identify tradeoffs, and define checkpoints.",
         "implementer": "Make targeted changes and report validation results.",
         "reviewer": "Review diffs, test outcomes, risks, and readiness for user approval.",
-        "gavin": "Planner. Turn the user goal into checkpoints, milestones, and clear task slices.",
-        "srikanth": "Tech lead. Own architecture, integration decisions, and final technical direction.",
-        "jamal": "Senior developer. Implement the core terminal application and keep changes shippable.",
-        "kris": "Frontend/UI specialist, aka Dr Oom. Shape the terminal UI, flow, copy, and presentation polish.",
-        "juan": "QA. Verify behavior, run the app, test edge cases, and confirm acceptance criteria.",
+        "Clippy": "Planner. Turn the user goal into checkpoints, milestones, and clear task slices.",
+        "Srikanth": "Tech lead. Own architecture, integration decisions, and final technical direction.",
+        "Jamal": "Senior developer. Implement the core terminal application and keep changes shippable.",
+        "Kris": "Frontend/UI specialist, aka Dr Oom. Shape the terminal UI, flow, copy, and presentation polish.",
+        "Eric": "QA. Verify behavior, run the app, test edge cases, and confirm acceptance criteria.",
     }
     return defaults.get(agent, f"Contribute to the coven as `{agent}`.")
 
@@ -345,7 +371,7 @@ def starter_tasks(agents: list[str], example: dict[str, Any] | None = None) -> l
     return tasks
 
 
-def team_toml(name: str, agents: list[str], opencode_command: str) -> str:
+def team_toml(name: str, agents: list[str], opencode_command: str, multiplexer: str) -> str:
     agent_blocks = "\n".join(
         f"""[[agents]]
 id = {q(agent)}
@@ -358,6 +384,7 @@ prompt = {q(f"prompts/{agent}.md")}
 name = {q(name)}
 
 [runtime]
+multiplexer = {q(multiplexer)}
 opencode_command = {q(opencode_command)}
 source_of_truth = "logs/events.jsonl"
 dashboard = "dashboard.md"
@@ -440,14 +467,27 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
     return "\n".join(lines)
 
 
-def agent_launch_command(name: str, workspace: Path, agent: str, opencode_command: str) -> str:
+def agent_launch_command(name: str, workspace: Path, agent: str, opencode_command: str, multiplexer: str = "tmux") -> str:
     opencode_command = normalize_opencode_command(opencode_command)
+    prompt_path = f"prompts/{agent}.start.txt"
+    if multiplexer == "herdr":
+        return (
+            f"printf 'Agent: {agent}\\nPrompt: {workspace}/prompts/{agent}.md\\n'"
+            f"; printf 'Auto-bootstrapping OpenCode with {prompt_path}...\\n\\n'"
+            "; pane=\"${HERDR_PANE_ID:-}\""
+            "; herdr_bin=\"${HERDR_BIN_PATH:-herdr}\""
+            f"; (sleep 5; if [ -n \"$pane\" ]; then prompt=\"$(cat {shlex.quote(prompt_path)})\"; "
+            '"$herdr_bin" pane send-text "$pane" "$prompt"; '
+            '"$herdr_bin" pane send-keys "$pane" enter; fi) & '
+            f"{opencode_command}"
+        )
+
     buffer_name = f"coven-{slugify(name)}-{agent}-starter"
     return (
         f"printf 'Agent: {agent}\\nPrompt: {workspace}/prompts/{agent}.md\\n'"
-        f"; printf 'Auto-bootstrapping OpenCode with prompts/{agent}.start.txt...\\n\\n'"
+        f"; printf 'Auto-bootstrapping OpenCode with {prompt_path}...\\n\\n'"
         f"; pane=\"$(tmux display-message -p '#{{pane_id}}')\""
-        f"; (sleep 5; tmux load-buffer -b {q(buffer_name)} {q(f'prompts/{agent}.start.txt')}; "
+        f"; (sleep 5; tmux load-buffer -b {q(buffer_name)} {q(prompt_path)}; "
         f"tmux paste-buffer -b {q(buffer_name)} -t \"$pane\"; "
         f"tmux send-keys -t \"$pane\" Enter) & "
         f"{opencode_command}"
@@ -461,6 +501,7 @@ def render_dashboard(workspace: Path) -> str:
     goal = (workspace / "goal.md").read_text(encoding="utf-8").strip() if (workspace / "goal.md").exists() else ""
     if goal.startswith("# Goal"):
         goal = goal.removeprefix("# Goal").strip()
+    multiplexer = runtime_multiplexer(team)
     lead = read_lead(workspace)
     lead_text = "None set."
     if lead:
@@ -524,7 +565,8 @@ def render_dashboard(workspace: Path) -> str:
 
 - Events: `logs/events.jsonl`
 - Messages: `logs/messages.jsonl`
-- Tmux manifest: `tmux/coven.toml`
+- Runtime multiplexer: `{multiplexer}`
+- Tmux manifest (for optional tmux runtime): `tmux/coven.toml`
 """
 
 
@@ -637,6 +679,9 @@ def command_init(args: argparse.Namespace) -> int:
         agents = parse_agents(args.agents)
     except ValueError as exc:
         fail(str(exc))
+    multiplexer = str(args.multiplexer).strip().lower()
+    if multiplexer not in SUPPORTED_MULTIPLEXERS:
+        fail(f"Unsupported multiplexer `{multiplexer}`. Choose one of: {', '.join(sorted(SUPPORTED_MULTIPLEXERS))}")
 
     workspace = workspace_path(args.workspace)
     name = args.name or workspace.name or "coven"
@@ -649,6 +694,7 @@ def command_init(args: argparse.Namespace) -> int:
         "created_at": now(),
         "source_of_truth": "logs/events.jsonl",
         "opencode_command": args.opencode_command,
+        "multiplexer": multiplexer,
         "agents": agents,
         "example": None if args.blank else example["id"],
     }
@@ -663,7 +709,7 @@ def command_init(args: argparse.Namespace) -> int:
     write_if_missing(workspace / "goal.md", "# Goal\n\nDescribe the unified coven goal here.\n" if args.blank else example_goal_text(example), force=args.force)
     if not args.blank:
         write_if_missing(workspace / "spec.md", read_example_text(example, "spec.md", "# Spec\n\nDescribe the desired behavior here.\n"), force=args.force)
-    write_if_missing(workspace / "coven.toml", team_toml(name, agents, args.opencode_command), force=args.force)
+    write_if_missing(workspace / "coven.toml", team_toml(name, agents, args.opencode_command, multiplexer), force=args.force)
     write_if_missing(workspace / "logs" / "events.jsonl", "", force=args.force)
     write_if_missing(workspace / "logs" / "messages.jsonl", "", force=args.force)
     write_if_missing(workspace / "tmux" / "coven.toml", tmux_manifest(name, workspace, agents, args.opencode_command), force=args.force)
@@ -686,7 +732,7 @@ def command_init(args: argparse.Namespace) -> int:
         info(f"Next: coven goal {workspace} \"<your goal>\"")
     else:
         info(str(example.get("seed_message") or f"Seeded example: {example['id']}"))
-    info(f"Launch: coven up {workspace}")
+    info(f"Launch ({multiplexer}): coven up {workspace}")
     return 0
 
 
@@ -831,7 +877,85 @@ def print_pretty_jsonl(path: Path, kind: str) -> int:
     return 0
 
 
-def running_agent_pane(team: dict[str, Any], agent: str) -> str | None:
+def herdr_workspace_label(team: dict[str, Any]) -> str:
+    return f"coven-{slugify(str(team['name']))}"
+
+
+def run_herdr(args: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["herdr", *args], check=False, capture_output=capture, text=True)
+
+
+def herdr_result(result: subprocess.CompletedProcess[str], message: str) -> dict[str, Any]:
+    if result.returncode != 0:
+        fail(result.stderr.strip() or message)
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        fail(f"{message}: invalid Herdr JSON response")
+    response = payload.get("result")
+    return response if isinstance(response, dict) else {}
+
+
+def find_herdr_workspace(team: dict[str, Any]) -> dict[str, Any] | None:
+    result = run_herdr(["workspace", "list"], capture=True)
+    if result.returncode != 0:
+        return None
+    try:
+        workspaces = json.loads(result.stdout).get("result", {}).get("workspaces", [])
+    except json.JSONDecodeError:
+        return None
+    label = herdr_workspace_label(team)
+    for workspace in workspaces if isinstance(workspaces, list) else []:
+        if isinstance(workspace, dict) and workspace.get("label") == label:
+            return workspace
+    return None
+
+
+def find_herdr_tab(team: dict[str, Any], agent: str) -> dict[str, Any] | None:
+    workspace_info = find_herdr_workspace(team)
+    if not workspace_info:
+        return None
+    workspace_id = str(workspace_info.get("workspace_id") or "")
+    if not workspace_id:
+        return None
+    result = run_herdr(["tab", "list", "--workspace", workspace_id], capture=True)
+    if result.returncode != 0:
+        return None
+    try:
+        tabs = json.loads(result.stdout).get("result", {}).get("tabs", [])
+    except json.JSONDecodeError:
+        return None
+    label = f"agent-{agent}"
+    for tab in tabs if isinstance(tabs, list) else []:
+        if isinstance(tab, dict) and tab.get("label") == label:
+            return tab
+    return None
+
+
+def running_herdr_agent_target(team: dict[str, Any], agent: str) -> tuple[str, str] | None:
+    tab = find_herdr_tab(team, agent)
+    if not tab:
+        return None
+    workspace_id = str(tab.get("workspace_id") or "")
+    tab_id = str(tab.get("tab_id") or "")
+    if not workspace_id or not tab_id:
+        return None
+    result = run_herdr(["pane", "list", "--workspace", workspace_id], capture=True)
+    if result.returncode != 0:
+        return None
+    try:
+        panes = json.loads(result.stdout).get("result", {}).get("panes", [])
+    except json.JSONDecodeError:
+        return None
+    for pane in panes if isinstance(panes, list) else []:
+        if isinstance(pane, dict) and pane.get("tab_id") == tab_id:
+            pane_id = str(pane.get("pane_id") or "")
+            if pane_id:
+                return pane_id, tab_id
+    return None
+
+
+def running_tmux_agent_pane(team: dict[str, Any], agent: str) -> str | None:
     session = team_session_name(team)
     window_target = f"{session}:agent-{agent}"
     pane_lookup = subprocess.run(
@@ -845,11 +969,22 @@ def running_agent_pane(team: dict[str, Any], agent: str) -> str | None:
     return pane_lookup.stdout.strip().splitlines()[0]
 
 
+def running_agent_pane(team: dict[str, Any], agent: str) -> str | None:
+    if runtime_multiplexer(team) == "herdr":
+        target = running_herdr_agent_target(team, agent)
+        return target[0] if target else None
+    return running_tmux_agent_pane(team, agent)
+
+
 def send_to_agent_pane(team: dict[str, Any], agent: str, text: str) -> bool:
     target = running_agent_pane(team, agent)
     if not target:
         return False
-    subprocess.run(["tmux", "send-keys", "-t", target, text, "Enter"], check=False)
+    if runtime_multiplexer(team) == "herdr":
+        subprocess.run(["herdr", "pane", "send-text", target, text], check=False)
+        subprocess.run(["herdr", "pane", "send-keys", target, "enter"], check=False)
+    else:
+        subprocess.run(["tmux", "send-keys", "-t", target, text, "Enter"], check=False)
     return True
 
 
@@ -882,13 +1017,35 @@ def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> boo
         info(f"{agent} already running at {pane}")
         return False
 
+    if runtime_multiplexer(team) == "herdr":
+        workspace_info = find_herdr_workspace(team)
+        if not workspace_info:
+            fail(f"Coven Herdr workspace is not running: {herdr_workspace_label(team)}. Run `coven up` first.")
+        workspace_id = str(workspace_info.get("workspace_id") or "")
+        if not workspace_id:
+            fail("Could not resolve Coven Herdr workspace id")
+        opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
+        command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command, "herdr")
+        tab_result = run_herdr(
+            ["tab", "create", "--workspace", workspace_id, "--cwd", str(workspace), "--label", f"agent-{agent}", "--focus"],
+            capture=True,
+        )
+        tab_payload = herdr_result(tab_result, f"Failed to create Herdr tab for agent `{agent}`")
+        pane_id = str(tab_payload.get("root_pane", {}).get("pane_id") or "")
+        if not pane_id:
+            fail(f"Could not resolve Herdr pane for agent `{agent}`")
+        run_herdr(["pane", "rename", pane_id, agent], capture=True)
+        run_herdr(["pane", "run", pane_id, command], capture=True)
+        append_event(workspace, "agent.started.tab", agent=agent, multiplexer="herdr")
+        return True
+
     session = team_session_name(team)
     session_check = subprocess.run(["tmux", "has-session", "-t", session], check=False, capture_output=True, text=True)
     if session_check.returncode != 0:
         fail(f"Coven tmux session is not running: {session}. Run `coven start` first.")
 
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
-    command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command)
+    command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command, "tmux")
     result = subprocess.run(
         ["tmux", "new-window", "-t", session, "-n", f"agent-{agent}", "-c", str(workspace), command],
         check=False,
@@ -903,11 +1060,24 @@ def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> boo
 
 def stop_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> bool:
     require_agent(team, agent)
-    target = agent_window_target(team, agent)
     status, _pane = agent_runtime_status(team, agent)
     if status != "running":
         info(f"{agent} is not running")
         return False
+
+    if runtime_multiplexer(team) == "herdr":
+        target = running_herdr_agent_target(team, agent)
+        if not target:
+            info(f"{agent} is not running")
+            return False
+        _pane_id, tab_id = target
+        result = run_herdr(["tab", "close", tab_id], capture=True)
+        if result.returncode != 0:
+            fail(result.stderr.strip() or f"Failed to stop Herdr agent tab `{agent}`")
+        append_event(workspace, "agent.stopped.tab", agent=agent, multiplexer="herdr")
+        return True
+
+    target = agent_window_target(team, agent)
     result = subprocess.run(["tmux", "kill-window", "-t", target], check=False, capture_output=True, text=True)
     if result.returncode != 0:
         fail(result.stderr.strip() or f"Failed to stop agent `{agent}`")
@@ -940,6 +1110,7 @@ def command_messages(args: argparse.Namespace) -> int:
 
 def render_standup(workspace: Path) -> str:
     team = load_team(workspace)
+    multiplexer = runtime_multiplexer(team)
     tasks = read_json(workspace / "state" / "tasks.json", [])
     agents = read_json(workspace / "state" / "agents.json", [])
     lead = read_lead(workspace)
@@ -972,7 +1143,7 @@ def render_standup(workspace: Path) -> str:
         agent = str(agent_state.get("id"))
         runtime, pane = agent_runtime_status(team, agent)
         pane_text = f" at {pane}" if pane else ""
-        agent_lines.append(f"- `{agent}` — state={agent_state.get('status', 'unknown')}, tmux={runtime}{pane_text}")
+        agent_lines.append(f"- `{agent}` — state={agent_state.get('status', 'unknown')}, {multiplexer}={runtime}{pane_text}")
 
     checkpoint_lines = []
     for checkpoint_id in ("plan-approval", "pre-delivery-review"):
@@ -985,7 +1156,7 @@ def render_standup(workspace: Path) -> str:
         runtime, pane = agent_runtime_status(team, agent)
         pane_text = f" at {pane}" if pane else ""
         lead_lines = [
-            f"- `{agent}` — tmux={runtime}{pane_text}",
+            f"- `{agent}` — {multiplexer}={runtime}{pane_text}",
             f"- Set: {lead.get('set_at', 'unknown time')}",
             f"- Stop condition: {lead.get('until', 'goal achieved or critical blocker')}",
         ]
@@ -1131,7 +1302,7 @@ Goal: {goal or 'See goal.md'}
 
 Your operating loop:
 1. Run or inspect `coven standup` to see coven status, blockers, checkpoints, and agent runtime state.
-2. Use `coven send <agent|all> <message>` to move agents along through tmux send-keys under the hood.
+2. Use `coven send <agent|all> <message>` to move agents along through the configured terminal multiplexer.
 3. Make your best decision to unblock the coven without waiting for the user unless a checkpoint, destructive action, missing requirement, or critical blocker requires user input.
 4. Keep `logs/events.jsonl`, `logs/messages.jsonl`, `state/tasks.json`, and `dashboard.md` current.
 5. Use `work/` for in-progress artifacts, `output/` for delivery artifacts, and `checkpoints/` for user decisions.
@@ -1151,10 +1322,11 @@ def command_lead(args: argparse.Namespace) -> int:
         if not state:
             print("No coven lead set.")
             return 0
+        multiplexer = runtime_multiplexer(team)
         agent = str(state.get("agent"))
         runtime, pane = agent_runtime_status(team, agent)
         pane_text = f" pane={pane}" if pane else ""
-        print(f"Coven lead: {agent} tmux={runtime}{pane_text}")
+        print(f"Coven lead: {agent} {multiplexer}={runtime}{pane_text}")
         print(f"Set: {state.get('set_at', 'unknown time')}")
         print(f"Until: {state.get('until', 'goal achieved or critical blocker')}")
         return 0
@@ -1243,6 +1415,7 @@ def command_send(args: argparse.Namespace) -> int:
 def command_agent_status(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     team = load_team(workspace)
+    multiplexer = runtime_multiplexer(team)
     agents = rest or team_agents(team)
     states = read_json(workspace / "state" / "agents.json", [])
     state_by_id = {str(item.get("id")): item for item in states if isinstance(item, dict) and item.get("id")}
@@ -1251,7 +1424,7 @@ def command_agent_status(args: argparse.Namespace) -> int:
         runtime, pane = agent_runtime_status(team, agent)
         state = state_by_id.get(agent, {})
         pane_text = f" pane={pane}" if pane else ""
-        print(f"{agent}: tmux={runtime}{pane_text} state={state.get('status', 'unknown')}")
+        print(f"{agent}: {multiplexer}={runtime}{pane_text} state={state.get('status', 'unknown')}")
     return 0
 
 
@@ -1392,7 +1565,7 @@ def print_console_help() -> None:
   status                       Show dashboard
   next                         Show recommended next action
   agents                       Show agent runtime status
-  send <agent|all> <message>   Send a tmux-backed message
+  send <agent|all> <message>   Send a multiplexer-backed message
   approve [checkpoint]         Approve a checkpoint (default: plan-approval)
   suggest <checkpoint> <text>  Save/send requested checkpoint changes
   review [checkpoint]          Interactive checkpoint review
@@ -1485,6 +1658,7 @@ def command_refresh(args: argparse.Namespace) -> int:
     if not isinstance(agents, list) or not all(isinstance(agent, str) for agent in agents):
         fail("coven.json agents must be a list of strings")
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
+    multiplexer = runtime_multiplexer(team)
     example = load_example(str(team.get("example"))) if team.get("example") else None
 
     (workspace / "tmux" / "coven.toml").write_text(
@@ -1499,7 +1673,7 @@ def command_refresh(args: argparse.Namespace) -> int:
         (workspace / "prompts" / f"{agent}.start.txt").write_text(starter_prompt_text(agent, workspace), encoding="utf-8")
     append_event(workspace, "workspace.refreshed", agents=agents)
     refresh_dashboard(workspace)
-    info("Regenerated tmux/coven.toml and starter prompt files")
+    info(f"Regenerated tmux/coven.toml and starter prompt files (runtime={multiplexer})")
     return 0
 
 
@@ -1515,12 +1689,24 @@ def command_bootstrap(args: argparse.Namespace) -> int:
         fail("coven.json agents must be a list of strings")
 
     session = team_session_name(team)
+    multiplexer = runtime_multiplexer(team)
     sent = 0
     missing: list[str] = []
     for agent in agents:
         prompt_file = workspace / "prompts" / f"{agent}.start.txt"
         if not prompt_file.exists():
             prompt_file.write_text(starter_prompt_text(agent, workspace), encoding="utf-8")
+        if multiplexer == "herdr":
+            target = running_agent_pane(team, agent)
+            if not target:
+                missing.append(agent)
+                continue
+            text = prompt_file.read_text(encoding="utf-8")
+            subprocess.run(["herdr", "pane", "send-text", target, text], check=False)
+            subprocess.run(["herdr", "pane", "send-keys", target, "enter"], check=False)
+            append_event(workspace, "agent.bootstrap.sent", agent=agent, target=target, multiplexer="herdr")
+            sent += 1
+            continue
         window_target = f"{session}:agent-{agent}"
         pane_lookup = subprocess.run(
             ["tmux", "list-panes", "-t", window_target, "-F", "#{pane_id}"],
@@ -1569,6 +1755,16 @@ def focus_tmux_session(session: str) -> int:
     return run_tmux(["attach-session", "-t", session]).returncode
 
 
+def focus_herdr_workspace(workspace_id: str, label: str) -> int:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        info(f"Coven Herdr workspace ready: {label} ({workspace_id})")
+        return 0
+    result = run_herdr(["workspace", "focus", workspace_id], capture=True)
+    if result.returncode != 0:
+        fail(result.stderr.strip() or f"Failed to focus Herdr workspace `{label}`")
+    return 0
+
+
 def print_tmux_plan(workspace: Path, team: dict[str, Any]) -> int:
     agents = team_agents(team)
     session = team_session_name(team)
@@ -1580,6 +1776,18 @@ def print_tmux_plan(workspace: Path, team: dict[str, Any]) -> int:
     print(f"Manifest: {manifest}")
     print("Windows:")
     print("- orchestrator: dashboard, events, messages, shell")
+    for agent in agents:
+        print(f"- agent-{agent}: {agent}")
+    return 0
+
+
+def print_herdr_plan(workspace: Path, team: dict[str, Any]) -> int:
+    agents = team_agents(team)
+    label = herdr_workspace_label(team)
+    print(f"Coven Herdr plan: {label}")
+    print(f"Workspace: {workspace}")
+    print("Tabs:")
+    print("- orchestrator: dashboard, events, messages, shell panes")
     for agent in agents:
         print(f"- agent-{agent}: {agent}")
     return 0
@@ -1617,6 +1825,58 @@ def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
     run_tmux(["select-window", "-t", f"{session}:orchestrator"])
 
 
+def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any]) -> str:
+    agents = team_agents(team)
+    label = herdr_workspace_label(team)
+    opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
+    cli = cli_command()
+
+    result = run_herdr(["workspace", "create", "--cwd", str(workspace), "--label", label, "--no-focus"], capture=True)
+    payload = herdr_result(result, f"Failed to create Coven Herdr workspace `{label}`")
+    workspace_id = str(payload.get("workspace", {}).get("workspace_id") or "")
+    root_pane = str(payload.get("root_pane", {}).get("pane_id") or "")
+    root_tab = str(payload.get("tab", {}).get("tab_id") or "")
+    if not workspace_id or not root_pane:
+        fail(f"Could not resolve Herdr workspace/pane ids for `{label}`")
+
+    if root_tab:
+        run_herdr(["tab", "rename", root_tab, "orchestrator"], capture=True)
+    run_herdr(["pane", "rename", root_pane, "dashboard"], capture=True)
+    run_herdr(["pane", "run", root_pane, "while true; do clear; cat dashboard.md; sleep 2; done"], capture=True)
+
+    monitor_panes = [
+        ("events", f"while true; do clear; {cli} events; sleep 2; done"),
+        ("messages", f"while true; do clear; {cli} messages; sleep 2; done"),
+        ("shell", "printf 'coven workspace: '; pwd; exec /bin/zsh"),
+    ]
+    for title, command in monitor_panes:
+        pane_result = run_herdr(
+            ["pane", "split", "--pane", root_pane, "--direction", "right", "--ratio", "0.5", "--cwd", str(workspace), "--no-focus"],
+            capture=True,
+        )
+        pane_payload = herdr_result(pane_result, f"Failed to create Herdr `{title}` pane")
+        pane_id = str(pane_payload.get("pane", {}).get("pane_id") or "")
+        if pane_id:
+            run_herdr(["pane", "rename", pane_id, title], capture=True)
+            run_herdr(["pane", "run", pane_id, command], capture=True)
+
+    for agent in agents:
+        command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command, "herdr")
+        tab_result = run_herdr(
+            ["tab", "create", "--workspace", workspace_id, "--cwd", str(workspace), "--label", f"agent-{agent}", "--no-focus"],
+            capture=True,
+        )
+        tab_payload = herdr_result(tab_result, f"Failed to create Herdr agent tab `{agent}`")
+        pane_id = str(tab_payload.get("root_pane", {}).get("pane_id") or "")
+        if pane_id:
+            run_herdr(["pane", "rename", pane_id, agent], capture=True)
+            run_herdr(["pane", "run", pane_id, command], capture=True)
+
+    if root_tab:
+        run_herdr(["tab", "focus", root_tab], capture=True)
+    return workspace_id
+
+
 def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
     session = team_session_name(team)
     if action == "plan":
@@ -1639,12 +1899,50 @@ def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
     fail(f"Unsupported tmux action: {action}")
 
 
+def run_coven_herdr(workspace: Path, team: dict[str, Any], action: str) -> int:
+    label = herdr_workspace_label(team)
+    if action == "plan":
+        return print_herdr_plan(workspace, team)
+    if action == "down":
+        workspace_info = find_herdr_workspace(team)
+        if not workspace_info:
+            info(f"Coven Herdr workspace is not running: {label}")
+            return 0
+        workspace_id = str(workspace_info.get("workspace_id") or "")
+        if workspace_id:
+            result = run_herdr(["workspace", "close", workspace_id], capture=True)
+            if result.returncode != 0:
+                fail(result.stderr.strip() or f"Failed to close Coven Herdr workspace `{label}`")
+        return 0
+    if action == "restart":
+        workspace_info = find_herdr_workspace(team)
+        if workspace_info and workspace_info.get("workspace_id"):
+            result = run_herdr(["workspace", "close", str(workspace_info["workspace_id"])], capture=True)
+            if result.returncode != 0:
+                fail(result.stderr.strip() or f"Failed to close Coven Herdr workspace `{label}`")
+        workspace_id = create_coven_herdr_workspace(workspace, team)
+        return focus_herdr_workspace(workspace_id, label)
+    if action == "up":
+        workspace_info = find_herdr_workspace(team)
+        workspace_id = str(workspace_info.get("workspace_id")) if workspace_info else create_coven_herdr_workspace(workspace, team)
+        return focus_herdr_workspace(workspace_id, label)
+    fail(f"Unsupported Herdr action: {action}")
+
+
+def run_coven_runtime(workspace: Path, team: dict[str, Any], action: str) -> int:
+    multiplexer = runtime_multiplexer(team)
+    if multiplexer == "herdr":
+        return run_coven_herdr(workspace, team, action)
+    return run_coven_tmux(workspace, team, action)
+
+
 def command_tmux(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     team = load_team(workspace)
     action = "restart" if args.action == "up" and getattr(args, "replace", False) else args.action
-    append_event(workspace, f"tmux.{action}.requested")
-    return run_coven_tmux(workspace, team, action)
+    multiplexer = runtime_multiplexer(team)
+    append_event(workspace, f"{multiplexer}.{action}.requested")
+    return run_coven_runtime(workspace, team, action)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1656,6 +1954,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     init.add_argument("--name")
     init.add_argument("--agents", default=DEFAULT_AGENTS)
     init.add_argument("--opencode-command", default=DEFAULT_OPENCODE_COMMAND)
+    init.add_argument("--multiplexer", choices=sorted(SUPPORTED_MULTIPLEXERS), default=DEFAULT_MULTIPLEXER, help=f"Runtime multiplexer to use (default: {DEFAULT_MULTIPLEXER})")
     init.add_argument("--example", default=DEFAULT_EXAMPLE_ID, help=f"Example seed to use from examples/ (default: {DEFAULT_EXAMPLE_ID})")
     init.add_argument("--blank", action="store_true", help="Create structure without an example seed")
     init.add_argument("--force", action="store_true")
@@ -1689,7 +1988,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     next_cmd.add_argument("workspace", nargs="?", default=".")
     next_cmd.set_defaults(func=command_next)
 
-    send = subparsers.add_parser("send", help="Send a message to an agent pane with tmux send-keys")
+    send = subparsers.add_parser("send", help="Send a message to an agent pane through the configured multiplexer")
     send.add_argument("items", nargs="+", help="Optional workspace, then agent id (or 'all') and message")
     send.set_defaults(func=command_send)
 
@@ -1710,7 +2009,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     review.add_argument("--message", help="Custom approval message")
     review.set_defaults(func=command_review)
 
-    console = subparsers.add_parser("console", help="Interactive console for reviewing and sending tmux-backed agent commands")
+    console = subparsers.add_parser("console", help="Interactive console for reviewing and sending multiplexer-backed agent commands")
     console.add_argument("workspace", nargs="?", default=".")
     console.set_defaults(func=command_console)
 
@@ -1720,7 +2019,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     lead.add_argument("--message", help="Custom coven lead prompt")
     lead.set_defaults(func=command_lead)
 
-    refresh = subparsers.add_parser("refresh", help="Regenerate generated prompts and tmux manifest without resetting state")
+    refresh = subparsers.add_parser("refresh", help="Regenerate generated prompts and runtime manifests without resetting state")
     refresh.add_argument("workspace", nargs="?", default=".")
     refresh.set_defaults(func=command_refresh)
 
@@ -1765,10 +2064,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     task_list.set_defaults(func=command_task_list)
 
     for name, action in (("plan", "plan"), ("up", "up"), ("start", "up"), ("down", "down"), ("stop", "down"), ("restart", "restart")):
-        sub = subparsers.add_parser(name, help=f"Run coven tmux {action} for the coven workspace")
+        sub = subparsers.add_parser(name, help=f"Run coven {action} for the configured multiplexer")
         sub.add_argument("workspace", nargs="?", default=".")
         if name in {"up", "start"}:
-            sub.add_argument("--replace", action="store_true", help="Kill and recreate the coven tmux session before launching")
+            sub.add_argument("--replace", action="store_true", help="Kill and recreate the coven runtime before launching")
         sub.set_defaults(func=command_tmux, action=action)
 
     return parser.parse_args(argv)
