@@ -96,7 +96,8 @@ completed in the progress notes.
 
 ### Implementation progress — 2026-10-21
 
-**M0 / COV-01: in progress; immediate COV-03 revocation repaired.** Local slices:
+**M0 / COV-01: scaffold safeguards completed locally; immediate COV-03 revocation
+repaired.** No destructive reset or migration command is provided. Local slices:
 
 - [x] Refuse reinitialization and partial workspace collisions before writes,
   including existing/dangling symlinks; `--force` cannot authorize reset.
@@ -123,20 +124,33 @@ completed in the progress notes.
   rejection. Dashboard/standup/review/next use current file decisions; old events
   cannot reapprove checkpoints during refresh. Preserve fenced/nested history and
   reject ambiguous decision layouts or incompatible notes before effects.
+- [x] Add pure v1 workspace/task/agent/lead record contracts and validate current
+  persisted state before command and shared-helper effects. Validate live runtime
+  configuration, reject corrupt/unsupported records and ambiguous roster aliases,
+  preserve unknown fields and legacy ID/status/timestamp values, and retain
+  explicit missing-file defaults without silently discarding malformed files.
+- [x] Separate optional JSON display names from stable IDs. Capture new input
+  labels without migrating existing workspaces; sanitize human-facing output and
+  keep labels out of selectors, paths, owners, logs, and runtime identity. Validate
+  both generated TOML documents before initialization, including emoji labels.
 - [x] Establish an offline standard-library test suite, including the wrapper,
   re-init preservation, reserved-name/symlink collisions, invalid seed inputs,
   exclusive-create failure, canonical owners, legacy compatibility, and path
   safety through commands/helpers and both mocked runtime adapters. Include
   refresh-preservation snapshots and approve -> suggest -> refresh/reapprove
-  exercises through CLI, console, and interactive review.
-  Validation: `python3 -m unittest discover -s tests -v` — 54 tests pass;
+  exercises through CLI, console, and interactive review. Add corrupt-state CLI
+  and cached-helper matrices, unknown-field/legacy preservation, and safe label
+  routing/rendering/Unicode serialization coverage.
+  Validation: `python3 -m unittest discover -s tests -v` — 70 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
-- [ ] Finish COV-01: broader versioned persisted-record schemas and display labels.
-  Migration and destructive reset remain unavailable; future operations need
-  validated backups/import semantics or a loss preview and separate consent.
 
-Next M0 order: finish remaining COV-01 integrity work, then the COV-02 mutation
-foundation. Full COV-03 revision-bound authorization remains open. Current
+Migration and destructive reset remain intentionally unavailable; future
+operations need validated backups/import semantics or a loss preview and separate
+consent. Record schemas are structural, not new task lifecycle/reference rules.
+
+Next M0 work: the COV-02 mutation foundation (locking, revisions, atomic
+projections, explicit authority/recovery boundaries). Full COV-03 revision-bound
+authorization remains open. Current
 checkpoint Markdown is the interim current-decision authority; logs are history,
 not a replayable authorization ledger. No claims of concurrent mutation safety,
 crash consistency, general replay, or completed M0 are made yet.
@@ -181,6 +195,12 @@ without a confinement check.
 **Done when:** default seeding assigns the intended roles and task owners;
 reinitialization leaves an existing fixture unchanged; traversal IDs are rejected;
 explicit reset previews what will be lost and requires separate consent.
+
+**Local outcome:** current scaffold safeguards, structural v1 contracts, and
+identity/display separation are implemented and tested. Reset stays disabled,
+rather than introducing a destructive operation without preview/consent. Migration
+is reserved for the backed-up import/recovery work in COV-02; existing state is
+never automatically renamed or upgraded by refresh.
 
 ### COV-02 — Make concurrent state changes safe
 

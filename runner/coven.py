@@ -10,10 +10,15 @@ import shlex
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from . import records
+else:
+    import records
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -119,7 +124,7 @@ def checkpoint_text(workspace: Path, checkpoint: Any) -> str | None:
     return managed_text(workspace, f"checkpoints/{path.name}")
 
 
-def preflight_workspace_paths(workspace: Path, team: dict[str, Any] | None = None) -> None:
+def check_workspace_paths(workspace: Path, team: dict[str, Any] | None = None) -> None:
     """Validate the known control plane, not arbitrary user artifacts recursively."""
     for relative in MANAGED_DIRECTORIES:
         managed_path(workspace, relative, directory=True)
@@ -134,14 +139,54 @@ def preflight_workspace_paths(workspace: Path, team: dict[str, Any] | None = Non
         if path.suffix.lower() == ".md":
             record_id(path.stem, "checkpoint")
             managed_text(workspace, f"checkpoints/{path.name}")
-    # Mutating commands render the dashboard last. Validate its persisted lead
-    # identity up front rather than discovering an unsafe ID after notifications.
-    read_lead(workspace)
     if team is not None:
         for agent in team_agents(team):
             managed_path(workspace, f"agents/{agent}.md")
             managed_path(workspace, f"prompts/{agent}.md")
             managed_path(workspace, f"prompts/{agent}.start.txt")
+
+
+@dataclass(frozen=True)
+class WorkspaceState:
+    team: dict[str, Any]
+    tasks: list[dict[str, Any]]
+    agents: list[dict[str, Any]]
+    lead: dict[str, Any] | None
+
+
+def read_state_records(workspace: Path, relative: str, default: Any, validator: Any) -> Any:
+    try:
+        return validator(read_json(managed_path(workspace, relative), default))
+    except (ValueError, OSError) as exc:
+        fail(f"Invalid workspace record ({relative}): {exc}")
+
+
+def read_tasks(workspace: Path) -> list[dict[str, Any]]:
+    return read_state_records(workspace, "state/tasks.json", [], records.tasks)
+
+
+def read_agent_states(workspace: Path) -> list[dict[str, Any]]:
+    return read_state_records(workspace, "state/agents.json", [], records.agents)
+
+
+def load_workspace_state(workspace: Path, team: dict[str, Any] | None = None) -> WorkspaceState:
+    """Read-only validation boundary, not an atomic/concurrent state snapshot."""
+    check_workspace_paths(workspace)
+    persisted = read_team_config(workspace)
+    check_workspace_paths(workspace, persisted)
+    if team is not None:
+        try:
+            records.team(team)
+        except ValueError as exc:
+            fail(f"Invalid supplied workspace configuration: {exc}")
+        runtime_multiplexer(team)
+        check_workspace_paths(workspace, team)
+    return WorkspaceState(persisted, read_tasks(workspace), read_agent_states(workspace), read_lead(workspace))
+
+
+def preflight_workspace_paths(workspace: Path, team: dict[str, Any] | None = None) -> None:
+    # Shared mutations and runtime entrypoints must not trust a cached team alone.
+    load_workspace_state(workspace, team)
 
 
 def is_team_workspace(path: str | Path) -> bool:
@@ -157,6 +202,13 @@ def split_optional_workspace(items: list[str]) -> tuple[Path, list[str]]:
 
 def q(value: str) -> str:
     return json.dumps(value)
+
+
+def toml_string(value: str) -> str:
+    # JSON surrogate-pair escapes are not legal TOML Unicode scalars. Keep valid
+    # Unicode literal, escape ASCII DEL, and reject unpaired surrogates up front.
+    value.encode("utf-8")
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", r"\u007f")
 
 
 def cli_command() -> str:
@@ -198,6 +250,7 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def append_event(workspace: Path, event_type: str, **payload: Any) -> None:
+    preflight_workspace_paths(workspace)
     event = {"ts": now(), "type": event_type, **payload}
     path = managed_path(workspace, "logs/events.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +259,7 @@ def append_event(workspace: Path, event_type: str, **payload: Any) -> None:
 
 
 def append_message(workspace: Path, sender: str, recipient: str, body: str) -> None:
+    preflight_workspace_paths(workspace)
     managed_path(workspace, "logs/events.jsonl")
     message = {"ts": now(), "from": sender, "to": recipient, "body": body}
     path = managed_path(workspace, "logs/messages.jsonl")
@@ -216,24 +270,33 @@ def append_message(workspace: Path, sender: str, recipient: str, body: str) -> N
 
 
 def load_team(workspace: Path) -> dict[str, Any]:
-    preflight_workspace_paths(workspace)
+    return load_workspace_state(workspace).team
+
+
+def read_team_config(workspace: Path) -> dict[str, Any]:
     path = managed_path(workspace, "coven.json")
     if not path.exists():
         fail(f"Not a coven workspace: {workspace} (missing coven.json)")
     try:
-        team = read_json(path, {})
+        team = records.team(read_json(path, {}))
         config = read_toml(managed_path(workspace, "coven.toml"))
     except (ValueError, OSError) as exc:
         fail(f"Invalid workspace configuration: {exc}")
-    if not isinstance(team, dict) or not isinstance(team.get("name"), str) or not team["name"].strip():
-        fail("coven.json must be an object with a nonempty string name")
-    preflight_workspace_paths(workspace, team)
     runtime = config.get("runtime") if isinstance(config, dict) else None
-    if isinstance(runtime, dict):
+    if "runtime" in config and not isinstance(runtime, dict):
+        fail("coven.toml [runtime] must be a table")
+    if runtime is not None:
         for key in ("multiplexer", "opencode_command"):
-            value = runtime.get(key)
-            if isinstance(value, str) and value.strip():
+            if key in runtime:
+                value = runtime[key]
+                if not isinstance(value, str) or not value.strip():
+                    fail(f"coven.toml runtime.{key} must be a nonblank string")
                 team[key] = value.strip()
+    try:
+        records.team(team)
+    except ValueError as exc:
+        fail(f"Invalid effective workspace configuration: {exc}")
+    runtime_multiplexer(team)
     return team
 
 
@@ -243,6 +306,25 @@ def runtime_multiplexer(team: dict[str, Any]) -> str:
     if multiplexer not in SUPPORTED_MULTIPLEXERS:
         fail(f"Unsupported multiplexer `{multiplexer}`. Choose one of: {', '.join(sorted(SUPPORTED_MULTIPLEXERS))}")
     return multiplexer
+
+
+def visible_text(value: str) -> str:
+    """Labels are presentation, never terminal controls or shell fragments."""
+    return "".join(char if char.isprintable() else f"\\u{ord(char):04x}" for char in value)
+
+
+def markdown_text(value: str) -> str:
+    value = visible_text(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return re.sub(r"([\\`*_{}\[\]()#+.!|~-])", r"\\\1", value)
+
+
+def agent_display_name(team: dict[str, Any], agent: str) -> str:
+    return team.get("display_names", {}).get(agent, agent)
+
+
+def agent_label(team: dict[str, Any], agent: str) -> str:
+    label = visible_text(agent_display_name(team, agent))
+    return f"{label} ({agent})" if agent_display_name(team, agent) != agent else agent
 
 
 def write_if_missing(path: Path, content: str, *, force: bool) -> bool:
@@ -472,21 +554,22 @@ def starter_tasks(agents: list[str], example: dict[str, Any] | None = None) -> l
     return tasks
 
 
-def team_toml(name: str, agents: list[str], opencode_command: str, multiplexer: str) -> str:
+def team_toml(name: str, agents: list[str], opencode_command: str, multiplexer: str, display_names: dict[str, str] | None = None) -> str:
     agent_blocks = "\n".join(
         f"""[[agents]]
-id = {q(agent)}
-role = {q(agent_role(agent))}
-prompt = {q(f"prompts/{agent}.md")}
+id = {toml_string(agent)}
+display_name = {toml_string((display_names or {}).get(agent, agent))}
+role = {toml_string(agent_role(agent))}
+prompt = {toml_string(f"prompts/{agent}.md")}
 """
         for agent in agents
     )
     return f"""version = 1
-name = {q(name)}
+name = {toml_string(name)}
 
 [runtime]
-multiplexer = {q(multiplexer)}
-opencode_command = {q(opencode_command)}
+multiplexer = {toml_string(multiplexer)}
+opencode_command = {toml_string(opencode_command)}
 source_of_truth = "logs/events.jsonl"
 dashboard = "dashboard.md"
 
@@ -511,15 +594,15 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
     cli = cli_command()
     lines = [
         "version = 1",
-        f"name = {q(f'Coven: {name}')}",
-        f"default_session = {q(session)}",
+        f"name = {toml_string(f'Coven: {name}')}",
+        f"default_session = {toml_string(session)}",
         "",
         "[vars]",
-        f"COVEN_DIR = {q(str(workspace))}",
-        f"OPENCODE_CMD = {q(opencode_command)}",
+        f"COVEN_DIR = {toml_string(str(workspace))}",
+        f"OPENCODE_CMD = {toml_string(opencode_command)}",
         "",
         "[[sessions]]",
-        f"name = {q(session)}",
+        f"name = {toml_string(session)}",
         'if_exists = "attach"',
         "",
         "[[sessions.windows]]",
@@ -542,10 +625,10 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
         lines.extend(
             [
                 "[[sessions.windows.panes]]",
-                f"title = {q(title)}",
+                f"title = {toml_string(title)}",
                 'dir = "${COVEN_DIR}"',
-                f"command = {q(command)}",
-                f"role = {q(role)}",
+                f"command = {toml_string(command)}",
+                f"role = {toml_string(role)}",
                 "",
             ]
         )
@@ -555,12 +638,12 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
         lines.extend(
             [
                 "[[sessions.windows]]",
-                f"name = {q(f'agent-{agent}')}",
+                f"name = {toml_string(f'agent-{agent}')}",
                 "",
                 "[[sessions.windows.panes]]",
-                f"title = {q(agent)}",
+                f"title = {toml_string(agent)}",
                 'dir = "${COVEN_DIR}"',
-                f"command = {q(command)}",
+                f"command = {toml_string(command)}",
                 "",
             ]
         )
@@ -599,14 +682,13 @@ def agent_launch_command(name: str, workspace: Path, agent: str, opencode_comman
 
 
 def render_dashboard(workspace: Path) -> str:
-    team = load_team(workspace)
-    tasks = read_json(workspace / "state" / "tasks.json", [])
-    agents = read_json(workspace / "state" / "agents.json", [])
+    snapshot = load_workspace_state(workspace)
+    team, tasks, agents = snapshot.team, snapshot.tasks, snapshot.agents
     goal = (workspace / "goal.md").read_text(encoding="utf-8").strip() if (workspace / "goal.md").exists() else ""
     if goal.startswith("# Goal"):
         goal = goal.removeprefix("# Goal").strip()
     multiplexer = runtime_multiplexer(team)
-    lead = read_lead(workspace)
+    lead = snapshot.lead
     lead_text = "None set."
     if lead:
         lead_text = (
@@ -619,7 +701,7 @@ def render_dashboard(workspace: Path) -> str:
         for task in tasks
     ) or "| - | - | - | No tasks yet |"
     agent_rows = "\n".join(
-        f"| {agent['id']} | {agent['status']} | {agent['role']} |" for agent in agents
+        f"| {agent['id']} | {markdown_text(agent_display_name(team, agent['id']))} | {agent['status']} | {agent['role']} |" for agent in agents
     )
 
     checkpoint_rows = []
@@ -643,8 +725,8 @@ def render_dashboard(workspace: Path) -> str:
 
 ## Agents
 
-| Agent | Status | Role |
-| --- | --- | --- |
+| Agent ID | Display name | Status | Role |
+| --- | --- | --- | --- |
 {agent_rows}
 
 ## Tasks
@@ -678,16 +760,15 @@ def refresh_dashboard(workspace: Path) -> None:
 
 
 def read_lead(workspace: Path) -> dict[str, Any] | None:
-    try:
-        state = read_json(managed_path(workspace, "state/lead.json"), None)
-    except (ValueError, OSError) as exc:
-        fail(f"Invalid lead record: {exc}")
-    if isinstance(state, dict) and state.get("agent"):
-        record_id(state["agent"], "agent")
-    return state if isinstance(state, dict) and state.get("agent") else None
+    return read_state_records(workspace, "state/lead.json", None, records.lead)
 
 
 def write_lead(workspace: Path, state: dict[str, Any] | None) -> None:
+    preflight_workspace_paths(workspace)
+    try:
+        records.lead(state)
+    except ValueError as exc:
+        fail(f"Invalid proposed lead record: {exc}")
     path = managed_path(workspace, "state/lead.json")
     if state is None:
         if path.exists():
@@ -874,6 +955,7 @@ def command_init(args: argparse.Namespace) -> int:
         "opencode_command": args.opencode_command,
         "multiplexer": multiplexer,
         "agents": agents,
+        "display_names": dict(zip(agents, (label.strip() for label in args.agents.split(",")))),
         "example": None if args.blank else example["id"],
     }
     runtime_multiplexer(team)  # Validate environment overrides before writing too.
@@ -881,7 +963,9 @@ def command_init(args: argparse.Namespace) -> int:
     try:
         if not args.opencode_command.strip():
             raise ValueError("opencode command must not be empty")
+        records.team(team)
         tasks = [] if args.blank else starter_tasks(agents, example)
+        records.tasks(tasks)
         files = {
             "coven.json": json.dumps(team, indent=2) + "\n",
             "state/agents.json": json.dumps(
@@ -889,7 +973,7 @@ def command_init(args: argparse.Namespace) -> int:
             ) + "\n",
             "state/tasks.json": json.dumps(tasks, indent=2) + "\n",
             "goal.md": example_goal_text(example),
-            "coven.toml": team_toml(name, agents, args.opencode_command, multiplexer),
+            "coven.toml": team_toml(name, agents, args.opencode_command, multiplexer, team["display_names"]),
             "logs/events.jsonl": "",
             "logs/messages.jsonl": "",
             "tmux/coven.toml": tmux_manifest(name, workspace, agents, args.opencode_command),
@@ -902,6 +986,8 @@ def command_init(args: argparse.Namespace) -> int:
             files[f"agents/{agent}.md"] = agent_state_text(agent)
             files[f"prompts/{agent}.md"] = prompt_text(agent, workspace, example_context)
             files[f"prompts/{agent}.start.txt"] = starter_prompt_text(agent, workspace)
+        for relative in ("coven.toml", "tmux/coven.toml"):
+            tomllib.loads(files[relative])
     except (ValueError, OSError) as exc:
         fail(f"Invalid initialization inputs: {exc}")
 
@@ -956,10 +1042,14 @@ def command_task_add(args: argparse.Namespace) -> int:
         fail("task add requires a title")
     title = " ".join(rest)
     owner = resolve_agent(team, args.owner) if args.owner else None
-    tasks = read_json(workspace / "state" / "tasks.json", [])
+    tasks = read_tasks(workspace)
     existing = {str(task.get("id")) for task in tasks if isinstance(task, dict) and task.get("id")}
+    try:
+        task_id = unique_slug(title, existing)
+    except ValueError as exc:
+        fail(f"Invalid task title: {exc}")
     task = {
-        "id": unique_slug(title, existing),
+        "id": task_id,
         "title": title,
         "status": "pending" if not owner else "assigned",
         "owner": owner,
@@ -968,6 +1058,10 @@ def command_task_add(args: argparse.Namespace) -> int:
         "updated_at": now(),
     }
     tasks.append(task)
+    try:
+        records.tasks(tasks)
+    except ValueError as exc:
+        fail(f"Invalid proposed task records: {exc}")
     write_json(workspace / "state" / "tasks.json", tasks)
     append_event(workspace, "task.created", task=task)
     refresh_dashboard(workspace)
@@ -983,12 +1077,13 @@ def command_task_assign(args: argparse.Namespace) -> int:
     task_id, agent = rest[0], rest[1]
     team = load_team(workspace)
     agent = resolve_agent(team, agent)
-    tasks = read_json(workspace / "state" / "tasks.json", [])
+    tasks = read_tasks(workspace)
     for task in tasks:
         if task.get("id") == task_id:
             task["owner"] = agent
             task["status"] = "assigned"
             task["updated_at"] = now()
+            records.tasks(tasks)
             write_json(workspace / "state" / "tasks.json", tasks)
             append_event(workspace, "task.assigned", task_id=task_id, agent=agent)
             refresh_dashboard(workspace)
@@ -1001,7 +1096,7 @@ def command_task_assign(args: argparse.Namespace) -> int:
 def command_task_list(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     load_team(workspace)
-    tasks = read_json(workspace / "state" / "tasks.json", [])
+    tasks = read_tasks(workspace)
     if not tasks:
         print("No tasks yet")
         return 0
@@ -1173,6 +1268,7 @@ def running_agent_pane(team: dict[str, Any], agent: str) -> str | None:
 
 
 def send_to_agent_pane(team: dict[str, Any], agent: str, text: str) -> bool:
+    """Low-level transport; workspace-aware callers perform state preflight."""
     require_agent(team, agent)
     target = running_agent_pane(team, agent)
     if not target:
@@ -1186,14 +1282,10 @@ def send_to_agent_pane(team: dict[str, Any], agent: str, text: str) -> bool:
 
 
 def team_agents(team: dict[str, Any]) -> list[str]:
-    agents = team.get("agents", [])
-    if not isinstance(agents, list) or not agents:
-        fail("coven.json agents must be a nonempty list of IDs")
-    for agent in agents:
-        record_id(agent, "agent")
-    if len(set(agents)) != len(agents):
-        fail("coven.json agents must not contain duplicate IDs")
-    return agents
+    try:
+        return records.agent_ids(team.get("agents"))
+    except ValueError as exc:
+        fail(str(exc))
 
 
 def require_agent(team: dict[str, Any], agent: str) -> None:
@@ -1337,11 +1429,10 @@ def command_messages(args: argparse.Namespace) -> int:
 
 
 def render_standup(workspace: Path) -> str:
-    team = load_team(workspace)
+    snapshot = load_workspace_state(workspace)
+    team = snapshot.team
     multiplexer = runtime_multiplexer(team)
-    tasks = read_json(workspace / "state" / "tasks.json", [])
-    agents = read_json(workspace / "state" / "agents.json", [])
-    lead = read_lead(workspace)
+    tasks, agents, lead = snapshot.tasks, snapshot.agents, snapshot.lead
 
     def task_line(task: dict[str, Any]) -> str:
         return f"- `{task.get('id')}` — {task.get('title')} ({task.get('owner') or 'unassigned'})"
@@ -1371,7 +1462,8 @@ def render_standup(workspace: Path) -> str:
         agent = str(agent_state.get("id"))
         runtime, pane = agent_runtime_status(team, agent)
         pane_text = f" at {pane}" if pane else ""
-        agent_lines.append(f"- `{agent}` — state={agent_state.get('status', 'unknown')}, {multiplexer}={runtime}{pane_text}")
+        label = markdown_text(agent_display_name(team, agent))
+        agent_lines.append(f"- `{agent}` ({label}) — state={agent_state.get('status', 'unknown')}, {multiplexer}={runtime}{pane_text}")
 
     checkpoint_lines = []
     for checkpoint_id in ("plan-approval", "pre-delivery-review"):
@@ -1578,7 +1670,7 @@ def command_lead(args: argparse.Namespace) -> int:
         agent = str(state.get("agent"))
         runtime, pane = agent_runtime_status(team, agent)
         pane_text = f" pane={pane}" if pane else ""
-        print(f"Coven lead: {agent} {multiplexer}={runtime}{pane_text}")
+        print(f"Coven lead: {agent_label(team, agent)} {multiplexer}={runtime}{pane_text}")
         print(f"Set: {state.get('set_at', 'unknown time')}")
         print(f"Until: {state.get('until', 'goal achieved or critical blocker')}")
         return 0
@@ -1597,6 +1689,7 @@ def command_lead(args: argparse.Namespace) -> int:
     if goal.startswith("# Goal"):
         goal = goal.removeprefix("# Goal").strip()
     state = {
+        **(read_lead(workspace) or {}),
         "agent": agent,
         "set_at": now(),
         "until": "goal achieved or critical blocker requiring the user",
@@ -1664,14 +1757,14 @@ def command_agent_status(args: argparse.Namespace) -> int:
     team = load_team(workspace)
     multiplexer = runtime_multiplexer(team)
     agents = rest or team_agents(team)
-    states = read_json(workspace / "state" / "agents.json", [])
+    states = read_agent_states(workspace)
     state_by_id = {str(item.get("id")): item for item in states if isinstance(item, dict) and item.get("id")}
     for agent in agents:
         require_agent(team, agent)
         runtime, pane = agent_runtime_status(team, agent)
         state = state_by_id.get(agent, {})
         pane_text = f" pane={pane}" if pane else ""
-        print(f"{agent}: {multiplexer}={runtime}{pane_text} state={state.get('status', 'unknown')}")
+        print(f"{agent_label(team, agent)}: {multiplexer}={runtime}{pane_text} state={state.get('status', 'unknown')}")
     return 0
 
 
@@ -1917,6 +2010,7 @@ def command_refresh(args: argparse.Namespace) -> int:
     checkpoint_requests(workspace)
     try:
         manifest = tmux_manifest(team["name"], workspace, agents, opencode_command)
+        tomllib.loads(manifest)
         example_context = read_example_text(example, "prompt-context.md")
         prompt_files = {
             f"prompts/{agent}.start.txt": starter_prompt_text(agent, workspace) for agent in agents

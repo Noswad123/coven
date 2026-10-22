@@ -58,7 +58,8 @@ coven/
 ├── bin/
 │   └── coven              # executable wrapper
 ├── runner/
-│   └── coven.py           # main CLI and workspace runner
+│   ├── coven.py           # main CLI and workspace runner
+│   └── records.py         # pure v1 workspace record validators
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -166,9 +167,60 @@ clean error rather than partial approval or notification. Bootstrap reads all
 starter prompts before creating missing prompts or sending any of them. Fix the
 reported input explicitly; Coven does not sanitize unsafe history automatically.
 
-These are static path/ID/readability checks, not full record-schema validation,
-multi-file transactions, hard-link protection, or a sandbox against concurrent
+These are static path/ID/readability checks plus the structural contracts below,
+not multi-file transactions, hard-link protection, or a sandbox against concurrent
 filesystem replacement or tools run by an agent.
+
+### Persisted record contracts
+
+Commands and workspace-aware mutation/runtime helpers validate the current
+workspace metadata, tasks, agent state, and lead before effects. Invalid JSON,
+encoding, required fields, known-field types, or duplicate IDs produce a clear
+error identifying the source record. A cached team object does not bypass this
+validation. Invalid current files must be inspected and repaired explicitly;
+Coven does not overwrite them to recover automatically.
+
+The current format is **v1**, selected by `coven.json.version = 1`. Missing version
+means legacy v1 without backfilling; unsupported explicit versions are rejected.
+State files keep their existing list/object shapes:
+
+| File | Structural contract |
+| --- | --- |
+| `coven.json` | Object with nonblank `name` usable for runtime naming and a nonempty, unambiguous roster of safe IDs. Known runtime fields must be valid nonblank strings; optional `example` is a string or null. |
+| `state/tasks.json` | List of objects with unique safe `id` and string `title`/`status`; optional `owner` is a safe ID or null; `notes` and timestamps, when present, are strings. |
+| `state/agents.json` | List of objects with unique safe `id` and string `status`/`role`. |
+| `state/lead.json` | Object with safe `agent` and optional string `set_at`/`until`/`instructions`, or JSON null. |
+
+Absent task/agent files retain the legacy empty-list default; absent/null lead
+means no lead. Present malformed files never become empty defaults. Unknown
+extension fields survive mutations. Existing ID spelling, arbitrary string
+statuses, and opaque timestamp strings are retained; old owners or state agents
+need not belong to today's roster. Task transitions, referential reconciliation,
+locking, and crash-consistent updates are not enforced by these structural checks.
+
+Both persisted JSON runtime fields and live TOML overrides are checked before
+use; a valid override cannot hide a malformed JSON field. Initialization also
+parses both generated TOML documents before creating files, including Unicode
+display names.
+
+### Agent display names versus identity
+
+New workspaces retain trimmed `--agents` input as display names while deriving
+stable IDs as before: `--agents "Alice 🚀,Dr Oom"` creates IDs `alice,dr-oom`.
+Optional `coven.json.display_names` maps exact IDs to nonblank labels, for example:
+
+```json
+{"display_names": {"jamal": "Jamal — Senior Developer", "eric": "QA"}}
+```
+
+Add that field to existing metadata rather than replacing the whole file. Legacy
+workspaces without labels display their IDs, and refresh never backfills names.
+Labels appear alongside IDs in dashboard/standup and agent/lead status, with
+Markdown/control characters escaped for the surface. Labels may be duplicated,
+but are **not selectors**: owners, lead records, logs, filenames, tmux targets,
+and native routing always use IDs. Case/normalization-ambiguous ID rosters are
+rejected, not silently renamed. Generated TOML display names are descriptive;
+JSON remains their authority.
 
 ## Common commands
 
