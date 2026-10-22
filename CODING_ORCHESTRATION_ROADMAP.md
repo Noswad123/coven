@@ -142,7 +142,7 @@ Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 137 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 175 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Implicit migration and destructive reset remain unavailable. Task-only baseline
@@ -198,14 +198,38 @@ Protocol and operator guidance: [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.m
 - [x] Test concurrent identical keys, process death after frame before projection,
   original-revision replay after later state/roster edits, import-versus-v1-writer
   race, activation/frame fsync uncertainty, no-fallback corruption, and explicit
-  source/projection preservation. All 137 offline regressions pass.
+  source/projection preservation.
 
-Next COV-02 work remains open: mutation authority/scopes beyond task add/assign,
-general multi-file recovery, broader domain revisions, and retention/operational
-hardening of ledger epochs. Snapshot tokens and ledger task revisions are not
-lifecycle claims or approval bindings; unconditional assignment can reassign.
-Current checkpoint Markdown remains decision authority. M0 and full COV-03
-revision-bound authorization are not complete.
+**COV-02c / COV-03a: serialized checkpoint-local content binding implemented.**
+Contract: [CHECKPOINT_CONTRACT.md](CHECKPOINT_CONTRACT.md).
+
+- [x] One Markdown authority atomically publishes inline decision binding and
+  managed history under the workspace lock. No sidecar, checkpoint ledger, or
+  observational-event replay supplies current approval.
+- [x] Distinguish exact checkpoint snapshot/absence revisions from local scope
+  hashes. Conditional decisions recheck the inspected snapshot under lock; covered
+  text edits stale effective approval on read. Bare legacy approvals are shown as
+  unbound without rewriting them. External linked content is explicitly not bound.
+- [x] Preserve covered bytes, fenced/nested examples, and old human history. Only
+  trailing machine-history regions are excluded; relocating them into content or
+  appending covered prose invalidates the prior binding. Reject malformed/unknown
+  machinery and ambiguous layouts before effects.
+- [x] Interactive review and console confirmation bind displayed snapshots, reject
+  stale input without automatic retry, and preserve conflict/uncertainty outcomes.
+- [x] Treat logs/dashboard/notices as secondary. Uncertain publication skips them;
+  postcommit failure warns without rollback. Notices run outside the lock, include
+  decision/scope identity, and suppress already-observed stale/superseded decisions.
+  Transport exit codes, including a failed Herdr enter, do not report success.
+- [x] Test actual process races, whole-file atomic readers, missing-file creation
+  conflicts, UI edit races, before/after-replace failures, lock-free delivery,
+  stale/superseded notices, legacy compatibility, and unchanged task-ledger scope.
+  All 175 offline regressions pass.
+
+Next COV-02/COV-03 work remains open: run/plan/repository/action/candidate input
+manifests and enforced authorization boundaries, remaining goal/lead/runtime
+mutation scopes, broader recovery, and ledger retention/operational hardening.
+Neither task revisions nor checkpoint-local hashes authorize execution. M0 and
+full COV-03 revision-bound authorization are not complete.
 
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |
@@ -263,7 +287,8 @@ the source of truth, but no general reducer rebuilds state from them.
 **Local progress:** COV-02a fixes cooperating task lost updates without changing
 v1 format. COV-02b adds explicitly imported task-ledger authority, replay, and
 committed-request receipts; it does not migrate all workspace state or solve
-whole-workspace transaction/recovery semantics.
+whole-workspace transaction/recovery semantics. COV-02c adds checkpoint-local
+serialized single-file decisions with snapshot conditions and scope invalidation.
 
 **Build:**
 
@@ -294,9 +319,11 @@ not duplicate tasks; corrupt history blocks unsafe transitions with a fix path.
 Historical approval events can reapprove it during refresh. Assignment and launch
 do not enforce checkpoint approval.
 
-**Local progress:** explicit change requests now revoke current approval, and
-refresh does not replay approvals. Revision/digest binding, withdrawal/new-plan
-invalidation, and enforcement at execution boundaries are still open.
+**Local progress:** explicit change requests revoke approval and refresh never
+replays it. Checkpoint-local content/snapshot binding now detects covered edits
+and stale decision attempts; legacy approvals remain unbound until explicit
+action. Run/plan/repository/action/candidate binding, withdrawal, and execution
+boundary enforcement remain open—local text approval is not an execution grant.
 
 **Build:**
 

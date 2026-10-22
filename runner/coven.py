@@ -18,11 +18,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger
+    from . import records, storage, task_ledger, checkpoints
 else:
     import records
     import storage
     import task_ledger
+    import checkpoints
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -824,117 +825,19 @@ def write_lead(workspace: Path, state: dict[str, Any] | None) -> None:
 
 
 def checkpoint_status(workspace: Path, checkpoint: str) -> str:
-    content = checkpoint_text(workspace, checkpoint)
-    if content is None:
-        return "missing"
-    header, _ = checkpoint_header(content)
-    for _, _, line in markdown_lines(header):
-        status = re.match(r"^ {0,3}status:([^\r\n]*)$", line, re.IGNORECASE)
-        if status:
-            return status.group(1).strip().lower() or "unknown"
-    return "unknown"
+    return checkpoint_view(workspace, checkpoint).effective_status
 
 
-def markdown_lines(content: str, *, strict: bool = False) -> list[tuple[int, int, str]]:
-    """Offsets of non-code lines for the small generated checkpoint format."""
-    visible = []
-    fence: tuple[str, int] | None = None
-    offset = 0
-    for raw in content.splitlines(keepends=True):
-        line = raw.rstrip("\r\n")
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-        if fence:
-            if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
-                fence = None
-        elif marker:
-            fence = (marker[1][0], len(marker[1]))
-        elif not line.startswith(("    ", "\t")):
-            visible.append((offset, offset + len(raw), line))
-        offset += len(raw)
-    if strict and fence:
-        fail("Cannot edit checkpoint: unterminated fenced code block")
-    return visible
-
-
-def markdown_heading(line: str) -> tuple[int, str] | None:
-    match = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*$", line)
-    if not match:
-        return None
-    title = re.sub(r"[ \t]+#+[ \t]*$", "", match[2])
-    return len(match[1]), title.lower()
-
-
-def checkpoint_header(content: str) -> tuple[str, str]:
-    """Only metadata before the first H2 describes the current decision."""
-    for start, _, line in markdown_lines(content):
-        heading = markdown_heading(line)
-        if heading and heading[0] == 2:
-            return content[:start], content[start:]
-    return content, ""
-
-
-def checkpoint_decision_text(content: str, status: str) -> str:
-    markdown_lines(content, strict=True)
-    header, body = checkpoint_header(content)
-    status_lines = [(start, end) for start, end, line in markdown_lines(header)
-                    if re.match(r"^ {0,3}status:", line, re.IGNORECASE)]
-    if len(status_lines) > 1:
-        fail("Cannot edit checkpoint: ambiguous current status headers")
-    if status_lines:
-        start, end = status_lines[0]
-        header = header[:start] + f"Status: {status}\n" + header[end:]
-    else:
-        header += ("" if header.endswith("\n") else "\n") + f"\nStatus: {status}\n\n"
-
-    approved = status == "approved"
-    decisions = (("Approved", approved), ("Rejected / needs changes", not approved))
-    visible = markdown_lines(body)
-    sections = [(start, end) for start, end, line in visible if markdown_heading(line) == (2, "user decision")]
-    if len(sections) > 1:
-        fail("Cannot edit checkpoint: ambiguous User decision sections")
-    if not sections:
-        current = "\n".join(f"- [{'x' if checked else ' '}] {label}" for label, checked in decisions)
-        return header + f"## User decision\n\n{current}\n\n" + body
-
-    _, start = sections[0]
-    end = next((offset for offset, _, line in visible if offset >= start and markdown_heading(line)), len(body))
-    current = body[start:end]
-    replacements = []
-    missing = []
-    for label, checked in decisions:
-        pattern = re.compile(r"^ {0,3}-[ \t]+\[[ xX]\][ \t]+" + re.escape(label) + r"[ \t]*$", re.IGNORECASE)
-        checkbox = f"- [{'x' if checked else ' '}] {label}"
-        matches = [(offset, stop) for offset, stop, line in markdown_lines(current) if pattern.match(line)]
-        if len(matches) > 1:
-            fail(f"Cannot edit checkpoint: ambiguous current `{label}` checkboxes")
-        if matches:
-            replacements.append((*matches[0], checkbox + "\n"))
-        else:
-            missing.append(checkbox)
-    for offset, stop, checkbox in sorted(replacements, reverse=True):
-        current = current[:offset] + checkbox + current[stop:]
-    if missing:
-        current += ("" if current.endswith("\n") else "\n") + "\n".join(missing) + "\n\n"
-    return header + body[:start] + current + body[end:]
-
-
-def prepare_checkpoint_decision(workspace: Path, checkpoint: str, status: str, heading: str, notes: str) -> tuple[Path, str]:
+def checkpoint_bytes(workspace: Path, checkpoint: str) -> bytes | None:
     path = checkpoint_path(workspace, checkpoint)
-    content = checkpoint_text(workspace, checkpoint)
-    if content is None:
-        checkpoint_id = path.stem
-        content = checkpoint_file(checkpoint_id, checkpoint_id.replace("-", " ").title(), "User approval checkpoint.")
-    content = checkpoint_decision_text(content, status)
-    content += f"\n## {heading} — {now()}\n\n{notes}\n"
-    # Notes are historical, but must not introduce an ambiguous live section or
-    # leave an open fence that would prevent the next explicit decision.
-    checkpoint_decision_text(content, status)
-    return path, content
+    try:
+        return path.read_bytes() if path.exists() else None
+    except OSError as exc:
+        raise storage.StorageError(f"Cannot read managed checkpoint {path}: {exc}") from exc
 
 
-def write_checkpoint_decision(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+def checkpoint_view(workspace: Path, checkpoint: str) -> checkpoints.View:
+    return checkpoints.inspect(checkpoint, checkpoint_bytes(workspace, checkpoint))
 
 
 def checkpoint_log_records(workspace: Path, filename: str) -> list[dict[str, Any]]:
@@ -1593,10 +1496,13 @@ def send_to_agent_pane(team: dict[str, Any], agent: str, text: str) -> bool:
     if not target:
         return False
     if runtime_multiplexer(team) == "herdr":
-        subprocess.run(["herdr", "pane", "send-text", target, text], check=False)
-        subprocess.run(["herdr", "pane", "send-keys", target, "enter"], check=False)
+        commands = [["herdr", "pane", "send-text", target, text], ["herdr", "pane", "send-keys", target, "enter"]]
     else:
-        subprocess.run(["tmux", "send-keys", "-t", target, text, "Enter"], check=False)
+        commands = [["tmux", "send-keys", "-t", target, text, "Enter"]]
+    for command in commands:
+        result = subprocess.run(command, check=False, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise storage.StorageError(f"Agent pane delivery failed for {agent}: {result.stderr.strip() or 'transport rejected the command'}")
     return True
 
 
@@ -1912,49 +1818,138 @@ def notify_agents(workspace: Path, team: dict[str, Any], agent_selector: str, me
     return sent, missing
 
 
-def approve_checkpoint(workspace: Path, team: dict[str, Any], checkpoint: str, message: str, agent_selector: str = "all") -> tuple[int, list[str]]:
-    preflight_workspace_paths(workspace, team)
-    checkpoint_text(workspace, checkpoint)
-    if agent_selector != "all":
-        require_agent(team, agent_selector)
-    path, content = prepare_checkpoint_decision(workspace, checkpoint, "approved", "Approval", message)
-    append_event(workspace, "checkpoint.approved", checkpoint=checkpoint, by="user")
-    append_message(workspace, "user", "coven", message)
-    write_checkpoint_decision(path, content)
-    sent, missing = notify_agents(
-        workspace,
-        team,
-        agent_selector,
-        message,
-        event_type="checkpoint.approval.sent",
-        checkpoint=checkpoint,
-    )
-    refresh_dashboard(workspace)
-    return sent, missing
+def check_checkpoint_revision(expected: str | None, actual: str) -> None:
+    if expected is not None and expected != actual:
+        raise storage.RevisionConflict(f"Stale checkpoint revision: expected {expected}; current {actual}; no decision applied")
 
 
-def suggest_checkpoint_changes(workspace: Path, team: dict[str, Any], checkpoint: str, notes: str, agent_selector: str = "all") -> tuple[int, list[str]]:
+def checkpoint_proposal(workspace: Path, checkpoint: str, action: str, notes: str, source: str,
+                        decision_id: str, expected_revision: str | None):
+    data = checkpoint_bytes(workspace, checkpoint)
+    before = checkpoints.inspect(checkpoint, data)
+    check_checkpoint_revision(expected_revision, before.revision)
+    template = checkpoint_file(checkpoint, checkpoint.replace("-", " ").title(), "User approval checkpoint.").encode("utf-8")
+    encoded, final = checkpoints.prepare(checkpoint, data, action, notes, decision_id=decision_id,
+                                         decided_at=now(), source=source, initial_content=template)
+    return before, encoded, final
+
+
+def deliver_checkpoint_notice(workspace: Path, checkpoint: str, selector: str, result: dict[str, Any]) -> None:
+    """Observational delivery only; never hold a workspace lock across runtime I/O."""
+    try:
+        team = load_team(workspace)
+        agents = team_agents(team) if selector == "all" else [selector]
+        for agent in agents:
+            require_agent(team, agent)
+    except (Exception, SystemExit) as exc:
+        result["warnings"].append(f"Checkpoint committed; notifications unavailable: {exc}")
+        return
+    message = (f"Checkpoint `{checkpoint}` decision {result['decision_id']} recorded as {result['action']} "
+               f"for scope {result['scope_revision']}. Reinspect current checkpoint status before acting. "
+               "This notice is not execution authorization.")
+    for agent in agents:
+        try:
+            current = checkpoint_view(workspace, checkpoint)
+            if (not current.decision or current.decision["decision_id"] != result["decision_id"]
+                    or current.effective_status != result["action"]):
+                result["warnings"].append("Checkpoint notice suppressed: decision superseded or no longer effective")
+                break
+            if not send_to_agent_pane(team, agent, message):
+                result["missing"].append(agent)
+                continue
+            result["sent"] += 1
+            append_event(workspace, "checkpoint.notice.sent", checkpoint=checkpoint, agent=agent,
+                         decision_id=result["decision_id"], scope_revision=result["scope_revision"])
+        except (Exception, SystemExit) as exc:
+            result["warnings"].append(f"Checkpoint committed; notice delivery/history failed for {agent}: {exc}")
+
+
+def decide_checkpoint(workspace: Path, team: dict[str, Any], checkpoint: str, action: str, notes: str,
+                      agent_selector: str = "all", *, expected_revision: str | None = None,
+                      source: str = "cli") -> dict[str, Any]:
+    checkpoints.validate_revision(expected_revision)
     preflight_workspace_paths(workspace, team)
-    checkpoint_text(workspace, checkpoint)
+    checkpoint_path(workspace, checkpoint)
     if agent_selector != "all":
         require_agent(team, agent_selector)
-    if not notes.strip():
+    if action == "changes_requested" and (not isinstance(notes, str) or not notes.strip()):
         fail("Change request cannot be empty")
-    path, content = prepare_checkpoint_decision(workspace, checkpoint, "changes_requested", "Changes requested", notes)
-    write_checkpoint_decision(path, content)
-    message = f"Changes requested for checkpoint `{checkpoint}`:\n\n{notes}"
-    append_event(workspace, "checkpoint.changes.requested", checkpoint=checkpoint, by="user")
-    append_message(workspace, "user", "coven", message)
-    sent, missing = notify_agents(
-        workspace,
-        team,
-        agent_selector,
-        message,
-        event_type="checkpoint.change_request.sent",
-        checkpoint=checkpoint,
-    )
-    refresh_dashboard(workspace)
-    return sent, missing
+    decision_id = uuid.uuid4().hex
+    # Discard this draft; predictable input failures must not create a lock.
+    checkpoint_proposal(workspace, checkpoint, action, notes, source, decision_id, expected_revision)
+    with workspace_mutation(workspace) as held:
+        team = load_team(workspace)
+        if agent_selector != "all":
+            require_agent(team, agent_selector)
+        before, encoded, final = checkpoint_proposal(workspace, checkpoint, action, notes, source, decision_id, expected_revision)
+        result = {"outcome": "committed", "checkpoint": checkpoint, "action": action, "decision_id": decision_id,
+                  "selection": "conditional" if expected_revision is not None else "latest",
+                  "before_revision": before.revision, "after_revision": final.revision,
+                  "scope_revision": final.scope_revision, "warnings": [], "sent": 0, "missing": []}
+        path = checkpoint_path(workspace, checkpoint)
+        created_parent = not path.parent.exists()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if created_parent:
+            try:
+                storage.sync_directory(path.parent.parent)
+            except OSError as exc:
+                raise storage.StorageError(f"Checkpoint directory creation could not be synced; no decision published: {exc}") from exc
+        try:
+            storage.atomic_replace_bytes(path, encoded)
+        except storage.CommitUncertain as exc:
+            result["outcome"] = "durability_uncertain"
+            result["warnings"].append(str(exc))
+            return result
+        event_type = "checkpoint.approved" if action == "approved" else "checkpoint.changes.requested"
+        for label, callback in (
+            ("event history incomplete", lambda: append_event(workspace, event_type, lock=held,
+                checkpoint=checkpoint, by="user", source=source, decision_id=decision_id,
+                scope_revision=final.scope_revision, reviewed_revision=before.revision)),
+            ("message history incomplete", lambda: append_message(workspace, "user", "coven", notes, lock=held)),
+            ("dashboard stale", lambda: refresh_dashboard(workspace, lock=held)),
+        ):
+            try:
+                callback()
+            except (Exception, SystemExit) as exc:
+                result["warnings"].append(f"Checkpoint committed; {label}: {exc}")
+    deliver_checkpoint_notice(workspace, checkpoint, agent_selector, result)
+    return result
+
+
+def approve_checkpoint(workspace: Path, team: dict[str, Any], checkpoint: str, message: str, agent_selector: str = "all", *,
+                       expected_revision: str | None = None, source: str = "cli") -> dict[str, Any]:
+    return decide_checkpoint(workspace, team, checkpoint, "approved", message, agent_selector,
+                             expected_revision=expected_revision, source=source)
+
+
+def suggest_checkpoint_changes(workspace: Path, team: dict[str, Any], checkpoint: str, notes: str, agent_selector: str = "all", *,
+                                expected_revision: str | None = None, source: str = "cli") -> dict[str, Any]:
+    return decide_checkpoint(workspace, team, checkpoint, "changes_requested", notes, agent_selector,
+                             expected_revision=expected_revision, source=source)
+
+
+def print_checkpoint_result(result: dict[str, Any], *, json_output: bool = False) -> int:
+    if json_output:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        label = "Recorded" if result["outcome"] == "committed" else "Replaced; durability uncertain for"
+        info(f"{label} {result['checkpoint']} decision {result['decision_id']}: {result['action']} (selection={result['selection']})")
+        if result["missing"]:
+            info(f"No running pane found for: {', '.join(result['missing'])}")
+        for warning in result["warnings"]:
+            print(f"[WARN] {warning}", file=sys.stderr)
+    return 0 if result["outcome"] == "committed" else 2
+
+
+def command_checkpoint_inspect(args: argparse.Namespace) -> int:
+    workspace, rest = split_optional_workspace(list(args.items))
+    load_team(workspace)
+    if len(rest) > 1:
+        fail("checkpoint inspect accepts one checkpoint ID")
+    checkpoint = rest[0] if rest else "plan-approval"
+    view = checkpoint_view(workspace, checkpoint)
+    print(json.dumps(view.to_dict(), ensure_ascii=False, indent=None if args.json else 2))
+    return 0
 
 
 def lead_prompt(agent: str, workspace: Path, goal: str) -> str:
@@ -2033,6 +2028,11 @@ def command_next(args: argparse.Namespace) -> int:
         request for request in checkpoint_requests(workspace)
         if checkpoint_status(workspace, request["checkpoint"]) != "approved"
     ]
+    if not approvals:
+        directory = managed_path(workspace, "checkpoints", directory=True)
+        for path in sorted(directory.glob("*.md")):
+            if checkpoint_status(workspace, path.stem) in {"approval_stale", "approved_unbound", "decision_invalid"}:
+                approvals.append({"checkpoint": path.stem})
     if approvals:
         checkpoint = approvals[-1].get("checkpoint")
         print(f"Next action: approve checkpoint `{checkpoint}`")
@@ -2148,15 +2148,10 @@ def command_approve(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     checkpoint = rest[0] if rest else "plan-approval"
     team = load_team(workspace)
-    message = args.message or (
-        f"Checkpoint `{checkpoint}` approved by user. Continue your assigned task. "
-        "Use the Coven task/message commands and refresh; do not edit shared task JSON, logs, or dashboard directly."
-    )
-    sent, missing = approve_checkpoint(workspace, team, checkpoint, message, args.agent)
-    if missing:
-        info(f"No running pane found for: {', '.join(missing)}")
-    info(f"Approved {checkpoint}; notified {sent} agent(s)")
-    return 0
+    message = args.message or f"Checkpoint `{checkpoint}` approved for its local content; no execution permission is implied."
+    result = approve_checkpoint(workspace, team, checkpoint, message, args.agent,
+                                 expected_revision=getattr(args, "expect_revision", None))
+    return print_checkpoint_result(result, json_output=getattr(args, "json", False))
 
 
 def command_suggest(args: argparse.Namespace) -> int:
@@ -2166,61 +2161,76 @@ def command_suggest(args: argparse.Namespace) -> int:
     checkpoint = rest[0]
     notes = " ".join(rest[1:])
     team = load_team(workspace)
-    sent, missing = suggest_checkpoint_changes(workspace, team, checkpoint, notes, args.agent)
-    if missing:
-        info(f"No running pane found for: {', '.join(missing)}")
-    info(f"Saved change request for {checkpoint}; notified {sent} agent(s)")
-    return 0
+    result = suggest_checkpoint_changes(workspace, team, checkpoint, notes, args.agent,
+                                        expected_revision=getattr(args, "expect_revision", None))
+    return print_checkpoint_result(result, json_output=getattr(args, "json", False))
+
+
+def display_checkpoint(workspace: Path, checkpoint: str, view: checkpoints.View) -> None:
+    print("\n" + "=" * 80)
+    print(f"Review checkpoint: {checkpoint}")
+    print(f"File: {checkpoint_path(workspace, checkpoint)}")
+    print(f"Snapshot: {view.revision}")
+    print(f"Effective status: {view.effective_status}; binding={view.binding}")
+    if view.reason:
+        print(f"Reason: {view.reason}")
+    print("=" * 80)
+    print(view.content if view.content is not None else "Checkpoint does not exist; a decision will create a default local checkpoint.")
 
 
 def command_review(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     team = load_team(workspace)
     checkpoints = rest or checkpoint_review_candidates(workspace)
-    paths = [(checkpoint, checkpoint_path(workspace, checkpoint), checkpoint_text(workspace, checkpoint)) for checkpoint in checkpoints]
+    # Reject a bad batch before prompting or applying any earlier decision.
+    for checkpoint in checkpoints:
+        checkpoint_view(workspace, checkpoint)
+    if args.agent != "all":
+        require_agent(team, args.agent)
     if not checkpoints:
         print("No pending checkpoint files found.")
         return 0
 
-    for checkpoint, path, content in paths:
-        print("\n" + "=" * 80)
-        print(f"Review checkpoint: {checkpoint}")
-        print(f"File: {path}")
-        print("=" * 80)
-        if content is not None:
-            print(content)
-        else:
-            print("Checkpoint file does not exist yet; it will be created if you approve or suggest changes.")
+    exit_status = 0
+    for checkpoint in checkpoints:
+        view = checkpoint_view(workspace, checkpoint)
+        display_checkpoint(workspace, checkpoint, view)
 
         while True:
             try:
                 action = input("[a]pprove, [s]uggest changes, [n]ext, [q]uit > ").strip().lower()
             except EOFError:
                 print()
-                return 0
+                return exit_status
             if action in {"a", "approve"}:
-                message = args.message or f"Checkpoint `{checkpoint}` approved by user after interactive review. Continue."
-                sent, missing = approve_checkpoint(workspace, team, checkpoint, message, args.agent)
-                if missing:
-                    info(f"No running pane found for: {', '.join(missing)}")
-                info(f"Approved {checkpoint}; notified {sent} agent(s)")
+                message = args.message or f"Checkpoint `{checkpoint}` approved after reviewing the displayed local snapshot."
+                try:
+                    result = approve_checkpoint(workspace, load_team(workspace), checkpoint, message, args.agent,
+                                                 expected_revision=view.revision, source="review")
+                    exit_status = max(exit_status, print_checkpoint_result(result))
+                except storage.RevisionConflict as exc:
+                    print(f"[WARN] {exc}. Reload and review explicitly; decision skipped.", file=sys.stderr)
+                    exit_status = max(exit_status, 1)
                 break
             if action in {"s", "suggest", "changes", "change"}:
                 notes = prompt_multiline("Enter requested changes for the agents.")
                 if notes:
-                    sent, missing = suggest_checkpoint_changes(workspace, team, checkpoint, notes, args.agent)
-                    if missing:
-                        info(f"No running pane found for: {', '.join(missing)}")
-                    info(f"Saved change request for {checkpoint}; notified {sent} agent(s)")
+                    try:
+                        result = suggest_checkpoint_changes(workspace, load_team(workspace), checkpoint, notes, args.agent,
+                                                             expected_revision=view.revision, source="review")
+                        exit_status = max(exit_status, print_checkpoint_result(result))
+                    except storage.RevisionConflict as exc:
+                        print(f"[WARN] {exc}. Reload and review explicitly; decision skipped.", file=sys.stderr)
+                        exit_status = max(exit_status, 1)
                 else:
                     info("No change request saved")
                 break
             if action in {"n", "next", "skip"}:
                 break
             if action in {"q", "quit", "exit"}:
-                return 0
+                return exit_status
             print("Choose approve, suggest changes, next, or quit.")
-    return 0
+    return exit_status
 
 
 def print_console_help() -> None:
@@ -2246,16 +2256,17 @@ def command_console(args: argparse.Namespace) -> int:
     team = load_team(workspace)
     print(f"coven console: {team['name']} ({workspace})")
     print_console_help()
+    exit_status = 0
     while True:
         try:
             raw = input("coven> ").strip()
         except EOFError:
             print()
-            return 0
+            return exit_status
         if not raw:
             continue
         if raw in {"q", "quit", "exit"}:
-            return 0
+            return exit_status
         if raw in {"h", "help", "?"}:
             print_console_help()
             continue
@@ -2276,7 +2287,7 @@ def command_console(args: argparse.Namespace) -> int:
         command = parts[0]
         if command == "review":
             items = [str(workspace)] + ([parts[1]] if len(parts) > 1 else [])
-            command_review(argparse.Namespace(items=items, agent="all", message=None))
+            exit_status = max(exit_status, command_review(argparse.Namespace(items=items, agent="all", message=None)))
             continue
         if command == "lead":
             items = [str(workspace)] + raw.split()[1:]
@@ -2284,20 +2295,13 @@ def command_console(args: argparse.Namespace) -> int:
             continue
         if command == "approve":
             checkpoint = parts[1] if len(parts) > 1 else "plan-approval"
-            message = f"Checkpoint `{checkpoint}` approved by user from coven console. Continue."
-            sent, missing = approve_checkpoint(workspace, team, checkpoint, message, "all")
-            if missing:
-                info(f"No running pane found for: {', '.join(missing)}")
-            info(f"Approved {checkpoint}; notified {sent} agent(s)")
+            exit_status = max(exit_status, console_checkpoint_decision(workspace, checkpoint, "approved", "Approved displayed checkpoint content from console."))
             continue
         if command == "suggest":
             if len(parts) < 3:
                 print("Usage: suggest <checkpoint> <requested changes>")
                 continue
-            sent, missing = suggest_checkpoint_changes(workspace, team, parts[1], parts[2], "all")
-            if missing:
-                info(f"No running pane found for: {', '.join(missing)}")
-            info(f"Saved change request for {parts[1]}; notified {sent} agent(s)")
+            exit_status = max(exit_status, console_checkpoint_decision(workspace, parts[1], "changes_requested", parts[2]))
             continue
         if command == "send":
             if len(parts) < 3:
@@ -2313,7 +2317,26 @@ def command_console(args: argparse.Namespace) -> int:
             command_send(argparse.Namespace(items=[str(workspace), recipient, message]))
             continue
         print("Unknown command. Type `help`.")
-    return 0
+    return exit_status
+
+
+def console_checkpoint_decision(workspace: Path, checkpoint: str, action: str, notes: str) -> int:
+    view = checkpoint_view(workspace, checkpoint)
+    display_checkpoint(workspace, checkpoint, view)
+    try:
+        confirmed = input(f"Record {action} for this displayed snapshot? [y/N] > ").strip().lower()
+    except EOFError:
+        return 0
+    if confirmed not in {"y", "yes"}:
+        info("No checkpoint decision saved")
+        return 0
+    try:
+        result = decide_checkpoint(workspace, load_team(workspace), checkpoint, action, notes,
+                                    expected_revision=view.revision, source="console")
+        return print_checkpoint_result(result)
+    except storage.RevisionConflict as exc:
+        print(f"[WARN] {exc}. Reinspect and confirm explicitly; no retry was made.", file=sys.stderr)
+        return 1
 
 
 def command_refresh(args: argparse.Namespace) -> int:
@@ -2692,12 +2715,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     approve.add_argument("items", nargs="*", help="Optional workspace and optional checkpoint (default: plan-approval)")
     approve.add_argument("--agent", default="all", help="Agent id to notify, or 'all' (default)")
     approve.add_argument("--message", help="Custom approval message")
+    approve.add_argument("--expect-revision", help="Apply only to the exact checkpoint snapshot token inspected")
+    approve.add_argument("--json", action="store_true", help="Return decision identity, revisions, outcome, and delivery warnings")
     approve.set_defaults(func=command_approve)
 
     suggest = subparsers.add_parser("suggest", help="Request changes for a checkpoint and notify agents")
     suggest.add_argument("items", nargs="+", help="Optional workspace, then checkpoint and change request text")
     suggest.add_argument("--agent", default="all", help="Agent id to notify, or 'all' (default)")
+    suggest.add_argument("--expect-revision", help="Apply only to the exact checkpoint snapshot token inspected")
+    suggest.add_argument("--json", action="store_true", help="Return decision identity, revisions, outcome, and delivery warnings")
     suggest.set_defaults(func=command_suggest)
+
+    checkpoint = subparsers.add_parser("checkpoint", help="Inspect checkpoint-local scope and exact snapshot revisions")
+    checkpoint_sub = checkpoint.add_subparsers(dest="checkpoint_command", required=True)
+    checkpoint_inspect = checkpoint_sub.add_parser("inspect", help="Read-only checkpoint content, binding, and revision diagnostics")
+    checkpoint_inspect.add_argument("items", nargs="*", help="Optional workspace and checkpoint (default: plan-approval)")
+    checkpoint_inspect.add_argument("--json", action="store_true")
+    checkpoint_inspect.set_defaults(func=command_checkpoint_inspect)
 
     review = subparsers.add_parser("review", help="Interactively review checkpoint files and approve or request changes")
     review.add_argument("items", nargs="*", help="Optional workspace and optional checkpoint(s)")

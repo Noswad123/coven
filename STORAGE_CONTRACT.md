@@ -14,7 +14,7 @@ in [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md). Nothing imports implicitl
 | Resource | Authority / role |
 | --- | --- |
 | `state/tasks.json` | Authoritative v1 task list. A task mutation replaces this one file. |
-| Checkpoint Markdown | Current decision authority, unchanged by this slice. |
+| Checkpoint Markdown | Current local decision authority; revision-bound single-file protocol is documented separately below. |
 | Metadata, goal, other state | Existing file authorities; no new cross-file transaction. |
 | `logs/events.jsonl`, `logs/messages.jsonl` | Observational append-only history, not a replay ledger. |
 | `dashboard.md` | Regenerable projection. |
@@ -39,10 +39,12 @@ event/message appenders use the same lock. Every dashboard publisher locks the
 actual render and publication, including `status` and `refresh`; locking just
 the final rename would allow an old render to overwrite a newer one.
 
-Goal, lead, checkpoint, and runtime operations are **not fully serialized
-transactions** merely because their history append/dashboard publish participates
-in the lock. Runtime processes and interactive decisions are not held inside a
-global CLI lock.
+Goal, lead, and runtime operations are **not fully serialized transactions**
+merely because their history/dashboard writes participate in the lock.
+Checkpoint decisions now have their own serialized, content-bound single-file
+publication protocol in [CHECKPOINT_CONTRACT.md](CHECKPOINT_CONTRACT.md), still
+without a checkpoint+event+runtime transaction. Runtime I/O and interactive input
+are not held inside a global CLI lock.
 
 The lock is opened without truncation and held with exclusive POSIX `flock`.
 Acquisition waits at most five seconds, then reports busy. Nested helpers reuse

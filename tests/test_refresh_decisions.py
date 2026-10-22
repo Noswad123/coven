@@ -149,7 +149,7 @@ class RefreshDecisionTests(CovenTestCase):
         historical = "## Notes\n\n- [x] Approved\n- [x] Rejected / needs changes\nStatus: approved\nKeep this evidence.\n"
         path = self.workspace / "checkpoints/custom.md"
         path.write_text("# Custom\n\nsTaTuS: APPROVED\n\n## User decision\n\n- [X] Approved\n- [x] Rejected / needs changes\n\n" + historical)
-        self.assertEqual(coven.checkpoint_status(self.workspace, "custom"), "approved")
+        self.assertEqual(coven.checkpoint_status(self.workspace, "custom"), "approved_unbound")
         self.invoke("suggest", self.workspace, "custom", "Reconsider")
         self.assertIn(historical, path.read_text())
         self.assertEqual(coven.checkpoint_status(self.workspace, "custom"), "changes_requested")
@@ -178,7 +178,7 @@ class RefreshDecisionTests(CovenTestCase):
                 decision_example = f"{fence}markdown\n## User decision\n\n- [x] Approved\n- [ ] Rejected / needs changes\n{fence}\n"
                 path.write_text("# Custom\n\n" + metadata_example + "\nStatus: approved\n\n## Purpose\n\n" + decision_example +
                                 "\n## User decision\n\n- [x] Approved\n- [ ] Rejected / needs changes\n\n## Notes\nKeep these notes.\n")
-                self.assertEqual(coven.checkpoint_status(self.workspace, "custom"), "approved")
+                self.assertEqual(coven.checkpoint_status(self.workspace, "custom"), "approved_unbound")
                 self.invoke("suggest", self.workspace, "custom", "More QA")
                 content = path.read_text()
                 self.assertIn(metadata_example, content)
@@ -254,7 +254,7 @@ class RefreshDecisionTests(CovenTestCase):
         self.assertIn("approve checkpoint `pre-delivery-review`", self.invoke("next", self.workspace))
 
     def test_console_and_interactive_review_share_decision_transitions(self):
-        with mock.patch("builtins.input", side_effect=["approve plan-approval", "suggest plan-approval More QA", "quit"]):
+        with mock.patch("builtins.input", side_effect=["approve plan-approval", "y", "suggest plan-approval More QA", "y", "quit"]):
             self.invoke("console", self.workspace)
         self.assertEqual(coven.checkpoint_status(self.workspace, "plan-approval"), "changes_requested")
         with mock.patch("builtins.input", return_value="a"):

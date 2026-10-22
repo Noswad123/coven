@@ -61,7 +61,8 @@ coven/
 │   ├── coven.py           # main CLI and workspace runner
 │   ├── records.py         # pure v1 workspace record validators
 │   ├── storage.py         # POSIX locks, atomic publication, strict history I/O
-│   └── task_ledger.py     # opt-in ledger, baseline import, durable task receipts
+│   ├── task_ledger.py     # opt-in ledger, baseline import, durable task receipts
+│   └── checkpoints.py     # exact snapshot/local-scope checkpoint bindings
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -356,25 +357,46 @@ standup, agents, send, approve, suggest, and review operations.
 
 ### Current checkpoint decisions
 
-The current `Status:` metadata before the first real H2 heading in a checkpoint
-file is authoritative for its displayed decision. `suggest` sets it to
-`changes_requested`, unchecks the current approval, and checks “Rejected / needs
-changes.” Explicit approval reverses those checkboxes. Prior rationale and
-feedback stay in the file; historical approval events do not grant current
-approval or revive it during refresh. `next` discovers requests in both logs and
-checks current file status, not whether approval happened at some point.
+```bash
+coven checkpoint inspect plan-approval --json
+# Substitute the inspected snapshot token; scope tokens are not write tokens.
+coven approve plan-approval --expect-revision '<snapshot revision>' --json
+coven suggest plan-approval "Please add QA evidence" --expect-revision '<new snapshot revision>' --json
+```
 
-Decision edits are limited to metadata and the direct checklist under the live
-`## User decision` section. Fenced examples and nested historical sections are
-preserved. Ambiguous layouts (duplicate current fields/sections/checklist labels
-or unclosed code fences) are rejected before saving or notifying agents. This
-also applies to newly submitted notes: close code fences and quote/fence example
-decision sections rather than introducing another live H2 decision heading.
-Existing contradictory legacy prose is not silently repaired; make an explicit
-decision after inspecting it.
+The Markdown file is one decision authority: explicit approve/suggest installs a
+versioned inline binding and publishes the whole file atomically under the
+workspace lock. Approval is effective only while its checkpoint-local scope
+matches current covered bytes. Editing purpose, criteria, custom prose, examples,
+whitespace, or line endings yields `approval_stale` on read without rewriting the
+file. Legacy bare `Status: approved` is now **`approved_unbound`**, not effective
+bound approval, until an explicit decision. `suggest` records `changes_requested`;
+historical events cannot revive approval. Dashboard/standup/review/next agree on
+effective status rather than trusting presentation or old events alone.
 
-These decisions are not revision-bound execution grants. Dispatch enforcement,
-concurrent writes, and crash-consistent decision/log updates remain future work.
+Scope excludes only live decision machinery and valid trailing machine history.
+Old human history remains covered; moving machine history into reviewed content,
+or adding prose after it, makes that region covered too. Rationale is retained in
+structured history comments and decoded by inspect. Ambiguous/malformed machinery
+and incompatible notes fail before writes or notifications.
+
+`--expect-revision` protects the exact inspected snapshot, including machinery
+and history. Without it, CLI decisions explicitly select the latest snapshot
+under the lock; they do not prove an earlier review still matches. Interactive
+review and console confirmation submit their displayed revision and never retry
+conflicts automatically. Console/review preserve conflict/uncertainty exit codes.
+
+After commit, history/dashboard failures and runtime-notice failures produce
+warnings, not rollback. Exit 2 means replacement with uncertain durability and
+skips secondary work. Notices run outside the lock, carry decision/scope IDs,
+suppress known-superseded decisions, and tell agents to recheck current status.
+They are not execution grants. No checkpoint request deduplication is provided.
+
+This binds **checkpoint text only**, not mutable link targets, run plans, task
+graphs, repositories, or candidate commits. Dispatch/integration/delivery
+authorization still needs explicit policy and enforcement. See
+[CHECKPOINT_CONTRACT.md](CHECKPOINT_CONTRACT.md) for exact byte coverage, legacy
+behavior, single-file commit boundaries, and limits.
 
 ## Runtime lifecycle
 
