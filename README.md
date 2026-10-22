@@ -59,7 +59,8 @@ coven/
 │   └── coven              # executable wrapper
 ├── runner/
 │   ├── coven.py           # main CLI and workspace runner
-│   └── records.py         # pure v1 workspace record validators
+│   ├── records.py         # pure v1 workspace record validators
+│   └── storage.py         # POSIX locks, atomic publication, strict history I/O
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -95,6 +96,7 @@ new-coven/
 ├── state/
 │   ├── agents.json
 │   ├── tasks.json
+│   ├── .workspace.lock          # persistent coordination file; never force-delete
 │   └── lead.json               # present when a lead is set
 ├── logs/
 │   ├── events.jsonl            # append-only event log
@@ -247,6 +249,44 @@ a refresh event, rename legacy task IDs, restore missing guidance/checkpoint
 files, or recover approval from historical events. Initialization, refresh, and
 future explicit migration/recovery are separate operations; no migration command
 is supplied yet. Refresh remains subject to the managed-path validation above.
+On first valid mutation/publication in a legacy workspace, Coven may create
+`state/.workspace.lock`; this coordination file is not a state migration.
+
+### Safe task mutations
+
+```bash
+coven task list --json
+coven task add "Investigate tool rendering" --owner jamal --json
+# Copy a revision token from task list --json; do not literally use the placeholder.
+coven task assign core-chatbot jamal --expect-revision '<revision token>' --json
+```
+
+Cooperating current Coven processes serialize task add/assign under a persistent
+workspace lock, reload task state inside it, and atomically replace the complete
+task list. `--expect-revision` rejects a stale whole-task snapshot; without it,
+assignment is ordinary serialized reassignment, not an exclusive claim. Task
+listing returns a token from its exact bytes without creating a lock. Tokens are
+content hashes (or `tasks-missing:v1`), not monotonic or approval revisions.
+
+The task snapshot is authoritative; history and dashboard are separate secondary
+writes. A task committed with history/dashboard warnings still exits **0**. Exit
+**2** with `outcome: durability_uncertain` means replacement occurred but directory
+sync failed. Inspect current task state before retrying either case. There is no
+idempotency key yet, so repeating an add after a lost response can duplicate work.
+
+The lock waits up to five seconds and is released by the kernel when its holder
+exits. Never delete a live lock file or mix these commands with old binaries or
+direct shared-JSON writes. Event/message appends and dashboard render/publication
+use the same lock, but goal/lead/checkpoint/runtime operations are not thereby
+fully transactional. Generated prompts direct workers through task/message APIs;
+custom role prompts remain preserved and may need their old direct-edit guidance
+retired. Report unsupported task lifecycle changes as messages instead of editing
+task JSON manually.
+
+History parsing now reports malformed/nonobject/interior/truncated-tail records
+with a path and line number instead of silently skipping them. Explicit inspection
+and repair are required; no automatic truncation or replay. For full scope,
+commit outcomes, and recovery instructions, see [STORAGE_CONTRACT.md](STORAGE_CONTRACT.md).
 
 ## User interaction
 
@@ -349,7 +389,7 @@ logged, and sent to the lead's runtime pane when it is running.
 
 ## Development checks
 
-Python 3.11+ is required (the runner uses `tomllib`). Run the offline regression
+Python 3.11+ and local POSIX locking (macOS/Linux) are required. Run the offline regression
 suite from the repository root:
 
 ```bash

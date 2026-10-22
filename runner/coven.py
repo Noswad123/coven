@@ -10,15 +10,18 @@ import shlex
 import subprocess
 import sys
 import tomllib
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 if __package__:
-    from . import records
+    from . import records, storage
 else:
     import records
+    import storage
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -33,7 +36,7 @@ INIT_RESERVED_NAMES = (
 MANAGED_DIRECTORIES = ("agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux")
 MANAGED_FILES = (
     "coven.json", "coven.toml", "goal.md", "spec.md", "dashboard.md",
-    "state/agents.json", "state/tasks.json", "state/lead.json",
+    "state/agents.json", "state/tasks.json", "state/lead.json", "state/.workspace.lock",
     "logs/events.jsonl", "logs/messages.jsonl", "tmux/coven.toml",
     "work/README.md", "output/README.md",
 )
@@ -189,6 +192,16 @@ def preflight_workspace_paths(workspace: Path, team: dict[str, Any] | None = Non
     load_workspace_state(workspace, team)
 
 
+@contextmanager
+def workspace_mutation(workspace: Path, lock: storage.WorkspaceLock | None = None):
+    # Deterministic invalid requests fail before creating coordination files.
+    preflight_workspace_paths(workspace)
+    path = managed_path(workspace, "state/.workspace.lock")
+    with storage.workspace_lock(workspace, path, held=lock) as held:
+        preflight_workspace_paths(workspace)
+        yield held
+
+
 def is_team_workspace(path: str | Path) -> bool:
     marker = Path(path).expanduser() / "coven.json"
     return marker.exists() or marker.is_symlink()
@@ -249,24 +262,30 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def append_event(workspace: Path, event_type: str, **payload: Any) -> None:
+def append_event(workspace: Path, event_type: str, *, lock: storage.WorkspaceLock | None = None, **payload: Any) -> None:
     preflight_workspace_paths(workspace)
-    event = {"ts": now(), "type": event_type, **payload}
+    event = {"event_id": str(uuid.uuid4()), "ts": now(), "type": event_type, **payload}
     path = managed_path(workspace, "logs/events.jsonl")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(event, sort_keys=True) + "\n")
+    storage.read_jsonl(path)
+    storage.encode_json(event)
+    with workspace_mutation(workspace, lock):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        storage.append_jsonl(path, event)
 
 
-def append_message(workspace: Path, sender: str, recipient: str, body: str) -> None:
+def append_message(workspace: Path, sender: str, recipient: str, body: str, *, lock: storage.WorkspaceLock | None = None) -> None:
     preflight_workspace_paths(workspace)
-    managed_path(workspace, "logs/events.jsonl")
+    event_path = managed_path(workspace, "logs/events.jsonl")
     message = {"ts": now(), "from": sender, "to": recipient, "body": body}
     path = managed_path(workspace, "logs/messages.jsonl")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(message, sort_keys=True) + "\n")
-    append_event(workspace, "message.sent", sender=sender, recipient=recipient)
+    storage.encode_json(message)
+    storage.read_jsonl(event_path)
+    storage.read_jsonl(path)
+    with workspace_mutation(workspace, lock) as held:
+        storage.read_jsonl(event_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        storage.append_jsonl(path, message)
+        append_event(workspace, "message.sent", sender=sender, recipient=recipient, lock=held)
 
 
 def load_team(workspace: Path) -> dict[str, Any]:
@@ -420,8 +439,10 @@ Read first:
 8. `checkpoints/*.md`
 
 Rules:
-- Use `logs/events.jsonl` and `logs/messages.jsonl` as append-only history.
-- Update `state/tasks.json` and regenerate/maintain `dashboard.md` when task state changes.
+- Treat task state as authoritative and the logs as history, not a replay ledger.
+- Do not edit shared task JSON, logs, or dashboard files directly. Use `coven task list --json`, `coven task add`, `coven task assign`, `coven message`, and `coven refresh`.
+- Use `--expect-revision` from `task list --json` when a task change depends on the state you reviewed. A stale revision requires reinspection, not an automatic retry.
+- Completion/blocker lifecycle updates are not yet a task API: report them with `coven message {agent} coven "<summary>"` rather than changing task JSON manually.
 - Consult the user at configured checkpoints before proceeding past them.
 - Do not overwrite another agent's notes; append corrections or send messages.
 - Keep work scoped to your current assignment.
@@ -437,10 +458,14 @@ def starter_prompt_text(agent: str, workspace: Path) -> str:
 Your first actions:
 1. Read `goal.md`, `spec.md` if present, `dashboard.md`, `coven.toml`, `agents/{agent}.md`, and `state/tasks.json`.
 2. Find your assigned task(s).
-3. Append a short `agent.started` event to `logs/events.jsonl`.
+3. Record your start through `coven message {agent} coven "Starting assigned work"`; do not append logs directly.
 4. Inspect `checkpoints/*.md`, `work/`, and `output/`.
 5. Work only within your role and current assignment.
-6. If you reach a checkpoint requiring user approval, stop and write the request to `logs/messages.jsonl`, `dashboard.md`, and the relevant `checkpoints/<id>.md` file.
+6. If you reach a checkpoint requiring user approval, stop and send the request through `coven message {agent} user "Checkpoint <id> needs approval: <summary>"`.
+
+Shared task JSON, logs, and dashboard files are not editing surfaces. Use the CLI
+for task changes and messages. Existing role prompts may be customized; these
+coordination rules still apply even if an older prompt asks for direct edits.
 
 Do not wait for another prompt unless blocked. Start now.
 """
@@ -570,7 +595,7 @@ name = {toml_string(name)}
 [runtime]
 multiplexer = {toml_string(multiplexer)}
 opencode_command = {toml_string(opencode_command)}
-source_of_truth = "logs/events.jsonl"
+source_of_truth = "workspace-files"
 dashboard = "dashboard.md"
 
 {agent_blocks}
@@ -755,8 +780,13 @@ def render_dashboard(workspace: Path) -> str:
 """
 
 
-def refresh_dashboard(workspace: Path) -> None:
-    managed_path(workspace, "dashboard.md").write_text(render_dashboard(workspace), encoding="utf-8")
+def refresh_dashboard(workspace: Path, *, lock: storage.WorkspaceLock | None = None) -> None:
+    # The render, not just publication, is serialized with task mutations.
+    preflight_workspace_paths(workspace)
+    managed_text(workspace, "goal.md")
+    with workspace_mutation(workspace, lock):
+        content = render_dashboard(workspace).encode("utf-8")
+        storage.atomic_replace_bytes(managed_path(workspace, "dashboard.md"), content)
 
 
 def read_lead(workspace: Path) -> dict[str, Any] | None:
@@ -951,7 +981,7 @@ def command_init(args: argparse.Namespace) -> int:
         "version": 1,
         "name": name,
         "created_at": now(),
-        "source_of_truth": "logs/events.jsonl",
+        "source_of_truth": "workspace-files",
         "opencode_command": args.opencode_command,
         "multiplexer": multiplexer,
         "agents": agents,
@@ -1035,68 +1065,136 @@ def next_task_id(tasks: list[dict[str, Any]]) -> str:
     return unique_slug("task", existing)
 
 
+def read_task_snapshot(workspace: Path) -> tuple[str, list[dict[str, Any]]]:
+    path = managed_path(workspace, "state/tasks.json")
+    try:
+        data = path.read_bytes() if path.exists() else None
+        tasks = records.tasks(json.loads(data.decode("utf-8")) if data is not None else [])
+    except (ValueError, OSError) as exc:
+        raise storage.StorageError(f"Invalid task snapshot {path}: {exc}") from exc
+    return storage.snapshot_revision(data), tasks
+
+
+def check_task_revision(expected: str | None, current: str) -> None:
+    if expected is not None and expected != current:
+        raise storage.RevisionConflict(f"Stale tasks revision: expected {expected}; current {current}; no task change applied")
+
+
+TaskChange = Callable[[dict[str, Any], list[dict[str, Any]]], tuple[dict[str, Any], str, dict[str, Any]]]
+
+
+def mutate_tasks(workspace: Path, change: TaskChange, *, expected_revision: str | None = None) -> dict[str, Any]:
+    """One authoritative snapshot commit; history/projection are secondary effects."""
+    storage.validate_revision(expected_revision)
+    # Validate deterministic failures without creating a lock, then discard this
+    # draft. Only the freshly reloaded state inside the lock may be committed.
+    team = load_team(workspace)
+    before, draft = read_task_snapshot(workspace)
+    check_task_revision(expected_revision, before)
+    change(team, draft)
+    records.tasks(draft)
+    storage.encode_json(draft)
+    for filename in ("events", "messages"):
+        iter_jsonl(managed_path(workspace, f"logs/{filename}.jsonl"))
+
+    with workspace_mutation(workspace) as held:
+        team = load_team(workspace)
+        before, tasks = read_task_snapshot(workspace)
+        check_task_revision(expected_revision, before)
+        for filename in ("events", "messages"):
+            iter_jsonl(managed_path(workspace, f"logs/{filename}.jsonl"))
+        task, event_type, payload = change(team, tasks)
+        records.tasks(tasks)
+        encoded = storage.encode_json(tasks)
+        after = storage.snapshot_revision(encoded)
+        mutation_id = str(uuid.uuid4())
+        event_payload = {**payload, "mutation_id": mutation_id, "before_revision": before, "after_revision": after}
+        storage.encode_json(event_payload)
+        result = {"outcome": "committed", "mutation_id": mutation_id, "task": task,
+                  "before_revision": before, "after_revision": after, "warnings": []}
+        try:
+            storage.atomic_replace_bytes(managed_path(workspace, "state/tasks.json"), encoded)
+        except storage.CommitUncertain as exc:
+            result["outcome"] = "durability_uncertain"
+            result["warnings"].append(str(exc))
+            return result
+        # Never roll back or report an ordinary failed mutation after the durable
+        # authoritative replace. This is NOT a snapshot+event+dashboard transaction.
+        for label, action in (
+            ("history incomplete", lambda: append_event(workspace, event_type, lock=held, **event_payload)),
+            ("dashboard stale", lambda: refresh_dashboard(workspace, lock=held)),
+        ):
+            try:
+                action()
+            except (Exception, SystemExit) as exc:
+                result["warnings"].append(f"Task committed; {label}: {exc}. Inspect before retrying this request.")
+        return result
+
+
+def add_task(workspace: Path, title: str, owner: str | None = None, notes: str = "", *, expected_revision: str | None = None) -> dict[str, Any]:
+    def change(team: dict[str, Any], tasks: list[dict[str, Any]]):
+        task_owner = resolve_agent(team, owner) if owner else None
+        try:
+            records.text(title, "task title")
+            task_id = unique_slug(title, {task["id"] for task in tasks})
+            records.text(notes, "task notes")
+        except ValueError as exc:
+            fail(f"Invalid task title/notes: {exc}")
+        task = {"id": task_id, "title": title, "status": "assigned" if task_owner else "pending", "owner": task_owner,
+                "notes": notes, "created_at": now(), "updated_at": now()}
+        tasks.append(task)
+        return task, "task.created", {"task": task}
+    return mutate_tasks(workspace, change, expected_revision=expected_revision)
+
+
+def assign_task(workspace: Path, task_id: str, agent: str, *, expected_revision: str | None = None) -> dict[str, Any]:
+    def change(team: dict[str, Any], tasks: list[dict[str, Any]]):
+        owner = resolve_agent(team, agent)
+        for task in tasks:
+            if task["id"] == task_id:
+                task.update(owner=owner, status="assigned", updated_at=now())
+                return task, "task.assigned", {"task_id": task_id, "agent": owner}
+        fail(f"Task not found: {task_id}")
+    return mutate_tasks(workspace, change, expected_revision=expected_revision)
+
+
+def print_task_result(result: dict[str, Any], *, json_output: bool, action: str) -> int:
+    if json_output:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        task = result["task"]
+        if result["outcome"] == "committed":
+            print(f"Created {task['id']}: {task['title']}" if action == "add" else f"Assigned {task['id']} to {task['owner']}")
+        else:
+            print(f"Task snapshot replaced for {task['id']}; durability uncertain. Inspect before retrying.")
+        for warning in result["warnings"]:
+            print(f"[WARN] {warning}", file=sys.stderr)
+    return 0 if result["outcome"] == "committed" else 2
+
+
 def command_task_add(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
-    team = load_team(workspace)
     if not rest:
         fail("task add requires a title")
-    title = " ".join(rest)
-    owner = resolve_agent(team, args.owner) if args.owner else None
-    tasks = read_tasks(workspace)
-    existing = {str(task.get("id")) for task in tasks if isinstance(task, dict) and task.get("id")}
-    try:
-        task_id = unique_slug(title, existing)
-    except ValueError as exc:
-        fail(f"Invalid task title: {exc}")
-    task = {
-        "id": task_id,
-        "title": title,
-        "status": "pending" if not owner else "assigned",
-        "owner": owner,
-        "notes": args.notes or "",
-        "created_at": now(),
-        "updated_at": now(),
-    }
-    tasks.append(task)
-    try:
-        records.tasks(tasks)
-    except ValueError as exc:
-        fail(f"Invalid proposed task records: {exc}")
-    write_json(workspace / "state" / "tasks.json", tasks)
-    append_event(workspace, "task.created", task=task)
-    refresh_dashboard(workspace)
-    print(f"Created {task['id']}: {task['title']}")
-    return 0
+    result = add_task(workspace, " ".join(rest), args.owner, args.notes or "", expected_revision=getattr(args, "expect_revision", None))
+    return print_task_result(result, json_output=getattr(args, "json", False), action="add")
 
 
 def command_task_assign(args: argparse.Namespace) -> int:
-    items = list(args.items)
-    workspace, rest = split_optional_workspace(items)
+    workspace, rest = split_optional_workspace(list(args.items))
     if len(rest) < 2:
         fail("task assign requires task_id and agent")
-    task_id, agent = rest[0], rest[1]
-    team = load_team(workspace)
-    agent = resolve_agent(team, agent)
-    tasks = read_tasks(workspace)
-    for task in tasks:
-        if task.get("id") == task_id:
-            task["owner"] = agent
-            task["status"] = "assigned"
-            task["updated_at"] = now()
-            records.tasks(tasks)
-            write_json(workspace / "state" / "tasks.json", tasks)
-            append_event(workspace, "task.assigned", task_id=task_id, agent=agent)
-            refresh_dashboard(workspace)
-            print(f"Assigned {task_id} to {agent}")
-            return 0
-    fail(f"Task not found: {task_id}")
-    return 1
+    result = assign_task(workspace, rest[0], rest[1], expected_revision=getattr(args, "expect_revision", None))
+    return print_task_result(result, json_output=getattr(args, "json", False), action="assign")
 
 
 def command_task_list(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     load_team(workspace)
-    tasks = read_tasks(workspace)
+    revision, tasks = read_task_snapshot(workspace)
+    if getattr(args, "json", False):
+        print(json.dumps({"revision": revision, "tasks": tasks}, ensure_ascii=False))
+        return 0
     if not tasks:
         print("No tasks yet")
         return 0
@@ -1127,19 +1225,7 @@ def print_file(path: Path, default: str) -> int:
 
 
 def iter_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    items: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            items.append(value)
-    return items
+    return storage.read_jsonl(path)
 
 
 def print_pretty_jsonl(path: Path, kind: str) -> int:
@@ -1648,7 +1734,7 @@ Your operating loop:
 1. Run or inspect `coven standup` to see coven status, blockers, checkpoints, and agent runtime state.
 2. Use `coven send <agent|all> <message>` to move agents along through the configured terminal multiplexer.
 3. Make your best decision to unblock the coven without waiting for the user unless a checkpoint, destructive action, missing requirement, or critical blocker requires user input.
-4. Keep `logs/events.jsonl`, `logs/messages.jsonl`, `state/tasks.json`, and `dashboard.md` current.
+4. Use `coven task list --json`, task add/assign with `--expect-revision` when appropriate, `coven message`, and `coven refresh`; never directly edit shared task JSON, logs, or dashboard. Report unsupported lifecycle updates as messages.
 5. Use `work/` for in-progress artifacts, `output/` for delivery artifacts, and `checkpoints/` for user decisions.
 6. When the goal is achieved, prepare the pre-delivery review checkpoint and tell the user what to review.
 
@@ -1831,7 +1917,7 @@ def command_approve(args: argparse.Namespace) -> int:
     team = load_team(workspace)
     message = args.message or (
         f"Checkpoint `{checkpoint}` approved by user. Continue your assigned task. "
-        "Update state/tasks.json, dashboard.md, logs/events.jsonl, and logs/messages.jsonl as you work."
+        "Use the Coven task/message commands and refresh; do not edit shared task JSON, logs, or dashboard directly."
     )
     sent, missing = approve_checkpoint(workspace, team, checkpoint, message, args.agent)
     if missing:
@@ -1999,6 +2085,14 @@ def command_console(args: argparse.Namespace) -> int:
 
 def command_refresh(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
+    # Discard this draft: deterministic bad inputs must not create a legacy
+    # workspace's first lock. Actual outputs are prepared again under the lock.
+    prepare_refresh(workspace)
+    with workspace_mutation(workspace) as held:
+        return refresh_workspace(workspace, held)
+
+
+def prepare_refresh(workspace: Path) -> tuple[str, dict[str, str], dict[str, str], str, str]:
     team = load_team(workspace)
     agents = team_agents(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
@@ -2022,14 +2116,21 @@ def command_refresh(args: argparse.Namespace) -> int:
         dashboard = render_dashboard(workspace)
     except (ValueError, OSError) as exc:
         fail(f"Cannot prepare refresh: {exc}")
-    manifest_path = managed_path(workspace, "tmux/coven.toml")
-    write_if_missing(manifest_path, manifest, force=True)
-    for relative, content in missing_prompts.items():
-        write_if_missing(managed_path(workspace, relative), content, force=False)
-    for relative, content in prompt_files.items():
-        write_if_missing(managed_path(workspace, relative), content, force=True)
-    managed_path(workspace, "dashboard.md").write_text(dashboard, encoding="utf-8")
-    info(f"Regenerated tmux/coven.toml and starter prompt files (runtime={multiplexer})")
+    return manifest, missing_prompts, prompt_files, dashboard, multiplexer
+
+
+def refresh_workspace(workspace: Path, lock: storage.WorkspaceLock) -> int:
+    # Validate/reuse the token; no runtime actions or interactive input inside.
+    with workspace_mutation(workspace, lock):
+        manifest, missing_prompts, prompt_files, dashboard, multiplexer = prepare_refresh(workspace)
+        manifest_path = managed_path(workspace, "tmux/coven.toml")
+        write_if_missing(manifest_path, manifest, force=True)
+        for relative, content in missing_prompts.items():
+            write_if_missing(managed_path(workspace, relative), content, force=False)
+        for relative, content in prompt_files.items():
+            write_if_missing(managed_path(workspace, relative), content, force=True)
+        storage.atomic_replace_bytes(managed_path(workspace, "dashboard.md"), dashboard.encode("utf-8"))
+        info(f"Regenerated tmux/coven.toml and starter prompt files (runtime={multiplexer})")
     return 0
 
 
@@ -2417,12 +2518,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     task_add.add_argument("items", nargs="+", help="Optional workspace followed by task title")
     task_add.add_argument("--owner")
     task_add.add_argument("--notes")
+    task_add.add_argument("--expect-revision", help="Reject unless the current whole-task snapshot matches this token")
+    task_add.add_argument("--json", action="store_true", help="Return mutation outcome, task, revisions, and warnings")
     task_add.set_defaults(func=command_task_add)
     task_assign = task_sub.add_parser("assign")
     task_assign.add_argument("items", nargs="+", help="Optional workspace followed by task_id and agent")
+    task_assign.add_argument("--expect-revision", help="Reject unless the current whole-task snapshot matches this token")
+    task_assign.add_argument("--json", action="store_true", help="Return mutation outcome, task, revisions, and warnings")
     task_assign.set_defaults(func=command_task_assign)
     task_list = task_sub.add_parser("list")
     task_list.add_argument("workspace", nargs="?", default=".")
+    task_list.add_argument("--json", action="store_true", help="Return tasks and an exact content revision for conditional mutations")
     task_list.set_defaults(func=command_task_list)
 
     for name, action in (("plan", "plan"), ("up", "up"), ("start", "up"), ("down", "down"), ("stop", "down"), ("restart", "restart")):
@@ -2437,7 +2543,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except storage.StorageError as exc:
+        fail(str(exc))
 
 
 if __name__ == "__main__":

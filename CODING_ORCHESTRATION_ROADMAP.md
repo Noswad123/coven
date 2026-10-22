@@ -141,19 +141,43 @@ repaired.** No destructive reset or migration command is provided. Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 70 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 106 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Migration and destructive reset remain intentionally unavailable; future
 operations need validated backups/import semantics or a loss preview and separate
 consent. Record schemas are structural, not new task lifecycle/reference rules.
 
-Next M0 work: the COV-02 mutation foundation (locking, revisions, atomic
-projections, explicit authority/recovery boundaries). Full COV-03 revision-bound
-authorization remains open. Current
-checkpoint Markdown is the interim current-decision authority; logs are history,
-not a replayable authorization ledger. No claims of concurrent mutation safety,
-crash consistency, general replay, or completed M0 are made yet.
+**COV-02a: bounded task-snapshot mutation foundation implemented locally.**
+Contract and operator guidance: [STORAGE_CONTRACT.md](STORAGE_CONTRACT.md).
+
+- [x] Persistent single-host POSIX workspace lock with bounded acquisition,
+  explicit nested-token reuse, no PID stealing, and kernel release on process exit.
+- [x] Serialize full task add/assign reload/validation/ID allocation/replacement;
+  preserve the v1 task list and unknown fields. Expose exact-content revisions
+  through `task list --json` and optional `--expect-revision` checks under lock.
+- [x] Publish task snapshots with same-directory temp/file fsync/replace/directory
+  fsync; distinguish precommit failure, replaced-but-durability-uncertain outcome,
+  and committed task with secondary history/dashboard warnings. No rollback fiction.
+- [x] Serialize all log appends and actual dashboard render/publication with the
+  same lock. Reject malformed/interior/nonobject/truncated-tail history with
+  explicit inspection diagnostics, not silent skipping. New event/mutation IDs
+  aid correlation, but do not establish a sequenced or replayable ledger.
+- [x] Correct new authority declarations to workspace files and replace generated
+  prompt instructions for direct shared-file edits with supported CLI operations.
+  Preserve legacy metadata and customized role prompts; starter prompts state
+  that old direct-edit instructions must not be followed.
+- [x] Prove independent-process add/add and add/assign retention, conditional
+  assignment conflict, complete reader snapshots, lock death release, stale
+  dashboard prevention through both entrypoints, and before/after-replace crashes.
+  Cover event fsync/secondary projection failures and explicit uncertain outcomes.
+
+Next COV-02 work remains open: authoritative sequenced ledger/baseline import,
+monotonic domain revisions, durable idempotency, full mutation scopes beyond
+tasks, and general recovery. Snapshot content tokens are not lifecycle claims or
+approval bindings; unconditional assignment can reassign. Current checkpoint
+Markdown remains the decision authority; history is not a recovery ledger.
+M0 and full COV-03 revision-bound authorization are not complete.
 
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |
@@ -204,9 +228,13 @@ never automatically renamed or upgraded by refresh.
 
 ### COV-02 — Make concurrent state changes safe
 
-**Current gap:** task handlers perform unlocked read/modify/write of whole files.
+**Assessed gap (baseline):** task handlers perform unlocked read/modify/write of whole files.
 Events have timestamps but no stable event IDs or sequence. Metadata calls events
 the source of truth, but no general reducer rebuilds state from them.
+
+**Local progress:** COV-02a above fixes cooperating task lost updates without
+changing the v1 state format. Snapshot authority is an explicit interim decision,
+not a claim that the preferred ledger/replay/idempotency design has shipped.
 
 **Build:**
 
