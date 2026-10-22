@@ -1,10 +1,13 @@
 # COV-02c / COV-03a: checkpoint-local content-bound decisions
 
-This is single-file checkpoint authority, not execution permission. Approval does
-not authorize dispatch, repository edits, commits, integration, push, merge, or
-deployment, nor transfer a lead's permissions to workers. Linked files, Git
+This is single-file checkpoint authority, not execution permission by itself.
+Approval alone does not authorize dispatch, repository edits, commits, integration,
+push, merge, or deployment, nor transfer a lead's permissions to workers. Linked files, Git
 objects, run/task graphs, and external plans are not hashed by this protocol.
 The task ledger remains task-only and does not contain checkpoint decisions.
+The optional [runtime-launch action](RUNTIME_LAUNCH_CONTRACT.md) adds its own
+manifest verification and single-use claim before unrestricted startup; it does
+not turn arbitrary checkpoints into execution grants.
 
 ## Inspect and select an exact snapshot
 

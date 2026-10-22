@@ -62,7 +62,9 @@ coven/
 │   ├── records.py         # pure v1 workspace record validators
 │   ├── storage.py         # POSIX locks, atomic publication, strict history I/O
 │   ├── task_ledger.py     # opt-in ledger, baseline import, durable task receipts
-│   └── checkpoints.py     # exact snapshot/local-scope checkpoint bindings
+│   ├── checkpoints.py     # exact snapshot/local-scope checkpoint bindings
+│   ├── actions.py         # opt-in runtime manifests, single-use claims/outcomes
+│   └── launch.py          # frozen cold-start transport plans/execution
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -446,6 +448,55 @@ coven agent start jamal
 coven agent restart jamal
 ```
 
+## Optional reviewed runtime startup
+
+**This authorizes unrestricted runtime startup, not read-only work or task
+dispatch.** Current pane adapters cannot sandbox tools or prove worker acceptance.
+Native tools may still mutate files according to their independent policy.
+
+```bash
+coven action enable-runtime-launch --json
+coven action prepare-runtime-launch --json
+coven action inspect '<action-id>' --json
+coven checkpoint inspect 'runtime-launch-<action-id>' --json
+coven approve 'runtime-launch-<action-id>' --expect-revision '<snapshot-token>' --json
+coven action submit '<action-id>' --expect-manifest '<manifest-token>' \
+  --expect-checkpoint '<approved-snapshot-token>' --expect-decision '<decision-id>' --json
+```
+
+Use actual IDs/tokens from output; an optional workspace path precedes the action
+ID. Enable is explicit and persistent. It drains admitted cooperating legacy
+transports before activation, then blocks legacy launch/restart/bootstrap/pane
+delivery paths and agent start/restart/stop. Stop old binaries/direct writers and
+inspect old sessions before opting in; activation does not stop running agents.
+Existing unactivated workspaces retain their behavior.
+
+Preparation freezes a closed guidance/config/task/roster/prompt inventory and
+literal transport plan into an immutable manifest. The dedicated checkpoint
+binds that manifest. Submission rechecks current inputs and exact approval under
+the workspace lock, consumes one durable claim, then executes only its frozen
+plan **outside** that lock. Edits/revocation before claim block startup; after
+claim they do not cancel the consumed attempt. No repository/source/toolchain or
+filesystem sandbox is implied.
+
+Repeated submissions return the consumed attempt without launching again—even
+after failure or a lost response. An uncertain claim never executes. An unresolved
+attempt requires inspection and explicit `action acknowledge-unknown` before a
+separately prepared/reviewed new action. Nothing automatically retries or deletes
+partial resources.
+
+```bash
+coven action stop '<action-id>' --json
+coven down   # enabled mode: current scoped attempt only, using its frozen backend
+```
+
+`transport_completed` means startup CLI commands succeeded, not healthy workers
+or accepted tasks. Status is unverified in this mode; action inspection reports
+durable transport facts. Stop distinguishes attempted from successful response
+and never resets consumption. See
+[RUNTIME_LAUNCH_CONTRACT.md](RUNTIME_LAUNCH_CONTRACT.md) for exact inventory,
+activation/claim linearization, recovery, and exclusions.
+
 ## Coven lead
 
 Set one agent to lead until the goal is achieved or a critical blocker requires
@@ -459,6 +510,8 @@ coven lead clear
 
 The lead is recorded in `state/lead.json`, shown in the dashboard/standup,
 logged, and sent to the lead's runtime pane when it is running.
+In approved-launch mode, only metadata is recorded; legacy pane delivery remains
+disabled and a lead record cannot grant startup or worker tool permissions.
 
 ## Development checks
 

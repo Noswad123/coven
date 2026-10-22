@@ -1,6 +1,7 @@
 """Focused storage contracts; no agent runtimes or external services."""
 
 import hashlib
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -36,6 +37,55 @@ class StorageTests(unittest.TestCase):
                         "tasks-sha256:" + "a" * 63, "tasks-missing:v1\n"):
             with self.subTest(token=invalid), self.assertRaises(storage.StorageError):
                 storage.validate_revision(invalid)
+
+    def test_transport_gate_shared_admission_and_exclusive_activation(self):
+        gate_path = self.root / ".runtime-transport.lock"
+        with storage.transport_gate(self.root, gate_path) as shared:
+            with storage.transport_gate(self.root, gate_path, held=shared) as nested:
+                self.assertIs(nested, shared)
+            with self.assertRaises(storage.StorageError), storage.transport_gate(self.root, gate_path, held=shared, exclusive=True):
+                pass
+            with self.assertRaises(storage.LockBusy), storage.transport_gate(self.root, gate_path, exclusive=True, timeout=0):
+                pass
+            with storage.workspace_lock(self.root, self.lock):
+                pass  # The transport gate is independent from workspace state.
+        with storage.transport_gate(self.root, gate_path, exclusive=True) as exclusive:
+            self.assertTrue(exclusive.exclusive)
+            self.assertFalse(os.get_inheritable(exclusive.fd))
+            with self.assertRaises(storage.LockBusy), storage.transport_gate(self.root, gate_path, timeout=0):
+                pass
+        with self.assertRaises(storage.StorageError), storage.transport_gate(self.root, gate_path, held=exclusive):
+            pass
+        self.assertTrue(gate_path.exists())
+
+    def test_transport_gate_nesting_exceptions_aliases_and_invalid_owners(self):
+        path = self.root / ".runtime-transport.lock"
+        alias = self.root / "alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        with storage.transport_gate(self.root, path) as outer:
+            with self.assertRaisesRegex(ValueError, "nested failure"):
+                with storage.transport_gate(alias, alias / path.name, held=outer):
+                    raise ValueError("nested failure")
+            self.assertTrue(outer.active)
+            with self.assertRaises(storage.LockBusy), storage.transport_gate(self.root, path, exclusive=True, timeout=0):
+                pass
+            for token in (replace(outer, active=False), replace(outer, owner_pid=-1),
+                          replace(outer, owner_thread_id=-1), replace(outer, path=self.root / "other")):
+                with self.assertRaises(storage.StorageError), storage.transport_gate(self.root, path, held=token):
+                    pass
+            errors = []
+            def wrong_thread():
+                try:
+                    with storage.transport_gate(self.root, path, held=outer):
+                        pass
+                except storage.StorageError:
+                    errors.append(True)
+            thread = threading.Thread(target=wrong_thread)
+            thread.start()
+            thread.join(timeout=5)
+            self.assertEqual(errors, [True])
+        with storage.transport_gate(self.root, path, exclusive=True):
+            pass
 
     def test_json_encoding(self):
         self.assertEqual(storage.encode_json({"a": [1]}), b'{\n  "a": [\n    1\n  ]\n}\n')

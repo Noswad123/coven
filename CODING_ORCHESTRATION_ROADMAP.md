@@ -142,7 +142,7 @@ Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 175 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 232 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Implicit migration and destructive reset remain unavailable. Task-only baseline
@@ -223,13 +223,45 @@ Contract: [CHECKPOINT_CONTRACT.md](CHECKPOINT_CONTRACT.md).
 - [x] Test actual process races, whole-file atomic readers, missing-file creation
   conflicts, UI edit races, before/after-replace failures, lock-free delivery,
   stale/superseded notices, legacy compatibility, and unchanged task-ledger scope.
-  All 175 offline regressions pass.
+  Covered by the current offline regression suite.
 
-Next COV-02/COV-03 work remains open: run/plan/repository/action/candidate input
-manifests and enforced authorization boundaries, remaining goal/lead/runtime
-mutation scopes, broader recovery, and ledger retention/operational hardening.
-Neither task revisions nor checkpoint-local hashes authorize execution. M0 and
-full COV-03 revision-bound authorization are not complete.
+**COV-03b: opt-in reviewed unrestricted runtime startup implemented.**
+Contract: [RUNTIME_LAUNCH_CONTRACT.md](RUNTIME_LAUNCH_CONTRACT.md).
+
+- [x] Explicit persistent activation blocks legacy launch/restart/bootstrap/pane
+  delivery routes, including shared helpers. A separate shared-legacy/exclusive-
+  activation transport gate drains admitted operations before activation can
+  publish. Acquire it before the workspace lock; never wait for the gate while
+  holding that workspace lock. Cached pre-activation teams cannot bypass mode.
+- [x] Freeze a closed guidance/config/task/roster/prompt inventory, effective
+  runtime/environment selection, workspace/activation identity, and deterministic
+  cold transport plan. A dedicated checkpoint binds the immutable manifest;
+  generic local text approval alone remains insufficient to execute anything.
+- [x] Revalidate current inputs and exact bound approval under lock, then publish
+  consumption and in-flight claim in one atomic control replacement. Execute only
+  the durable frozen claim outside locks. Before-claim edits/revocation block;
+  after-claim changes do not retroactively cancel that attempt.
+- [x] Return existing consumed attempts without relaunch, including failures,
+  crashes, and uncertain claims. Keep explicit unknown acknowledgement separate
+  from proof of stopped processes, and require a new prepared/reviewed action for
+  a new attempt. No implicit cleanup, claim reset, or adoption of partial panes.
+- [x] Check every required tmux/Herdr response and typed dynamic handle. Use
+  frozen literal startup text rather than delayed mutable-file reads. Report CLI
+  transport completion only—not native worker readiness, acceptance, or sessions.
+  Scoped operator stop distinguishes attempted/succeeded/uncertain results and
+  refuses to mistake a permission/query failure for established absence.
+- [x] Serialize participating goal/lead input writers with claims and refresh;
+  preserve native policy independence and fail closed on corrupt/moved control.
+  Prove concurrent submit executes once, activation races, immutable input checks,
+  before/after-claim failure behavior, process death, frozen post-claim execution,
+  and lock-free runtime transport. All 232 offline regressions pass.
+
+This is deliberately **not read-only dispatch**: current pane adapters cannot
+enforce that. Next work remains native task/attempt identity and adapter capability
+checks for genuinely bounded workers, repository/mutation/integration/delivery
+grants, broader recovery, and ledger retention/operational hardening. Task
+revisions/checkpoint hashes alone are not execution grants. Full COV-02/COV-03
+and the remaining milestones are not declared complete.
 
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |
@@ -289,6 +321,8 @@ v1 format. COV-02b adds explicitly imported task-ledger authority, replay, and
 committed-request receipts; it does not migrate all workspace state or solve
 whole-workspace transaction/recovery semantics. COV-02c adds checkpoint-local
 serialized single-file decisions with snapshot conditions and scope invalidation.
+COV-03b also serializes goal/lead writers and single-use startup control, with a
+separate activation/legacy-transport gate rather than workspace locks over I/O.
 
 **Build:**
 
@@ -322,8 +356,10 @@ do not enforce checkpoint approval.
 **Local progress:** explicit change requests revoke approval and refresh never
 replays it. Checkpoint-local content/snapshot binding now detects covered edits
 and stale decision attempts; legacy approvals remain unbound until explicit
-action. Run/plan/repository/action/candidate binding, withdrawal, and execution
-boundary enforcement remain open—local text approval is not an execution grant.
+action. COV-03b adds a concrete opt-in `runtime_launch` manifest and enforced
+single-use claim boundary. Other run/plan/repository/candidate binding, withdrawal,
+and worker/mutation/integration/delivery enforcement remain open; local text
+approval by itself is not an execution grant.
 
 **Build:**
 

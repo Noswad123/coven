@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+from functools import wraps
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+import threading
 import tomllib
 import uuid
 from contextlib import contextmanager
@@ -18,12 +22,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger, checkpoints
+    from . import records, storage, task_ledger, checkpoints, actions, launch
 else:
     import records
     import storage
     import task_ledger
     import checkpoints
+    import actions
+    import launch
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -36,12 +42,12 @@ INIT_RESERVED_NAMES = (
     "agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux",
 )
 MANAGED_DIRECTORIES = ("agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux",
-                       "state/task-ledger", "state/task-recovery")
+                       "state/task-ledger", "state/task-recovery", "state/actions")
 MANAGED_FILES = (
     "coven.json", "coven.toml", "goal.md", "spec.md", "dashboard.md",
     "state/agents.json", "state/tasks.json", "state/lead.json", "state/.workspace.lock", "state/task-authority.json",
     "logs/events.jsonl", "logs/messages.jsonl", "tmux/coven.toml",
-    "work/README.md", "output/README.md",
+    "work/README.md", "output/README.md", "state/runtime-launch-control.json", "state/.runtime-transport.lock",
 )
 COVEN_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = Path(__file__).resolve().parents[3]
@@ -329,6 +335,10 @@ def read_team_config(workspace: Path) -> dict[str, Any]:
     except ValueError as exc:
         fail(f"Invalid effective workspace configuration: {exc}")
     runtime_multiplexer(team)
+    # Derived flag, never an authorization input from user metadata. Workspace-
+    # aware launch entrypoints also check the actual control directly.
+    team["_runtime_launch_mode"] = actions.ActionStore(workspace).read_control() is not None
+    team["_workspace_root"] = str(workspace.resolve())
     return team
 
 
@@ -810,18 +820,23 @@ def read_lead(workspace: Path) -> dict[str, Any] | None:
     return read_state_records(workspace, "state/lead.json", None, records.lead)
 
 
-def write_lead(workspace: Path, state: dict[str, Any] | None) -> None:
+def write_lead(workspace: Path, state: dict[str, Any] | None, *, lock: storage.WorkspaceLock | None = None) -> None:
     preflight_workspace_paths(workspace)
     try:
         records.lead(state)
     except ValueError as exc:
         fail(f"Invalid proposed lead record: {exc}")
-    path = managed_path(workspace, "state/lead.json")
-    if state is None:
-        if path.exists():
-            path.unlink()
-        return
-    write_json(path, state)
+    with workspace_mutation(workspace, lock):
+        path = managed_path(workspace, "state/lead.json")
+        if state is None:
+            if path.exists():
+                path.unlink()
+                try:
+                    storage.sync_directory(path.parent)
+                except OSError as exc:
+                    raise storage.CommitUncertain(path) from exc
+            return
+        storage.atomic_replace_bytes(path, storage.encode_json(state))
 
 
 def checkpoint_status(workspace: Path, checkpoint: str) -> str:
@@ -972,9 +987,14 @@ def command_goal(args: argparse.Namespace) -> int:
     if not text:
         print((workspace / "goal.md").read_text(encoding="utf-8"))
         return 0
-    (workspace / "goal.md").write_text(f"# Goal\n\n{text}\n", encoding="utf-8")
-    append_event(workspace, "goal.updated", goal=text)
-    refresh_dashboard(workspace)
+    with workspace_mutation(workspace) as held:
+        storage.atomic_replace_bytes(managed_path(workspace, "goal.md"), f"# Goal\n\n{text}\n".encode("utf-8"))
+        for callback in (lambda: append_event(workspace, "goal.updated", goal=text, lock=held),
+                         lambda: refresh_dashboard(workspace, lock=held)):
+            try:
+                callback()
+            except (Exception, SystemExit) as exc:
+                print(f"[WARN] Goal committed; secondary update failed: {exc}", file=sys.stderr)
     info("Goal updated")
     return 0
 
@@ -1352,6 +1372,249 @@ def command_message(args: argparse.Namespace) -> int:
     return 0
 
 
+def reject_legacy_runtime() -> int:
+    raise actions.ActionError("Approved runtime-launch mode is enabled; use action prepare-runtime-launch/inspect/submit. Legacy launch, restart, pane delivery, and agent stop are disabled; use action stop for scoped operator control")
+
+
+def require_legacy_runtime(workspace: Path) -> None:
+    if actions.ActionStore(workspace).read_control() is not None:
+        reject_legacy_runtime()
+
+
+_transport_gates = threading.local()
+
+
+@contextmanager
+def legacy_runtime_transport(workspace: Path):
+    preflight_workspace_paths(workspace)
+    root = workspace.resolve()
+    entries = getattr(_transport_gates, "entries", {})
+    old = entries.get(str(root))
+    path = managed_path(root, "state/.runtime-transport.lock")
+    with storage.transport_gate(root, path, held=old) as gate:
+        require_legacy_runtime(root)  # Recheck only AFTER admission is fenced.
+        _transport_gates.entries = {**entries, str(root): gate}
+        try:
+            yield
+        finally:
+            _transport_gates.entries = entries
+
+
+def legacy_transport_effect(function):
+    @wraps(function)
+    def guarded(workspace, *args, **kwargs):
+        if function.__name__ in {"start_agent_window", "stop_agent_window"} and len(args) >= 2:
+            require_agent(args[0], args[1])
+        with legacy_runtime_transport(workspace):
+            return function(workspace, *args, **kwargs)
+    return guarded
+
+
+@contextmanager
+def action_control_mutation(workspace: Path):
+    # Consumed receipts/outcome recording must survive changes to non-authority
+    # input files. Fresh claims validate those inputs separately inside this lock.
+    store = actions.ActionStore(workspace)
+    if store.read_control() is None:
+        raise actions.ActionError("Enable runtime-launch approval mode explicitly first")
+    with storage.workspace_lock(workspace, store.path("state/.workspace.lock")) as held:
+        store.read_control()
+        yield store, held
+
+
+def runtime_launch_inputs(workspace: Path) -> dict[str, Any]:
+    team = load_team(workspace)
+    tasks = task_inspection(workspace)
+    if tasks.get("import_pending") or tasks.get("projection", {"status": "current"})["status"] != "current":
+        raise actions.ActionError("Resolve pending task import/projection recovery before reviewing runtime startup")
+    authority = {key: tasks[key] for key in ("authority", "revision", "tasks", "workspace_id", "epoch_id", "sequence") if key in tasks}
+    roster = team_agents(team)
+    paths = ["coven.json", "coven.toml", "goal.md", "spec.md", "state/tasks.json", "state/agents.json", "state/lead.json"]
+    paths += [relative for agent in roster for relative in (f"agents/{agent}.md", f"prompts/{agent}.md", f"prompts/{agent}.start.txt")]
+    files = []
+    for relative in paths:
+        path = managed_path(workspace, relative)
+        try:
+            data = path.read_bytes() if path.exists() else None
+        except OSError as exc:
+            raise actions.ActionError(f"Cannot capture runtime input {relative}: {exc}") from exc
+        files.append({"path": relative, "bytes": None if data is None else base64.b64encode(data).decode("ascii"),
+                      "sha256": None if data is None else hashlib.sha256(data).hexdigest()})
+    return {"version": 1, "location": actions.ActionStore(workspace).location(), "files": files,
+            "task_authority": authority, "roster": roster,
+            "effective_runtime": {"multiplexer": runtime_multiplexer(team),
+                "command": normalize_opencode_command(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)},
+            "environment": {"selection": {"COVEN_MULTIPLEXER": os.environ.get("COVEN_MULTIPLEXER")},
+                "transport": {key: os.environ[key] for key in sorted(launch.ENV_KEYS) if key in os.environ}}}
+
+
+def frozen_launch_plan(control: dict[str, Any], action_id: str, inputs: dict[str, Any]) -> dict[str, Any]:
+    files = {item["path"]: item["bytes"] for item in inputs["files"]}
+    agents = []
+    try:
+        for agent in inputs["roster"]:
+            for relative in (f"prompts/{agent}.md", f"prompts/{agent}.start.txt"):
+                value = files[relative]
+                if value is None or not base64.b64decode(value).decode("utf-8").strip():
+                    raise ValueError(f"Missing/empty prompt {relative}; refresh before preparing")
+            agents.append({"id": agent, "command": inputs["effective_runtime"]["command"],
+                           "starter": base64.b64decode(files[f"prompts/{agent}.start.txt"]).decode("utf-8")})
+        return launch.build_plan(inputs["location"]["root"], f"coven-{control['workspace_id']}-{action_id}",
+                                 inputs["effective_runtime"]["multiplexer"], agents, inputs["environment"]["transport"])
+    except (ValueError, KeyError, TypeError) as exc:
+        raise actions.ActionError(f"Cannot prepare frozen runtime launch: {exc}") from exc
+
+
+def prepare_runtime_launch(workspace: Path) -> dict[str, Any]:
+    store = actions.ActionStore(workspace)
+    control = store.read_control()
+    if control is None:
+        raise actions.ActionError("Enable runtime-launch approval mode explicitly first")
+    action_id = uuid.uuid4().hex
+    frozen_launch_plan(control, action_id, runtime_launch_inputs(workspace))  # discarded preflight
+    with workspace_mutation(workspace) as held:
+        control = store.read_control()
+        inputs = runtime_launch_inputs(workspace)
+        plan = frozen_launch_plan(control, action_id, inputs)
+        bundle = store.make_bundle(inputs, plan, action_id, held)
+        manifest = store.publish_bundle(bundle, held)
+        cp_id = actions.checkpoint_id(bundle)
+        path = checkpoint_path(workspace, cp_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            # A crash may leave an unapproved preparation; never overwrite an
+            # existing checkpoint or treat bundle publication as permission.
+            with path.open("xb") as stream:
+                stream.write(actions.checkpoint_bytes(bundle))
+                stream.flush()
+                os.fsync(stream.fileno())
+            storage.sync_directory(path.parent)
+            storage.sync_directory(path.parent.parent)
+        except OSError as exc:
+            raise actions.ActionError(f"Action bundle preserved but checkpoint preparation incomplete; inspect {action_id}: {exc}") from exc
+        return {"outcome": "prepared", "action_id": action_id, "manifest_digest": manifest,
+                "checkpoint": cp_id, "checkpoint_revision": checkpoint_view(workspace, cp_id).revision,
+                "warning": "Unrestricted cold runtime startup; not read-only work, dispatch, or worker acceptance"}
+
+
+def submit_runtime_launch(workspace: Path, action_id: str, expected_manifest: str,
+                          expected_checkpoint: str, expected_decision: str) -> dict[str, Any]:
+    actions.validate_action_id(action_id)
+    with action_control_mutation(workspace) as (store, held):
+        try:
+            if store.get_claim(action_id) is not None:
+                claim, replayed = store.claim(action_id, expected_manifest, expected_checkpoint, expected_decision, {}, held)
+            else:
+                inputs = runtime_launch_inputs(workspace)
+                bundle = store.read_bundle(action_id)
+                plan = frozen_launch_plan(store.read_control(), action_id, inputs)
+                if actions.canonical(plan) != actions.canonical(bundle["plan"]):
+                    raise actions.ActionError("Frozen plan differs from current captured runtime inputs")
+                claim, replayed = store.claim(action_id, expected_manifest, expected_checkpoint, expected_decision, inputs, held)
+        except storage.CommitUncertain as exc:
+            return {"outcome": "durability_uncertain", "replayed": True, "claim": store.get_claim(action_id),
+                    "warnings": [str(exc), "No transport attempted; consumed action must never be automatically relaunched"]}
+    if replayed:
+        return {"outcome": claim["status"], "replayed": True, "claim": claim, "warnings": []}
+    # This is the only executor boundary. It receives the durable claim's plan,
+    # not live team/config/prompt paths. No workspace lock spans runtime I/O.
+    try:
+        report = launch.execute(claim["plan"])
+    except Exception as exc:
+        report = {"operation": "runtime_launch", "status": "transport_failed_or_partial", "completed_steps": 0,
+                  "handles": {}, "diagnostics": [{"step": None, "error": type(exc).__name__, "message": str(exc)[:2048]}],
+                  "outcome_unknown": True}
+    try:
+        with action_control_mutation(workspace) as (store, held):
+            claim = store.record_outcome(action_id, claim["claim_id"], report, held)
+    except (Exception, SystemExit) as exc:
+        return {"outcome": "outcome_unknown", "replayed": False, "claim": claim, "transport_report": report,
+                "warnings": [f"Transport may have run; durable outcome recording failed: {exc}. Inspect, never relaunch this action."]}
+    warnings = []
+    try:
+        append_event(workspace, "runtime_launch.transport.recorded", action_id=action_id, claim_id=claim["claim_id"], status=claim["status"])
+    except (Exception, SystemExit) as exc:
+        warnings.append(f"Outcome committed; history incomplete: {exc}")
+    return {"outcome": claim["status"], "replayed": False, "claim": claim, "warnings": warnings}
+
+
+def stop_runtime_action(workspace: Path, action_id: str) -> dict[str, Any]:
+    store = actions.ActionStore(workspace)
+    claim = store.get_claim(action_id)
+    if claim is None:
+        raise actions.ActionError("No consumed launch claim for this action")
+    report = launch.stop(claim["plan"])
+    return {"outcome": report["status"], "action_id": action_id, "transport_report": report,
+            "warning": "Operator stop is not evidence of native worker termination and does not reset launch consumption"}
+
+
+def action_exit_code(value: dict[str, Any]) -> int:
+    if value["outcome"] in {"claimed", "outcome_unknown", "durability_uncertain"}:
+        return 2
+    return 1 if value["outcome"] == "transport_failed_or_partial" else 0
+
+
+def print_action_result(value: dict[str, Any], json_output: bool = True) -> int:
+    print(json.dumps(value, ensure_ascii=False, indent=None if json_output else 2))
+    return action_exit_code(value)
+
+
+def stop_current_action(workspace: Path) -> int:
+    control = actions.ActionStore(workspace).read_control()
+    if control is None or control["head"] is None:
+        return print_action_result({"outcome": "transport_completed", "note": "No scoped launch attempt recorded; no transport sent"})
+    return print_action_result(stop_runtime_action(workspace, control["head"]))
+
+
+def command_action_enable(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    load_team(workspace)
+    # Never wait for the transport gate while holding the workspace lock: an
+    # admitted legacy operation may need that lock to finish its own history.
+    with storage.transport_gate(workspace, managed_path(workspace, "state/.runtime-transport.lock"), exclusive=True) as gate:
+        with workspace_mutation(workspace) as held:
+            store = actions.ActionStore(workspace)
+            try:
+                control = store.enable(held, gate=gate)
+            except storage.CommitUncertain as exc:
+                return print_action_result({"outcome": "durability_uncertain", "control": store.read_control(), "warnings": [str(exc)]}, args.json)
+    return print_action_result({"outcome": "enabled", "control": control,
+        "warning": "Legacy launches and pane delivery are disabled; this mode does not sandbox runtime tools"}, args.json)
+
+
+def command_action_prepare(args: argparse.Namespace) -> int:
+    return print_action_result(prepare_runtime_launch(workspace_path(args.workspace)), args.json)
+
+
+def command_action_inspect(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    value = actions.ActionStore(workspace).inspect(args.action_id)
+    try:
+        value["checkpoint"] = checkpoint_view(workspace, value["checkpoint_id"]).to_dict()
+    except (Exception, SystemExit) as exc:
+        value["checkpoint_error"] = str(exc)
+    value["outcome"] = "inspected"
+    return print_action_result(value, args.json)
+
+
+def command_action_submit(args: argparse.Namespace) -> int:
+    value = submit_runtime_launch(workspace_path(args.workspace), args.action_id, args.expect_manifest,
+                                  args.expect_checkpoint, args.expect_decision)
+    return print_action_result(value, args.json)
+
+
+def command_action_acknowledge(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    with action_control_mutation(workspace) as (store, held):
+        claim = store.acknowledge_unknown(args.action_id, args.expect_claim, held)
+    return print_action_result({"outcome": "acknowledged", "claim": claim,
+        "warning": "No process was proven stopped; only a separately prepared and approved new action may launch again"}, args.json)
+
+
+def command_action_stop(args: argparse.Namespace) -> int:
+    return print_action_result(stop_runtime_action(workspace_path(args.workspace), args.action_id), args.json)
+
+
 def print_file(path: Path, default: str) -> int:
     if not path.exists():
         print(default)
@@ -1491,7 +1754,18 @@ def running_agent_pane(team: dict[str, Any], agent: str) -> str | None:
 
 def send_to_agent_pane(team: dict[str, Any], agent: str, text: str) -> bool:
     """Low-level transport; workspace-aware callers perform state preflight."""
+    root = team.get("_workspace_root")
     require_agent(team, agent)
+    if not isinstance(root, str):
+        raise actions.ActionError("Legacy transport requires a loaded workspace identity")
+    with legacy_runtime_transport(Path(root)):
+        return _send_to_agent_pane_legacy(team, agent, text)
+
+
+def _send_to_agent_pane_legacy(team: dict[str, Any], agent: str, text: str) -> bool:
+    require_agent(team, agent)
+    if team.get("_runtime_launch_mode"):
+        raise actions.ActionError("Legacy pane delivery is disabled in approved-launch mode; launch approval is not task-dispatch permission")
     target = running_agent_pane(team, agent)
     if not target:
         return False
@@ -1549,12 +1823,16 @@ def agent_window_target(team: dict[str, Any], agent: str) -> str:
 
 def agent_runtime_status(team: dict[str, Any], agent: str) -> tuple[str, str | None]:
     record_id(agent, "agent")
+    if team.get("_runtime_launch_mode"):
+        return "unverified (inspect action transport records)", None
     pane = running_agent_pane(team, agent)
     return ("running", pane) if pane else ("stopped", None)
 
 
+@legacy_transport_effect
 def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> bool:
     preflight_workspace_paths(workspace, team)
+    require_legacy_runtime(workspace)
     require_agent(team, agent)
     status, pane = agent_runtime_status(team, agent)
     if status == "running":
@@ -1602,8 +1880,10 @@ def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> boo
     return True
 
 
+@legacy_transport_effect
 def stop_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> bool:
     preflight_workspace_paths(workspace, team)
+    require_legacy_runtime(workspace)
     require_agent(team, agent)
     status, _pane = agent_runtime_status(team, agent)
     if status != "running":
@@ -1801,6 +2081,7 @@ def prompt_multiline(prompt: str) -> str:
 
 def notify_agents(workspace: Path, team: dict[str, Any], agent_selector: str, message: str, *, event_type: str, checkpoint: str | None = None) -> tuple[int, list[str]]:
     preflight_workspace_paths(workspace, team)
+    require_legacy_runtime(workspace)
     agents = team_agents(team) if agent_selector == "all" else [agent_selector]
     for agent in agents:
         require_agent(team, agent)
@@ -1990,31 +2271,45 @@ def command_lead(args: argparse.Namespace) -> int:
         return 0
 
     if rest[0] in {"clear", "remove", "unset"}:
-        previous = read_lead(workspace)
-        write_lead(workspace, None)
-        append_event(workspace, "lead.cleared", previous=previous)
-        refresh_dashboard(workspace)
+        with workspace_mutation(workspace) as held:
+            previous = read_lead(workspace)
+            write_lead(workspace, None, lock=held)
+            for callback in (lambda: append_event(workspace, "lead.cleared", previous=previous, lock=held),
+                             lambda: refresh_dashboard(workspace, lock=held)):
+                try:
+                    callback()
+                except (Exception, SystemExit) as exc:
+                    print(f"[WARN] Lead cleared; secondary update failed: {exc}", file=sys.stderr)
         info("Cleared coven lead")
         return 0
 
     agent = rest[1] if rest[0] == "set" and len(rest) > 1 else rest[0]
     require_agent(team, agent)
-    goal = (workspace / "goal.md").read_text(encoding="utf-8").strip() if (workspace / "goal.md").exists() else ""
-    if goal.startswith("# Goal"):
-        goal = goal.removeprefix("# Goal").strip()
-    state = {
-        **(read_lead(workspace) or {}),
-        "agent": agent,
-        "set_at": now(),
-        "until": "goal achieved or critical blocker requiring the user",
-        "instructions": "Run the coven, use coven standup, and use coven send to move agents along.",
-    }
-    write_lead(workspace, state)
-    message = args.message or lead_prompt(agent, workspace, goal)
-    append_event(workspace, "lead.set", agent=agent)
-    append_message(workspace, "user", agent, message)
-    sent, missing = notify_agents(workspace, team, agent, message, event_type="lead.message.sent")
-    refresh_dashboard(workspace)
+    with workspace_mutation(workspace) as held:
+        team = load_team(workspace)
+        require_agent(team, agent)
+        goal = (managed_text(workspace, "goal.md") or "").strip().removeprefix("# Goal").strip()
+        state = {**(read_lead(workspace) or {}), "agent": agent, "set_at": now(),
+                 "until": "goal achieved or critical blocker requiring the user",
+                 "instructions": "Coordinate using supported task/message operations; runtime launch approval is separate."}
+        message = args.message or lead_prompt(agent, workspace, goal)
+        write_lead(workspace, state, lock=held)
+        for callback in (lambda: append_event(workspace, "lead.set", agent=agent, lock=held),
+                         lambda: append_message(workspace, "user", agent, message, lock=held),
+                         lambda: refresh_dashboard(workspace, lock=held)):
+            try:
+                callback()
+            except (Exception, SystemExit) as exc:
+                print(f"[WARN] Lead committed; secondary update failed: {exc}", file=sys.stderr)
+    if team.get("_runtime_launch_mode"):
+        sent, missing = 0, [agent]
+        info("Lead metadata recorded; legacy pane delivery is disabled in approved-launch mode")
+    else:
+        try:
+            sent, missing = notify_agents(workspace, team, agent, message, event_type="lead.message.sent")
+        except (Exception, SystemExit) as exc:
+            print(f"[WARN] Lead committed; delivery unavailable: {exc}", file=sys.stderr)
+            sent, missing = 0, [agent]
     if missing:
         info(f"No running pane found for: {', '.join(missing)}")
     info(f"Set {agent} as coven lead; notified {sent} agent(s)")
@@ -2054,6 +2349,7 @@ def command_send(args: argparse.Namespace) -> int:
     agent_arg = rest[0]
     message = " ".join(rest[1:])
     team = load_team(workspace)
+    require_legacy_runtime(workspace)
     agents = team_agents(team) if agent_arg == "all" else [agent_arg]
     for agent in agents:
         require_agent(team, agent)
@@ -2132,6 +2428,7 @@ def command_agent_restart(args: argparse.Namespace) -> int:
     if not rest:
         fail("agent restart requires an agent")
     team = load_team(workspace)
+    require_legacy_runtime(workspace)
     restarted = 0
     for agent in rest:
         require_agent(team, agent)
@@ -2397,6 +2694,18 @@ def team_session_name(team: dict[str, Any]) -> str:
 def command_bootstrap(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     team = load_team(workspace)
+    require_legacy_runtime(workspace)
+    team_session_name(team)
+    for agent in team_agents(team):
+        managed_text(workspace, f"prompts/{agent}.start.txt")
+    with legacy_runtime_transport(workspace):
+        return _command_bootstrap_legacy(args)
+
+
+def _command_bootstrap_legacy(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    team = load_team(workspace)
+    require_legacy_runtime(workspace)
     agents = team_agents(team)
 
     session = team_session_name(team)
@@ -2508,8 +2817,10 @@ def print_herdr_plan(workspace: Path, team: dict[str, Any]) -> int:
     return 0
 
 
+@legacy_transport_effect
 def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
     preflight_workspace_paths(workspace, team)
+    require_legacy_runtime(workspace)
     agents = team_agents(team)
     session = team_session_name(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
@@ -2541,8 +2852,10 @@ def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
     run_tmux(["select-window", "-t", f"{session}:orchestrator"])
 
 
+@legacy_transport_effect
 def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any]) -> str:
     preflight_workspace_paths(workspace, team)
+    require_legacy_runtime(workspace)
     agents = team_agents(team)
     label = herdr_workspace_label(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
@@ -2596,6 +2909,13 @@ def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any]) -> str:
 
 def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
     preflight_workspace_paths(workspace, team)
+    if actions.ActionStore(workspace).read_control() is not None:
+        return stop_current_action(workspace) if action == "down" else reject_legacy_runtime()
+    with legacy_runtime_transport(workspace):
+        return _run_coven_tmux_legacy(workspace, team, action)
+
+
+def _run_coven_tmux_legacy(workspace: Path, team: dict[str, Any], action: str) -> int:
     session = team_session_name(team)
     if action == "plan":
         return print_tmux_plan(workspace, team)
@@ -2619,6 +2939,13 @@ def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
 
 def run_coven_herdr(workspace: Path, team: dict[str, Any], action: str) -> int:
     preflight_workspace_paths(workspace, team)
+    if actions.ActionStore(workspace).read_control() is not None:
+        return stop_current_action(workspace) if action == "down" else reject_legacy_runtime()
+    with legacy_runtime_transport(workspace):
+        return _run_coven_herdr_legacy(workspace, team, action)
+
+
+def _run_coven_herdr_legacy(workspace: Path, team: dict[str, Any], action: str) -> int:
     label = herdr_workspace_label(team)
     if action == "plan":
         return print_herdr_plan(workspace, team)
@@ -2649,6 +2976,8 @@ def run_coven_herdr(workspace: Path, team: dict[str, Any], action: str) -> int:
 
 
 def run_coven_runtime(workspace: Path, team: dict[str, Any], action: str) -> int:
+    if actions.ActionStore(workspace).read_control() is not None:
+        return stop_current_action(workspace) if action == "down" else reject_legacy_runtime()
     multiplexer = runtime_multiplexer(team)
     if multiplexer == "herdr":
         return run_coven_herdr(workspace, team, action)
@@ -2657,6 +2986,8 @@ def run_coven_runtime(workspace: Path, team: dict[str, Any], action: str) -> int
 
 def command_tmux(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
+    if actions.ActionStore(workspace).read_control() is not None:
+        return stop_current_action(workspace) if args.action == "down" else reject_legacy_runtime()
     team = load_team(workspace)
     action = "restart" if args.action == "up" and getattr(args, "replace", False) else args.action
     multiplexer = runtime_multiplexer(team)
@@ -2820,6 +3151,41 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     recover.add_argument("--expect-revision")
     recover.add_argument("--json", action="store_true")
     recover.set_defaults(func=command_state_recover_tasks)
+
+    action = subparsers.add_parser("action", help="Opt-in reviewed, single-use unrestricted runtime startup")
+    action_sub = action.add_subparsers(dest="action_command", required=True)
+    enable = action_sub.add_parser("enable-runtime-launch", help="Explicitly disable legacy launch/delivery routes for this workspace")
+    enable.add_argument("workspace", nargs="?", default=".")
+    enable.add_argument("--json", action="store_true")
+    enable.set_defaults(func=command_action_enable)
+    prepare = action_sub.add_parser("prepare-runtime-launch", help="Freeze current startup inputs and create a dedicated approval checkpoint")
+    prepare.add_argument("workspace", nargs="?", default=".")
+    prepare.add_argument("--json", action="store_true")
+    prepare.set_defaults(func=command_action_prepare)
+    action_inspect = action_sub.add_parser("inspect", help="Read-only immutable bundle and consumed-attempt diagnostics")
+    action_inspect.add_argument("workspace", nargs="?", default=".")
+    action_inspect.add_argument("action_id")
+    action_inspect.add_argument("--json", action="store_true")
+    action_inspect.set_defaults(func=command_action_inspect)
+    submit = action_sub.add_parser("submit", help="Consume exact bound approval once before an unrestricted cold-start attempt")
+    submit.add_argument("workspace", nargs="?", default=".")
+    submit.add_argument("action_id")
+    submit.add_argument("--expect-manifest", required=True)
+    submit.add_argument("--expect-checkpoint", required=True)
+    submit.add_argument("--expect-decision", required=True)
+    submit.add_argument("--json", action="store_true")
+    submit.set_defaults(func=command_action_submit)
+    acknowledge = action_sub.add_parser("acknowledge-unknown", help="Explicitly accept an unresolved attempt; never retries it or proves it stopped")
+    acknowledge.add_argument("workspace", nargs="?", default=".")
+    acknowledge.add_argument("action_id")
+    acknowledge.add_argument("--expect-claim", required=True)
+    acknowledge.add_argument("--json", action="store_true")
+    acknowledge.set_defaults(func=command_action_acknowledge)
+    action_stop = action_sub.add_parser("stop", help="Explicitly stop the action-scoped container without resetting consumption")
+    action_stop.add_argument("workspace", nargs="?", default=".")
+    action_stop.add_argument("action_id")
+    action_stop.add_argument("--json", action="store_true")
+    action_stop.set_defaults(func=command_action_stop)
 
     for name, action in (("plan", "plan"), ("up", "up"), ("start", "up"), ("down", "down"), ("stop", "down"), ("restart", "restart")):
         sub = subparsers.add_parser(name, help=f"Run coven {action} for the configured multiplexer")

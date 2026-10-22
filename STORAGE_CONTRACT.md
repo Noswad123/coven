@@ -19,6 +19,7 @@ in [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md). Nothing imports implicitl
 | `logs/events.jsonl`, `logs/messages.jsonl` | Observational append-only history, not a replay ledger. |
 | `dashboard.md` | Regenerable projection. |
 | `state/.workspace.lock` | Persistent coordination inode, not state or ownership truth. |
+| `state/runtime-launch-control.json` | Opt-in single-use startup consumption/outcome authority; see the runtime-launch contract. |
 
 No task envelope, revision sidecar, baseline import, or implicit migration is
 introduced. Legacy IDs and extension fields remain intact. New workspaces declare
@@ -39,12 +40,19 @@ event/message appenders use the same lock. Every dashboard publisher locks the
 actual render and publication, including `status` and `refresh`; locking just
 the final rename would allow an old render to overwrite a newer one.
 
-Goal, lead, and runtime operations are **not fully serialized transactions**
-merely because their history/dashboard writes participate in the lock.
+Goal and lead writers now serialize/atomically publish their individual files
+(lead clear syncs its removal), so runtime manifests select coherent cooperating
+input writes. This is not an aggregate file/event/runtime transaction.
 Checkpoint decisions now have their own serialized, content-bound single-file
 publication protocol in [CHECKPOINT_CONTRACT.md](CHECKPOINT_CONTRACT.md), still
 without a checkpoint+event+runtime transaction. Runtime I/O and interactive input
 are not held inside a global CLI lock.
+
+The optional [runtime-launch contract](RUNTIME_LAUNCH_CONTRACT.md) adds a separate
+shared-legacy/exclusive-activation transport gate. Acquire it before the workspace
+lock, never upgrade or force-delete it. Legacy transports can finish their native
+I/O while admitted; activation waits outside the workspace lock. Approved launch
+execution runs after durable claim and outside both locks.
 
 The lock is opened without truncation and held with exclusive POSIX `flock`.
 Acquisition waits at most five seconds, then reports busy. Nested helpers reuse

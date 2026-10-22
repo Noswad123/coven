@@ -56,6 +56,89 @@ class WorkspaceLock:
         return self.workspace
 
 
+@dataclass
+class TransportGate:
+    workspace: Path
+    path: Path
+    fd: int
+    exclusive: bool
+    active: bool
+    owner_pid: int
+    owner_thread_id: int
+
+
+@contextmanager
+def transport_gate(workspace: Path, path: Path, *, exclusive: bool = False,
+                   held: TransportGate | None = None, timeout: float = 5.0):
+    """Shared legacy admission versus exclusive activation, NOT workspace state.
+
+    Acquire this gate BEFORE the workspace lock. Shared holders may do native
+    I/O; activation cannot publish while one remains admitted. Never upgrade a
+    shared gate or unlink its persistent inode.
+    """
+    selected = Path(workspace).absolute()
+    root = selected.resolve()
+    candidate = Path(path).absolute()
+    try:
+        try:
+            relative = candidate.relative_to(selected)
+        except ValueError:
+            relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise StorageError("transport gate must be inside its resolved workspace") from exc
+    if not relative.parts or ".." in relative.parts:
+        raise StorageError("unsafe transport gate path")
+    target = root / relative
+    if held is not None:
+        if (not isinstance(held, TransportGate) or not held.active or held.workspace != root or held.path != target
+                or held.owner_pid != os.getpid() or held.owner_thread_id != threading.get_ident()
+                or (exclusive and not held.exclusive)):
+            raise StorageError("invalid held transport gate; shared gates cannot be upgraded")
+        yield held
+        return
+    fd = None
+    try:
+        if not math.isfinite(timeout) or timeout < 0:
+            raise StorageError("transport gate timeout must be finite and nonnegative")
+        for parent in reversed(target.parents):
+            if parent.exists() or parent.is_symlink():
+                if not stat.S_ISDIR(parent.lstat().st_mode):
+                    raise StorageError(f"unsafe transport gate parent: {parent}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _check_path(target)
+        fd = _open_regular(target, os.O_RDWR | os.O_CREAT)
+        mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(fd, mode | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN, errno.EINTR):
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise LockBusy("runtime transport gate busy; quiesce legacy operations before activation") from exc
+                time.sleep(min(0.05, remaining))
+        token = TransportGate(root, target, fd, exclusive, True, os.getpid(), threading.get_ident())
+    except OSError as exc:
+        if fd is not None:
+            os.close(fd)
+        raise StorageError(f"cannot acquire transport gate: {exc}") from exc
+    except BaseException:
+        if fd is not None:
+            os.close(fd)
+        raise
+    try:
+        yield token
+    finally:
+        token.active = False
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
 def _check_path(path: Path) -> None:
     """Check every existing component without resolving away symlinks."""
     if ".." in path.parts:
