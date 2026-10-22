@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 from functools import wraps
 import json
 import os
@@ -15,14 +16,14 @@ import sys
 import threading
 import tomllib
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger, checkpoints, actions, launch, workers
+    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts
 else:
     import records
     import storage
@@ -31,6 +32,7 @@ else:
     import actions
     import launch
     import workers
+    import task_attempts
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -1066,6 +1068,7 @@ def mutate_tasks(workspace: Path, change: TaskChange, *, expected_revision: str 
             iter_jsonl(managed_path(workspace, f"logs/{filename}.jsonl"))
         task, event_type, payload = change(team, tasks)
         records.tasks(tasks)
+        task_attempts.guard_task_mutation(workspace, task["id"], held)
         encoded = storage.encode_json(tasks)
         after = storage.snapshot_revision(encoded)
         mutation_id = str(uuid.uuid4())
@@ -1643,6 +1646,198 @@ def command_worker_readiness(args: argparse.Namespace) -> int:
         for blocker in report["blockers"]:
             print(f"- {blocker['code']}: {blocker['next_step']}")
     return workers.report_exit_code(report)
+
+
+def execution_source(workspace: Path, snapshot_source_id: str) -> dict[str, Any]:
+    """One authoritative task view/revision, read by a caller holding its lock."""
+    team = load_team(workspace)
+    ledger = task_ledger.LedgerStore(workspace)
+    view = ledger.read()
+    if view is None:
+        if ledger.has_pending_import():
+            raise task_attempts.AttemptError("Resolve the pending task import before execution enrollment/preparation")
+        revision, tasks = read_legacy_task_snapshot(workspace)
+        identity = {"kind": "snapshot-v1", "source_id": snapshot_source_id, "path": "state/tasks.json"}
+    else:
+        revision, tasks = view.revision, view.tasks
+        identity = {"kind": "task-ledger-v1", "workspace_id": view.workspace_id,
+                    "epoch_id": view.epoch_id, "path": "state/task-ledger"}
+    return {"identity": identity, "revision": revision, "tasks": tasks, "roster": team_agents(team)}
+
+
+@contextmanager
+def execution_control_mutation(workspace: Path):
+    # Cancellation and receipts must not require valid mutable tasks, roster,
+    # checkpoint, runtime, or provider state. This is not generic preflight.
+    store = task_attempts.Store(workspace)
+    with storage.workspace_lock(workspace, managed_path(workspace, "state/.workspace.lock")) as held:
+        yield store, held
+
+
+def mutate_execution(workspace: Path, operation: str, parameters: dict[str, Any], *,
+                     expected_execution_revision: str, expected_tasks_revision: str | None,
+                     request_id: str) -> dict[str, Any]:
+    task_attempts.request_binding(operation, parameters, expected_execution_revision, expected_tasks_revision)
+    if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", request_id):
+        raise task_attempts.AttemptError("Invalid execution request key")
+    view = task_attempts.Store(workspace).read()
+    if view is None:
+        if operation != "enable":
+            raise task_attempts.AttemptError("Execution control is disabled; enable explicitly first")
+        if expected_execution_revision != task_attempts.DISABLED:
+            raise task_attempts.AttemptError("execution revision conflict")
+        # Deterministic invalid workspace/source must not create a legacy lock.
+        task_attempts._source(execution_source(workspace, "0" * 32), "0" * 32)
+    with execution_control_mutation(workspace) as (store, held):
+        return store.mutate(operation, parameters, expected_execution_revision=expected_execution_revision,
+            expected_tasks_revision=expected_tasks_revision, request_id=request_id,
+            source_loader=lambda source_id: execution_source(workspace, source_id), lock=held)
+
+
+def print_execution_result(value: dict[str, Any], json_output: bool) -> int:
+    print(json.dumps(value, ensure_ascii=True, indent=None if json_output else 2))
+    return 2 if value.get("delivery", {}).get("outcome") == "durability_uncertain" else 0
+
+
+def execution_binding_status(record: dict[str, Any], source: dict[str, Any] | None, error: str | None) -> dict[str, Any]:
+    if source is None:
+        return {"status": "source_unavailable", "reason": error or "Source not assessed"}
+    if record["task_authority_identity"] != source["identity"]:
+        return {"status": "source_authority_changed", "reason": "Explicit source rebind is required before new preparation"}
+    task = next((item for item in source["tasks"] if item["id"] == record["task_id"]), None)
+    if task is None:
+        return {"status": "task_missing"}
+    if task_attempts.task_snapshot_digest(task) != record["task_snapshot_digest"]:
+        return {"status": "task_changed"}
+    owner = record["complete_task_snapshot"].get("owner")
+    if owner is not None and owner not in source["roster"]:
+        return {"status": "owner_missing"}
+    if record["task_source_revision"] != source["revision"]:
+        return {"status": "source_revision_changed", "reason": "Whole-task authority revision differs, even if selected task content is unchanged"}
+    return {"status": "current"}
+
+
+def execution_inspection(workspace: Path) -> dict[str, Any]:
+    store = task_attempts.Store(workspace)
+    result = {"execution": store.inspect_control(), "authorization": "none", "dispatchable": False,
+              "blockers": list(task_attempts.BLOCKERS)}
+    if result["execution"]["status"] != "active":
+        return result
+    view = store.read()
+    source, error = None, "Coherent source assessment requires the existing workspace lock; none was created"
+    diagnostics = io.StringIO()
+    try:
+        with redirect_stderr(diagnostics):
+            lock_path = managed_path(workspace, "state/.workspace.lock")
+            if lock_path.exists():
+                with storage.workspace_lock(workspace, lock_path):
+                    view = store.read()
+                    if view is None:
+                        result["execution"] = {"status": "disabled", "revision": task_attempts.DISABLED}
+                        return result
+                    try:
+                        source = task_attempts._source(execution_source(workspace, view.snapshot_source_id), view.snapshot_source_id)
+                        error = None
+                    except (Exception, SystemExit) as exc:
+                        error = f"Current source could not be assessed: {diagnostics.getvalue().strip() or str(exc)}"
+    except (Exception, SystemExit) as exc:
+        state = store.inspect_control()
+        if state["status"] != "active":
+            result["execution"] = state
+            return result
+        error = f"Coordinated source assessment unavailable: {diagnostics.getvalue().strip() or str(exc)}"
+    result["execution"] = {"status": "active", "revision": view.revision,
+                           "execution_authority_id": view.authority_id, "generation": view.generation}
+    result["source_assessment"] = {"coordinated": source is not None, "error": error,
+                                   "revision": None if source is None else source["revision"]}
+    result["enrollments"] = [{**record, "source_binding": execution_binding_status(record["bindings"][-1], source, error)}
+                             for record in view.enrollments.values()]
+    result["attempts"] = [{**record, "source_binding": execution_binding_status(record["prepared"], source, error)}
+                         for record in view.attempts.values()]
+    return result
+
+
+def command_execution_inspect(args: argparse.Namespace) -> int:
+    return print_execution_result(execution_inspection(workspace_path(args.workspace)), args.json)
+
+
+def command_execution_enable(args: argparse.Namespace) -> int:
+    return print_execution_result(mutate_execution(workspace_path(args.workspace), "enable", {},
+        expected_execution_revision=args.expect_execution_revision, expected_tasks_revision=None, request_id=args.request_id), args.json)
+
+
+def command_execution_enroll(args: argparse.Namespace) -> int:
+    return print_execution_result(mutate_execution(workspace_path(args.workspace), "enroll",
+        {"task_id": args.task_id, "rebind_source": args.rebind_source}, expected_execution_revision=args.expect_execution_revision,
+        expected_tasks_revision=args.expect_tasks_revision, request_id=args.request_id), args.json)
+
+
+def read_attempt_intent(path: str) -> dict[str, Any]:
+    try:
+        selected = Path(path).expanduser().resolve()
+        with os.fdopen(storage._open_regular(selected, os.O_RDONLY), "rb") as stream:
+            data = stream.read(1024 * 1024 + 1)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise task_attempts.AttemptError(f"Cannot read operator-selected intent document: {exc}") from exc
+    if len(data) > 1024 * 1024:
+        raise task_attempts.AttemptError("intent document exceeds 1 MiB")
+    return task_attempts.validate_intent(task_attempts._json(data))
+
+
+def command_attempt_prepare(args: argparse.Namespace) -> int:
+    intent = read_attempt_intent(args.intent)
+    return print_execution_result(mutate_execution(workspace_path(args.workspace), "prepare", {"task_id": args.task_id, "intent": intent},
+        expected_execution_revision=args.expect_execution_revision, expected_tasks_revision=args.expect_tasks_revision,
+        request_id=args.request_id), args.json)
+
+
+def command_attempt_cancel(args: argparse.Namespace) -> int:
+    return print_execution_result(mutate_execution(workspace_path(args.workspace), "cancel",
+        {"attempt_id": args.attempt_id, "reason": args.reason}, expected_execution_revision=args.expect_execution_revision,
+        expected_tasks_revision=None, request_id=args.request_id), args.json)
+
+
+def command_attempt_list(args: argparse.Namespace) -> int:
+    value = execution_inspection(workspace_path(args.workspace))
+    if args.task is not None:
+        record_id(args.task, "task")
+        if "attempts" in value:
+            value["attempts"] = [item for item in value["attempts"] if item["prepared"]["task_id"] == args.task]
+    value.pop("enrollments", None)
+    return print_execution_result(value, args.json)
+
+
+def command_attempt_inspect(args: argparse.Namespace) -> int:
+    if not re.fullmatch(r"[0-9a-f]{32}", args.attempt_id):
+        raise task_attempts.AttemptError("Invalid attempt ID")
+    value = execution_inspection(workspace_path(args.workspace))
+    if "attempts" in value:
+        selected = next((item for item in value["attempts"] if item["prepared"]["attempt_id"] == args.attempt_id), None)
+        if selected is None:
+            raise task_attempts.AttemptError("Unknown attempt ID")
+        value["attempt"] = selected
+        value.pop("attempts")
+    value.pop("enrollments", None)
+    return print_execution_result(value, args.json)
+
+
+def command_execution_recover(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    if not args.archive_pending and (not isinstance(args.expect_execution_revision, str)
+            or not re.fullmatch(task_attempts.EXEC_REV, args.expect_execution_revision)):
+        raise task_attempts.AttemptError("--confirm-authority requires an inspected active --expect-execution-revision")
+    with execution_control_mutation(workspace) as (store, held):
+        if args.archive_pending:
+            if args.expect_execution_revision is not None:
+                raise task_attempts.AttemptError("Archive does not accept an execution revision; active control can never be archived")
+            value = {"outcome": "archived_pending", "archive_path": store.archive_pending(held), "revision": task_attempts.DISABLED}
+        else:
+            view = store.read()
+            if view is None or args.expect_execution_revision != view.revision:
+                raise task_attempts.AttemptError("Execution revision conflict during confirmation")
+            store.confirm_durability(view, held)
+            value = {"outcome": "confirmed", "revision": view.revision}
+    return print_execution_result({**value, "authorization": "none", "dispatchable": False}, args.json)
 
 
 def print_file(path: Path, default: str) -> int:
@@ -3160,6 +3355,63 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     task_list.add_argument("workspace", nargs="?", default=".")
     task_list.add_argument("--json", action="store_true", help="Return tasks and an exact content revision for conditional mutations")
     task_list.set_defaults(func=command_task_list)
+
+    def execution_request_flags(parser, *, tasks_revision=False):
+        parser.add_argument("--expect-execution-revision", required=True, help="Exact execution-control revision, or execution-disabled:v1 for enable")
+        if tasks_revision:
+            parser.add_argument("--expect-tasks-revision", required=True, help="Exact authoritative task revision inspected")
+        parser.add_argument("--request-id", required=True, help="Durable execution-authority request key; reuse only the original exact binding")
+        parser.add_argument("--json", action="store_true")
+
+    attempt = task_sub.add_parser("attempt", help="Prepare/cancel declarative local intent; never dispatches a worker")
+    attempt_sub = attempt.add_subparsers(dest="attempt_command", required=True)
+    attempt_prepare = attempt_sub.add_parser("prepare", help="Freeze one enrolled task/owner/intent snapshot without execution permission")
+    attempt_prepare.add_argument("workspace", nargs="?", default=".")
+    attempt_prepare.add_argument("task_id")
+    attempt_prepare.add_argument("--intent", required=True, help="Operator-selected bounded JSON task-intent document; never executed")
+    execution_request_flags(attempt_prepare, tasks_revision=True)
+    attempt_prepare.set_defaults(func=command_attempt_prepare)
+    attempt_cancel = attempt_sub.add_parser("cancel", help="Cancel a local preparation before submission; not native cancellation")
+    attempt_cancel.add_argument("workspace", nargs="?", default=".")
+    attempt_cancel.add_argument("attempt_id")
+    attempt_cancel.add_argument("--reason", required=True)
+    execution_request_flags(attempt_cancel)
+    attempt_cancel.set_defaults(func=command_attempt_cancel)
+    attempt_list = attempt_sub.add_parser("list", help="Read preparations/transitions and derived source freshness")
+    attempt_list.add_argument("workspace", nargs="?", default=".")
+    attempt_list.add_argument("--task")
+    attempt_list.add_argument("--json", action="store_true")
+    attempt_list.set_defaults(func=command_attempt_list)
+    attempt_inspect = attempt_sub.add_parser("inspect", help="Read an immutable preparation and its current local state")
+    attempt_inspect.add_argument("workspace", nargs="?", default=".")
+    attempt_inspect.add_argument("attempt_id")
+    attempt_inspect.add_argument("--json", action="store_true")
+    attempt_inspect.set_defaults(func=command_attempt_inspect)
+
+    execution = subparsers.add_parser("execution", help="Explicit preparation-only task enrollment authority; no native execution")
+    execution_sub = execution.add_subparsers(dest="execution_command", required=True)
+    execution_inspect = execution_sub.add_parser("inspect", help="Read execution authority and coordinated source diagnostics without creating a lock")
+    execution_inspect.add_argument("workspace", nargs="?", default=".")
+    execution_inspect.add_argument("--json", action="store_true")
+    execution_inspect.set_defaults(func=command_execution_inspect)
+    execution_enable = execution_sub.add_parser("enable", help="Explicitly initialize empty execution control; enrolls zero tasks")
+    execution_enable.add_argument("workspace", nargs="?", default=".")
+    execution_request_flags(execution_enable)
+    execution_enable.set_defaults(func=command_execution_enable)
+    execution_enroll = execution_sub.add_parser("enroll", help="Enroll exactly one selected task source without changing the task")
+    execution_enroll.add_argument("workspace", nargs="?", default=".")
+    execution_enroll.add_argument("task_id")
+    execution_enroll.add_argument("--rebind-source", action="store_true", help="Explicitly retain/rebind an existing enrollment after authority identity changes")
+    execution_request_flags(execution_enroll, tasks_revision=True)
+    execution_enroll.set_defaults(func=command_execution_enroll)
+    execution_recover = execution_sub.add_parser("recover", help="Confirm current durability or preserve/archive only a missing-control activation")
+    execution_recover.add_argument("workspace", nargs="?", default=".")
+    execution_recovery = execution_recover.add_mutually_exclusive_group(required=True)
+    execution_recovery.add_argument("--archive-pending", action="store_true")
+    execution_recovery.add_argument("--confirm-authority", action="store_true")
+    execution_recover.add_argument("--expect-execution-revision")
+    execution_recover.add_argument("--json", action="store_true")
+    execution_recover.set_defaults(func=command_execution_recover)
 
     state = subparsers.add_parser("state", help="Inspect, explicitly import, or recover task authority")
     state_sub = state.add_subparsers(dest="state_command", required=True)

@@ -109,6 +109,22 @@ Check **`delivery.outcome` and exit code**, not only frozen `result.outcome`:
 No universal power-loss guarantee, pruning, compaction, or epoch rotation exists.
 Reads replay retained history and can become expensive; use bounded local workflows.
 
+## Local preparation guards
+
+The optional [execution-intent authority](EXECUTION_INTENT_CONTRACT.md) retains
+task enrollment, immutable prepared attempts, and local pre-submission cancellation
+outside this ledger. It does not add operation types or upgrade ledger-v1.
+Fresh add/assign effects check that authority under the same workspace lock;
+prepared target tasks remain guarded even when stale. Already committed request
+lookup/replay occurs first and is not hidden by an unavailable execution control.
+
+Import/resume refuses any prepared attempt. After explicit cancellation, import
+can proceed; enrollments keep their original source identity until an explicit
+CAS-bound rebind. Old preparations and receipts are never transplanted. Projection
+repair and pending-import archival do not change task authority and do not require
+releasing preparations. These are local task-API guards, not worker admission or
+native termination facts.
+
 ## Divergence and explicit recovery
 
 Task listing, dashboard rendering, and receipt lookup read ledger authority even

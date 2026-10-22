@@ -65,7 +65,8 @@ coven/
 │   ├── checkpoints.py     # exact snapshot/local-scope checkpoint bindings
 │   ├── actions.py         # opt-in runtime manifests, single-use claims/outcomes
 │   ├── launch.py          # frozen cold-start transport plans/execution
-│   └── workers.py         # help-only native adapter compatibility observations
+│   ├── workers.py         # help-only native adapter compatibility observations
+│   └── task_attempts.py   # explicit preparation-only execution intent/receipts
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -342,6 +343,55 @@ never falls back to v1 or deletes final frames. See
 limits, and request/acknowledgement semantics. This is not a whole-workspace
 transaction, general task lifecycle, distributed coordinator, or exactly-once
 secondary-event delivery protocol.
+
+## Preparation-only task attempts
+
+```bash
+coven execution inspect --json
+coven execution enable --expect-execution-revision execution-disabled:v1 --request-id enable-1 --json
+coven execution enroll core-chatbot --expect-tasks-revision '<task-token>' \
+  --expect-execution-revision '<execution-token>' --request-id enroll-1 --json
+coven task attempt prepare core-chatbot --intent intent.json \
+  --expect-tasks-revision '<current-task-token>' --expect-execution-revision '<current-execution-token>' \
+  --request-id prepare-1 --json
+coven task attempt list --task core-chatbot --json
+```
+
+Use inspected tokens and an explicit JSON intent with task ID, exact assigned
+owner, and declarative acceptance criteria; see
+[EXECUTION_INTENT_CONTRACT.md](EXECUTION_INTENT_CONTRACT.md) for the schema.
+Enable enrolls zero tasks. Nothing changes task bytes/status, upgrades ledger-v1,
+or starts a worker. Every result is `dispatchable: false`, authorization `none`.
+
+Selected enrollments retain complete task snapshots and stable source identity.
+One immutable prepared attempt per task records source revision, criteria/digests,
+owner and predecessor. Fresh reassignment—including the same owner—is guarded
+under the task-writer lock until explicit local cancellation:
+
+```bash
+coven task attempt cancel '<attempt-id>' --reason "Revise assignment" \
+  --expect-execution-revision '<current-execution-token>' --request-id cancel-1 --json
+```
+
+Cancellation means **cancelled before submission**, never native termination.
+It works without current task/roster validity, preserves the preparation, and
+permits a new numbered attempt after reassignment. Changed sources/owners are
+diagnostics, not automatic guard release. Import/resume requires no prepared
+attempts; changed source identity then requires explicit enrollment rebind.
+
+Execution effects and request receipts share one bounded atomic control file.
+Retry the original key/content/revisions: replay precedes mutable source checks
+and returns the frozen result even after cancellation. Uncertain delivery exits
+2; current revision/state may be unknown while the known receipt is preserved.
+Cancellation capacity is reserved before accepting preparations/history growth.
+Inspect never creates an absent lock; corrupt current source does not hide valid
+frozen attempts. Pending/corrupt execution control fails closed for fresh task
+changes—no silent reset or automatic activation repair.
+
+These are cooperating task-API guards, not path reservations, native tool policy,
+execution approval, or a scheduler. Readiness and runtime-startup claims remain
+independent; future native admission must explicitly revalidate and authorize
+attempts rather than automatically executing existing preparations.
 
 ## User interaction
 

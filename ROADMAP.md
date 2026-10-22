@@ -174,6 +174,8 @@ to map a native Djinn session back to the orchestration graph:
 
 - `orchestration_id`: Coven workspace/run id.
 - `task_id`: Coven task graph node id.
+- `attempt_id`: stable execution intent/correlation id; retrying an ambiguous
+  submission retains it, while a new execution attempt gets a new id.
 - `coven_agent_id`: lead/worker roster id, e.g. `reviewer-1`.
 - `parent_ref`: optional parent lead/session reference.
 - `execution_mode`: foreground/background/headless presentation hint.

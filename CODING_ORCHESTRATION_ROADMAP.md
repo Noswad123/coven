@@ -142,7 +142,7 @@ Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 271 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 327 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Implicit migration and destructive reset remain unavailable. Task-only baseline
@@ -276,7 +276,7 @@ Contract: [WORKER_READINESS_CONTRACT.md](WORKER_READINESS_CONTRACT.md).
 - [x] Prove unchanged v1/task-ledger/approved-launch workspace bytes and no
   authority locks or state writes. Do not invoke native status/watch/list as
   non-mutating probes, fabricate a capabilities API, create attempts, or fallback
-  to worker execution. All 271 offline regressions pass.
+  to worker execution, covered by the current offline suite.
 
 The installed help-only probe reports `unknown`, not a ready worker. Required
 native contracts remain versioned admission, recoverable attempt correlation,
@@ -284,11 +284,41 @@ non-mutating lifecycle inspection, cancellation, bound result pointers, and
 immutable per-attempt tool/resource enforcement. Help-only inspection cannot
 establish them, even when flags or role names suggest read-only behavior.
 
-Next work remains COV-04 attempt identity plus a supported native bounded-worker
-contract before actual COV-05 execution, repository/mutation/integration/delivery
-grants, broader recovery, and ledger retention/operational hardening. This
-inspection prerequisite does not remove COV-05 execution's COV-04 dependency.
-Full COV-02/COV-03, COV-04/COV-05 execution, and later milestones remain open.
+**COV-04a: explicit preparation-only execution intent implemented.**
+Contract: [EXECUTION_INTENT_CONTRACT.md](EXECUTION_INTENT_CONTRACT.md).
+
+- [x] Explicit enable enrolls zero tasks; selected enrollment, immutable prepared
+  attempt identity, and local `cancelled_before_submission` transitions live in one
+  bounded execution-control authority, with effect and frozen request receipt in
+  the same atomic publication. No task-ledger upgrade or task status rewriting.
+- [x] Bind complete source task/authority identity/revision, exact canonical owner,
+  declarative criteria, and domain-separated intent digests. Retain unknown source
+  fields, enrollment rebind history, old preparations, cancellations and numbered
+  retry links. Every result is non-dispatchable with authorization `none`.
+- [x] Require explicit CAS/request binding; replay committed requests before
+  mutable source/roster parsing, including after cancellation or source corruption.
+  Post-publication verification failures preserve the known receipt with uncertain
+  delivery and unknown current state, never an ordinary failed mutation result.
+- [x] Guard fresh task effects and import/resume under the same workspace lock,
+  including low-level ledger paths. Prepared/stale tasks cannot be reassigned even
+  to the same owner; historical task receipts remain replayable before this guard.
+  Cancellation release is durably confirmed; source changes need explicit rebind.
+- [x] Inspect frozen state despite source corruption; source assessment never
+  creates an absent lock. Missing/bad enabled control fails closed without global
+  preflight burying unrelated task reads or historical receipts. Pending archival
+  preserves artifacts and never resets a present malformed control.
+- [x] Reserve cancellation capacity for every prepared attempt before all history
+  growth; maximum-sized valid reasons cannot be crowded out. Test concurrency and
+  both task/import lock orders, before/after-publication process death, uncertainty,
+  malformed source diagnostics, retained extensions, and native-call prohibition.
+  All 327 offline regressions pass.
+
+Next work still requires a supported native bounded-worker contract plus explicit
+task-scoped authorization/admission before any COV-05 execution. COV-04 dependency
+DAGs, native attempts/lifecycle facts, scheduler/cancellation propagation and run
+completion remain open, as do repository/mutation/integration/delivery grants,
+broader recovery, and retention/operational hardening. Preparation and readiness
+inspection do not make an executable worker or complete those milestones.
 
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |

@@ -20,6 +20,7 @@ in [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md). Nothing imports implicitl
 | `dashboard.md` | Regenerable projection. |
 | `state/.workspace.lock` | Persistent coordination inode, not state or ownership truth. |
 | `state/runtime-launch-control.json` | Opt-in single-use startup consumption/outcome authority; see the runtime-launch contract. |
+| `state/execution/control.json` | Explicit enrollment/preparation/cancellation and request receipts, never execution permission. |
 
 No task envelope, revision sidecar, baseline import, or implicit migration is
 introduced. Legacy IDs and extension fields remain intact. New workspaces declare
@@ -88,6 +89,13 @@ lock. Concurrent adds both survive and receive distinct IDs. Unconditional
 assignment is serialized reassignment: the last successful assignment wins.
 Two conditional assignments against one token have one winner, but this is
 **not a task-claim or lifecycle protocol**.
+
+Explicit [execution preparation](EXECUTION_INTENT_CONTRACT.md) adds a separate
+same-lock guard: a prepared task cannot be newly mutated/reassigned, including to
+the same owner, until local cancellation is durably confirmed. Unrelated task
+effects remain allowed. Missing/malformed enabled execution control fails closed
+for fresh task effects, not for task listing or historical ledger receipt replay.
+No execution authority is enabled implicitly and no task format is changed.
 
 Tokens are opaque content fingerprints, not monotonic revisions. Formatting
 changes invalidate them; changing and reverting to identical bytes restores the

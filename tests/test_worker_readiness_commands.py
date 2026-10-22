@@ -31,13 +31,16 @@ class WorkerReadinessCommandTests(CovenTestCase):
         return json.loads(output.getvalue()) if json_output else output.getvalue()
 
     def test_all_workspace_authorities_are_byte_preserved_without_locks_or_native_effects(self):
-        for authority in ("snapshot", "task-ledger", "approved-launch"):
+        for authority in ("snapshot", "task-ledger", "approved-launch", "execution-preparation"):
             with self.subTest(authority=authority):
                 if authority == "task-ledger":
                     token = json.loads(self.invoke("task", "list", self.workspace, "--json"))["revision"]
                     self.invoke("state", "import-tasks", self.workspace, "--expect-revision", token)
                 if authority == "approved-launch":
                     self.invoke("action", "enable-runtime-launch", self.workspace)
+                if authority == "execution-preparation":
+                    self.invoke("execution", "enable", self.workspace, "--expect-execution-revision", "execution-disabled:v1",
+                                "--request-id", "enable-readiness-fixture")
                 before = snapshot(self.workspace)
                 fake = FakeProbe()
                 with mock.patch.object(storage, "workspace_lock", side_effect=AssertionError("unexpected workspace lock")), \

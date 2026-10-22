@@ -84,6 +84,12 @@ way to change the action. Prepare a new bundle instead.
 The manifest does not contain its eventual approval snapshot/decision. The claim
 records those after review, avoiding circular authority. Current files and
 environment selections must still match the captured inventory at claim time.
+
+Preparation-only execution control is not part of this startup inventory.
+Runtime launch does not admit a prepared task attempt, and creating/cancelling an
+attempt does not retroactively change an already reviewed startup bundle. Local
+task-API reservations are not native-tool or filesystem guards; unrestricted
+startup and independently configured tools remain outside their guarantees.
 Goal/lead writes, task mutations, and prompt refresh participate in the same
 workspace lock. Quiesce manual/uncooperating edits; no filesystem-race sandbox
 is claimed.

@@ -16,10 +16,11 @@ import tempfile
 import uuid
 
 if __package__:
-    from . import records, storage
+    from . import records, storage, task_attempts
 else:
     import records
     import storage
+    import task_attempts
 
 
 class LedgerError(storage.StorageError):
@@ -400,6 +401,7 @@ class LedgerStore:
 
     def import_tasks(self, expected_revision, lock):
         with self._lock(lock):
+            task_attempts.guard_authority_change(self.workspace, lock)
             if self._read(MARKER, missing=True) is not None or self.has_pending_import():
                 raise LedgerError("active or pending ledger already exists")
             validate_revision(expected_revision)
@@ -449,6 +451,7 @@ class LedgerStore:
                 raise storage.RevisionConflict("ledger revision mismatch")
             if self.projection_health(actual)["status"] != "current":
                 raise LedgerError("projection is not current; repair explicitly")
+            task_attempts.guard_task_mutation(self.workspace, task["id"], lock)
             tasks = deepcopy(actual.tasks)
             if binding["operation"] == "add":
                 tasks.append(deepcopy(task))
@@ -515,6 +518,7 @@ class LedgerStore:
 
     def resume_import(self, expected_revision, lock):
         with self._lock(lock):
+            task_attempts.guard_authority_change(self.workspace, lock)
             validate_revision(expected_revision)
             if not self.has_pending_import():
                 raise LedgerError("no resumable pending import")
