@@ -60,7 +60,8 @@ coven/
 ├── runner/
 │   ├── coven.py           # main CLI and workspace runner
 │   ├── records.py         # pure v1 workspace record validators
-│   └── storage.py         # POSIX locks, atomic publication, strict history I/O
+│   ├── storage.py         # POSIX locks, atomic publication, strict history I/O
+│   └── task_ledger.py     # opt-in ledger, baseline import, durable task receipts
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -169,6 +170,11 @@ clean error rather than partial approval or notification. Bootstrap reads all
 starter prompts before creating missing prompts or sending any of them. Fix the
 reported input explicitly; Coven does not sanitize unsafe history automatically.
 
+After explicit task-ledger import, an unsafe/unreadable `state/tasks.json`
+projection is diagnosed without following it. Authority and committed receipts
+remain readable, but new task changes are blocked and unsafe paths cannot be
+automatically repaired or overwritten.
+
 These are static path/ID/readability checks plus the structural contracts below,
 not multi-file transactions, hard-link protection, or a sandbox against concurrent
 filesystem replacement or tools run by an agent.
@@ -192,6 +198,10 @@ State files keep their existing list/object shapes:
 | `state/tasks.json` | List of objects with unique safe `id` and string `title`/`status`; optional `owner` is a safe ID or null; `notes` and timestamps, when present, are strings. |
 | `state/agents.json` | List of objects with unique safe `id` and string `status`/`role`. |
 | `state/lead.json` | Object with safe `agent` and optional string `set_at`/`until`/`instructions`, or JSON null. |
+
+The task-file contract describes snapshot-v1. After explicit task-ledger import,
+the same task records are validated from replay; an unhealthy `tasks.json`
+projection is diagnosed rather than mistaken for authoritative state.
 
 Absent task/agent files retain the legacy empty-list default; absent/null lead
 means no lead. Present malformed files never become empty defaults. Unknown
@@ -247,12 +257,12 @@ Refresh leaves task/agent/lead state, metadata/config, checkpoint decisions,
 roster notes, both logs, and work/output artifacts unchanged. It does not append
 a refresh event, rename legacy task IDs, restore missing guidance/checkpoint
 files, or recover approval from historical events. Initialization, refresh, and
-future explicit migration/recovery are separate operations; no migration command
-is supplied yet. Refresh remains subject to the managed-path validation above.
+explicit task import/recovery are separate operations; refresh never activates or
+repairs task authority. Refresh remains subject to managed-path validation.
 On first valid mutation/publication in a legacy workspace, Coven may create
 `state/.workspace.lock`; this coordination file is not a state migration.
 
-### Safe task mutations
+### Safe snapshot-v1 task mutations (default)
 
 ```bash
 coven task list --json
@@ -287,6 +297,47 @@ History parsing now reports malformed/nonobject/interior/truncated-tail records
 with a path and line number instead of silently skipping them. Explicit inspection
 and repair are required; no automatic truncation or replay. For full scope,
 commit outcomes, and recovery instructions, see [STORAGE_CONTRACT.md](STORAGE_CONTRACT.md).
+
+### Opt-in task ledger and durable retries
+
+```bash
+coven task list --json
+# Substitute the actual token from the output, after inspecting current work.
+coven state import-tasks --expect-revision '<snapshot revision>' --json
+coven state inspect --json
+coven task list --json
+coven task add "Investigate rendering" --request-id rendering-1 --json
+```
+
+Explicit import preserves the exact old snapshot and activates a task-only,
+sequenced ledger. It never interprets old events as complete history or silently
+changes existing workspaces. After import, `state/tasks.json` is a projection:
+task listing and dashboard rendering use replayed authority instead.
+
+Imported add/assign require `--request-id`. The committed effect and frozen
+receipt share one frame, so retrying the **same key with the original arguments
+and expected revision** returns the original result without another mutation.
+Changing that bound request conflicts. Snapshot-v1 rejects request IDs rather
+than promising durable retries. Rejected precommit requests are not cached.
+
+Ledger JSON contains a frozen `result` and live `delivery` metadata. Check
+`delivery.outcome`/exit code: secondary warnings still mean committed; exit 2
+means publication was observed but durability confirmation failed. A stale or
+unreadable projection does not hide a receipt. New requests wait for explicit
+recovery, which preserves observed projection bytes before replacement:
+
+```bash
+coven state recover-tasks --repair-projection --json
+```
+
+`state inspect` is read-only (unlike dashboard-publishing `status`). Interrupted
+unactivated imports can be explicitly resumed against the original snapshot or
+aborted by preserving/renaming their artifact directory. Corrupt active authority
+never falls back to v1 or deletes final frames. See
+[TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md) for formats, recovery commands,
+limits, and request/acknowledgement semantics. This is not a whole-workspace
+transaction, general task lifecycle, distributed coordinator, or exactly-once
+secondary-event delivery protocol.
 
 ## User interaction
 

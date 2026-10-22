@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage
+    from . import records, storage, task_ledger
 else:
     import records
     import storage
+    import task_ledger
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -33,10 +34,11 @@ INIT_RESERVED_NAMES = (
     "coven.json", "coven.toml", "goal.md", "spec.md", "dashboard.md",
     "agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux",
 )
-MANAGED_DIRECTORIES = ("agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux")
+MANAGED_DIRECTORIES = ("agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux",
+                       "state/task-ledger", "state/task-recovery")
 MANAGED_FILES = (
     "coven.json", "coven.toml", "goal.md", "spec.md", "dashboard.md",
-    "state/agents.json", "state/tasks.json", "state/lead.json", "state/.workspace.lock",
+    "state/agents.json", "state/tasks.json", "state/lead.json", "state/.workspace.lock", "state/task-authority.json",
     "logs/events.jsonl", "logs/messages.jsonl", "tmux/coven.toml",
     "work/README.md", "output/README.md",
 )
@@ -131,7 +133,14 @@ def check_workspace_paths(workspace: Path, team: dict[str, Any] | None = None) -
     """Validate the known control plane, not arbitrary user artifacts recursively."""
     for relative in MANAGED_DIRECTORIES:
         managed_path(workspace, relative, directory=True)
+    managed_path(workspace, "state/task-authority.json")
+    imported = task_ledger.LedgerStore(workspace).read() is not None
     for relative in MANAGED_FILES:
+        if relative == "state/tasks.json" and imported:
+            # Authority does not depend on projection readability/type. The
+            # ledger reports unsafe/unreadable projections without following
+            # them, and blocks new changes until explicit safe repair.
+            continue
         managed_path(workspace, relative)
     for checkpoint in ("plan-approval", "pre-delivery-review"):
         checkpoint_text(workspace, checkpoint)
@@ -165,6 +174,9 @@ def read_state_records(workspace: Path, relative: str, default: Any, validator: 
 
 
 def read_tasks(workspace: Path) -> list[dict[str, Any]]:
+    view = task_ledger.LedgerStore(workspace).read()
+    if view is not None:
+        return view.tasks
     return read_state_records(workspace, "state/tasks.json", [], records.tasks)
 
 
@@ -434,7 +446,7 @@ Read first:
 3. `dashboard.md`
 4. `coven.toml`
 5. `agents/{agent}.md`
-6. `state/tasks.json`
+6. Output of `coven task list --json` (after import, `state/tasks.json` is only a projection)
 7. `logs/messages.jsonl`
 8. `checkpoints/*.md`
 
@@ -442,6 +454,7 @@ Rules:
 - Treat task state as authoritative and the logs as history, not a replay ledger.
 - Do not edit shared task JSON, logs, or dashboard files directly. Use `coven task list --json`, `coven task add`, `coven task assign`, `coven message`, and `coven refresh`.
 - Use `--expect-revision` from `task list --json` when a task change depends on the state you reviewed. A stale revision requires reinspection, not an automatic retry.
+- If task authority is an imported ledger, add/assign require `--request-id`. On a lost/uncertain response, retry the same key with the original exact request and original expected revision, not a new key or edited arguments.
 - Completion/blocker lifecycle updates are not yet a task API: report them with `coven message {agent} coven "<summary>"` rather than changing task JSON manually.
 - Consult the user at configured checkpoints before proceeding past them.
 - Do not overwrite another agent's notes; append corrections or send messages.
@@ -456,7 +469,7 @@ def starter_prompt_text(agent: str, workspace: Path) -> str:
     return f"""Read `{workspace}/prompts/{agent}.md` and begin as `{agent}`.
 
 Your first actions:
-1. Read `goal.md`, `spec.md` if present, `dashboard.md`, `coven.toml`, `agents/{agent}.md`, and `state/tasks.json`.
+1. Read `goal.md`, `spec.md` if present, `dashboard.md`, `coven.toml`, `agents/{agent}.md`, and `coven task list --json` output.
 2. Find your assigned task(s).
 3. Record your start through `coven message {agent} coven "Starting assigned work"`; do not append logs directly.
 4. Inspect `checkpoints/*.md`, `work/`, and `output/`.
@@ -466,6 +479,9 @@ Your first actions:
 Shared task JSON, logs, and dashboard files are not editing surfaces. Use the CLI
 for task changes and messages. Existing role prompts may be customized; these
 coordination rules still apply even if an older prompt asks for direct edits.
+Inspect task authority through `coven state inspect --json`. In imported ledger
+mode, add/assign require `--request-id`; retry a lost response with the same key
+and original arguments/revision. Task JSON may be stale and is not authority.
 
 Do not wait for another prompt unless blocked. Start now.
 """
@@ -1066,6 +1082,13 @@ def next_task_id(tasks: list[dict[str, Any]]) -> str:
 
 
 def read_task_snapshot(workspace: Path) -> tuple[str, list[dict[str, Any]]]:
+    view = task_ledger.LedgerStore(workspace).read()
+    if view is not None:
+        return view.revision, view.tasks
+    return read_legacy_task_snapshot(workspace)
+
+
+def read_legacy_task_snapshot(workspace: Path) -> tuple[str, list[dict[str, Any]]]:
     path = managed_path(workspace, "state/tasks.json")
     try:
         data = path.read_bytes() if path.exists() else None
@@ -1083,8 +1106,16 @@ def check_task_revision(expected: str | None, current: str) -> None:
 TaskChange = Callable[[dict[str, Any], list[dict[str, Any]]], tuple[dict[str, Any], str, dict[str, Any]]]
 
 
-def mutate_tasks(workspace: Path, change: TaskChange, *, expected_revision: str | None = None) -> dict[str, Any]:
+def mutate_tasks(workspace: Path, change: TaskChange, *, expected_revision: str | None = None,
+                 request_id: str | None = None, binding: dict[str, Any] | None = None) -> dict[str, Any]:
     """One authoritative snapshot commit; history/projection are secondary effects."""
+    store = task_ledger.LedgerStore(workspace)
+    if store.read() is not None:
+        return mutate_ledger_tasks(workspace, change, request_id, binding)
+    if request_id is not None:
+        raise task_ledger.LedgerError("--request-id requires explicit state import-tasks; snapshot-v1 does not provide durable deduplication")
+    if store.has_pending_import():
+        raise task_ledger.LedgerError("Task import is pending; inspect and explicitly resume or abort it before task mutations")
     storage.validate_revision(expected_revision)
     # Validate deterministic failures without creating a lock, then discard this
     # draft. Only the freshly reloaded state inside the lock may be committed.
@@ -1098,6 +1129,12 @@ def mutate_tasks(workspace: Path, change: TaskChange, *, expected_revision: str 
         iter_jsonl(managed_path(workspace, f"logs/{filename}.jsonl"))
 
     with workspace_mutation(workspace) as held:
+        # Import and task writes use one lock. Never commit to a backend chosen
+        # only during the unlocked preflight.
+        if store.read() is not None:
+            return mutate_ledger_tasks(workspace, change, request_id, binding, lock=held)
+        if store.has_pending_import():
+            raise task_ledger.LedgerError("Task import is pending; inspect and explicitly resume or abort it")
         team = load_team(workspace)
         before, tasks = read_task_snapshot(workspace)
         check_task_revision(expected_revision, before)
@@ -1131,7 +1168,68 @@ def mutate_tasks(workspace: Path, change: TaskChange, *, expected_revision: str 
         return result
 
 
-def add_task(workspace: Path, title: str, owner: str | None = None, notes: str = "", *, expected_revision: str | None = None) -> dict[str, Any]:
+def ledger_delivery(store: task_ledger.LedgerStore, view: task_ledger.LedgerView, result: dict[str, Any], *,
+                    replayed: bool, warnings: list[str] | None = None, outcome: str = "committed") -> dict[str, Any]:
+    health = store.projection_health(view)
+    messages = list(warnings or [])
+    if health["status"] != "current":
+        messages.append("Task projection is not current; new mutations require state recover-tasks --repair-projection")
+    return {"result": result, "delivery": {"outcome": outcome, "replayed": replayed,
+            "warnings": messages, "current_revision": view.revision, "projection": health}}
+
+
+def mutate_ledger_tasks(workspace: Path, change: TaskChange, request_id: str | None,
+                        binding: dict[str, Any] | None, *, lock: storage.WorkspaceLock | None = None) -> dict[str, Any]:
+    if request_id is None or binding is None:
+        raise task_ledger.LedgerError("Imported task authority requires --request-id for every add/assign")
+    task_ledger.validate_key(request_id)
+    with workspace_mutation(workspace, lock) as held:
+        team = load_team(workspace)
+        store = task_ledger.LedgerStore(workspace)
+        view = store.read()
+        if view is None:
+            raise task_ledger.LedgerError("Task authority changed; inspect before retrying")
+        # Receipt lookup precedes expected-revision/current roster interpretation.
+        receipt = store.lookup(view, request_id, binding)
+        try:
+            store.confirm_durability(view, held)
+        except task_ledger.PublicationUncertain as exc:
+            if receipt is None:
+                raise
+            return ledger_delivery(store, view, receipt, replayed=True, warnings=[str(exc)], outcome="durability_uncertain")
+        if receipt is not None:
+            return ledger_delivery(store, view, receipt, replayed=True)
+        if store.projection_health(view)["status"] != "current":
+            raise task_ledger.LedgerError("Task projection diverged/missing; explicitly state recover-tasks --repair-projection before new mutations")
+        check_task_revision(binding["expected_revision"], view.revision)
+        # Replay is a fresh object; modifying this draft does not change history.
+        task, event_type, payload = change(team, json.loads(json.dumps(view.tasks)))
+        try:
+            committed = store.commit(view, request_id, binding, task, held)
+        except task_ledger.PublicationUncertain as exc:
+            observed = store.read()
+            receipt = store.lookup(observed, request_id, binding) if observed else None
+            if receipt is None:
+                raise
+            return ledger_delivery(store, observed, receipt, replayed=False, warnings=[str(exc)], outcome="durability_uncertain")
+        result = store.lookup(committed, request_id, binding)
+        warnings = []
+        for label, action in (
+            ("task projection stale", lambda: store.publish_projection(committed, held)),
+            ("history incomplete", lambda: append_event(workspace, event_type, lock=held, **payload,
+                mutation_id=result["mutation_id"], epoch_id=committed.epoch_id, sequence=committed.sequence,
+                frame_digest=committed.head_digest)),
+            ("dashboard stale", lambda: refresh_dashboard(workspace, lock=held)),
+        ):
+            try:
+                action()
+            except (Exception, SystemExit) as exc:
+                warnings.append(f"Ledger task committed; {label}: {exc}")
+        return ledger_delivery(store, committed, result, replayed=False, warnings=warnings)
+
+
+def add_task(workspace: Path, title: str, owner: str | None = None, notes: str = "", *, expected_revision: str | None = None,
+             request_id: str | None = None) -> dict[str, Any]:
     def change(team: dict[str, Any], tasks: list[dict[str, Any]]):
         task_owner = resolve_agent(team, owner) if owner else None
         try:
@@ -1144,10 +1242,12 @@ def add_task(workspace: Path, title: str, owner: str | None = None, notes: str =
                 "notes": notes, "created_at": now(), "updated_at": now()}
         tasks.append(task)
         return task, "task.created", {"task": task}
-    return mutate_tasks(workspace, change, expected_revision=expected_revision)
+    binding = task_ledger.request_binding("add", {"title": title, "owner": owner or None, "notes": notes}, expected_revision) if request_id is not None else None
+    return mutate_tasks(workspace, change, expected_revision=expected_revision, request_id=request_id, binding=binding)
 
 
-def assign_task(workspace: Path, task_id: str, agent: str, *, expected_revision: str | None = None) -> dict[str, Any]:
+def assign_task(workspace: Path, task_id: str, agent: str, *, expected_revision: str | None = None,
+                request_id: str | None = None) -> dict[str, Any]:
     def change(team: dict[str, Any], tasks: list[dict[str, Any]]):
         owner = resolve_agent(team, agent)
         for task in tasks:
@@ -1155,10 +1255,22 @@ def assign_task(workspace: Path, task_id: str, agent: str, *, expected_revision:
                 task.update(owner=owner, status="assigned", updated_at=now())
                 return task, "task.assigned", {"task_id": task_id, "agent": owner}
         fail(f"Task not found: {task_id}")
-    return mutate_tasks(workspace, change, expected_revision=expected_revision)
+    binding = task_ledger.request_binding("assign", {"task_id": task_id, "agent": agent}, expected_revision) if request_id is not None else None
+    return mutate_tasks(workspace, change, expected_revision=expected_revision, request_id=request_id, binding=binding)
 
 
 def print_task_result(result: dict[str, Any], *, json_output: bool, action: str) -> int:
+    if "delivery" in result:
+        if json_output:
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            frozen, delivery = result["result"], result["delivery"]
+            verb = ("Observed; durability uncertain for" if delivery["outcome"] == "durability_uncertain"
+                    else "Replayed committed" if delivery["replayed"] else "Committed")
+            print(f"{verb} ledger task {frozen['task']['id']} (sequence {frozen['sequence']})")
+            for warning in delivery["warnings"]:
+                print(f"[WARN] {warning}", file=sys.stderr)
+        return 0 if result["delivery"]["outcome"] == "committed" else 2
     if json_output:
         print(json.dumps(result, ensure_ascii=False))
     else:
@@ -1176,7 +1288,7 @@ def command_task_add(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     if not rest:
         fail("task add requires a title")
-    result = add_task(workspace, " ".join(rest), args.owner, args.notes or "", expected_revision=getattr(args, "expect_revision", None))
+    result = add_task(workspace, " ".join(rest), args.owner, args.notes or "", expected_revision=getattr(args, "expect_revision", None), request_id=getattr(args, "request_id", None))
     return print_task_result(result, json_output=getattr(args, "json", False), action="add")
 
 
@@ -1184,7 +1296,7 @@ def command_task_assign(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     if len(rest) < 2:
         fail("task assign requires task_id and agent")
-    result = assign_task(workspace, rest[0], rest[1], expected_revision=getattr(args, "expect_revision", None))
+    result = assign_task(workspace, rest[0], rest[1], expected_revision=getattr(args, "expect_revision", None), request_id=getattr(args, "request_id", None))
     return print_task_result(result, json_output=getattr(args, "json", False), action="assign")
 
 
@@ -1193,7 +1305,11 @@ def command_task_list(args: argparse.Namespace) -> int:
     load_team(workspace)
     revision, tasks = read_task_snapshot(workspace)
     if getattr(args, "json", False):
-        print(json.dumps({"revision": revision, "tasks": tasks}, ensure_ascii=False))
+        view = task_ledger.LedgerStore(workspace).read()
+        if view is not None:
+            print(json.dumps(task_inspection(workspace, view), ensure_ascii=False))
+        else:
+            print(json.dumps({"revision": revision, "tasks": tasks}, ensure_ascii=False))
         return 0
     if not tasks:
         print("No tasks yet")
@@ -1201,6 +1317,123 @@ def command_task_list(args: argparse.Namespace) -> int:
     for task in tasks:
         print(f"{task['id']} [{task['status']}] {task.get('owner') or 'unassigned'} - {task['title']}")
     return 0
+
+
+def task_inspection(workspace: Path, view: task_ledger.LedgerView | None = None) -> dict[str, Any]:
+    store = task_ledger.LedgerStore(workspace)
+    view = view or store.read()
+    if view is None:
+        pending = store.has_pending_import()
+        try:
+            revision, tasks = read_legacy_task_snapshot(workspace)
+        except storage.StorageError as exc:
+            if not pending:
+                raise
+            return {"authority": "snapshot-v1", "import_pending": True, "source_error": str(exc)}
+        return {"authority": "snapshot-v1", "revision": revision, "tasks": tasks,
+                "import_pending": pending}
+    return {"authority": "task-ledger-v1", "revision": view.revision, "tasks": view.tasks,
+            "workspace_id": view.workspace_id, "epoch_id": view.epoch_id,
+            "sequence": view.sequence, "frame_digest": view.head_digest,
+            "projection": store.projection_health(view)}
+
+
+def print_state_outcome(value: dict[str, Any], json_output: bool) -> int:
+    print(json.dumps(value, ensure_ascii=False) if json_output else json.dumps(value, indent=2, ensure_ascii=False))
+    return 2 if value.get("outcome") == "durability_uncertain" else 0
+
+
+def import_secondary_outputs(workspace: Path, store: task_ledger.LedgerStore, view: task_ledger.LedgerView,
+                             lock: storage.WorkspaceLock) -> list[str]:
+    warnings = []
+    for label, action in (
+        ("task projection stale", lambda: store.publish_projection(view, lock) if store.projection_health(view)["status"] != "current" else None),
+        ("dashboard stale", lambda: refresh_dashboard(workspace, lock=lock)),
+    ):
+        try:
+            action()
+        except (Exception, SystemExit) as exc:
+            warnings.append(f"Ledger authority active; {label}: {exc}")
+    return warnings
+
+
+def command_state_inspect(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    # Diagnostic reads must not depend on a valid non-authoritative projection
+    # or a valid source snapshot while an interrupted import awaits inspection.
+    check_workspace_paths(workspace)
+    read_team_config(workspace)
+    return print_state_outcome(task_inspection(workspace), args.json)
+
+
+@contextmanager
+def pending_import_recovery(workspace: Path):
+    # Archival changes no task contents. Do not require repairing a corrupt v1
+    # source just to preserve/rename an unactivated import's artifacts.
+    check_workspace_paths(workspace)
+    read_team_config(workspace)
+    with storage.workspace_lock(workspace, managed_path(workspace, "state/.workspace.lock")) as held:
+        check_workspace_paths(workspace)
+        read_team_config(workspace)
+        yield held
+
+
+def command_state_import_tasks(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    load_team(workspace)
+    storage.validate_revision(args.expect_revision)
+    store = task_ledger.LedgerStore(workspace)
+    if store.read() is not None or store.has_pending_import():
+        raise task_ledger.LedgerError("Task authority is already active or import pending; inspect/recover explicitly")
+    revision, _ = read_legacy_task_snapshot(workspace)
+    check_task_revision(args.expect_revision, revision)
+    with workspace_mutation(workspace) as held:
+        try:
+            view = store.import_tasks(args.expect_revision, held)
+        except task_ledger.PublicationUncertain as exc:
+            view = store.read()
+            if view is None:
+                raise
+            return print_state_outcome({**task_inspection(workspace, view), "outcome": "durability_uncertain",
+                                        "warnings": [str(exc)]}, args.json)
+        warnings = import_secondary_outputs(workspace, store, view, held)
+        return print_state_outcome({**task_inspection(workspace, view), "outcome": "committed", "warnings": warnings}, args.json)
+
+
+def command_state_recover_tasks(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    if args.abort_import:
+        if args.expect_revision is not None:
+            raise task_ledger.LedgerError("--expect-revision is used only with --resume-import")
+        with pending_import_recovery(workspace) as held:
+            archived = task_ledger.LedgerStore(workspace).abort_import(held)
+            return print_state_outcome({"outcome": "aborted", "authority": "snapshot-v1", "preserved_artifacts": archived}, args.json)
+    load_team(workspace)
+    store = task_ledger.LedgerStore(workspace)
+    if args.resume_import:
+        if args.expect_revision is None:
+            raise task_ledger.LedgerError("--resume-import requires --expect-revision of the original snapshot")
+        storage.validate_revision(args.expect_revision)
+    elif args.expect_revision is not None:
+        raise task_ledger.LedgerError("--expect-revision is used only with --resume-import")
+    with workspace_mutation(workspace) as held:
+        try:
+            if args.resume_import:
+                view = store.resume_import(args.expect_revision, held)
+                detail = {"import_resumed": True}
+            else:
+                view = store.read()
+                if view is None:
+                    raise task_ledger.LedgerError("No active ledger; inspect a pending import and use --resume-import or --abort-import")
+                store.confirm_durability(view, held)
+                detail = store.repair_projection(held)
+        except (task_ledger.PublicationUncertain, storage.CommitUncertain) as exc:
+            view = store.read()
+            if view is None:
+                raise
+            return print_state_outcome({**task_inspection(workspace, view), "outcome": "durability_uncertain", "warnings": [str(exc)]}, args.json)
+        warnings = import_secondary_outputs(workspace, store, view, held)
+        return print_state_outcome({**task_inspection(workspace, view), "outcome": "recovered", "recovery": detail, "warnings": warnings}, args.json)
 
 
 def command_message(args: argparse.Namespace) -> int:
@@ -2519,17 +2752,40 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     task_add.add_argument("--owner")
     task_add.add_argument("--notes")
     task_add.add_argument("--expect-revision", help="Reject unless the current whole-task snapshot matches this token")
+    task_add.add_argument("--request-id", help="Durable request key, required only after explicit task-ledger import")
     task_add.add_argument("--json", action="store_true", help="Return mutation outcome, task, revisions, and warnings")
     task_add.set_defaults(func=command_task_add)
     task_assign = task_sub.add_parser("assign")
     task_assign.add_argument("items", nargs="+", help="Optional workspace followed by task_id and agent")
     task_assign.add_argument("--expect-revision", help="Reject unless the current whole-task snapshot matches this token")
+    task_assign.add_argument("--request-id", help="Durable request key, required only after explicit task-ledger import")
     task_assign.add_argument("--json", action="store_true", help="Return mutation outcome, task, revisions, and warnings")
     task_assign.set_defaults(func=command_task_assign)
     task_list = task_sub.add_parser("list")
     task_list.add_argument("workspace", nargs="?", default=".")
     task_list.add_argument("--json", action="store_true", help="Return tasks and an exact content revision for conditional mutations")
     task_list.set_defaults(func=command_task_list)
+
+    state = subparsers.add_parser("state", help="Inspect, explicitly import, or recover task authority")
+    state_sub = state.add_subparsers(dest="state_command", required=True)
+    inspect = state_sub.add_parser("inspect", help="Read-only task authority and projection diagnostics")
+    inspect.add_argument("workspace", nargs="?", default=".")
+    inspect.add_argument("--json", action="store_true")
+    inspect.set_defaults(func=command_state_inspect)
+    import_tasks = state_sub.add_parser("import-tasks", help="Back up exact snapshot bytes and activate a task-only ledger")
+    import_tasks.add_argument("workspace", nargs="?", default=".")
+    import_tasks.add_argument("--expect-revision", required=True)
+    import_tasks.add_argument("--json", action="store_true")
+    import_tasks.set_defaults(func=command_state_import_tasks)
+    recover = state_sub.add_parser("recover-tasks", help="Explicitly repair a projection or resume/abort an unfinished import")
+    recover.add_argument("workspace", nargs="?", default=".")
+    action = recover.add_mutually_exclusive_group(required=True)
+    action.add_argument("--repair-projection", action="store_true")
+    action.add_argument("--resume-import", action="store_true")
+    action.add_argument("--abort-import", action="store_true")
+    recover.add_argument("--expect-revision")
+    recover.add_argument("--json", action="store_true")
+    recover.set_defaults(func=command_state_recover_tasks)
 
     for name, action in (("plan", "plan"), ("up", "up"), ("start", "up"), ("down", "down"), ("stop", "down"), ("restart", "restart")):
         sub = subparsers.add_parser(name, help=f"Run coven {action} for the configured multiplexer")

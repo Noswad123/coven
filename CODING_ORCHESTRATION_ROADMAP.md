@@ -97,7 +97,8 @@ completed in the progress notes.
 ### Implementation progress — 2026-10-21
 
 **M0 / COV-01: scaffold safeguards completed locally; immediate COV-03 revocation
-repaired.** No destructive reset or migration command is provided. Local slices:
+repaired.** No destructive reset is provided; task-ledger import is explicit.
+Local slices:
 
 - [x] Refuse reinitialization and partial workspace collisions before writes,
   including existing/dangling symlinks; `--force` cannot authorize reset.
@@ -141,12 +142,12 @@ repaired.** No destructive reset or migration command is provided. Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 106 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 137 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
-Migration and destructive reset remain intentionally unavailable; future
-operations need validated backups/import semantics or a loss preview and separate
-consent. Record schemas are structural, not new task lifecycle/reference rules.
+Implicit migration and destructive reset remain unavailable. Task-only baseline
+import is implemented below with exact backups and explicit activation. Record
+schemas are structural, not new task lifecycle/reference rules.
 
 **COV-02a: bounded task-snapshot mutation foundation implemented locally.**
 Contract and operator guidance: [STORAGE_CONTRACT.md](STORAGE_CONTRACT.md).
@@ -172,12 +173,39 @@ Contract and operator guidance: [STORAGE_CONTRACT.md](STORAGE_CONTRACT.md).
   dashboard prevention through both entrypoints, and before/after-replace crashes.
   Cover event fsync/secondary projection failures and explicit uncertain outcomes.
 
-Next COV-02 work remains open: authoritative sequenced ledger/baseline import,
-monotonic domain revisions, durable idempotency, full mutation scopes beyond
-tasks, and general recovery. Snapshot content tokens are not lifecycle claims or
-approval bindings; unconditional assignment can reassign. Current checkpoint
-Markdown remains the decision authority; history is not a recovery ledger.
-M0 and full COV-03 revision-bound authorization are not complete.
+**COV-02b: opt-in task ledger and committed-request deduplication implemented.**
+Protocol and operator guidance: [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md).
+
+- [x] Explicit revision-conditional import preserves exact source bytes/mode and
+  source absence, allocates stable workspace/epoch identities, and activates only
+  after a validated/durable baseline. Existing v1 workspaces stay v1 by default.
+- [x] Immutable sequenced frames atomically publish each task effect and frozen
+  receipt together. Validate canonical bounded frames, digests, identities,
+  sequence/hash chain, effect invariants, and result consistency; never treat a
+  malformed final frame as a disposable tail or fall back to snapshot authority.
+- [x] Imported add/assign require request IDs bound to original structured input
+  and expected revision. Same-key retries return frozen committed results before
+  current revision/roster checks; changed bindings conflict. Rejected requests
+  are not cached and secondary events are not delivered exactly once.
+- [x] Task reads/status use authority despite malformed/missing/unreadable
+  projections. Require healthy projection for new requests; explicit recovery
+  preserves observed bytes before repair. Pending import inspection/archival
+  remains possible even when the source has become corrupt.
+- [x] Confirm observed authority durability before retry acknowledgement, expose
+  post-publication uncertainty separately, and support explicit pending-import
+  resume or nondestructive artifact archival. Old event/message logs remain
+  observational and do not gate ledger receipts or fabricate a past history.
+- [x] Test concurrent identical keys, process death after frame before projection,
+  original-revision replay after later state/roster edits, import-versus-v1-writer
+  race, activation/frame fsync uncertainty, no-fallback corruption, and explicit
+  source/projection preservation. All 137 offline regressions pass.
+
+Next COV-02 work remains open: mutation authority/scopes beyond task add/assign,
+general multi-file recovery, broader domain revisions, and retention/operational
+hardening of ledger epochs. Snapshot tokens and ledger task revisions are not
+lifecycle claims or approval bindings; unconditional assignment can reassign.
+Current checkpoint Markdown remains decision authority. M0 and full COV-03
+revision-bound authorization are not complete.
 
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |
@@ -222,9 +250,9 @@ explicit reset previews what will be lost and requires separate consent.
 
 **Local outcome:** current scaffold safeguards, structural v1 contracts, and
 identity/display separation are implemented and tested. Reset stays disabled,
-rather than introducing a destructive operation without preview/consent. Migration
-is reserved for the backed-up import/recovery work in COV-02; existing state is
-never automatically renamed or upgraded by refresh.
+rather than introducing a destructive operation without preview/consent. COV-02b
+provides explicit backed-up task import; existing state is never automatically
+renamed, imported, or upgraded by refresh.
 
 ### COV-02 — Make concurrent state changes safe
 
@@ -232,9 +260,10 @@ never automatically renamed or upgraded by refresh.
 Events have timestamps but no stable event IDs or sequence. Metadata calls events
 the source of truth, but no general reducer rebuilds state from them.
 
-**Local progress:** COV-02a above fixes cooperating task lost updates without
-changing the v1 state format. Snapshot authority is an explicit interim decision,
-not a claim that the preferred ledger/replay/idempotency design has shipped.
+**Local progress:** COV-02a fixes cooperating task lost updates without changing
+v1 format. COV-02b adds explicitly imported task-ledger authority, replay, and
+committed-request receipts; it does not migrate all workspace state or solve
+whole-workspace transaction/recovery semantics.
 
 **Build:**
 

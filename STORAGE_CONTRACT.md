@@ -1,9 +1,13 @@
-# COV-02a: task snapshot mutation contract
+# COV-02a: default snapshot-v1 task mutation contract
 
 This documents implemented single-host behavior, not the complete COV-02 ledger
 roadmap. The code is in `runner/storage.py` and the task services in
 `runner/coven.py`. It supports cooperating current Coven processes on local
 POSIX filesystems (macOS/Linux). It is neither a distributed lock nor a sandbox.
+
+This contract applies before explicit task-ledger import. The implemented opt-in
+authority, replay, and durable request-receipt protocol is documented separately
+in [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md). Nothing imports implicitly.
 
 ## Authority and compatibility
 
@@ -135,7 +139,7 @@ Recovery currently available:
 5. A corrupt authoritative snapshot needs inspected restoration/repair; no event
    replay can reconstruct it from today's incomplete history.
 
-The future authoritative ledger, monotonic revisions, durable idempotency,
-baseline import, and general multi-file recovery remain open COV-02 work. A
-ledger migration must explicitly capture a backed-up validated current snapshot
-as a new authority epoch, not pretend old observational events are sufficient.
+Opt-in task-ledger baseline import and committed-request deduplication are now
+available through the separate contract linked above. Snapshot-v1 deliberately
+keeps the behavior documented here. Whole-workspace transactions, domain/task
+lifecycle revisions, and general multi-file recovery remain open COV-02 work.
