@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger, checkpoints, actions, launch
+    from . import records, storage, task_ledger, checkpoints, actions, launch, workers
 else:
     import records
     import storage
@@ -30,6 +30,7 @@ else:
     import checkpoints
     import actions
     import launch
+    import workers
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -1615,6 +1616,35 @@ def command_action_stop(args: argparse.Namespace) -> int:
     return print_action_result(stop_runtime_action(workspace_path(args.workspace), args.action_id), args.json)
 
 
+def command_worker_readiness(args: argparse.Namespace) -> int:
+    # This is independent adapter observation, not workspace mutation or native
+    # task execution. Do not load native config, inspect sessions, or acquire
+    # workspace/transport authority merely to report missing compatibility.
+    try:
+        report = workers.inspect_readiness(workspace_path(args.workspace), adapter=args.adapter,
+            profile=args.profile, executable=args.executable, timeout=args.timeout,
+            max_output_bytes=args.max_output_bytes)
+    except ValueError as exc:
+        raise storage.StorageError(f"Invalid worker readiness request: {exc}") from exc
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False))
+    else:
+        print(f"{report['adapter']} adapter compatibility: {report['assessment'].upper()}")
+        print(f"Profile: {report['profile']}; adapter contract: {report['adapter_contract']}")
+        executable = report["executable"]["resolved_path"] or report["executable"]["selected_path"] or "not found"
+        print(f"Executable: {visible_text(executable)}")
+        if report["executable"]["identity"] is not None:
+            print(f"Executable SHA256: {report['executable']['identity']['sha256']}")
+        print(f"Native version: {report['native_version'] or 'not observed'}")
+        print("Authorization: none. No worker created; help surfaces do not attest effective policy or execution readiness.")
+        for surface, value in report["cli_surfaces"].items():
+            print(f"- CLI {surface}: {value['state']}")
+        print("Blockers:")
+        for blocker in report["blockers"]:
+            print(f"- {blocker['code']}: {blocker['next_step']}")
+    return workers.report_exit_code(report)
+
+
 def print_file(path: Path, default: str) -> int:
     if not path.exists():
         print(default)
@@ -3186,6 +3216,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     action_stop.add_argument("action_id")
     action_stop.add_argument("--json", action="store_true")
     action_stop.set_defaults(func=command_action_stop)
+
+    worker = subparsers.add_parser("worker", help="Inspect native adapter compatibility without worker execution")
+    worker_sub = worker.add_subparsers(dest="worker_command", required=True)
+    readiness = worker_sub.add_parser("readiness", help="Help-only fail-closed Djinn adapter inspection; never grants execution permission")
+    readiness.add_argument("workspace", nargs="?", default=".")
+    readiness.add_argument("--adapter", choices=["djinn"], default="djinn")
+    readiness.add_argument("--profile", choices=["research-readonly"], default="research-readonly")
+    readiness.add_argument("--executable", help="Explicit trusted Djinn executable path; default resolves djinn from PATH")
+    readiness.add_argument("--timeout", type=float, default=3.0, help="Per-probe seconds, greater than 0 and at most 30")
+    readiness.add_argument("--max-output-bytes", type=int, default=131072, help="Combined output budget per help probe (1024 through 1048576)")
+    readiness.add_argument("--json", action="store_true")
+    readiness.set_defaults(func=command_worker_readiness)
 
     for name, action in (("plan", "plan"), ("up", "up"), ("start", "up"), ("down", "down"), ("stop", "down"), ("restart", "restart")):
         sub = subparsers.add_parser(name, help=f"Run coven {action} for the configured multiplexer")

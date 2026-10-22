@@ -64,7 +64,8 @@ coven/
 │   ├── task_ledger.py     # opt-in ledger, baseline import, durable task receipts
 │   ├── checkpoints.py     # exact snapshot/local-scope checkpoint bindings
 │   ├── actions.py         # opt-in runtime manifests, single-use claims/outcomes
-│   └── launch.py          # frozen cold-start transport plans/execution
+│   ├── launch.py          # frozen cold-start transport plans/execution
+│   └── workers.py         # help-only native adapter compatibility observations
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -447,6 +448,37 @@ coven agent stop jamal
 coven agent start jamal
 coven agent restart jamal
 ```
+
+## Native worker readiness inspection
+
+```bash
+coven worker readiness --adapter djinn --profile research-readonly --json
+coven worker readiness /path/to/project --executable /trusted/path/to/djinn
+```
+
+This read-only **adapter compatibility diagnostic** creates no worker/session and
+grants no permission. It resolves/fingerprints the executable, follows only
+advertised help routes, and reports CLI surfaces separately from unverified native
+identity, acknowledgement/reconciliation, lifecycle, cancellation, results, and
+immutable tool/resource policy. Coven does not load Djinn credentials/configuration
+or request native session inspection. Native help runs as trusted code; these
+limits are not a purity or filesystem-access guarantee. Ordinary project
+directories are accepted; the inspector creates no Coven state, logs, locks,
+dashboards, or migrations.
+
+The current `djinn-help-v1` adapter **never declares `compatible` from help**.
+Exit 1 means a verified help surface lacks the required session/run route; exit 2
+means unknown/probe failure or unverified worker guarantees. Exit 0 is reserved
+for a future implemented compatibility contract. Installed Djinn currently
+advertises useful native session surfaces but does not establish this bounded
+worker contract; its observed readiness is `unknown`, with authorization `none`.
+
+Probes have bounded output/time and supervised cleanup, including caller death.
+No bare native status/watch/list command is used: those may persist recovery
+observations. Select a trusted executable—help probing is not an OS sandbox.
+There is no `coven worker run` or fallback to runtime startup. See
+[WORKER_READINESS_CONTRACT.md](WORKER_READINESS_CONTRACT.md) for exact allowed
+probes, report semantics, source observations, and native prerequisites.
 
 ## Optional reviewed runtime startup
 

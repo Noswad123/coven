@@ -142,7 +142,7 @@ Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 232 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 271 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Implicit migration and destructive reset remain unavailable. Task-only baseline
@@ -254,14 +254,41 @@ Contract: [RUNTIME_LAUNCH_CONTRACT.md](RUNTIME_LAUNCH_CONTRACT.md).
   preserve native policy independence and fail closed on corrupt/moved control.
   Prove concurrent submit executes once, activation races, immutable input checks,
   before/after-claim failure behavior, process death, frozen post-claim execution,
-  and lock-free runtime transport. All 232 offline regressions pass.
+  and lock-free runtime transport, covered by the current offline suite.
 
 This is deliberately **not read-only dispatch**: current pane adapters cannot
-enforce that. Next work remains native task/attempt identity and adapter capability
-checks for genuinely bounded workers, repository/mutation/integration/delivery
-grants, broader recovery, and ledger retention/operational hardening. Task
-revisions/checkpoint hashes alone are not execution grants. Full COV-02/COV-03
-and the remaining milestones are not declared complete.
+enforce that. Task revisions/checkpoint hashes alone are not execution grants.
+
+**COV-05a: fail-closed native adapter compatibility inspection implemented.**
+Contract: [WORKER_READINESS_CONTRACT.md](WORKER_READINESS_CONTRACT.md).
+
+- [x] Inspect the installed Djinn help surface/source rather than assuming the
+  proposed worker CLI exists. Keep native/folder/UI/PID/pane identities distinct.
+  No provider/session/model operations or credential/configuration inspection were
+  requested; native CLI probes used help only, not a native-code purity attestation.
+- [x] Add `worker readiness` with versioned Coven report, resolved executable
+  fingerprint, bounded advertised help/version probes, provenance, actionable
+  blockers, and explicit `authorization: none`. Separate advertised syntax from
+  semantic policy/identity/lifecycle evidence, which remains unverified.
+- [x] Bound subprocess output, timeout, and supervisor lifetime. Private completion
+  and parent-liveness descriptors never reach native code; group cleanup covers
+  ordinary exits, limits, caller SIGTERM/SIGKILL, and stalled parent cleanup.
+- [x] Prove unchanged v1/task-ledger/approved-launch workspace bytes and no
+  authority locks or state writes. Do not invoke native status/watch/list as
+  non-mutating probes, fabricate a capabilities API, create attempts, or fallback
+  to worker execution. All 271 offline regressions pass.
+
+The installed help-only probe reports `unknown`, not a ready worker. Required
+native contracts remain versioned admission, recoverable attempt correlation,
+non-mutating lifecycle inspection, cancellation, bound result pointers, and
+immutable per-attempt tool/resource enforcement. Help-only inspection cannot
+establish them, even when flags or role names suggest read-only behavior.
+
+Next work remains COV-04 attempt identity plus a supported native bounded-worker
+contract before actual COV-05 execution, repository/mutation/integration/delivery
+grants, broader recovery, and ledger retention/operational hardening. This
+inspection prerequisite does not remove COV-05 execution's COV-04 dependency.
+Full COV-02/COV-03, COV-04/COV-05 execution, and later milestones remain open.
 
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |

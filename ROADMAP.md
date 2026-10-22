@@ -189,6 +189,14 @@ Acceptance criteria:
 
 ### Coven-facing Djinn worker command
 
+Before implementing execution, establish a supported native contract for stable
+attempt/session identity, accepted immutable tool/resource policy, acknowledged
+submission with lost-ack reconciliation, non-mutating lifecycle inspection,
+cancellation, and bound result/transcript pointers. Existing folder-session
+helpers, process spawn output, and role names are not equivalent guarantees.
+Coven's help-only compatibility inspector reports observations and blockers,
+not worker readiness or authorization; see `WORKER_READINESS_CONTRACT.md`.
+
 The ideal adapter surface is a single command Coven can call for one worker task,
 not a chain of manual child-session commands. Shape to refine during
 implementation:
