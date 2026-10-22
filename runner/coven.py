@@ -20,6 +20,18 @@ DEFAULT_OPENCODE_COMMAND = "oc"
 DEFAULT_EXAMPLE_ID = "interactive-demo"
 DEFAULT_MULTIPLEXER = "herdr"
 SUPPORTED_MULTIPLEXERS = {"herdr", "tmux"}
+# Init owns these names. Even partial workspaces must not be silently adopted.
+INIT_RESERVED_NAMES = (
+    "coven.json", "coven.toml", "goal.md", "spec.md", "dashboard.md",
+    "agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux",
+)
+MANAGED_DIRECTORIES = ("agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux")
+MANAGED_FILES = (
+    "coven.json", "coven.toml", "goal.md", "spec.md", "dashboard.md",
+    "state/agents.json", "state/tasks.json", "state/lead.json",
+    "logs/events.jsonl", "logs/messages.jsonl", "tmux/coven.toml",
+    "work/README.md", "output/README.md",
+)
 COVEN_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = COVEN_DIR / "examples"
@@ -40,7 +52,7 @@ def fail(message: str) -> None:
 
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip().lower()).strip("-")
-    if not slug:
+    if not re.search(r"[a-z0-9]", slug):
         raise ValueError("value must contain at least one letter or number")
     return slug
 
@@ -50,9 +62,10 @@ def parse_agents(raw: str) -> list[str]:
     seen: set[str] = set()
     for item in raw.split(","):
         agent = slugify(item)
-        if agent not in seen:
-            agents.append(agent)
-            seen.add(agent)
+        if agent in seen:
+            raise ValueError(f"Duplicate agent ID after normalization: {agent}")
+        agents.append(agent)
+        seen.add(agent)
     if not agents:
         raise ValueError("at least one agent is required")
     return agents
@@ -62,8 +75,78 @@ def workspace_path(path: str | None) -> Path:
     return Path(path or ".").expanduser().resolve()
 
 
+def record_id(value: Any, kind: str) -> str:
+    """Validate persisted identities without renaming them or excluding legacy `_`."""
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        fail(f"Invalid {kind} ID {value!r}; use only ASCII letters, digits, underscores, and hyphens")
+    return value
+
+
+def managed_path(workspace: Path, relative: str, *, directory: bool = False) -> Path:
+    """Reject pre-existing managed symlinks/types; not a race-proof filesystem sandbox."""
+    root = workspace.resolve()
+    suffix = Path(relative)
+    if suffix.is_absolute() or not suffix.parts or ".." in suffix.parts:
+        fail(f"Unsafe workspace-relative path: {relative!r}")
+    path = root
+    for index, part in enumerate(suffix.parts):
+        path = path / part
+        if path.is_symlink():
+            fail(f"Unsafe managed path (symlinks are not supported): {path}")
+        if path.exists():
+            want_directory = directory or index < len(suffix.parts) - 1
+            if want_directory and not path.is_dir():
+                fail(f"Managed path must be a directory: {path}")
+            if not want_directory and not path.is_file():
+                fail(f"Managed path must be a regular file: {path}")
+    return path
+
+
+def checkpoint_path(workspace: Path, checkpoint: Any) -> Path:
+    return managed_path(workspace, f"checkpoints/{record_id(checkpoint, 'checkpoint')}.md")
+
+
+def managed_text(workspace: Path, relative: str) -> str | None:
+    path = managed_path(workspace, relative)
+    try:
+        return path.read_text(encoding="utf-8") if path.exists() else None
+    except (ValueError, OSError) as exc:
+        fail(f"Cannot read managed file {path}: {exc}")
+
+
+def checkpoint_text(workspace: Path, checkpoint: Any) -> str | None:
+    path = checkpoint_path(workspace, checkpoint)
+    return managed_text(workspace, f"checkpoints/{path.name}")
+
+
+def preflight_workspace_paths(workspace: Path, team: dict[str, Any] | None = None) -> None:
+    """Validate the known control plane, not arbitrary user artifacts recursively."""
+    for relative in MANAGED_DIRECTORIES:
+        managed_path(workspace, relative, directory=True)
+    for relative in MANAGED_FILES:
+        managed_path(workspace, relative)
+    for checkpoint in ("plan-approval", "pre-delivery-review"):
+        checkpoint_text(workspace, checkpoint)
+    checkpoint_dir = managed_path(workspace, "checkpoints", directory=True)
+    for path in sorted(checkpoint_dir.iterdir()) if checkpoint_dir.exists() else []:
+        # glob("*.md") misses .MD aliases even on case-insensitive filesystems.
+        # Inspect actual names so both symlink/type and decoding checks apply.
+        if path.suffix.lower() == ".md":
+            record_id(path.stem, "checkpoint")
+            managed_text(workspace, f"checkpoints/{path.name}")
+    # Mutating commands render the dashboard last. Validate its persisted lead
+    # identity up front rather than discovering an unsafe ID after notifications.
+    read_lead(workspace)
+    if team is not None:
+        for agent in team_agents(team):
+            managed_path(workspace, f"agents/{agent}.md")
+            managed_path(workspace, f"prompts/{agent}.md")
+            managed_path(workspace, f"prompts/{agent}.start.txt")
+
+
 def is_team_workspace(path: str | Path) -> bool:
-    return (Path(path).expanduser() / "coven.json").exists()
+    marker = Path(path).expanduser() / "coven.json"
+    return marker.exists() or marker.is_symlink()
 
 
 def split_optional_workspace(items: list[str]) -> tuple[Path, list[str]]:
@@ -116,15 +199,16 @@ def write_json(path: Path, value: Any) -> None:
 
 def append_event(workspace: Path, event_type: str, **payload: Any) -> None:
     event = {"ts": now(), "type": event_type, **payload}
-    path = workspace / "logs" / "events.jsonl"
+    path = managed_path(workspace, "logs/events.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, sort_keys=True) + "\n")
 
 
 def append_message(workspace: Path, sender: str, recipient: str, body: str) -> None:
+    managed_path(workspace, "logs/events.jsonl")
     message = {"ts": now(), "from": sender, "to": recipient, "body": body}
-    path = workspace / "logs" / "messages.jsonl"
+    path = managed_path(workspace, "logs/messages.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(message, sort_keys=True) + "\n")
@@ -132,11 +216,18 @@ def append_message(workspace: Path, sender: str, recipient: str, body: str) -> N
 
 
 def load_team(workspace: Path) -> dict[str, Any]:
-    path = workspace / "coven.json"
+    preflight_workspace_paths(workspace)
+    path = managed_path(workspace, "coven.json")
     if not path.exists():
         fail(f"Not a coven workspace: {workspace} (missing coven.json)")
-    team = read_json(path, {})
-    config = read_toml(workspace / "coven.toml")
+    try:
+        team = read_json(path, {})
+        config = read_toml(managed_path(workspace, "coven.toml"))
+    except (ValueError, OSError) as exc:
+        fail(f"Invalid workspace configuration: {exc}")
+    if not isinstance(team, dict) or not isinstance(team.get("name"), str) or not team["name"].strip():
+        fail("coven.json must be an object with a nonempty string name")
+    preflight_workspace_paths(workspace, team)
     runtime = config.get("runtime") if isinstance(config, dict) else None
     if isinstance(runtime, dict):
         for key in ("multiplexer", "opencode_command"):
@@ -220,13 +311,13 @@ def agent_role(agent: str) -> str:
         "architect": "Break goals into plans, identify tradeoffs, and define checkpoints.",
         "implementer": "Make targeted changes and report validation results.",
         "reviewer": "Review diffs, test outcomes, risks, and readiness for user approval.",
-        "Clippy": "Planner. Turn the user goal into checkpoints, milestones, and clear task slices.",
-        "Srikanth": "Tech lead. Own architecture, integration decisions, and final technical direction.",
-        "Jamal": "Senior developer. Implement the core terminal application and keep changes shippable.",
-        "Kris": "Frontend/UI specialist, aka Dr Oom. Shape the terminal UI, flow, copy, and presentation polish.",
-        "Eric": "QA. Verify behavior, run the app, test edge cases, and confirm acceptance criteria.",
+        "clippy": "Planner. Turn the user goal into checkpoints, milestones, and clear task slices.",
+        "srikanth": "Tech lead. Own architecture, integration decisions, and final technical direction.",
+        "jamal": "Senior developer. Implement the core terminal application and keep changes shippable.",
+        "kris": "Frontend/UI specialist, aka Dr Oom. Shape the terminal UI, flow, copy, and presentation polish.",
+        "eric": "QA. Verify behavior, run the app, test edge cases, and confirm acceptance criteria.",
     }
-    return defaults.get(agent, f"Contribute to the coven as `{agent}`.")
+    return defaults.get(agent.lower(), f"Contribute to the coven as `{agent}`.")
 
 
 def prompt_text(agent: str, workspace: Path, example_context: str = "") -> str:
@@ -345,18 +436,28 @@ def starter_tasks(agents: list[str], example: dict[str, Any] | None = None) -> l
     owners = set(agents)
 
     def owner(agent: str) -> str | None:
-        return agent if agent in owners else None
+        canonical = slugify(agent)
+        return canonical if canonical in owners else None
 
     raw_tasks = read_example_json(example, "tasks.json", [])
     tasks: list[dict[str, Any]] = []
+    task_ids: set[str] = set()
     if not isinstance(raw_tasks, list):
-        raw_tasks = []
+        raise ValueError("Example tasks.json must contain a list of task records")
     for raw_task in raw_tasks:
         if not isinstance(raw_task, dict):
-            continue
-        task_id = str(raw_task.get("id") or slugify(str(raw_task.get("title") or "task")))
-        title = str(raw_task.get("title") or task_id)
-        task_owner = owner(str(raw_task.get("owner"))) if raw_task.get("owner") else None
+            raise ValueError("Example tasks must be objects")
+        for field in ("id", "title", "owner", "notes"):
+            if raw_task.get(field) is not None and not isinstance(raw_task[field], str):
+                raise ValueError(f"Example task {field} must be a string")
+        task_id = raw_task.get("id") or slugify(raw_task.get("title") or "task")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", task_id):
+            raise ValueError(f"Invalid example task ID: {task_id!r}")
+        if task_id in task_ids:
+            raise ValueError(f"Duplicate example task ID: {task_id}")
+        task_ids.add(task_id)
+        title = raw_task.get("title") or task_id
+        task_owner = owner(raw_task["owner"]) if raw_task.get("owner") else None
         tasks.append(
             {
                 "id": task_id,
@@ -468,6 +569,9 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
 
 
 def agent_launch_command(name: str, workspace: Path, agent: str, opencode_command: str, multiplexer: str = "tmux") -> str:
+    record_id(agent, "agent")
+    managed_path(workspace, f"prompts/{agent}.md")
+    managed_path(workspace, f"prompts/{agent}.start.txt")
     opencode_command = normalize_opencode_command(opencode_command)
     prompt_path = f"prompts/{agent}.start.txt"
     if multiplexer == "herdr":
@@ -524,8 +628,7 @@ def render_dashboard(workspace: Path) -> str:
         ("pre-delivery-review", "consult user before declaring completion"),
     ]
     for checkpoint_id, purpose in checkpoint_specs:
-        file_path = workspace / "checkpoints" / f"{checkpoint_id}.md"
-        status = checkpoint_status(file_path)
+        status = checkpoint_status(workspace, checkpoint_id)
         checkpoint_rows.append(f"| `{checkpoint_id}` | {status} | `checkpoints/{checkpoint_id}.md` | {purpose} |")
 
     return f"""# Coven Dashboard: {team['name']}
@@ -571,16 +674,21 @@ def render_dashboard(workspace: Path) -> str:
 
 
 def refresh_dashboard(workspace: Path) -> None:
-    (workspace / "dashboard.md").write_text(render_dashboard(workspace), encoding="utf-8")
+    managed_path(workspace, "dashboard.md").write_text(render_dashboard(workspace), encoding="utf-8")
 
 
 def read_lead(workspace: Path) -> dict[str, Any] | None:
-    state = read_json(workspace / "state" / "lead.json", None)
+    try:
+        state = read_json(managed_path(workspace, "state/lead.json"), None)
+    except (ValueError, OSError) as exc:
+        fail(f"Invalid lead record: {exc}")
+    if isinstance(state, dict) and state.get("agent"):
+        record_id(state["agent"], "agent")
     return state if isinstance(state, dict) and state.get("agent") else None
 
 
 def write_lead(workspace: Path, state: dict[str, Any] | None) -> None:
-    path = workspace / "state" / "lead.json"
+    path = managed_path(workspace, "state/lead.json")
     if state is None:
         if path.exists():
             path.unlink()
@@ -588,93 +696,162 @@ def write_lead(workspace: Path, state: dict[str, Any] | None) -> None:
     write_json(path, state)
 
 
-def checkpoint_status(path: Path) -> str:
-    if not path.exists():
+def checkpoint_status(workspace: Path, checkpoint: str) -> str:
+    content = checkpoint_text(workspace, checkpoint)
+    if content is None:
         return "missing"
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.lower().startswith("status:"):
-            return line.split(":", 1)[1].strip() or "unknown"
+    header, _ = checkpoint_header(content)
+    for _, _, line in markdown_lines(header):
+        status = re.match(r"^ {0,3}status:([^\r\n]*)$", line, re.IGNORECASE)
+        if status:
+            return status.group(1).strip().lower() or "unknown"
     return "unknown"
 
 
-def mark_checkpoint_approved(path: Path, message: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        content = path.read_text(encoding="utf-8")
+def markdown_lines(content: str, *, strict: bool = False) -> list[tuple[int, int, str]]:
+    """Offsets of non-code lines for the small generated checkpoint format."""
+    visible = []
+    fence: tuple[str, int] | None = None
+    offset = 0
+    for raw in content.splitlines(keepends=True):
+        line = raw.rstrip("\r\n")
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1] and not marker[2].strip():
+                fence = None
+        elif marker:
+            fence = (marker[1][0], len(marker[1]))
+        elif not line.startswith(("    ", "\t")):
+            visible.append((offset, offset + len(raw), line))
+        offset += len(raw)
+    if strict and fence:
+        fail("Cannot edit checkpoint: unterminated fenced code block")
+    return visible
+
+
+def markdown_heading(line: str) -> tuple[int, str] | None:
+    match = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*$", line)
+    if not match:
+        return None
+    title = re.sub(r"[ \t]+#+[ \t]*$", "", match[2])
+    return len(match[1]), title.lower()
+
+
+def checkpoint_header(content: str) -> tuple[str, str]:
+    """Only metadata before the first H2 describes the current decision."""
+    for start, _, line in markdown_lines(content):
+        heading = markdown_heading(line)
+        if heading and heading[0] == 2:
+            return content[:start], content[start:]
+    return content, ""
+
+
+def checkpoint_decision_text(content: str, status: str) -> str:
+    markdown_lines(content, strict=True)
+    header, body = checkpoint_header(content)
+    status_lines = [(start, end) for start, end, line in markdown_lines(header)
+                    if re.match(r"^ {0,3}status:", line, re.IGNORECASE)]
+    if len(status_lines) > 1:
+        fail("Cannot edit checkpoint: ambiguous current status headers")
+    if status_lines:
+        start, end = status_lines[0]
+        header = header[:start] + f"Status: {status}\n" + header[end:]
     else:
+        header += ("" if header.endswith("\n") else "\n") + f"\nStatus: {status}\n\n"
+
+    approved = status == "approved"
+    decisions = (("Approved", approved), ("Rejected / needs changes", not approved))
+    visible = markdown_lines(body)
+    sections = [(start, end) for start, end, line in visible if markdown_heading(line) == (2, "user decision")]
+    if len(sections) > 1:
+        fail("Cannot edit checkpoint: ambiguous User decision sections")
+    if not sections:
+        current = "\n".join(f"- [{'x' if checked else ' '}] {label}" for label, checked in decisions)
+        return header + f"## User decision\n\n{current}\n\n" + body
+
+    _, start = sections[0]
+    end = next((offset for offset, _, line in visible if offset >= start and markdown_heading(line)), len(body))
+    current = body[start:end]
+    replacements = []
+    missing = []
+    for label, checked in decisions:
+        pattern = re.compile(r"^ {0,3}-[ \t]+\[[ xX]\][ \t]+" + re.escape(label) + r"[ \t]*$", re.IGNORECASE)
+        checkbox = f"- [{'x' if checked else ' '}] {label}"
+        matches = [(offset, stop) for offset, stop, line in markdown_lines(current) if pattern.match(line)]
+        if len(matches) > 1:
+            fail(f"Cannot edit checkpoint: ambiguous current `{label}` checkboxes")
+        if matches:
+            replacements.append((*matches[0], checkbox + "\n"))
+        else:
+            missing.append(checkbox)
+    for offset, stop, checkbox in sorted(replacements, reverse=True):
+        current = current[:offset] + checkbox + current[stop:]
+    if missing:
+        current += ("" if current.endswith("\n") else "\n") + "\n".join(missing) + "\n\n"
+    return header + body[:start] + current + body[end:]
+
+
+def prepare_checkpoint_decision(workspace: Path, checkpoint: str, status: str, heading: str, notes: str) -> tuple[Path, str]:
+    path = checkpoint_path(workspace, checkpoint)
+    content = checkpoint_text(workspace, checkpoint)
+    if content is None:
         checkpoint_id = path.stem
         content = checkpoint_file(checkpoint_id, checkpoint_id.replace("-", " ").title(), "User approval checkpoint.")
-    content = re.sub(r"(?m)^Status:.*$", "Status: approved", content, count=1)
-    content = content.replace("- [ ] Approved", "- [x] Approved", 1)
-    content += f"\n## Approval — {now()}\n\n{message}\n"
+    content = checkpoint_decision_text(content, status)
+    content += f"\n## {heading} — {now()}\n\n{notes}\n"
+    # Notes are historical, but must not introduce an ambiguous live section or
+    # leave an open fence that would prevent the next explicit decision.
+    checkpoint_decision_text(content, status)
+    return path, content
+
+
+def write_checkpoint_decision(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
 
 
-def sync_checkpoint_approvals_from_events(workspace: Path) -> None:
-    approvals = [event for event in iter_jsonl(workspace / "logs" / "events.jsonl") if event.get("type") == "checkpoint.approved"]
-    for event in approvals:
-        checkpoint = event.get("checkpoint")
-        if not checkpoint:
-            continue
-        checkpoint_path = workspace / "checkpoints" / f"{checkpoint}.md"
-        if checkpoint_status(checkpoint_path) == "approved":
-            continue
-        ts = event.get("ts", "unknown time")
-        mark_checkpoint_approved(checkpoint_path, f"Migrated approval from events log ({ts}).")
+def checkpoint_log_records(workspace: Path, filename: str) -> list[dict[str, Any]]:
+    records = iter_jsonl(managed_path(workspace, f"logs/{filename}.jsonl"))
+    # Validate the entire batch before discovery can consume any entry.
+    for record in records:
+        if "checkpoint" in record:
+            checkpoint_text(workspace, record["checkpoint"])
+    return records
 
 
-def ensure_workspace_structure(workspace: Path, *, force_static: bool = False, example: dict[str, Any] | None = None) -> None:
-    write_if_missing(workspace / "work" / "README.md", read_example_text(example, "work/README.md", work_readme()), force=force_static)
-    write_if_missing(workspace / "output" / "README.md", read_example_text(example, "output/README.md", output_readme()), force=force_static)
-    write_if_missing(
-        workspace / "checkpoints" / "plan-approval.md",
-        checkpoint_file(
+def workspace_structure_files(example: dict[str, Any] | None = None) -> dict[str, str]:
+    return {
+        "work/README.md": read_example_text(example, "work/README.md", work_readme()),
+        "output/README.md": read_example_text(example, "output/README.md", output_readme()),
+        "checkpoints/plan-approval.md": checkpoint_file(
             "plan-approval",
             "Plan Approval",
             "Approve the coven plan, acceptance criteria, and proposed implementation sequence before implementation begins.",
         ),
-        force=force_static,
-    )
-    write_if_missing(
-        workspace / "checkpoints" / "pre-delivery-review.md",
-        checkpoint_file(
+        "checkpoints/pre-delivery-review.md": checkpoint_file(
             "pre-delivery-review",
             "Pre-delivery Review",
             "Approve final validation and review notes before the coven declares the work complete.",
         ),
-        force=force_static,
-    )
-
-
-def migrate_starter_task_ids(workspace: Path) -> None:
-    path = workspace / "state" / "tasks.json"
-    tasks = read_json(path, [])
-    if not isinstance(tasks, list):
-        return
-    title_to_id = {
-        "Define the plan checkpoint and acceptance criteria": "plan-checkpoint",
-        "Define the interactive demo plan and acceptance criteria": "plan-checkpoint",
-        "Choose the terminal app architecture and implementation approach": "architecture",
-        "Choose the workspace-aware demo agent architecture": "architecture",
-        "Implement the core terminal chatbot run path": "core-chatbot",
-        "Implement the interactive demo agent run path": "core-chatbot",
-        "Polish terminal copy, layout, and introduction flow": "ui-polish",
-        "Polish the interactive terminal conversation experience": "ui-polish",
-        "Run QA verification and record results": "qa-verification",
-        "Run interactive QA verification and record results": "qa-verification",
-        "Perform final technical review before user delivery checkpoint": "technical-review",
     }
-    changed = False
-    for task in tasks:
-        if isinstance(task, dict) and str(task.get("id", "")).startswith("T") and task.get("title") in title_to_id:
-            task["id"] = title_to_id[str(task["title"])]
-            changed = True
-    if changed:
-        write_json(path, tasks)
-        append_event(workspace, "tasks.ids.migrated", scheme="slug")
+
+
+def preflight_init(workspace: Path) -> None:
+    if workspace.exists() and not workspace.is_dir():
+        fail(f"Workspace path is not a directory: {workspace}")
+    conflicts = [name for name in INIT_RESERVED_NAMES
+                 if (workspace / name).exists() or (workspace / name).is_symlink()]
+    if conflicts:
+        fail(
+            f"Refusing to initialize over existing workspace files in {workspace}: "
+            f"{', '.join(conflicts)}. Use `coven refresh` for an existing workspace "
+            "or choose a new directory. --force does not authorize a reset."
+        )
 
 
 def command_init(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    preflight_init(workspace)
     try:
         agents = parse_agents(args.agents)
     except ValueError as exc:
@@ -683,10 +860,11 @@ def command_init(args: argparse.Namespace) -> int:
     if multiplexer not in SUPPORTED_MULTIPLEXERS:
         fail(f"Unsupported multiplexer `{multiplexer}`. Choose one of: {', '.join(sorted(SUPPORTED_MULTIPLEXERS))}")
 
-    workspace = workspace_path(args.workspace)
     name = args.name or workspace.name or "coven"
-    example = None if args.blank else load_example(args.example)
-    workspace.mkdir(parents=True, exist_ok=True)
+    try:
+        example = None if args.blank else load_example(args.example)
+    except (ValueError, OSError) as exc:
+        fail(f"Invalid example: {exc}")
 
     team = {
         "version": 1,
@@ -698,28 +876,44 @@ def command_init(args: argparse.Namespace) -> int:
         "agents": agents,
         "example": None if args.blank else example["id"],
     }
-    write_json(workspace / "coven.json", team)
-    write_json(
-        workspace / "state" / "agents.json",
-        [{"id": agent, "role": agent_role(agent), "status": "idle"} for agent in agents],
-    )
-    tasks = [] if args.blank else starter_tasks(agents, example)
-    write_json(workspace / "state" / "tasks.json", tasks)
+    runtime_multiplexer(team)  # Validate environment overrides before writing too.
+    # Read and validate all seed inputs and render templates before creating files.
+    try:
+        if not args.opencode_command.strip():
+            raise ValueError("opencode command must not be empty")
+        tasks = [] if args.blank else starter_tasks(agents, example)
+        files = {
+            "coven.json": json.dumps(team, indent=2) + "\n",
+            "state/agents.json": json.dumps(
+                [{"id": agent, "role": agent_role(agent), "status": "idle"} for agent in agents], indent=2
+            ) + "\n",
+            "state/tasks.json": json.dumps(tasks, indent=2) + "\n",
+            "goal.md": example_goal_text(example),
+            "coven.toml": team_toml(name, agents, args.opencode_command, multiplexer),
+            "logs/events.jsonl": "",
+            "logs/messages.jsonl": "",
+            "tmux/coven.toml": tmux_manifest(name, workspace, agents, args.opencode_command),
+            **workspace_structure_files(example),
+        }
+        if not args.blank:
+            files["spec.md"] = read_example_text(example, "spec.md", "# Spec\n\nDescribe the desired behavior here.\n")
+        example_context = read_example_text(example, "prompt-context.md")
+        for agent in agents:
+            files[f"agents/{agent}.md"] = agent_state_text(agent)
+            files[f"prompts/{agent}.md"] = prompt_text(agent, workspace, example_context)
+            files[f"prompts/{agent}.start.txt"] = starter_prompt_text(agent, workspace)
+    except (ValueError, OSError) as exc:
+        fail(f"Invalid initialization inputs: {exc}")
 
-    write_if_missing(workspace / "goal.md", "# Goal\n\nDescribe the unified coven goal here.\n" if args.blank else example_goal_text(example), force=args.force)
-    if not args.blank:
-        write_if_missing(workspace / "spec.md", read_example_text(example, "spec.md", "# Spec\n\nDescribe the desired behavior here.\n"), force=args.force)
-    write_if_missing(workspace / "coven.toml", team_toml(name, agents, args.opencode_command, multiplexer), force=args.force)
-    write_if_missing(workspace / "logs" / "events.jsonl", "", force=args.force)
-    write_if_missing(workspace / "logs" / "messages.jsonl", "", force=args.force)
-    write_if_missing(workspace / "tmux" / "coven.toml", tmux_manifest(name, workspace, agents, args.opencode_command), force=args.force)
-    ensure_workspace_structure(workspace, force_static=args.force, example=example)
-
-    example_context = read_example_text(example, "prompt-context.md")
-    for agent in agents:
-        write_if_missing(workspace / "agents" / f"{agent}.md", agent_state_text(agent), force=args.force)
-        write_if_missing(workspace / "prompts" / f"{agent}.md", prompt_text(agent, workspace, example_context), force=args.force)
-        write_if_missing(workspace / "prompts" / f"{agent}.start.txt", starter_prompt_text(agent, workspace), force=args.force)
+    try:
+        workspace.mkdir(parents=True, exist_ok=True)
+        for relative, content in files.items():
+            path = workspace / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("x", encoding="utf-8") as handle:
+                handle.write(content)
+    except OSError as exc:
+        fail(f"Initialization stopped; partial files have been preserved for inspection: {exc}")
 
     append_event(workspace, "workspace.created", name=name, agents=agents, example="blank" if args.blank else example["id"])
     if not args.blank:
@@ -757,17 +951,18 @@ def next_task_id(tasks: list[dict[str, Any]]) -> str:
 
 def command_task_add(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
-    load_team(workspace)
+    team = load_team(workspace)
     if not rest:
         fail("task add requires a title")
     title = " ".join(rest)
+    owner = resolve_agent(team, args.owner) if args.owner else None
     tasks = read_json(workspace / "state" / "tasks.json", [])
     existing = {str(task.get("id")) for task in tasks if isinstance(task, dict) and task.get("id")}
     task = {
         "id": unique_slug(title, existing),
         "title": title,
-        "status": "pending" if not args.owner else "assigned",
-        "owner": args.owner,
+        "status": "pending" if not owner else "assigned",
+        "owner": owner,
         "notes": args.notes or "",
         "created_at": now(),
         "updated_at": now(),
@@ -786,7 +981,8 @@ def command_task_assign(args: argparse.Namespace) -> int:
     if len(rest) < 2:
         fail("task assign requires task_id and agent")
     task_id, agent = rest[0], rest[1]
-    load_team(workspace)
+    team = load_team(workspace)
+    agent = resolve_agent(team, agent)
     tasks = read_json(workspace / "state" / "tasks.json", [])
     for task in tasks:
         if task.get("id") == task_id:
@@ -977,6 +1173,7 @@ def running_agent_pane(team: dict[str, Any], agent: str) -> str | None:
 
 
 def send_to_agent_pane(team: dict[str, Any], agent: str, text: str) -> bool:
+    require_agent(team, agent)
     target = running_agent_pane(team, agent)
     if not target:
         return False
@@ -990,15 +1187,43 @@ def send_to_agent_pane(team: dict[str, Any], agent: str, text: str) -> bool:
 
 def team_agents(team: dict[str, Any]) -> list[str]:
     agents = team.get("agents", [])
-    if not isinstance(agents, list) or not all(isinstance(agent, str) for agent in agents):
-        fail("coven.json agents must be a list of strings")
+    if not isinstance(agents, list) or not agents:
+        fail("coven.json agents must be a nonempty list of IDs")
+    for agent in agents:
+        record_id(agent, "agent")
+    if len(set(agents)) != len(agents):
+        fail("coven.json agents must not contain duplicate IDs")
     return agents
 
 
 def require_agent(team: dict[str, Any], agent: str) -> None:
+    record_id(agent, "agent")
     agents = team_agents(team)
     if agent not in agents:
         fail(f"Unknown agent `{agent}`. Known agents: {', '.join(agents)}")
+
+
+def resolve_agent(team: dict[str, Any], value: str) -> str:
+    """Resolve a human-facing owner name without rewriting persisted identities."""
+    agents = team_agents(team)
+    try:
+        canonical = slugify(value)
+    except ValueError as exc:
+        # Older versions accepted underscore-only IDs. Keep exact legacy lookup
+        # possible, without allowing those names in newly initialized rosters.
+        if value in agents:
+            return value
+        fail(str(exc))
+    matches = []
+    for agent in agents:
+        try:
+            if slugify(agent) == canonical:
+                matches.append(agent)
+        except ValueError:
+            continue
+    if len(matches) != 1:
+        fail(f"Unknown or ambiguous agent `{value}`. Known agents: {', '.join(agents)}")
+    return matches[0]
 
 
 def agent_window_target(team: dict[str, Any], agent: str) -> str:
@@ -1006,11 +1231,13 @@ def agent_window_target(team: dict[str, Any], agent: str) -> str:
 
 
 def agent_runtime_status(team: dict[str, Any], agent: str) -> tuple[str, str | None]:
+    record_id(agent, "agent")
     pane = running_agent_pane(team, agent)
     return ("running", pane) if pane else ("stopped", None)
 
 
 def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> bool:
+    preflight_workspace_paths(workspace, team)
     require_agent(team, agent)
     status, pane = agent_runtime_status(team, agent)
     if status == "running":
@@ -1059,6 +1286,7 @@ def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> boo
 
 
 def stop_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> bool:
+    preflight_workspace_paths(workspace, team)
     require_agent(team, agent)
     status, _pane = agent_runtime_status(team, agent)
     if status != "running":
@@ -1147,7 +1375,7 @@ def render_standup(workspace: Path) -> str:
 
     checkpoint_lines = []
     for checkpoint_id in ("plan-approval", "pre-delivery-review"):
-        status = checkpoint_status(workspace / "checkpoints" / f"{checkpoint_id}.md")
+        status = checkpoint_status(workspace, checkpoint_id)
         checkpoint_lines.append(f"- `{checkpoint_id}` — {status} (`checkpoints/{checkpoint_id}.md`)")
 
     lead_lines = ["- None set."]
@@ -1167,7 +1395,7 @@ def render_standup(workspace: Path) -> str:
     suggestions: list[str] = []
     if blocked:
         suggestions.append("- Clear the blocked task(s) or message the owner for a handoff.")
-    if checkpoint_status(workspace / "checkpoints" / "pre-delivery-review.md") != "approved" and done and not blocked:
+    if checkpoint_status(workspace, "pre-delivery-review") != "approved" and done and not blocked:
         suggestions.append("- Prepare or review the pre-delivery checkpoint when QA/review evidence is ready.")
     if not suggestions:
         suggestions.append("- Continue from the dashboard and current task assignments.")
@@ -1194,13 +1422,29 @@ def command_standup(args: argparse.Namespace) -> int:
     return 0
 
 
+def checkpoint_requests(workspace: Path) -> list[dict[str, Any]]:
+    records = checkpoint_log_records(workspace, "messages") + checkpoint_log_records(workspace, "events")
+    requests = [record for record in records if record.get("checkpoint") and "request" in str(record.get("type", ""))]
+
+    def timestamp(record: dict[str, Any]) -> datetime:
+        # Best-effort ordering across two legacy logs, not a sequenced ledger.
+        try:
+            value = datetime.fromisoformat(str(record.get("ts", "")))
+            return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        except (ValueError, OverflowError):
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    return sorted(requests, key=timestamp)
+
+
 def checkpoint_review_candidates(workspace: Path) -> list[str]:
+    preflight_workspace_paths(workspace)
     requested: list[str] = []
     seen: set[str] = set()
-    for item in iter_jsonl(workspace / "logs" / "messages.jsonl") + iter_jsonl(workspace / "logs" / "events.jsonl"):
+    for item in checkpoint_requests(workspace):
         checkpoint = item.get("checkpoint")
         if checkpoint and "request" in str(item.get("type", "")):
-            checkpoint_id = str(checkpoint)
+            checkpoint_id = record_id(checkpoint, "checkpoint")
             if checkpoint_id not in seen:
                 seen.add(checkpoint_id)
                 requested.append(checkpoint_id)
@@ -1208,17 +1452,17 @@ def checkpoint_review_candidates(workspace: Path) -> list[str]:
     pending_requested = [
         checkpoint
         for checkpoint in requested
-        if checkpoint_status(workspace / "checkpoints" / f"{checkpoint}.md") != "approved"
+        if checkpoint_status(workspace, checkpoint) != "approved"
     ]
     if pending_requested:
         return pending_requested
 
-    checkpoint_dir = workspace / "checkpoints"
+    checkpoint_dir = managed_path(workspace, "checkpoints", directory=True)
     if not checkpoint_dir.exists():
         return []
     pending_files = []
     for path in sorted(checkpoint_dir.glob("*.md")):
-        if checkpoint_status(path) != "approved":
+        if checkpoint_status(workspace, path.stem) != "approved":
             pending_files.append(path.stem)
     return pending_files
 
@@ -1239,7 +1483,10 @@ def prompt_multiline(prompt: str) -> str:
 
 
 def notify_agents(workspace: Path, team: dict[str, Any], agent_selector: str, message: str, *, event_type: str, checkpoint: str | None = None) -> tuple[int, list[str]]:
+    preflight_workspace_paths(workspace, team)
     agents = team_agents(team) if agent_selector == "all" else [agent_selector]
+    for agent in agents:
+        require_agent(team, agent)
     sent = 0
     missing: list[str] = []
     for agent in agents:
@@ -1255,9 +1502,14 @@ def notify_agents(workspace: Path, team: dict[str, Any], agent_selector: str, me
 
 
 def approve_checkpoint(workspace: Path, team: dict[str, Any], checkpoint: str, message: str, agent_selector: str = "all") -> tuple[int, list[str]]:
+    preflight_workspace_paths(workspace, team)
+    checkpoint_text(workspace, checkpoint)
+    if agent_selector != "all":
+        require_agent(team, agent_selector)
+    path, content = prepare_checkpoint_decision(workspace, checkpoint, "approved", "Approval", message)
     append_event(workspace, "checkpoint.approved", checkpoint=checkpoint, by="user")
     append_message(workspace, "user", "coven", message)
-    mark_checkpoint_approved(workspace / "checkpoints" / f"{checkpoint}.md", message)
+    write_checkpoint_decision(path, content)
     sent, missing = notify_agents(
         workspace,
         team,
@@ -1271,14 +1523,14 @@ def approve_checkpoint(workspace: Path, team: dict[str, Any], checkpoint: str, m
 
 
 def suggest_checkpoint_changes(workspace: Path, team: dict[str, Any], checkpoint: str, notes: str, agent_selector: str = "all") -> tuple[int, list[str]]:
+    preflight_workspace_paths(workspace, team)
+    checkpoint_text(workspace, checkpoint)
+    if agent_selector != "all":
+        require_agent(team, agent_selector)
     if not notes.strip():
         fail("Change request cannot be empty")
-    path = workspace / "checkpoints" / f"{checkpoint}.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.write_text(checkpoint_file(checkpoint, checkpoint.replace("-", " ").title(), "User approval checkpoint."), encoding="utf-8")
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(f"\n## Changes requested — {now()}\n\n{notes}\n")
+    path, content = prepare_checkpoint_decision(workspace, checkpoint, "changes_requested", "Changes requested", notes)
+    write_checkpoint_decision(path, content)
     message = f"Changes requested for checkpoint `{checkpoint}`:\n\n{notes}"
     append_event(workspace, "checkpoint.changes.requested", checkpoint=checkpoint, by="user")
     append_message(workspace, "user", "coven", message)
@@ -1365,22 +1617,15 @@ def command_lead(args: argparse.Namespace) -> int:
 def command_next(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     load_team(workspace)
-    messages = iter_jsonl(workspace / "logs" / "messages.jsonl")
-    events = iter_jsonl(workspace / "logs" / "events.jsonl")
-    approved = {str(event.get("checkpoint")) for event in events if event.get("type") == "checkpoint.approved" and event.get("checkpoint")}
     approvals = [
-        msg
-        for msg in messages
-        if msg.get("checkpoint")
-        and "request" in str(msg.get("type", ""))
-        and str(msg.get("checkpoint")) not in approved
-        and checkpoint_status(workspace / "checkpoints" / f"{msg.get('checkpoint')}.md") != "approved"
+        request for request in checkpoint_requests(workspace)
+        if checkpoint_status(workspace, request["checkpoint"]) != "approved"
     ]
     if approvals:
         checkpoint = approvals[-1].get("checkpoint")
         print(f"Next action: approve checkpoint `{checkpoint}`")
         print("Reason: one or more agents are blocked waiting for user approval.")
-        print(f"Review file: {workspace / 'checkpoints' / f'{checkpoint}.md'}")
+        print(f"Review file: {checkpoint_path(workspace, checkpoint)}")
         suggested = f"coven approve {checkpoint}" if workspace == workspace_path(".") else f"coven approve {workspace} {checkpoint}"
         print(f"Suggested: {suggested}")
         return 0
@@ -1398,6 +1643,8 @@ def command_send(args: argparse.Namespace) -> int:
     message = " ".join(rest[1:])
     team = load_team(workspace)
     agents = team_agents(team) if agent_arg == "all" else [agent_arg]
+    for agent in agents:
+        require_agent(team, agent)
     missing: list[str] = []
     for agent in agents:
         if send_to_agent_pane(team, agent, message):
@@ -1443,6 +1690,8 @@ def command_agent_start(args: argparse.Namespace) -> int:
     team = load_team(workspace)
     started = 0
     for agent in rest:
+        require_agent(team, agent)
+    for agent in rest:
         if start_agent_window(workspace, team, agent):
             started += 1
     refresh_dashboard(workspace)
@@ -1457,6 +1706,8 @@ def command_agent_stop(args: argparse.Namespace) -> int:
     team = load_team(workspace)
     stopped = 0
     for agent in rest:
+        require_agent(team, agent)
+    for agent in rest:
         if stop_agent_window(workspace, team, agent):
             stopped += 1
     refresh_dashboard(workspace)
@@ -1470,6 +1721,8 @@ def command_agent_restart(args: argparse.Namespace) -> int:
         fail("agent restart requires an agent")
     team = load_team(workspace)
     restarted = 0
+    for agent in rest:
+        require_agent(team, agent)
     for agent in rest:
         stop_agent_window(workspace, team, agent)
         if start_agent_window(workspace, team, agent):
@@ -1512,18 +1765,18 @@ def command_review(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     team = load_team(workspace)
     checkpoints = rest or checkpoint_review_candidates(workspace)
+    paths = [(checkpoint, checkpoint_path(workspace, checkpoint), checkpoint_text(workspace, checkpoint)) for checkpoint in checkpoints]
     if not checkpoints:
         print("No pending checkpoint files found.")
         return 0
 
-    for checkpoint in checkpoints:
-        path = workspace / "checkpoints" / f"{checkpoint}.md"
+    for checkpoint, path, content in paths:
         print("\n" + "=" * 80)
         print(f"Review checkpoint: {checkpoint}")
         print(f"File: {path}")
         print("=" * 80)
-        if path.exists():
-            print(path.read_text(encoding="utf-8"))
+        if content is not None:
+            print(content)
         else:
             print("Checkpoint file does not exist yet; it will be created if you approve or suggest changes.")
 
@@ -1654,25 +1907,34 @@ def command_console(args: argparse.Namespace) -> int:
 def command_refresh(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     team = load_team(workspace)
-    agents = team.get("agents", [])
-    if not isinstance(agents, list) or not all(isinstance(agent, str) for agent in agents):
-        fail("coven.json agents must be a list of strings")
+    agents = team_agents(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
     multiplexer = runtime_multiplexer(team)
     example = load_example(str(team.get("example"))) if team.get("example") else None
 
-    (workspace / "tmux" / "coven.toml").write_text(
-        tmux_manifest(team["name"], workspace, agents, opencode_command), encoding="utf-8"
-    )
-    ensure_workspace_structure(workspace, force_static=False, example=example)
-    migrate_starter_task_ids(workspace)
-    sync_checkpoint_approvals_from_events(workspace)
-    example_context = read_example_text(example, "prompt-context.md")
-    for agent in agents:
-        write_if_missing(workspace / "prompts" / f"{agent}.md", prompt_text(agent, workspace, example_context), force=False)
-        (workspace / "prompts" / f"{agent}.start.txt").write_text(starter_prompt_text(agent, workspace), encoding="utf-8")
-    append_event(workspace, "workspace.refreshed", agents=agents)
-    refresh_dashboard(workspace)
+    # Log metadata remains validated, but history never repairs current decisions.
+    # Stage generated outputs before writing; state, guidance, and logs are read-only.
+    checkpoint_requests(workspace)
+    try:
+        manifest = tmux_manifest(team["name"], workspace, agents, opencode_command)
+        example_context = read_example_text(example, "prompt-context.md")
+        prompt_files = {
+            f"prompts/{agent}.start.txt": starter_prompt_text(agent, workspace) for agent in agents
+        }
+        missing_prompts = {
+            f"prompts/{agent}.md": prompt_text(agent, workspace, example_context)
+            for agent in agents if not managed_path(workspace, f"prompts/{agent}.md").exists()
+        }
+        dashboard = render_dashboard(workspace)
+    except (ValueError, OSError) as exc:
+        fail(f"Cannot prepare refresh: {exc}")
+    manifest_path = managed_path(workspace, "tmux/coven.toml")
+    write_if_missing(manifest_path, manifest, force=True)
+    for relative, content in missing_prompts.items():
+        write_if_missing(managed_path(workspace, relative), content, force=False)
+    for relative, content in prompt_files.items():
+        write_if_missing(managed_path(workspace, relative), content, force=True)
+    managed_path(workspace, "dashboard.md").write_text(dashboard, encoding="utf-8")
     info(f"Regenerated tmux/coven.toml and starter prompt files (runtime={multiplexer})")
     return 0
 
@@ -1684,24 +1946,26 @@ def team_session_name(team: dict[str, Any]) -> str:
 def command_bootstrap(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     team = load_team(workspace)
-    agents = team.get("agents", [])
-    if not isinstance(agents, list) or not all(isinstance(agent, str) for agent in agents):
-        fail("coven.json agents must be a list of strings")
+    agents = team_agents(team)
 
     session = team_session_name(team)
     multiplexer = runtime_multiplexer(team)
     sent = 0
     missing: list[str] = []
+    prompts = []
     for agent in agents:
-        prompt_file = workspace / "prompts" / f"{agent}.start.txt"
-        if not prompt_file.exists():
-            prompt_file.write_text(starter_prompt_text(agent, workspace), encoding="utf-8")
+        prompt_file = managed_path(workspace, f"prompts/{agent}.start.txt")
+        text = managed_text(workspace, f"prompts/{agent}.start.txt")
+        if text is None:
+            text = starter_prompt_text(agent, workspace)
+        prompts.append((agent, prompt_file, text))
+    for agent, prompt_file, text in prompts:
+        write_if_missing(prompt_file, text, force=False)
         if multiplexer == "herdr":
             target = running_agent_pane(team, agent)
             if not target:
                 missing.append(agent)
                 continue
-            text = prompt_file.read_text(encoding="utf-8")
             subprocess.run(["herdr", "pane", "send-text", target, text], check=False)
             subprocess.run(["herdr", "pane", "send-keys", target, "enter"], check=False)
             append_event(workspace, "agent.bootstrap.sent", agent=agent, target=target, multiplexer="herdr")
@@ -1794,6 +2058,7 @@ def print_herdr_plan(workspace: Path, team: dict[str, Any]) -> int:
 
 
 def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
+    preflight_workspace_paths(workspace, team)
     agents = team_agents(team)
     session = team_session_name(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
@@ -1826,6 +2091,7 @@ def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
 
 
 def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any]) -> str:
+    preflight_workspace_paths(workspace, team)
     agents = team_agents(team)
     label = herdr_workspace_label(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
@@ -1878,6 +2144,7 @@ def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any]) -> str:
 
 
 def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
+    preflight_workspace_paths(workspace, team)
     session = team_session_name(team)
     if action == "plan":
         return print_tmux_plan(workspace, team)
@@ -1900,6 +2167,7 @@ def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
 
 
 def run_coven_herdr(workspace: Path, team: dict[str, Any], action: str) -> int:
+    preflight_workspace_paths(workspace, team)
     label = herdr_workspace_label(team)
     if action == "plan":
         return print_herdr_plan(workspace, team)
@@ -1957,7 +2225,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     init.add_argument("--multiplexer", choices=sorted(SUPPORTED_MULTIPLEXERS), default=DEFAULT_MULTIPLEXER, help=f"Runtime multiplexer to use (default: {DEFAULT_MULTIPLEXER})")
     init.add_argument("--example", default=DEFAULT_EXAMPLE_ID, help=f"Example seed to use from examples/ (default: {DEFAULT_EXAMPLE_ID})")
     init.add_argument("--blank", action="store_true", help="Create structure without an example seed")
-    init.add_argument("--force", action="store_true")
+    init.add_argument("--force", action="store_true", help="Deprecated compatibility flag; never overwrites existing workspace files")
     init.set_defaults(func=command_init)
 
     goal = subparsers.add_parser("goal", help="Set or show the unified goal")

@@ -62,10 +62,21 @@ coven/
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
+├── ROADMAP.md             # orchestration roadmap and Coven/Djinn boundary
 └── README.md
 ```
 
 There is no `tools/coven/` tree in this project.
+
+## Roadmap
+
+See [`ROADMAP.md`](./ROADMAP.md) for the lead-agent orchestration roadmap,
+including the intended Coven/Djinn split: Coven owns decomposition, scheduling,
+worker lifecycle projection, and synthesis; Djinn owns Djinn-native worker
+execution, policy, tools, and transcripts.
+
+See [`CODING_ORCHESTRATION_ROADMAP.md`](./CODING_ORCHESTRATION_ROADMAP.md) for
+the prioritized safety repairs and the staged worker/composer coding workflow.
 
 ## Generated workspace layout
 
@@ -110,8 +121,54 @@ Create an empty workspace instead:
 coven init ~/Projects/new-coven --blank --agents orchestrator,architect,implementer,reviewer
 ```
 
+### Initialization safety
+
+`init` creates a workspace; it does not reset or adopt an existing one. It refuses
+any existing `coven.json`, `coven.toml`, `goal.md`, `spec.md`, `dashboard.md`, or
+reserved directory (`agents`, `prompts`, `state`, `logs`, `checkpoints`, `work`,
+`output`, `tmux`). Even empty reserved directories and dangling symlinks are
+rejected. Unrelated project files are allowed and left untouched.
+
+The deprecated `--force` flag remains accepted for compatibility but **does not
+permit overwriting**. Use `coven refresh` to regenerate an existing workspace's
+generated files, or choose a fresh directory. No destructive reset command is
+provided. Seed validation happens before creation; an I/O failure during creation
+leaves partial files for inspection rather than deleting them or retrying a reset.
+Initialization is not a multi-file transaction or a filesystem sandbox.
+
+New agent IDs are normalized to lowercase slugs; duplicate normalized IDs are
+rejected. Example task owners and `task add --owner` / `task assign` names resolve
+to the roster's IDs (for example, `Jamal` resolves to `jamal`). Explicit task-owner
+commands reject unknown agents. Example owners omitted from a custom roster leave
+their tasks unassigned.
+
 Starter examples live under `examples/`. See `examples/README.md` for the
 example directory format.
+
+### Managed path safety
+
+Checkpoint IDs and persisted roster IDs must be nonempty single components using
+ASCII letters, digits, underscores, or hyphens. Coven rejects traversal, absolute
+paths, whitespace, and nonstring IDs instead of silently renaming them. Safe
+legacy roster IDs, including uppercase names and `_`, retain their identity.
+
+Runner-managed control files and directories must not be symlinks, even if the
+link points inside the workspace or its target does not exist. This covers
+metadata, state, logs, checkpoints, roster notes, prompts, runtime manifests, and
+the `work/README.md` / `output/README.md` guidance files. A user-selected workspace
+root alias is resolved normally; unrelated artifact links under `work/` and
+`output/` are not recursively inspected or removed.
+
+Checkpoint actions, refresh/bootstrap, and runtime batch operations preflight
+their managed targets before writes or runtime actions. Invalid checkpoint IDs
+in consumed log records, unsafe lead IDs, and unreadable checkpoint text cause a
+clean error rather than partial approval or notification. Bootstrap reads all
+starter prompts before creating missing prompts or sending any of them. Fix the
+reported input explicitly; Coven does not sanitize unsafe history automatically.
+
+These are static path/ID/readability checks, not full record-schema validation,
+multi-file transactions, hard-link protection, or a sandbox against concurrent
+filesystem replacement or tools run by an agent.
 
 ## Common commands
 
@@ -124,6 +181,20 @@ coven messages     # print message log, or use --raw for JSONL
 coven refresh      # regenerate generated prompts and runtime manifests
 coven bootstrap    # paste starter prompts into running agent panes
 ```
+
+### Refresh preservation
+
+`coven refresh` only regenerates `dashboard.md`, `tmux/coven.toml`, and
+`prompts/<agent>.start.txt`, and creates missing `prompts/<agent>.md` files.
+Existing role prompts are preserved; starter prompts and the manifest are
+generated outputs and should not hold irreplaceable notes.
+
+Refresh leaves task/agent/lead state, metadata/config, checkpoint decisions,
+roster notes, both logs, and work/output artifacts unchanged. It does not append
+a refresh event, rename legacy task IDs, restore missing guidance/checkpoint
+files, or recover approval from historical events. Initialization, refresh, and
+future explicit migration/recovery are separate operations; no migration command
+is supplied yet. Refresh remains subject to the managed-path validation above.
 
 ## User interaction
 
@@ -139,6 +210,28 @@ coven send all "Pause and summarize current status."
 `coven review` walks pending checkpoint files and lets you approve, request
 changes, skip, or quit. `coven console` is a small interactive shell for status,
 standup, agents, send, approve, suggest, and review operations.
+
+### Current checkpoint decisions
+
+The current `Status:` metadata before the first real H2 heading in a checkpoint
+file is authoritative for its displayed decision. `suggest` sets it to
+`changes_requested`, unchecks the current approval, and checks “Rejected / needs
+changes.” Explicit approval reverses those checkboxes. Prior rationale and
+feedback stay in the file; historical approval events do not grant current
+approval or revive it during refresh. `next` discovers requests in both logs and
+checks current file status, not whether approval happened at some point.
+
+Decision edits are limited to metadata and the direct checklist under the live
+`## User decision` section. Fenced examples and nested historical sections are
+preserved. Ambiguous layouts (duplicate current fields/sections/checklist labels
+or unclosed code fences) are rejected before saving or notifying agents. This
+also applies to newly submitted notes: close code fences and quote/fence example
+decision sections rather than introducing another live H2 decision heading.
+Existing contradictory legacy prose is not silently repaired; make an explicit
+decision after inspecting it.
+
+These decisions are not revision-bound execution grants. Dispatch enforcement,
+concurrent writes, and crash-consistent decision/log updates remain future work.
 
 ## Runtime lifecycle
 
@@ -171,6 +264,13 @@ Or edit `coven.toml` later:
 multiplexer = "tmux" # or "herdr"
 ```
 
+Configuration authority today: `coven.json` holds the workspace name and roster.
+Only `[runtime].multiplexer` and `[runtime].opencode_command` in `coven.toml`
+override the corresponding JSON values; `COVEN_MULTIPLEXER` takes precedence over
+both for runtime selection. Generated TOML agent/role/prompt and checkpoint
+sections are descriptive, not live customization. This scaffold does not yet
+rebuild workspace state from the event log.
+
 Target a specific agent window:
 
 ```bash
@@ -194,6 +294,20 @@ coven lead clear
 
 The lead is recorded in `state/lead.json`, shown in the dashboard/standup,
 logged, and sent to the lead's runtime pane when it is running.
+
+## Development checks
+
+Python 3.11+ is required (the runner uses `tomllib`). Run the offline regression
+suite from the repository root:
+
+```bash
+python3 -m unittest discover -s tests -v
+bash -n bin/coven
+git diff --check
+```
+
+Tests use disposable workspaces, exercise the real CLI wrapper, and do not start
+Herdr, tmux, OpenCode, or model sessions.
 
 ## License
 

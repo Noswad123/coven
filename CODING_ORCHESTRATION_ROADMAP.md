@@ -1,0 +1,648 @@
+# Coven coding orchestration roadmap
+
+## Purpose and status
+
+Take the useful safeguards from MPC Forge and implement them natively in Coven,
+without adding Forge as a dependency or adopting its full release process.
+
+This is an implementation backlog, not a list of shipped capabilities. Local
+implementation progress is recorded below; unmarked items remain proposed.
+It complements [ROADMAP.md](ROADMAP.md), which already describes decomposition,
+Djinn adapters, lifecycle projection, summaries, and synthesis. Those existing
+plans are not counted as new discoveries here; this document adds implementation
+gaps, coding-specific contracts, priorities, and testable completion criteria.
+
+Assessment date: 2026-10-21. Source baselines:
+
+- Coven: `ef6a18b438b2e5316802c350a6f37aa3077c6f8e`.
+- Forge: `af0737247a7901a8170c318fc0ee6f4caf83a6b0`.
+- Coven's existing local README and roadmap were also consulted; they contained
+  uncommitted changes. They were preserved, not treated as implemented code.
+- Findings come from source inspection. Neither application nor its tests were
+  executed for this assessment. Recheck findings when implementing each item.
+
+## Product decision: compose every multi-agent result
+
+For a run with more than one contributing agent, Coven should automatically
+create a dedicated composer session. Count contributors across the run, not just
+simultaneously running processes; running two workers serially still needs
+composition. Do not count the composer itself as a contributor for this trigger.
+
+- For research, the composer reconciles findings and produces a cited synthesis.
+- For coding, the composer assembles changes in its own integration worktree,
+  checks compatibility, runs integrated validation, and prepares one reviewable
+  candidate.
+- A lead coordinates the plan; a composer owns the combined result. These are
+  distinct responsibilities. Combining them into one session should be an
+  explicit policy override, not an assumption based on the name "tech lead."
+- Reserve capacity for the composer. Avoid a fan-out limit that leaves no room to
+  compose. Do not add another agent for an ordinary single-contributor task.
+- Worker success is not run success. Composer success is not permission to push,
+  merge into the user's branch, or deploy.
+
+Target coding workflow:
+
+```text
+user goal -> approved plan and acceptance criteria
+                        |
+                  Coven scheduler
+                   /           \
+             worker A        worker B
+             worktree A      worktree B
+                   \           /
+                exact-commit handoffs
+                        |
+                 composer session
+                 integration worktree
+                        |
+              merged-result checks + review
+                        |
+             one candidate and delivery report
+                        |
+              explicit user/CI merge decision
+```
+
+## Current capabilities versus confirmed gaps
+
+The current runner creates inspectable workspace files, starts agent panes,
+assigns tasks, records messages/events, tracks a designated lead, and presents
+checkpoint approvals. Keep those capabilities; do not rebuild them gratuitously.
+
+The table below records the assessment baseline. Implementation progress notes
+supersede repaired gaps; it is not a claim that all baseline behavior is current.
+
+| Area | Implemented today | Missing or insufficient |
+| --- | --- | --- |
+| Execution | OpenCode command in Herdr/tmux panes; configurable launch string | Native worker identity, acknowledged submission, reliable lifecycle/result collection; Djinn adapter is still planned |
+| Tasks | Add, assign, list; `pending`/`assigned` written by handlers | Validated transitions, dependencies, attempts, atomic claims, completion gates |
+| Leadership | Lead record and coordination prompt | Dedicated composer stage and enforced combined-result ownership |
+| Isolation | Shared `work/` and `output/` directories | Repository/base registration and per-worker Git worktrees |
+| Scope | Prompt says to stay within assignment | Path/resource reservations, bounded delegation, actual-diff validation |
+| Checks | Example specs describe acceptance; QA is a seeded task | Executable checks, source-bound receipts, integrated validation |
+| Approvals | Markdown checkpoints and approval events | Revision-scoped enforcement, revocation, separate mutation/integration authorization |
+| Persistence | Direct JSON writes and JSONL appends | Locked mutation, stale-write rejection, recoverable durable state |
+| Recovery | Refresh, prompt regeneration, narrow migrations | General replay/reconciliation and interrupted integration recovery |
+| Delivery | Pre-delivery checkpoint | Exact candidate identity and a validated composer handoff |
+
+Pane existence is currently reported as runtime status. It is not evidence that
+an agent accepted work, finished successfully, or produced a correct result.
+
+## Prioritized feature list
+
+Priorities: **P0** fixes existing unsafe behavior; **P1** is required for the first
+reliable multi-agent coding workflow; **P2** improves operation after that works;
+**P3** is conditional on demonstrated need. Items remain open unless explicitly
+completed in the progress notes.
+
+### Implementation progress — 2026-10-21
+
+**M0 / COV-01: in progress; immediate COV-03 revocation repaired.** Local slices:
+
+- [x] Refuse reinitialization and partial workspace collisions before writes,
+  including existing/dangling symlinks; `--force` cannot authorize reset.
+- [x] Read/validate seed records and render templates before creation; create
+  initial files exclusively and retain partial files if an I/O failure occurs.
+- [x] Fix named default roles and canonical example owners. Resolve explicit
+  task-owner aliases against the roster and reject unknown/ambiguous owners,
+  without rewriting legacy persisted IDs.
+- [x] Document actual JSON/TOML configuration authority and the lack of replay.
+- [x] Centralize strict checkpoint/roster ID validation and managed-path checks
+  across CLI, console, checkpoint discovery, consumed log metadata, refresh,
+  bootstrap, and runtime operations. Reject managed symlinks (including inward
+  and dangling links) and invalid file/directory types before side effects.
+- [x] Preflight batch targets, persisted lead IDs, and checkpoint readability;
+  decode all bootstrap prompts before sending. Cover case-insensitive `.MD`
+  aliases and retain safe legacy IDs without migration. Root aliases and
+  unrelated artifact symlinks remain supported. This is not a race-proof sandbox.
+- [x] Make refresh generated-output-only: preserve task IDs/history, metadata,
+  decisions, notes, work artifacts, and logs byte-for-byte. Do not restore missing
+  checkpoint/guidance files or append refresh events. Remove implicit task-ID
+  migration and unsafe approval-replay helpers rather than exposing a reset path.
+- [x] Repair immediate COV-03 revocation: `suggest` records `changes_requested`,
+  clears current approval, and retains feedback. Explicit reapproval clears
+  rejection. Dashboard/standup/review/next use current file decisions; old events
+  cannot reapprove checkpoints during refresh. Preserve fenced/nested history and
+  reject ambiguous decision layouts or incompatible notes before effects.
+- [x] Establish an offline standard-library test suite, including the wrapper,
+  re-init preservation, reserved-name/symlink collisions, invalid seed inputs,
+  exclusive-create failure, canonical owners, legacy compatibility, and path
+  safety through commands/helpers and both mocked runtime adapters. Include
+  refresh-preservation snapshots and approve -> suggest -> refresh/reapprove
+  exercises through CLI, console, and interactive review.
+  Validation: `python3 -m unittest discover -s tests -v` — 54 tests pass;
+  `bash -n bin/coven` and `git diff --check` pass.
+- [ ] Finish COV-01: broader versioned persisted-record schemas and display labels.
+  Migration and destructive reset remain unavailable; future operations need
+  validated backups/import semantics or a loss preview and separate consent.
+
+Next M0 order: finish remaining COV-01 integrity work, then the COV-02 mutation
+foundation. Full COV-03 revision-bound authorization remains open. Current
+checkpoint Markdown is the interim current-decision authority; logs are history,
+not a replayable authorization ledger. No claims of concurrent mutation safety,
+crash consistency, general replay, or completed M0 are made yet.
+
+| ID | Priority | Feature | Depends on |
+| --- | --- | --- | --- |
+| COV-01 | P0 | Safe initialization, identities, and confined paths | None |
+| COV-02 | P0 | Locked state mutations, revisions, and recovery foundation | COV-01 |
+| COV-03 | P0/P1 | Revocable, revision-bound approvals | COV-02 |
+| COV-04 | P1 | Task graph, attempts, and explicit lifecycle | COV-02 |
+| COV-05 | P1 | Native worker adapter and honest lifecycle facts | COV-04 |
+| COV-06 | P1 | Dedicated composer stage and result ownership | COV-03, COV-04, COV-05 |
+| COV-07 | P1 | Git repository registration and isolated worktrees | COV-01, COV-02, COV-04 |
+| COV-08 | P1 | Scope reservations and bounded delegation | COV-02, COV-04, COV-07 |
+| COV-09 | P1 | Structured, exact-source worker handoffs | COV-05, COV-07, COV-08 |
+| COV-10 | P1 | Executable, source-bound verification | COV-03, COV-07, COV-09 |
+| COV-11 | P1 | Serialized, journaled composer integration | COV-06, COV-09, COV-10 |
+| COV-12 | P1 | Candidate handoff and truthful run completion | COV-03, COV-10, COV-11 |
+| COV-13 | P2 | Operator recovery, blockers, and evidence navigation | COV-02 through COV-12 |
+| COV-14 | P3 | Immutable build reuse | Demonstrated repeated-build cost |
+| COV-15 | P3 | Cross-clone coordination and accepted ownership transfer | Demonstrated multi-host need |
+
+### COV-01 — Stop damaging existing workspaces
+
+**Assessed gap (baseline):** `command_init()` overwrites metadata, task state, and agent state
+even without `--force`. Default agent IDs are lowercased, but named roles and
+example owners use capitalized names. Checkpoint IDs become filesystem paths
+without a confinement check.
+
+**Build:**
+
+- Refuse initialization over an existing workspace. Separate initialization,
+  migration, refresh, and explicitly authorized reset.
+- Preserve logs, approvals, notes, dirty files, and task history during refresh.
+- Separate stable canonical agent IDs from display names; normalize and validate
+  example owners, assignments, and role lookup consistently.
+- Validate record schemas and constrain IDs/paths to their intended directories,
+  including resolved symlink handling. Never trust worker-provided paths.
+- Clarify config authority: `load_team()` currently overlays only runtime fields
+  from TOML. Do not silently imply that all generated TOML sections are live.
+
+**Done when:** default seeding assigns the intended roles and task owners;
+reinitialization leaves an existing fixture unchanged; traversal IDs are rejected;
+explicit reset previews what will be lost and requires separate consent.
+
+### COV-02 — Make concurrent state changes safe
+
+**Current gap:** task handlers perform unlocked read/modify/write of whole files.
+Events have timestamps but no stable event IDs or sequence. Metadata calls events
+the source of truth, but no general reducer rebuilds state from them.
+
+**Build:**
+
+- Give workspace, run, task, attempt, and event stable identities independent of
+  pane labels. Version schemas and record expected revisions on mutations.
+- Serialize mutations with a workspace lock; reject stale expected revisions.
+- Choose and document one authority model. Preferred: a sequenced append-only
+  transition ledger with derived JSON/Markdown projections, not two competing
+  sources of truth. Record initialization inputs needed for reconstruction.
+- Use atomic snapshot replacement and a defined flush/fsync policy. Define
+  ledger commit boundaries and replay behavior; rename alone is not a transaction.
+- Give commands idempotency keys. Repeating a request succeeds only if its intended
+  effect is durably observed, not because an earlier attempt probably ran.
+- Report malformed/interior log corruption. Treat a truncated final event through
+  an explicit recovery procedure, not silent line skipping.
+- Migrate old snapshots/logs through a backed-up, versioned import event. Never
+  pretend incomplete historical logs can reconstruct old state exactly.
+- Replace prompts telling workers to edit shared task JSON/events/dashboard with
+  calls through the mutation API. Human edits require validated import/reconcile.
+
+**Done when:** concurrent claims have one winner; stale edits cannot overwrite
+newer work; interrupted projection writes can be rebuilt; repeated requests do
+not duplicate tasks; corrupt history blocks unsafe transitions with a fix path.
+
+### COV-03 — Bind approval to what was actually approved
+
+**Assessed gap (baseline):** requesting changes does not revoke an approved checkpoint.
+Historical approval events can reapprove it during refresh. Assignment and launch
+do not enforce checkpoint approval.
+
+**Local progress:** explicit change requests now revoke current approval, and
+refresh does not replay approvals. Revision/digest binding, withdrawal/new-plan
+invalidation, and enforcement at execution boundaries are still open.
+
+**Build:**
+
+- First fix revocation: changes requested, withdrawal, or a new plan revision must
+  invalidate approval in both state and projections.
+- Bind decisions to run, plan digest/revision, action, repository, task scope,
+  decision source, and optional expiry. Delivery approval binds the candidate SHA.
+- Distinguish execution permission, local worker commits, composer integration,
+  push, target-branch merge, cleanup, and deployment. No blanket inherited grant.
+- Enforce decisions at dispatch/integration/delivery transitions, not merely in
+  prompts. Djinn policy remains independently authoritative.
+- Record stakeholder feedback as new events linked to the reviewed revision;
+  retain the original task and criteria rather than replacing their history.
+
+**Done when:** approve -> request changes -> refresh remains unapproved; changing
+the plan prevents dispatch under old approval; approval for one path/task cannot
+authorize another; approving code review does not authorize push or deployment.
+
+### COV-04 — Represent tasks and attempts, not just assignments
+
+**Current gap:** there is no validated task lifecycle or dependency scheduling.
+`task assign` resets status to `assigned`; renderers guess categories from strings.
+
+**Build:**
+
+- Define task transitions, for example `proposed -> ready -> running -> review ->
+  accepted`, with explicit blocked/failed/cancelled branches and reopen policy.
+- Store retries as separate attempts with native execution references and results.
+  Do not overwrite a failed attempt when starting another.
+- Validate dependency DAGs and distinguish worker completion, result availability,
+  acceptance, integration, and run completion.
+- Add concurrency/cost limits and cancellation propagation. Do not create more
+  workers merely because a plan can be split; serial execution remains valid.
+- Version task descriptions and acceptance criteria. A criteria change requires
+  impact review/reapproval, not an unnoticed edit beneath running workers.
+
+**Done when:** cycles and invalid transitions fail; unmet dependencies prevent
+dispatch; cancelling a run cannot leave its queued tasks dispatchable; completed
+attempts survive retries; two assignees cannot win the same claim revision.
+
+### COV-05 — Treat native sessions as execution, panes as presentation
+
+**Current gap:** agents launch in panes and receive text after a fixed delay.
+Some sends ignore subprocess failure. Pane detection does not establish agent
+health or successful submission. Native session/transcript IDs are not stored.
+
+**Build:**
+
+- Implement the already-planned Djinn adapter behind submit/inspect/cancel/
+  collect-result/reconcile operations; retain other harnesses behind the same
+  narrow contract where feasible.
+- Store run/task/attempt -> native session and transcript/result pointers. Keep
+  Herdr/tmux references optional and separate from execution identity.
+- Distinguish launch requested, accepted, running, awaiting permission, result
+  available, failed, cancelled, and unknown. Do not equate process exit with
+  application correctness.
+- Acknowledge submissions and check transport exit codes. When an acknowledgement
+  is lost, reconcile by attempt/idempotency identity before launching a duplicate.
+- Use supported installed Djinn interfaces and capability checks. The proposed
+  `djinn agent worker run` in the existing roadmap is not a shipped contract to
+  assume. A blocking adapter must account for background-by-default session runs.
+
+**Done when:** failed delivery is visibly failed; killing a pane does not erase
+task identity; restart finds the existing native attempt; headless execution can
+complete and collect a result without Herdr/tmux; permission pauses stay visible.
+
+### COV-06 — Make composition an actual stage
+
+**Current gap:** a lead has a prompt and a state file, but no enforced composition
+stage exists. Existing synthesis plans focus on findings, not code assembly.
+
+**Build:**
+
+- Automatically allocate the composer under the trigger defined above, with its
+  native session and task recorded before multi-contributor dispatch.
+- Add explicit composition states: waiting for inputs, ready, integrating,
+  blocked, validating, ready for user review, failed, cancelled.
+- Give the composer a manifest of required contributions and a dependency order.
+  Missing, failed, cancelled, or rejected work requires an explicit plan decision.
+- Have the composer reconcile interfaces and assumptions, not just copy summaries.
+  Send substantial repairs back as new worker attempts. Record composer-authored
+  fixes and apply the same scope/check rules to them.
+- For research-only runs, require cited synthesis but no Git/check ceremony.
+
+**Done when:** more than one contributor cannot start without a composer record;
+all workers reporting success does not complete the run; a missing contribution
+blocks composition unless an approved scope reduction excludes it; composer
+failure can be retried without rerunning successful workers unnecessarily.
+
+### COV-07 — Isolate code-changing attempts
+
+**Current gap:** all panes use the same Coven workspace. `work/` is a convention,
+not an isolated checkout. No repository or Git base is recorded.
+
+**Build:**
+
+- Register the target repository separately from the orchestration workspace.
+  Record the immutable base SHA and intended delivery target.
+- Create a branch/worktree per mutating attempt and a composer integration
+  worktree. Do not copy dirty changes, credentials, databases, or mutable runtimes.
+- Preflight dirty/untracked state, worktree collisions, repository identity, and
+  required executables. Never reset or stash user work implicitly.
+- Allow explicitly registered existing worktrees after validation, rather than
+  forcing all workspaces to be newly provisioned.
+- Make cleanup owner-aware and refuse to delete dirty, untracked, unresolved, or
+  otherwise unretained work. Preserve failed work until explicitly disposed of.
+
+**Done when:** workers edit different checkouts; an unrelated dirty user checkout
+is unchanged by setup/integration/cleanup; restarting setup reuses the correct
+attempt workspace instead of creating an orphan; composer writes nowhere else.
+
+### COV-08 — Reserve scopes before paying for conflicting implementations
+
+**Current gap:** assignments carry no machine-checked paths or resources.
+
+**Build:**
+
+- Reserve normalized repository-relative paths/subtrees and optional named
+  resources such as `contract:provider-config` before dispatch.
+- Detect equal/ancestor/descendant path conflicts conservatively. Two functions
+  in the same file are not automatically independent scopes.
+- Allow a parent scope to delegate disjoint child scopes to named attempts.
+  Reject siblings that overlap and children outside the parent scope.
+- Hold reservations through blocked/review/handoff states. A timeout or dead pane
+  is not proof the old worker stopped writing; recovery requires reconciliation
+  and accepted transfer or explicit abandonment, not automatic lock stealing.
+- Compare actual changed paths, including additions/deletions/renames, with the
+  reservation before accepting a handoff. A named contract does not grant paths.
+- Resolve conflicts by serialization, revised scope, or a single shared-change
+  owner; do not provide a silent "ignore overlap" path.
+
+**Done when:** two overlapping workers cannot both acquire scope; unrelated files
+can proceed; out-of-scope diffs block handoff; crashed-worker claims remain
+visible; approved scope expansion is recorded before its new edits are accepted.
+
+These are cooperative coordination checks, not an OS sandbox. Different files
+can still conflict semantically; the composer must identify shared contracts.
+
+### COV-09 — Collect exact-source handoffs
+
+**Current gap:** neither a structured coding result nor a source identity is
+required. The existing roadmap's summary contract is a good starting point.
+
+**Build:** require a versioned result containing:
+
+```text
+run_id, task_id, attempt_id, approved_plan_revision
+repository_id, base_sha, source_sha, tree_sha
+actual_changed_paths, scope_revision
+summary, interface_changes, dependencies
+check_receipt_refs, blockers, risks, follow_ups
+native_session_id, transcript_uri, result_artifact_digest
+```
+
+Require clean committed Git-visible source for a coding handoff; explicitly
+authorize local commits in the mutation plan. Capture results under attempt IDs
+without copying native transcripts into Coven. Validate identity and content
+digests; quarantine malformed or foreign results instead of ingesting them.
+
+**Done when:** a branch advancing after handoff cannot silently change the
+accepted source; another attempt's result is rejected; missing required evidence
+blocks readiness; an unchanged result can be collected twice without duplication.
+
+### COV-10 — Execute checks and bind evidence to exact inputs
+
+**Current gap:** QA and acceptance are prose, not executable completion gates.
+
+**Build:**
+
+- Configure named check sets for worker and integrated-result stages: argv, cwd,
+  timeout, environment policy, required/optional status, expected exit codes.
+- Record source commit/tree, target/base context, check-policy digest, declared
+  tool/environment identity, command, timestamps, exit status, and output digest.
+- Retain immutable receipts and output pointers. Never use a task's `verified`
+  boolean or a worker's self-report as a substitute for a receipt.
+- Recheck source before/after execution; checks mutating source cannot qualify
+  that candidate. Define declared generated/ignored inputs rather than claiming
+  Git cleanliness proves all external state was unchanged.
+- Reject stale evidence when source, target, criteria, or policy changes. Preserve
+  the older receipt with the invalidation reason instead of rewriting history.
+- No configured checks means unverified, not passed. Explicitly scoped human-only
+  review may exist, but must not be presented as automated test evidence.
+
+**Done when:** failed/empty checks block coding delivery; changing code after a
+green run invalidates its eligibility; a hung check times out; source-mutating
+checks fail qualification; worker checks do not satisfy merged-result checks.
+
+Independent review can be a policy option. A different actor label alone is not
+proof of an independent person or session; never claim otherwise.
+
+### COV-11 — Give the composer a recoverable integration transaction
+
+**Current gap:** no integration operation, single writer, journal, or conflict
+recovery exists. A composer prompt alone would not provide these guarantees.
+
+**Build:**
+
+1. Acquire exclusive integration authority and a lock for the target.
+2. Validate ownership, clean expected target, exact handoff SHA, scope, approvals,
+   and already-integrated dependencies.
+3. Durably record operation ID, source SHA, target-before SHA, policy identity,
+   and phase before mutating Git.
+4. Integrate the recorded commit through one explicit MVP strategy, such as a
+   non-fast-forward merge. Preserve a mapping from result to integrated commit.
+5. Record target-after SHA and execute admission checks against the merged code.
+6. Mark accepted only after required checks pass. Retain pending state on failure.
+
+On restart, compare journal and actual refs before acting. Recognize already
+applied work only with verified ancestry/parent and operation identity. Unexpected
+refs or conflicting pending sources require intervention, not an optimistic retry.
+Preserve merge conflicts and dirty repair work; do not automatically hard-reset.
+
+Define a separate, authorized repair transition for failed integrated checks.
+Ordinary admission of another source remains blocked while an operation is
+pending. A repair transition links a clean repair attempt to that pending operation,
+records the expected failed-target SHA and repair-source SHA before changing Git,
+and retains the original failed receipts. Integrate the repair under the same
+exclusive authority, invalidate evidence for the changed target, and rerun the
+required combined checks. Neither the original contribution nor its repair is
+accepted until the resulting target passes. Journal repair phases for restart;
+unexpected target movement blocks repair just as it blocks ordinary admission.
+An abort/supersession path must also be explicit and authorized, preserve the
+failed branch/evidence, and never discard dirty work automatically.
+
+**Done when:** admissions are serialized; failed merged checks remain pending;
+retry does not duplicate integration; crash injection before merge, after merge,
+after checks, and during projection updates is recoverable; unrelated ref movement
+blocks instead of being adopted as success; a code-level failure can be repaired
+through the journaled transition without bypassing the pending-operation guard.
+
+Local file locks do not constitute distributed integration authority. Keep the
+first version single-host and do not imply a cross-clone transaction guarantee.
+
+### COV-12 — Deliver one exact, reviewable candidate
+
+**Current gap:** the pre-delivery checkpoint is not bound to code or evidence.
+
+**Build:**
+
+- Produce a candidate record containing base/target, integrated SHA, included and
+  excluded result IDs, composer changes, conflict resolutions, check receipts,
+  review references, known risks, and unmet criteria.
+- Mark a candidate ready for review only after all required contributions are
+  accounted for and integrated checks pass.
+- Bind user acceptance to this candidate and criteria revision. Any subsequent
+  edit produces a new candidate and requires revalidation/reapproval.
+- Default delivery to a branch/commit and human-readable report. Offer PR or
+  merge actions only through explicit adapters/authorization; do not replace CI.
+- If a target moves, requalify the combined result against it. Do not imply
+  Forge's local promotion model handles GitHub merge-queue results.
+- Keep accepted work, merged work, pushed work, and deployed work distinct.
+
+**Done when:** no task/run completion based solely on worker summaries; reports
+link to the exact code checked; a moved target or edited candidate cannot reuse
+old approval; delivery has no implicit push, user-branch merge, or deployment.
+
+### COV-13 — Make recovery and evidence usable
+
+**Build:** expose an operator view answering: who owns each path, which native
+attempt is active, what is blocked, which operation is pending, which evidence is
+stale, and what action is safe next. Link through to native transcripts and check
+logs rather than duplicating them.
+
+Add inspected recovery for interrupted dispatch, orphaned worktrees, composer
+replacement, permission pauses, stale reservations, and inconsistent projections.
+Retain linked feedback/rework history and explicit acceptance decisions.
+
+**Done when:** a stopped process can be reconciled without guessing from pane
+names; replacing the composer preserves accepted inputs and pending operations;
+recovery previews effects and cannot silently seize ownership or discard work.
+
+### COV-14 — Reuse immutable builds only if it saves real time
+
+**Current gap:** no build cache; this is not a blocker for the composer workflow.
+
+If measurements justify it, key artifacts by declared inputs, dependencies,
+toolchain/platform, command/config, and environment. Build in private staging;
+publish only complete, validated output under a per-key lock. Verify inventories
+on reuse and pin each consumer to immutable output. Never share writable compiler
+state, editable environments, or live `dist` directories across workers.
+
+**Done when:** identical inputs reuse one artifact; changed frontend inputs miss;
+failed builds never become hits; tampering is rejected; consumers cannot silently
+switch artifacts. Do not claim hermeticity from hashing an incomplete input list.
+
+Prefer an existing build system's cache when it already provides these guarantees.
+
+### COV-15 — Cross-clone coordination only when needed
+
+**Current gap:** coordination is local. That is acceptable for the initial scope.
+
+If multi-host work becomes necessary, add portable task/claim metadata with
+freshness, conditional updates, explicit recipient-accepted ownership transfer,
+and independent source/evidence transport. Offline cached observations must not
+authorize new claims. Do not replicate machine-local paths, runtimes, credentials,
+or databases as if they were portable task state.
+
+**Done when:** racing assignments have one winner; stale observations cannot
+authorize work; accepted transfers preserve evidence and rebind local workspaces;
+two clones cannot both claim integration authority under the supported protocol.
+
+Do not copy Forge's Git-backed HANDOFF ledger unless Git transport is the actual
+requirement. First establish why Coven needs coordination beyond one machine.
+
+## Implementation sequence and milestone exits
+
+### M0 — Repair and test the current scaffold
+
+COV-01, the mutation foundation of COV-02, and immediate checkpoint revocation
+from COV-03. Establish automated tests; no test suite was present at the assessment
+baseline. Test the wrapper and CLI with mocked native runtimes and disposable files.
+
+**Exit:** no destructive re-init, no silent lost task updates, correct default
+owners/roles, and no stale approval revival. Stop here if normal use needs no
+additional orchestration.
+
+### M1 — Prove the composer with read-only workers
+
+COV-04, COV-05, COV-06, plus revision-bound plan approval. Deliver the existing
+roadmap's research story using two workers and a dedicated composer. Keep runtime
+facts separate from terminal presentation.
+
+**Exit:** structured cited synthesis, recoverable task/session mapping, failed
+delivery reported honestly, and run completion gated on composition. This
+milestone does not authorize code-changing fan-out.
+
+### M2 — First complete coding vertical slice
+
+COV-07 through COV-12, using the minimum supported single-repository/single-host
+policies. Build one small end-to-end slice rather than implementing every storage,
+scheduler, or Git feature in advance.
+
+**Exit:** the acceptance exercise below passes, including failure injection.
+
+### M3 — Operational hardening, then measured optimization
+
+COV-13 and broader cancellation/recovery tests. COV-14/COV-15 require a measured
+need and separate design approval. Do not block the first useful composer on them.
+
+## Acceptance exercise: two green workers, one broken combination
+
+Use a disposable Git repository and stubbed workers/check executors in automated
+tests; add a separately authorized live Djinn smoke test, not model calls in CI.
+
+1. Create an approved plan for two contributors and an automatically allocated
+   composer. Pin the base commit and real acceptance commands.
+2. Deliberately request overlapping scopes. Verify the second reservation fails.
+   Revise to disjoint files before either worker edits code.
+3. Worker A changes a configuration default in one file. Worker B adds a consumer
+   in another file assuming the old default. Their local tests pass individually.
+4. Collect clean exact-commit handoffs. Verify missing or out-of-scope artifacts
+   cannot be admitted and all-worker completion does not finish the run.
+5. Compose both changes. A configured cross-component test fails on the merged
+   result; the run stays blocked/pending, not accepted.
+6. Interrupt the composer after a merge but before final acceptance. Restart and
+   reconcile without a duplicate merge or deletion of the worktree.
+7. Request repair and record a new attempt. Use the explicit pending-operation
+   repair transition, not ordinary admission, to integrate it and pass combined
+   checks. Verify failed evidence remains linked to the accepted repaired result.
+8. Change the candidate after verification. Verify stale receipts/approval cannot
+   qualify it. Rerun checks and approve the new exact candidate.
+9. Produce one branch/commit and delivery report. Assert no push, target merge,
+   deployment, or destructive cleanup occurred implicitly.
+10. Repeat with workers executed serially; composition remains required. Repeat a
+    single-contributor task; no extra composer or release hierarchy is forced.
+
+## Architecture constraints and extension seams
+
+- Keep Coven the orchestration authority and Djinn the native execution authority.
+  Coven stores references and selected facts, not a second native transcript.
+- Preserve the lightweight file-backed model. No service framework or database
+  scheduler is needed to implement this roadmap's first milestones.
+- Gradually extract storage, transitions, runtime adapters, Git workspace handling,
+  checks, and composition from `runner/coven.py`; keep `bin/coven` thin. Do not
+  require a wholesale rewrite before delivering the first safeguard.
+- Explicitly declare capabilities for non-Git/research tasks; do not force coding
+  receipts onto prose synthesis or fake a code acceptance result.
+- Proposed APIs/commands should be designed alongside tests. Existing `coven plan`
+  prints multiplexer layout; do not silently repurpose it as task-plan approval.
+- Approval metadata is not authentication; scope reservations are not sandboxing;
+  test receipts are not semantic proof; local locks are not distributed locks.
+
+Not adopting by default: Forge as a dependency; PM/feature/release branch layers;
+one-active-release policy; local-main promotion; a second issue tracker; a wiki or
+memory system overlapping Djinn; cross-host cache transport; autonomous deployment.
+
+## Source evidence and implementation entry points
+
+Line ranges describe the inspected baseline and will drift. Prefer the named
+functions when locating current code.
+
+### Coven evidence
+
+All runner references below are in [runner/coven.py](runner/coven.py).
+
+| Finding | Functions / baseline lines |
+| --- | --- |
+| IDs versus named roles | `parse_agents`, `agent_role`, `starter_tasks`; 41–58, 217–229, 344–371; also [example owners](examples/interactive-demo/tasks.json) |
+| Unlocked storage/event append | `write_json`, `append_event`, `append_message`; 112–131 |
+| Limited config overlay | `load_team`; 134–146 |
+| Prompts request shared-file edits | `prompt_text`, `starter_prompt_text`, `lead_prompt`; 232–273, 1297–1312 |
+| Historical approval restoration | `sync_checkpoint_approvals_from_events`; 613–624 |
+| Initialization overwrites state | `command_init`; 677–736 |
+| Flat task mutations | `command_task_add`, `command_task_assign`; 758–802 |
+| Malformed event lines skipped | `iter_jsonl`; 838–851 |
+| Pane existence / unchecked delivery | `send_to_agent_pane`, `agent_runtime_status`; 979–1010 |
+| Revocation missing | `approve_checkpoint`, `suggest_checkpoint_changes`, `command_next`; 1257–1294, 1365–1377 |
+| Shared launch workspace / presentation lifecycle | `start_agent_window`, `create_coven_tmux_session`, `create_coven_herdr_workspace`; 1013–1058, 1796–1877 |
+| Actual commands, no Git/check/composition API | `parse_args`; 1948–2073 |
+
+### Forge safeguards borrowed, not dependencies
+
+Paths below are relative to the separate `mpc-forge` repository at the pinned
+baseline above, not files expected inside Coven. Tests were inspected, not run.
+
+| Safeguard | Implementation | Relevant test source |
+| --- | --- | --- |
+| Scope overlap, delegation, actual diff checks | `mpc_forge/devflow_lib/ledger.py`: `overlap`, `validate`, `check_paths` | `tests/devflow/test_coordination.py` |
+| Exact-source check receipts | `mpc_forge/devflow_lib/core.py`: `Context.checks`; `mpc_forge/devflow_lib/workflow.py`: `verify_increment`, `handoff` | `tests/devflow/test_coordination.py` |
+| Pending merge journal and idempotent retry | `mpc_forge/devflow_lib/workflow.py`: `admit` | `tests/devflow/test_coordination.py` |
+| Revision/assignment concurrency checks | `mpc_forge/devflow_lib/task_contract.py`, `mpc_forge/devflow_lib/tasks.py`, `mpc_forge/devflow_lib/ledger.py` | `tests/devflow/test_tasks.py` |
+| Immutable build publication and pins | `mpc_forge/devflow_lib/builds.py` | `tests/devflow/test_builds.py` |
+
+The transferable idea is small: agents can produce work independently, but only
+an owned, exact-source, checked, recoverable composition step turns their outputs
+into an accepted combined result.
