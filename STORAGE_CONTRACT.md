@@ -11,6 +11,16 @@ in [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md). Nothing imports implicitl
 
 ## Authority and compatibility
 
+Explicit groups use a separate schema-1 `state/groups.json` authority for participant
+declarations and durable publication counters, not the task ledger or agent roster.
+Mutations/reservations use the persistent workspace lock and atomic replacement;
+listing creates no lock. A foreground publisher additionally holds
+`state/.group-publisher.lock`, acquired before the workspace lock, with network I/O
+outside the workspace lock. Group content revisions exclude counters; uncertainty
+is not rollback and these commands provide no durable exact-request receipts.
+See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for the independent schema/lifetime,
+capacity, reservation, and annotation-only authority contract.
+
 | Resource | Authority / role |
 | --- | --- |
 | `state/tasks.json` | Authoritative v1 task list. A task mutation replaces this one file. |

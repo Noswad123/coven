@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories, kitsune_observation
+    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories, kitsune_observation, groups, group_publisher
 else:
     import records
     import storage
@@ -37,6 +37,8 @@ else:
     import execution_v2
     import repositories
     import kitsune_observation
+    import groups
+    import group_publisher
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -1682,6 +1684,66 @@ def command_observe_kitsune(args: argparse.Namespace) -> int:
         raise storage.StorageError(f"Invalid Kitsune observation request: {exc}") from exc
     print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
     return {"observed": 0, "unavailable": 1, "incompatible": 2}[value["assessment"]]
+
+
+def print_group_result(value: dict[str, Any], json_output: bool) -> int:
+    print(json.dumps(value, ensure_ascii=True, indent=None if json_output else 2))
+    return 2 if value.get("delivery", {}).get("outcome") == "durability_uncertain" else 0
+
+
+def command_group_create(args: argparse.Namespace) -> int:
+    return print_group_result(groups.create_group(workspace_path(args.workspace), args.group,
+        args.group if args.name is None else args.name, expected_revision=args.expect_revision), args.json)
+
+
+def command_group_list(args: argparse.Namespace) -> int:
+    view = groups.read_groups(workspace_path(args.workspace))
+    # Publication watermarks are implementation state, not participant identities
+    # or execution facts. Keep the user-facing list focused on group membership.
+    value = {"initialized": view["initialized"], "revision": view["revision"],
+             "groups": [] if view["state"] is None else view["state"]["groups"],
+             "authorization": "none", "dispatchable": False,
+             "native_lifecycle": "unestablished", "job_completion": "unestablished"}
+    return print_group_result(value, args.json)
+
+
+def command_group_add(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    # Deterministic invalid input and absent groups must not contact a server or
+    # create a lock. The fresh snapshot is read outside the mutation lock.
+    groups._selector(args.group)
+    groups._selector(args.member)
+    groups._display(args.role)
+    groups._string(args.pane)
+    if not args.pane.isprintable() or any(char.isspace() for char in args.pane):
+        raise groups.GroupError("An exact current pane ID is required")
+    view = groups.read_groups(workspace)
+    groups._cas(view["state"], args.expect_revision)
+    groups._group(view["state"], args.group)
+    try:
+        import time
+        fresh = group_publisher.read_publication_snapshot(args.socket, deadline=time.monotonic() + 3.0)
+        binding = group_publisher.binding_from_snapshot(fresh, args.pane)
+    except (ValueError, group_publisher.PublisherError) as exc:
+        code = exc.code if isinstance(exc, group_publisher.PublisherError) else str(exc)
+        raise groups.GroupError(f"Cannot observe selected group participant: {code}") from exc
+    return print_group_result(groups.add_member(workspace, args.group, args.member, args.role, binding,
+        rebind=args.rebind, expected_revision=args.expect_revision), args.json)
+
+
+def command_group_remove(args: argparse.Namespace) -> int:
+    return print_group_result(groups.remove_member(workspace_path(args.workspace), args.group,
+        args.member, expected_revision=args.expect_revision), args.json)
+
+
+def command_group_publish(args: argparse.Namespace) -> int:
+    try:
+        value = group_publisher.publish_group(workspace_path(args.workspace), args.group,
+            args.socket, args.source, duration=args.duration)
+    except ValueError as exc:
+        raise groups.GroupError(f"Invalid group publication request: {exc}") from exc
+    print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
+    return {"completed": 0, "failed": 1, "uncertain": 2, "interrupted": 130}[value["outcome"]]
 
 
 def execution_source(workspace: Path, snapshot_source_id: str) -> dict[str, Any]:
@@ -3657,6 +3719,46 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     action_stop.add_argument("action_id")
     action_stop.add_argument("--json", action="store_true")
     action_stop.set_defaults(func=command_action_stop)
+
+    group = subparsers.add_parser("group", help="Explicit role membership for existing participants; optional annotation-only publication")
+    group_sub = group.add_subparsers(dest="group_command", required=True)
+    group_create = group_sub.add_parser("create", help="Create an empty named group without launching agents")
+    group_create.add_argument("workspace", help="Existing Coven workspace")
+    group_create.add_argument("group", help="Lowercase human group selector, e.g. auth-review")
+    group_create.add_argument("--name", help="Display name, at most 64 UTF-8 bytes; defaults to the selector")
+    group_create.add_argument("--expect-revision", help="Optional exact group-content revision")
+    group_create.add_argument("--json", action="store_true")
+    group_create.set_defaults(func=command_group_create)
+    group_add = group_sub.add_parser("add", help="Observe one existing Kitsune agent and associate a Coven participant/role")
+    group_add.add_argument("workspace")
+    group_add.add_argument("group")
+    group_add.add_argument("--member", required=True, help="Stable human participant selector within this group")
+    group_add.add_argument("--role", required=True, help="Display role only, not a native agent configuration or execution policy")
+    group_add.add_argument("--socket", required=True, help="Explicit existing Kitsune API socket")
+    group_add.add_argument("--pane", required=True, help="Exact current pane ID from the agent inventory")
+    group_add.add_argument("--rebind", action="store_true", help="Explicitly accept changed terminal/native-reference evidence")
+    group_add.add_argument("--expect-revision")
+    group_add.add_argument("--json", action="store_true")
+    group_add.set_defaults(func=command_group_add)
+    group_remove = group_sub.add_parser("remove", help="Remove membership only; existing labels expire naturally")
+    group_remove.add_argument("workspace")
+    group_remove.add_argument("group")
+    group_remove.add_argument("--member", required=True)
+    group_remove.add_argument("--expect-revision")
+    group_remove.add_argument("--json", action="store_true")
+    group_remove.set_defaults(func=command_group_remove)
+    group_list = group_sub.add_parser("list", help="Read declared groups and sourced native-binding evidence without contacting runtimes")
+    group_list.add_argument("workspace")
+    group_list.add_argument("--json", action="store_true")
+    group_list.set_defaults(func=command_group_list)
+    group_publish = group_sub.add_parser("publish", help="Foreground, annotation-only labels for an explicitly enabled source; never launches/stops agents")
+    group_publish.add_argument("workspace")
+    group_publish.add_argument("group")
+    group_publish.add_argument("--socket", required=True)
+    group_publish.add_argument("--source", required=True, help="Dedicated source already enabled in Kitsune, e.g. coven")
+    group_publish.add_argument("--duration", type=int, default=60, help="Foreground run seconds, 1..3600 (default: 60); Ctrl-C stops refreshing")
+    group_publish.add_argument("--json", action="store_true")
+    group_publish.set_defaults(func=command_group_publish)
 
     observe = subparsers.add_parser("observe", help="One-shot optional observations; never dispatches agents or controls multiplexer UI")
     observe_sub = observe.add_subparsers(dest="observation_adapter", required=True)

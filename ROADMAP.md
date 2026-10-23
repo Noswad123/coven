@@ -5,17 +5,20 @@
 [APP_BOUNDARIES.md](APP_BOUNDARIES.md) is the accepted target boundary. Initial
 single-endpoint Kitsune observation is implemented in Coven only; see
 [the observation contract](KITSUNE_OBSERVATION_CONTRACT.md). Kitsune's built-ins
-remain. Next: characterize generic surfaces before extraction -> design separate,
-user-enabled generic annotations -> Coven grouping of existing sessions. Do this before further
-worker/worktree implementation. No scheduler, daemon, plugin framework, or native
+remain. Explicit Coven participant groups/roles and the foreground publisher through
+Kitsune's user-enabled generic annotations are initially implemented; see
+[GROUPS_CONTRACT.md](GROUPS_CONTRACT.md). Native group status/lifecycle, scheduling,
+automatic following, and extraction remain open. Characterize generic surfaces
+before extraction and before further worker/worktree implementation. No scheduler, daemon, plugin framework, or native
 admission design is prerequisite for observation/grouping.
 
 Annotations target bounded badges/labels/group hints/progress on existing
 panes/workspaces, useful for build/test/export services as well as coordinators.
 Kitsune/user own space, layout, rendering, clipping, and quotas; source-owned values
 need conflict policy/expiry and hidden/unknown failure handling, not stale active
-status. No arbitrary panels, embedded apps/scripts, UI takeover, new external
-schema, or return endpoint is implemented; display conveys no execution authority.
+status. The current return path is generic terminal-border `pane.annotate`, not
+workspace annotations, arbitrary panels, embedded apps/scripts, or UI takeover;
+display conveys no execution authority.
 
 The worker/composer stories, numbered slices, and execution contracts below are
 deferred backlog, not invalidated or current implementation order. Djinn is the
