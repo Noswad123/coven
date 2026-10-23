@@ -1,5 +1,32 @@
 # Coven Roadmap
 
+## Priority rebaseline — 2026-10-22
+
+[APP_BOUNDARIES.md](APP_BOUNDARIES.md) is the accepted target boundary. Initial
+single-endpoint Kitsune observation is implemented in Coven only; see
+[the observation contract](KITSUNE_OBSERVATION_CONTRACT.md). Kitsune's built-ins
+remain. Next: characterize generic surfaces before extraction -> design separate,
+user-enabled generic annotations -> Coven grouping of existing sessions. Do this before further
+worker/worktree implementation. No scheduler, daemon, plugin framework, or native
+admission design is prerequisite for observation/grouping.
+
+Annotations target bounded badges/labels/group hints/progress on existing
+panes/workspaces, useful for build/test/export services as well as coordinators.
+Kitsune/user own space, layout, rendering, clipping, and quotas; source-owned values
+need conflict policy/expiry and hidden/unknown failure handling, not stale active
+status. No arbitrary panels, embedded apps/scripts, UI takeover, new external
+schema, or return endpoint is implemented; display conveys no execution authority.
+
+The worker/composer stories, numbered slices, and execution contracts below are
+deferred backlog, not invalidated or current implementation order. Djinn is the
+first adapter, not a required universal native agent model; future adapters expose
+capabilities without invented guarantees. Coven can work headless or with other
+multiplexers. Kitsune still has built-in agent integrations during transition.
+Observation is not acceptance or permission to execute/cancel. Existing safety
+contracts remain in force; old preparations cannot automatically execute.
+Event/replay sketches below do not turn current observational logs into authority;
+existing explicit task-ledger and preparation contracts retain their own scope.
+
 This roadmap is the forward-looking work queue for Coven as the multi-agent
 orchestration layer. Keep implemented behavior in `README.md` and generated
 workspace docs; keep this file focused on product stories, architecture direction,

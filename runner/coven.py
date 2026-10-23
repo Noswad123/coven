@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories
+    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories, kitsune_observation
 else:
     import records
     import storage
@@ -36,6 +36,7 @@ else:
     import task_graphs
     import execution_v2
     import repositories
+    import kitsune_observation
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -1669,6 +1670,18 @@ def command_repository_register(args: argparse.Namespace) -> int:
     return print_repository_result(repositories.register_repository(
         workspace_path(args.workspace), path=args.path, base=args.base,
         delivery_target=args.delivery_target, expected_revision=args.expect_repository_revision), args.json)
+
+
+def command_observe_kitsune(args: argparse.Namespace) -> int:
+    # No workspace authority, executable, or implicit endpoint selection. This
+    # one-shot observation has no annotation/UI return path or native actions.
+    try:
+        value = kitsune_observation.inspect(args.socket, timeout=args.timeout,
+                                            max_response_bytes=args.max_response_bytes)
+    except ValueError as exc:
+        raise storage.StorageError(f"Invalid Kitsune observation request: {exc}") from exc
+    print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
+    return {"observed": 0, "unavailable": 1, "incompatible": 2}[value["assessment"]]
 
 
 def execution_source(workspace: Path, snapshot_source_id: str) -> dict[str, Any]:
@@ -3644,6 +3657,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     action_stop.add_argument("action_id")
     action_stop.add_argument("--json", action="store_true")
     action_stop.set_defaults(func=command_action_stop)
+
+    observe = subparsers.add_parser("observe", help="One-shot optional observations; never dispatches agents or controls multiplexer UI")
+    observe_sub = observe.add_subparsers(dest="observation_adapter", required=True)
+    observe_kitsune = observe_sub.add_parser("kitsune", help="Read an existing selected JSON API socket; no discovery, autostart, or annotations")
+    observe_kitsune.add_argument("--socket", required=True, help="Explicit absolute path to an existing private Kitsune JSON API socket")
+    observe_kitsune.add_argument("--timeout", type=float, default=3.0, help="Overall observation seconds, finite and in (0, 30]")
+    observe_kitsune.add_argument("--max-response-bytes", type=int, default=1048576, help="Response budget including LF, 1024 through 8388608")
+    observe_kitsune.add_argument("--json", action="store_true", help="Compact ASCII-escaped JSON observation report")
+    observe_kitsune.set_defaults(func=command_observe_kitsune)
 
     repository = subparsers.add_parser("repository", help="Explicit immutable checkout/base facts; never authorizes Git writes or execution")
     repository_sub = repository.add_subparsers(dest="repository_command", required=True)

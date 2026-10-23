@@ -3,6 +3,12 @@
 `coven` is a personal, magic-themed multi-agent workspace command for creating,
 tracking, and running local multi-agent workspaces.
 
+See [APP_BOUNDARIES.md](APP_BOUNDARIES.md) for the 2026-10-22 target decision:
+independent apps, Coven-owned cross-runtime observation/grouping first, optional
+Kitsune annotations as a separate generic presentation path, and Djinn-owned native
+execution. Initial Kitsune observation is implemented in Coven only; extraction,
+annotations, and grouping are not shipped.
+
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.
@@ -66,6 +72,7 @@ coven/
 │   ├── actions.py         # opt-in runtime manifests, single-use claims/outcomes
 │   ├── launch.py          # frozen cold-start transport plans/execution
 │   ├── workers.py         # help-only native adapter compatibility observations
+│   ├── kitsune_observation.py # bounded, explicit existing API socket observation
 │   ├── task_attempts.py   # preparation-only execution intent/receipts and facade
 │   ├── task_graphs.py     # pure bounded DAG/criteria/source manifests
 │   ├── execution_v2.py    # explicit graph upgrade, planning review/preparation
@@ -87,7 +94,36 @@ worker lifecycle projection, and synthesis; Djinn owns Djinn-native worker
 execution, policy, tools, and transcripts.
 
 See [`CODING_ORCHESTRATION_ROADMAP.md`](./CODING_ORCHESTRATION_ROADMAP.md) for
-the prioritized safety repairs and the staged worker/composer coding workflow.
+safety contracts and the deferred worker/composer coding backlog. The near-term
+priority is inspection, read-only extraction, and grouping existing sessions,
+before further worker/worktree implementation.
+
+## Current Kitsune observation
+
+```bash
+coven observe kitsune --socket /absolute/path/to/existing-api.sock --json
+```
+
+Explicit opt-in selects one existing API socket; no workspace or default endpoint.
+The adapter directly requests one existing `session.snapshot` response (protocol
+18 only), without discovery, subprocesses, autostart, ping, or events. It writes
+no Coven state and creates no group membership. `done` is idle/unacknowledged, not
+native completion or job success; native references may be persisted and freshness
+is unknown. Nonobserved reports safely return empty agents, not runtime failure
+inferences. Exits: 0 observed, 1 unavailable, 2 incompatible.
+
+**Read method does not mean zero server-side effects:** existing Kitsune dispatch
+housekeeping may expire metadata, drain events, sync titles, or create a default
+workspace (potentially spawning a shell). No live connections were run for this
+documentation update. See [KITSUNE_OBSERVATION_CONTRACT.md](KITSUNE_OBSERVATION_CONTRACT.md)
+for exact output, bounds, socket privacy checks, and CLI error semantics.
+
+Future annotations are independent of observation: user-enabled services may send
+bounded text badges/labels/group hints/progress for existing panes/workspaces.
+Kitsune and the user retain layout/space/rendering/clipping/quotas; this is not
+Coven-owned UI, panels, embedded apps/scripts, or terminal-control permission.
+Sources own values with conflict policy/expiry; missing or invalid input is
+hidden/unknown, never stale active status. No annotation endpoint is implemented.
 
 ## Generated workspace layout
 

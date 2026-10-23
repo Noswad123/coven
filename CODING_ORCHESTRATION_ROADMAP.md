@@ -1,5 +1,29 @@
 # Coven coding orchestration roadmap
 
+## Priority rebaseline — 2026-10-22
+
+Follow [APP_BOUNDARIES.md](APP_BOUNDARIES.md) before advancing this backlog:
+initial single-endpoint Kitsune observation is implemented in Coven only
+([contract](KITSUNE_OBSERVATION_CONTRACT.md)); Kitsune's built-ins remain. Next:
+characterize generic surfaces before extraction -> separate opt-in bounded generic
+annotations, with Kitsune/user-owned UI space -> group existing sessions.
+Extraction, annotations, and grouping are not shipped. Further worker/worktree implementation,
+including remaining M1/M2 work below, is deferred, not invalidated. The priority
+table and milestone sequence describe the longer-term coding workflow, not the
+immediate queue.
+
+Initial observation validation: 31 focused offline tests pass, including private
+fake-socket protocol/framing/status tests, workspace preservation, and the real
+wrapper. Full suite: **464 tests pass** (304 seconds). No live endpoint was queried.
+
+No scheduler, daemon, plugin framework, or native admission design is required
+just to observe/group existing agents. Djinn is the first capability-based adapter,
+not the universal native model. Coven must support headless/other-multiplexer
+operation; Kitsune's built-in agent behavior still exists during transition.
+Observation is not job acceptance or execution/cancel permission. Existing safety
+contracts remain valid, including non-dispatchable preparations and separate
+authorization/native adapter requirements. Never auto-execute old preparations.
+
 ## Purpose and status
 
 Take the useful safeguards from MPC Forge and implement them natively in Coven,
@@ -142,7 +166,7 @@ Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 433 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 464 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Implicit migration and destructive reset remain unavailable. Task-only baseline
