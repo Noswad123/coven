@@ -279,7 +279,7 @@ class TaskAttemptTests(unittest.TestCase):
     def test_corrupt_control_strict_json_and_schema(self):
         self.enable()
         original = self.path.read_bytes()
-        for data in (b'{"schema_version":1,"schema_version":1}', b'{"x":NaN}', b'{"x":1e999}',
+        for data in (b'null', b'false', b'{"schema_version":1,"schema_version":1}', b'{"x":NaN}', b'{"x":1e999}',
                      b'{"x":"\\ud800"}', b'\xff', b'[]', b'{"x":1} trailing'):
             self.path.write_bytes(data)
             with self.subTest(data=data), self.assertRaises(storage.StorageError):

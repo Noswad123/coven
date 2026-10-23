@@ -1,5 +1,9 @@
 # COV-04a: preparation-only task attempts
 
+This describes default execution-control v1. An explicit backed-up upgrade can
+enable [reviewed graph control v2](TASK_GRAPH_CONTRACT.md), preserving the validated
+v1 prefix/receipts rather than rewriting them. No upgrade happens implicitly.
+
 This protocol supplies durable local attempt identity and frozen declarative
 intent. It does **not** submit work, probe a provider/runtime, inspect a native
 session, grant tools, execute acceptance checks, or authorize dispatch. Every
@@ -182,7 +186,7 @@ not COV-08 path reservations, a worker sandbox, or execution authorization.
 
 ## Capacity and recovery
 
-Control is bounded at 16 MiB with permanent retained receipts/history; no pruning
+V1 control is bounded at 16 MiB with permanent retained receipts/history; no pruning
 or reset exists. Every history-growing operation reserves 512 KiB for **each**
 active preparation, enough for a valid maximum-escaped 16 KiB cancellation reason
 and bounded metadata. New preparations/history are rejected before publication

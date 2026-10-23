@@ -142,7 +142,7 @@ Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 327 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 382 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Implicit migration and destructive reset remain unavailable. Task-only baseline
@@ -311,14 +311,40 @@ Contract: [EXECUTION_INTENT_CONTRACT.md](EXECUTION_INTENT_CONTRACT.md).
   growth; maximum-sized valid reasons cannot be crowded out. Test concurrency and
   both task/import lock orders, before/after-publication process death, uncertainty,
   malformed source diagnostics, retained extensions, and native-call prohibition.
-  All 327 offline regressions pass.
+  Covered by the current offline regression suite.
 
-Next work still requires a supported native bounded-worker contract plus explicit
-task-scoped authorization/admission before any COV-05 execution. COV-04 dependency
-DAGs, native attempts/lifecycle facts, scheduler/cancellation propagation and run
-completion remain open, as do repository/mutation/integration/delivery grants,
-broader recovery, and retention/operational hardening. Preparation and readiness
-inspection do not make an executable worker or complete those milestones.
+**COV-04b: reviewed immutable DAGs and graph-bound preparation implemented.**
+Contract: [TASK_GRAPH_CONTRACT.md](TASK_GRAPH_CONTRACT.md).
+
+- [x] Explicit execution-control v2 upgrade preserves verified raw v1 bytes/mode,
+  stable identities, validated legacy prefix and original receipts. No implicit
+  task-ledger upgrade, receipt rewrite, downgrade, or backup promotion.
+- [x] Validate bounded DAGs from explicitly enrolled canonical tasks/owners, freeze
+  complete selected snapshots/criteria/edges/enrollment bindings, and expose
+  immutable revision/digests/topology and source-impact inspection/export.
+- [x] Planning decisions live in the same execution authority and publish with
+  their request receipts. Only the current reviewed head supplies preparation;
+  successors start unreviewed and old approvals cannot become current again.
+- [x] Proposal stickily manages selected IDs; standalone intent cannot bypass
+  proposed/revoked/stale/removed-node gates. Preparation derives criteria and
+  freezes graph/decision/node bindings. Unmanaged tasks retain local intent mode.
+- [x] Preserve source-free revocation/cancellation and receipt/export access with
+  broken mutable source. Keep selected-node drift distinct from unrelated task
+  revision changes, without weakening existing attempt whole-source freshness.
+- [x] Reserve revocation room for the approved head plus cancellation room per
+  prepared task before history growth. Prove CLI lifecycle, concurrent proposal
+  keys/CAS, selected-source review races, preparation versus successor, exact
+  backup/recovery across process death, and legacy compatibility. All 382 offline
+  regressions pass.
+
+This supplies reviewed decomposition and enforceable **preparation** criteria,
+not a scheduler: downstream nodes can be prepared while prerequisite acceptance
+remains unestablished, and every node is non-dispatchable. Actual COV-05 execution
+still requires the supported upstream native admission/reconciliation/policy
+contract and separately scoped authorization. Native lifecycle, accepted results,
+scheduling/cancellation propagation, composers, run completion, repository/mutation/
+integration/delivery grants, and recovery/retention hardening remain open. More
+nominal execution-policy envelopes cannot replace that native prerequisite.
 
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |

@@ -66,7 +66,9 @@ coven/
 │   ├── actions.py         # opt-in runtime manifests, single-use claims/outcomes
 │   ├── launch.py          # frozen cold-start transport plans/execution
 │   ├── workers.py         # help-only native adapter compatibility observations
-│   └── task_attempts.py   # explicit preparation-only execution intent/receipts
+│   ├── task_attempts.py   # preparation-only execution intent/receipts and facade
+│   ├── task_graphs.py     # pure bounded DAG/criteria/source manifests
+│   └── execution_v2.py    # explicit graph upgrade, planning review/preparation
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -392,6 +394,43 @@ These are cooperating task-API guards, not path reservations, native tool policy
 execution approval, or a scheduler. Readiness and runtime-startup claims remain
 independent; future native admission must explicitly revalidate and authorize
 attempts rather than automatically executing existing preparations.
+
+## Reviewed task graphs
+
+Execution control stays v1 until an explicit, backed-up upgrade. Cancel existing
+preparations first; task snapshots and task-ledger-v1 are never upgraded by it.
+
+```bash
+coven execution upgrade --expect-execution-revision '<v1-token>' --request-id upgrade-graphs-1 --json
+coven task graph propose --document graph.json --expect-tasks-revision '<task-token>' \
+  --expect-execution-revision '<v2-token>' --request-id graph-1 --json
+coven task graph inspect --json
+coven task graph decide '<graph-revision>' --decision approve --reason "Reviewed criteria" \
+  --expect-graph-digest '<graph-digest>' --expect-tasks-revision '<current-task-token>' \
+  --expect-execution-revision '<current-v2-token>' --request-id review-1 --json
+coven task attempt prepare core-chatbot --graph-revision '<reviewed-revision>' \
+  --expect-tasks-revision '<current-task-token>' --expect-execution-revision '<current-v2-token>' \
+  --request-id prepare-from-graph-1 --json
+```
+
+The graph document selects already-enrolled task IDs, exact owners, criteria and
+`depends_on` edges. The bounded DAG rejects duplicate/dangling/self/cyclic edges.
+Proposal freezes selected complete task snapshots/enrollment bindings; planning
+review owns one immutable criteria revision. Selected tasks become sticky managed
+on proposal and cannot bypass review with `--intent`, even after revocation or
+removal from a successor. Unmanaged tasks retain standalone preparation.
+
+Covered task changes stale the plan; unrelated whole-source revision drift is
+reported separately. Successors require cancellation of managed preparations and
+fresh review. `changes-requested` remains available without healthy current source
+and does not cancel old attempts. Generic checkpoint approval is not graph review.
+Historical manifests/receipts remain readable and old v1 receipt values survive
+upgrade unchanged.
+
+**This is not scheduling or execution:** downstream preparation is permitted,
+but dependency acceptance is unestablished and every node remains non-dispatchable
+with authorization `none`. See [TASK_GRAPH_CONTRACT.md](TASK_GRAPH_CONTRACT.md)
+for the document format, upgrade/retry/capacity contract, and exact exclusions.
 
 ## User interaction
 

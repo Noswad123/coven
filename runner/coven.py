@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts
+    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2
 else:
     import records
     import storage
@@ -33,6 +33,8 @@ else:
     import launch
     import workers
     import task_attempts
+    import task_graphs
+    import execution_v2
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -1677,10 +1679,15 @@ def execution_control_mutation(workspace: Path):
 def mutate_execution(workspace: Path, operation: str, parameters: dict[str, Any], *,
                      expected_execution_revision: str, expected_tasks_revision: str | None,
                      request_id: str) -> dict[str, Any]:
-    task_attempts.request_binding(operation, parameters, expected_execution_revision, expected_tasks_revision)
+    view = task_attempts.Store(workspace).read()
+    if operation in {"graph_propose", "graph_decide", "prepare_graph"} and getattr(view, "schema_version", 1) != 2:
+        raise task_attempts.AttemptError("Task graphs require explicit execution upgrade; existing v1 authority is unchanged")
+    binder = (execution_v2.request_binding if operation in {"graph_propose", "graph_decide", "prepare_graph"}
+              or (isinstance(expected_execution_revision, str) and expected_execution_revision.startswith("execution-control-v2:"))
+              else task_attempts.request_binding)
+    binder(operation, parameters, expected_execution_revision, expected_tasks_revision)
     if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", request_id):
         raise task_attempts.AttemptError("Invalid execution request key")
-    view = task_attempts.Store(workspace).read()
     if view is None:
         if operation != "enable":
             raise task_attempts.AttemptError("Execution control is disabled; enable explicitly first")
@@ -1717,6 +1724,31 @@ def execution_binding_status(record: dict[str, Any], source: dict[str, Any] | No
     return {"status": "current"}
 
 
+def graph_inspection(view: execution_v2.View, revision: str, source: dict[str, Any] | None,
+                      error: str | None) -> dict[str, Any]:
+    graph = view.graphs[revision]
+    try:
+        match = (task_graphs.match_source(graph["manifest"], source, view.enrollments) if source is not None else
+                 {"status": "source_unavailable", "reason": error})
+    except storage.StorageError as exc:
+        match = {"status": "source_unavailable", "reason": str(exc)}
+    current = revision == view.current_graph_revision
+    eligible = current and graph["current_review"] == "approved_for_preparation" and match["status"] == "current"
+    prepared = {item["prepared"]["task_id"] for item in view.attempts.values() if item["state"] == "prepared"}
+    return {"graph_revision": revision, "graph_digest": graph["digest"], "current": current,
+            "manifest": graph["manifest"], "planning_review": graph["current_review"],
+            "decisions": graph["decisions"], "source_binding": match,
+            "dependency_order": task_graphs.topology(graph["manifest"]),
+            "preparation_eligible": eligible,
+            "nodes": [{"task_id": node["task_id"], "depends_on": node["depends_on"],
+                       "preparation_eligible": eligible and node["task_id"] not in prepared,
+                       "dependency_acceptance": "unestablished" if node["depends_on"] else "not_required",
+                       "authorization": "none", "dispatchable": False} for node in graph["manifest"]["nodes"]],
+            "affected_preparations": [item["prepared"]["attempt_id"] for item in view.attempts.values()
+                if (item["prepared"].get("graph_binding") or {}).get("graph_revision") == revision],
+            "authorization": "none", "dispatchable": False}
+
+
 def execution_inspection(workspace: Path) -> dict[str, Any]:
     store = task_attempts.Store(workspace)
     result = {"execution": store.inspect_control(), "authorization": "none", "dispatchable": False,
@@ -1747,13 +1779,31 @@ def execution_inspection(workspace: Path) -> dict[str, Any]:
             return result
         error = f"Coordinated source assessment unavailable: {diagnostics.getvalue().strip() or str(exc)}"
     result["execution"] = {"status": "active", "revision": view.revision,
-                           "execution_authority_id": view.authority_id, "generation": view.generation}
+                           "execution_authority_id": view.authority_id, "generation": view.generation,
+                           "schema_version": getattr(view, "schema_version", 1)}
     result["source_assessment"] = {"coordinated": source is not None, "error": error,
                                    "revision": None if source is None else source["revision"]}
     result["enrollments"] = [{**record, "source_binding": execution_binding_status(record["bindings"][-1], source, error)}
                              for record in view.enrollments.values()]
     result["attempts"] = [{**record, "source_binding": execution_binding_status(record["prepared"], source, error)}
                          for record in view.attempts.values()]
+    if getattr(view, "schema_version", 1) == 2:
+        result["graphs"] = [graph_inspection(view, revision, source, error) for revision in view.graphs]
+        result["current_graph_revision"] = view.current_graph_revision
+        result["graph_managed_tasks"] = sorted(view.managed_tasks)
+        for attempt in result["attempts"]:
+            binding = attempt["prepared"].get("graph_binding")
+            if binding is None:
+                attempt["graph_binding_status"] = "not_graph_bound"
+            elif binding["graph_revision"] != view.current_graph_revision:
+                attempt["graph_binding_status"] = "superseded_revision"
+            else:
+                graph = view.graphs[binding["graph_revision"]]
+                report = next(item for item in result["graphs"] if item["graph_revision"] == view.current_graph_revision)
+                attempt["graph_binding_status"] = ("planning_review_changed" if graph["current_review"] != "approved_for_preparation"
+                    or graph["decisions"][-1]["decision_id"] != binding["decision_id"] else
+                    "current" if report["source_binding"]["status"] == "current"
+                    else "source_unavailable_or_stale")
     return result
 
 
@@ -1772,6 +1822,76 @@ def command_execution_enroll(args: argparse.Namespace) -> int:
         expected_tasks_revision=args.expect_tasks_revision, request_id=args.request_id), args.json)
 
 
+def command_execution_upgrade(args: argparse.Namespace) -> int:
+    workspace = workspace_path(args.workspace)
+    execution_v2.request_binding("upgrade", {}, args.expect_execution_revision, None)
+    with execution_control_mutation(workspace) as (store, held):
+        value = execution_v2.upgrade(store, args.expect_execution_revision, args.request_id, held)
+    return print_execution_result(value, args.json)
+
+
+def read_graph_document(path: str) -> dict[str, Any]:
+    try:
+        selected = Path(path).expanduser().resolve()
+        with os.fdopen(storage._open_regular(selected, os.O_RDONLY), "rb") as stream:
+            data = stream.read(task_graphs.MAX_BYTES + 1)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise task_graphs.GraphError(f"Cannot read operator-selected graph document: {exc}") from exc
+    if len(data) > task_graphs.MAX_BYTES:
+        raise task_graphs.GraphError("graph document exceeds 1 MiB")
+    return task_graphs.validate_document(task_attempts._json(data))
+
+
+def command_graph_propose(args: argparse.Namespace) -> int:
+    document = read_graph_document(args.document)
+    return print_execution_result(mutate_execution(workspace_path(args.workspace), "graph_propose", {"document": document},
+        expected_execution_revision=args.expect_execution_revision, expected_tasks_revision=args.expect_tasks_revision,
+        request_id=args.request_id), args.json)
+
+
+def command_graph_decide(args: argparse.Namespace) -> int:
+    parameters = {"graph_revision": args.graph_revision, "decision": args.decision, "reason": args.reason,
+                  "expected_graph_digest": args.expect_graph_digest}
+    return print_execution_result(mutate_execution(workspace_path(args.workspace), "graph_decide", parameters,
+        expected_execution_revision=args.expect_execution_revision, expected_tasks_revision=args.expect_tasks_revision,
+        request_id=args.request_id), args.json)
+
+
+def command_graph_inspect(args: argparse.Namespace) -> int:
+    workspace, rest = split_optional_workspace(list(args.items))
+    if len(rest) > 1:
+        raise task_graphs.GraphError("graph inspect accepts one optional graph revision")
+    value = execution_inspection(workspace)
+    if value["execution"]["status"] != "active":
+        return print_execution_result(value, args.json)
+    if value["execution"]["schema_version"] != 2:
+        raise task_attempts.AttemptError("Task graphs require explicit execution upgrade; v1 remains unchanged")
+    revision = (rest[0] if rest else None) or value["current_graph_revision"]
+    if revision is None:
+        return print_execution_result({"execution": value["execution"], "graph": None,
+            "authorization": "none", "dispatchable": False}, args.json)
+    if not re.fullmatch(task_attempts.UUID, revision):
+        raise task_graphs.GraphError("Invalid graph revision")
+    graph = next((item for item in value["graphs"] if item["graph_revision"] == revision), None)
+    if graph is None:
+        raise task_graphs.GraphError("Unknown graph revision")
+    return print_execution_result({"execution": value["execution"], "graph": graph,
+                                   "authorization": "none", "dispatchable": False}, args.json)
+
+
+def command_graph_export(args: argparse.Namespace) -> int:
+    if not re.fullmatch(task_attempts.UUID, args.graph_revision):
+        raise task_graphs.GraphError("Invalid graph revision")
+    view = task_attempts.Store(workspace_path(args.workspace)).read()
+    if view is None or getattr(view, "schema_version", 1) != 2:
+        raise task_attempts.AttemptError("Task graphs require explicit execution upgrade")
+    graph = view.graphs.get(args.graph_revision)
+    if graph is None:
+        raise task_graphs.GraphError("Unknown graph revision")
+    return print_execution_result({"manifest": graph["manifest"], "graph_digest": graph["digest"],
+        "execution_revision": view.revision, "authorization": "none", "dispatchable": False}, args.json)
+
+
 def read_attempt_intent(path: str) -> dict[str, Any]:
     try:
         selected = Path(path).expanduser().resolve()
@@ -1785,8 +1905,11 @@ def read_attempt_intent(path: str) -> dict[str, Any]:
 
 
 def command_attempt_prepare(args: argparse.Namespace) -> int:
-    intent = read_attempt_intent(args.intent)
-    return print_execution_result(mutate_execution(workspace_path(args.workspace), "prepare", {"task_id": args.task_id, "intent": intent},
+    graph_revision = getattr(args, "graph_revision", None)
+    operation = "prepare_graph" if graph_revision is not None else "prepare"
+    parameters = ({"task_id": args.task_id, "graph_revision": graph_revision} if graph_revision is not None else
+                  {"task_id": args.task_id, "intent": read_attempt_intent(args.intent)})
+    return print_execution_result(mutate_execution(workspace_path(args.workspace), operation, parameters,
         expected_execution_revision=args.expect_execution_revision, expected_tasks_revision=args.expect_tasks_revision,
         request_id=args.request_id), args.json)
 
@@ -1824,7 +1947,7 @@ def command_attempt_inspect(args: argparse.Namespace) -> int:
 def command_execution_recover(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     if not args.archive_pending and (not isinstance(args.expect_execution_revision, str)
-            or not re.fullmatch(task_attempts.EXEC_REV, args.expect_execution_revision)):
+            or not re.fullmatch(task_attempts.ALL_EXEC_REV, args.expect_execution_revision)):
         raise task_attempts.AttemptError("--confirm-authority requires an inspected active --expect-execution-revision")
     with execution_control_mutation(workspace) as (store, held):
         if args.archive_pending:
@@ -3368,7 +3491,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     attempt_prepare = attempt_sub.add_parser("prepare", help="Freeze one enrolled task/owner/intent snapshot without execution permission")
     attempt_prepare.add_argument("workspace", nargs="?", default=".")
     attempt_prepare.add_argument("task_id")
-    attempt_prepare.add_argument("--intent", required=True, help="Operator-selected bounded JSON task-intent document; never executed")
+    preparation = attempt_prepare.add_mutually_exclusive_group(required=True)
+    preparation.add_argument("--intent", help="Operator-selected bounded JSON task-intent document; unmanaged tasks only in v2")
+    preparation.add_argument("--graph-revision", help="Derive intent from this exact current approved v2 graph revision")
     execution_request_flags(attempt_prepare, tasks_revision=True)
     attempt_prepare.set_defaults(func=command_attempt_prepare)
     attempt_cancel = attempt_sub.add_parser("cancel", help="Cancel a local preparation before submission; not native cancellation")
@@ -3388,6 +3513,32 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     attempt_inspect.add_argument("--json", action="store_true")
     attempt_inspect.set_defaults(func=command_attempt_inspect)
 
+    graph = task_sub.add_parser("graph", help="Reviewed immutable DAG criteria, never a scheduler or execution grant")
+    graph_sub = graph.add_subparsers(dest="graph_command", required=True)
+    graph_propose = graph_sub.add_parser("propose", help="Freeze a DAG from explicitly enrolled current tasks")
+    graph_propose.add_argument("workspace", nargs="?", default=".")
+    graph_propose.add_argument("--document", required=True)
+    execution_request_flags(graph_propose, tasks_revision=True)
+    graph_propose.set_defaults(func=command_graph_propose)
+    graph_decide = graph_sub.add_parser("decide", help="Record planning review for the current immutable graph")
+    graph_decide.add_argument("workspace", nargs="?", default=".")
+    graph_decide.add_argument("graph_revision")
+    graph_decide.add_argument("--decision", choices=["approve", "changes-requested"], required=True)
+    graph_decide.add_argument("--reason", required=True)
+    graph_decide.add_argument("--expect-graph-digest", required=True)
+    graph_decide.add_argument("--expect-tasks-revision", help="Required for approve; omitted for source-independent changes-requested")
+    execution_request_flags(graph_decide)
+    graph_decide.set_defaults(func=command_graph_decide)
+    graph_inspect = graph_sub.add_parser("inspect", help="Read planning review, immutable criteria, topology, and source drift")
+    graph_inspect.add_argument("items", nargs="*", help="Optional Coven workspace and graph revision; current revision by default")
+    graph_inspect.add_argument("--json", action="store_true")
+    graph_inspect.set_defaults(func=command_graph_inspect)
+    graph_export = graph_sub.add_parser("export", help="Read the frozen manifest, not current mutable source")
+    graph_export.add_argument("workspace", nargs="?", default=".")
+    graph_export.add_argument("graph_revision")
+    graph_export.add_argument("--json", action="store_true")
+    graph_export.set_defaults(func=command_graph_export)
+
     execution = subparsers.add_parser("execution", help="Explicit preparation-only task enrollment authority; no native execution")
     execution_sub = execution.add_subparsers(dest="execution_command", required=True)
     execution_inspect = execution_sub.add_parser("inspect", help="Read execution authority and coordinated source diagnostics without creating a lock")
@@ -3398,6 +3549,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     execution_enable.add_argument("workspace", nargs="?", default=".")
     execution_request_flags(execution_enable)
     execution_enable.set_defaults(func=command_execution_enable)
+    execution_upgrade = execution_sub.add_parser("upgrade", help="Explicit backed-up v1-to-v2 graph support; requires no prepared attempts")
+    execution_upgrade.add_argument("workspace", nargs="?", default=".")
+    execution_request_flags(execution_upgrade)
+    execution_upgrade.set_defaults(func=command_execution_upgrade)
     execution_enroll = execution_sub.add_parser("enroll", help="Enroll exactly one selected task source without changing the task")
     execution_enroll.add_argument("workspace", nargs="?", default=".")
     execution_enroll.add_argument("task_id")

@@ -96,6 +96,9 @@ the same owner, until local cancellation is durably confirmed. Unrelated task
 effects remain allowed. Missing/malformed enabled execution control fails closed
 for fresh task effects, not for task listing or historical ledger receipt replay.
 No execution authority is enabled implicitly and no task format is changed.
+Execution-control v2 can additionally enforce reviewed graph criteria at the
+local preparation boundary; see [TASK_GRAPH_CONTRACT.md](TASK_GRAPH_CONTRACT.md).
+Planning approval is not task execution permission or dependency acceptance.
 
 Tokens are opaque content fingerprints, not monotonic revisions. Formatting
 changes invalidate them; changing and reverting to identical bytes restores the

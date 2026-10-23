@@ -38,6 +38,7 @@ CANCELLATION_RESERVE = 512 * 1024
 UUID = r"[0-9a-f]{32}"
 HEX = r"[0-9a-f]{64}"
 EXEC_REV = rf"execution-control-v1:{UUID}:[1-9][0-9]*:{HEX}"
+ALL_EXEC_REV = rf"{EXEC_REV}|execution-control-v2:{UUID}:[1-9][0-9]*:{HEX}"
 TASK_REV = rf"tasks-missing:v1|tasks-sha256:{HEX}|tasks-ledger:v1:{UUID}:{UUID}:(0|[1-9][0-9]*):{HEX}"
 BLOCKERS = ["PREPARATION_ONLY", "NATIVE_ADMISSION_NOT_IMPLEMENTED",
             "TASK_EXECUTION_AUTHORIZATION_NOT_IMPLEMENTED"]
@@ -448,10 +449,19 @@ class Store:
             raise AttemptError(f"cannot read execution control: {exc}") from exc
         if len(data) > MAX_CONTROL:
             _fail("control exceeds 16 MiB")
-        return _json(data)
+        control = _json(data)
+        if not isinstance(control, dict):
+            _fail("present execution control must be an object, never disabled")
+        return control
 
     def read(self):
         control = self._control()
+        if control is not None and control.get("schema_version") == 2:
+            if __package__:
+                from . import execution_v2
+            else:
+                import execution_v2
+            return execution_v2.replay(control)
         return None if control is None else _replay(control)
 
     def inspect_control(self):
@@ -460,7 +470,8 @@ class Store:
             if view is None:
                 return {"status": "disabled", "revision": DISABLED}
             return {"status": "active", "revision": view.revision,
-                    "execution_authority_id": view.authority_id, "generation": view.generation}
+                    "execution_authority_id": view.authority_id, "generation": view.generation,
+                    "schema_version": getattr(view, "schema_version", 1)}
         except (storage.StorageError, OSError) as exc:
             try:
                 self._paths()
@@ -532,8 +543,16 @@ class Store:
                expected_tasks_revision, request_id, source_loader, lock):
         self._lock(lock)
         key = _match(request_id, r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", "request key")
-        binding = request_binding(operation, parameters, expected_execution_revision, expected_tasks_revision)
         control = self._control()
+        if control is not None and control.get("schema_version") == 2:
+            if __package__:
+                from . import execution_v2
+            else:
+                import execution_v2
+            return execution_v2.mutate(self, operation, parameters,
+                expected_execution_revision=expected_execution_revision, expected_tasks_revision=expected_tasks_revision,
+                request_id=request_id, source_loader=source_loader, lock=lock)
+        binding = request_binding(operation, parameters, expected_execution_revision, expected_tasks_revision)
         view = None if control is None else _replay(control)
         if view and key in view.receipts:
             receipt = view.receipts[key]
