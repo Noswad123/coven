@@ -21,6 +21,12 @@ in [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md). Nothing imports implicitl
 | `state/.workspace.lock` | Persistent coordination inode, not state or ownership truth. |
 | `state/runtime-launch-control.json` | Opt-in single-use startup consumption/outcome authority; see the runtime-launch contract. |
 | `state/execution/control.json` | Explicit enrollment/preparation/cancellation and request receipts, never execution permission. |
+| `state/repository.json` | Explicit immutable checkout/base/root-tree facts; no Git mutation or execution grant. See [REPOSITORY_REGISTRATION_CONTRACT.md](REPOSITORY_REGISTRATION_CONTRACT.md). |
+
+Repository registration uses the shared workspace lock and atomic single-file
+publication primitives, but is independent of task/execution authority. Default
+repository inspection is source-free and uses no Git, lock, or fsync; optional
+verification adds ephemeral checkout observations without refreshing stored facts.
 
 No task envelope, revision sidecar, baseline import, or implicit migration is
 introduced. Legacy IDs and extension fields remain intact. New workspaces declare

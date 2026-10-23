@@ -142,7 +142,7 @@ Local slices:
   exercises through CLI, console, and interactive review. Add corrupt-state CLI
   and cached-helper matrices, unknown-field/legacy preservation, and safe label
   routing/rendering/Unicode serialization coverage.
-  Validation: `python3 -m unittest discover -s tests -v` — 382 tests pass;
+  Validation: `python3 -m unittest discover -s tests -v` — 433 tests pass;
   `bash -n bin/coven` and `git diff --check` pass.
 
 Implicit migration and destructive reset remain unavailable. Task-only baseline
@@ -346,6 +346,45 @@ scheduling/cancellation propagation, composers, run completion, repository/mutat
 integration/delivery grants, and recovery/retention hardening remain open. More
 nominal execution-policy envelopes cannot replace that native prerequisite.
 
+### Implementation progress — 2026-10-22
+
+**COV-07a: immutable local checkout/base registration implemented locally.**
+Contract: [REPOSITORY_REGISTRATION_CONTRACT.md](REPOSITORY_REGISTRATION_CONTRACT.md).
+
+- [x] Explicitly register one existing checkout/full commit/root tree and intended
+  delivery ref in `state/repository.json`, with fresh unregistered CAS and immutable
+  normalized original-request replay before reopening Git. Different inputs conflict;
+  no reset, replace, unregister, or task/attempt binding is introduced.
+- [x] Separate stored facts from ephemeral HEAD/dirty observations. Default inspect
+  is source-free with no Git/lock/fsync; optional bounded local verification retains
+  readable registration/revision when the repository is unavailable or changed.
+  Malformed authority is unavailable with null revision, never fresh absence.
+- [x] Preserve known publication/replay results through uncertain durability, with
+  exit 0 for committed/readable, 1 for prepublication failure/unavailable inspect,
+  and 2 for uncertainty. Dirty work is excluded and never copied or stashed.
+- [x] Support Git 2.48+, SHA-1/SHA-256 and linked worktrees with conservative split
+  index (including stale artifacts), partial-clone/promisor, alternates, config,
+  and extension exclusions. Validate exactly the commit and root-tree hashes;
+  complete checkout availability and object retention remain unestablished.
+
+- [x] Prove wrapper/CLI lifecycle, concurrent identical/conflicting processes,
+  process death before/after publication, exact-retry uncertainty, source-free
+  inspection, and preservation of task-ledger/runtime/graph/preparation authorities.
+  Reject split-index artifacts conservatively across filename casing before Git
+  can refresh their metadata; assert target bytes/mtime/ctime preservation.
+
+Validation: `python3 -m unittest discover -s tests -q` — **433 tests pass**
+(307 seconds); `bash -n bin/coven` and `git diff --check` pass. Deterministic
+deadline/combined-output tests and readiness/EOF-based descendant cleanup also
+passed 50 repeated tests without relaxing production probe bounds.
+
+This is an **independent fact-only prerequisite exception**, not automated M2
+rollout while M1 native admission/reconciliation/policy remains blocked. It grants
+no scheduler, worktree creation, composer, native execution, or tool-policy powers.
+Git selected from PATH is trusted code, not sandboxed; local path/inode identity is
+not a global repository identity. Existing graph preparation and worker readiness
+contracts remain unchanged. The rest of COV-07 and COV-08 through COV-12 remain open.
+
 | ID | Priority | Feature | Depends on |
 | --- | --- | --- | --- |
 | COV-01 | P0 | Safe initialization, identities, and confined paths | None |
@@ -534,8 +573,9 @@ failure can be retried without rerunning successful workers unnecessarily.
 
 ### COV-07 — Isolate code-changing attempts
 
-**Current gap:** all panes use the same Coven workspace. `work/` is a convention,
-not an isolated checkout. No repository or Git base is recorded.
+**Remaining gap:** all panes use the same Coven workspace. `work/` is a convention,
+not an isolated checkout. COV-07a now permits explicit immutable repository/base
+registration; per-attempt worktrees, execution binding, and cleanup remain open.
 
 **Build:**
 

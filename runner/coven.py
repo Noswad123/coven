@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 if __package__:
-    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2
+    from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories
 else:
     import records
     import storage
@@ -35,6 +35,7 @@ else:
     import task_attempts
     import task_graphs
     import execution_v2
+    import repositories
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -1648,6 +1649,26 @@ def command_worker_readiness(args: argparse.Namespace) -> int:
         for blocker in report["blockers"]:
             print(f"- {blocker['code']}: {blocker['next_step']}")
     return workers.report_exit_code(report)
+
+
+def print_repository_result(value: dict[str, Any], json_output: bool) -> int:
+    # Escape arbitrary filesystem labels even in terminal output. Registration
+    # is a source fact, never a mutation/delivery or native execution grant.
+    print(json.dumps(value, ensure_ascii=True, indent=None if json_output else 2))
+    if value.get("delivery", {}).get("outcome") == "durability_uncertain":
+        return 2
+    return 1 if value["status"] == "unavailable" else 0
+
+
+def command_repository_inspect(args: argparse.Namespace) -> int:
+    return print_repository_result(repositories.inspect_repository(
+        workspace_path(args.workspace), verify=args.verify), args.json)
+
+
+def command_repository_register(args: argparse.Namespace) -> int:
+    return print_repository_result(repositories.register_repository(
+        workspace_path(args.workspace), path=args.path, base=args.base,
+        delivery_target=args.delivery_target, expected_revision=args.expect_repository_revision), args.json)
 
 
 def execution_source(workspace: Path, snapshot_source_id: str) -> dict[str, Any]:
@@ -3623,6 +3644,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     action_stop.add_argument("action_id")
     action_stop.add_argument("--json", action="store_true")
     action_stop.set_defaults(func=command_action_stop)
+
+    repository = subparsers.add_parser("repository", help="Explicit immutable checkout/base facts; never authorizes Git writes or execution")
+    repository_sub = repository.add_subparsers(dest="repository_command", required=True)
+    repository_inspect = repository_sub.add_parser("inspect", help="Read frozen registration without Git; optionally observe the current checkout")
+    repository_inspect.add_argument("workspace", nargs="?", default=".")
+    repository_inspect.add_argument("--verify", action="store_true", help="Bounded read-only Git observations; never refreshes registration")
+    repository_inspect.add_argument("--json", action="store_true")
+    repository_inspect.set_defaults(func=command_repository_inspect)
+    repository_register = repository_sub.add_parser("register", help="Pin one existing checkout and full commit; no creation, replacement, or execution")
+    repository_register.add_argument("workspace", nargs="?", default=".")
+    repository_register.add_argument("--path", required=True, help="Existing checkout root; parent traversal is rejected")
+    repository_register.add_argument("--base", required=True, help="Full lowercase commit object ID, not a ref or revision expression")
+    repository_register.add_argument("--delivery-target", required=True, help="Intended refs/heads/... target only; grants no mutation permission")
+    repository_register.add_argument("--expect-repository-revision", required=True, help="repository-unregistered:v1 for fresh registration; exact original value on retry")
+    repository_register.add_argument("--json", action="store_true")
+    repository_register.set_defaults(func=command_repository_register)
 
     worker = subparsers.add_parser("worker", help="Inspect native adapter compatibility without worker execution")
     worker_sub = worker.add_subparsers(dest="worker_command", required=True)

@@ -68,7 +68,8 @@ coven/
 │   ├── workers.py         # help-only native adapter compatibility observations
 │   ├── task_attempts.py   # preparation-only execution intent/receipts and facade
 │   ├── task_graphs.py     # pure bounded DAG/criteria/source manifests
-│   └── execution_v2.py    # explicit graph upgrade, planning review/preparation
+│   ├── execution_v2.py    # explicit graph upgrade, planning review/preparation
+│   └── repositories.py    # immutable checkout/base facts and bounded local verification
 ├── examples/
 │   ├── README.md          # example authoring notes
 │   └── interactive-demo/  # default seeded workspace example
@@ -431,6 +432,34 @@ upgrade unchanged.
 but dependency acceptance is unestablished and every node remains non-dispatchable
 with authorization `none`. See [TASK_GRAPH_CONTRACT.md](TASK_GRAPH_CONTRACT.md)
 for the document format, upgrade/retry/capacity contract, and exact exclusions.
+
+## Immutable repository registration
+
+Register one existing checkout and an independently reviewed full commit ID;
+the optional workspace defaults to `.`. Registration is separate from task/graph
+preparation and grants no execution or Git mutation permission.
+
+```bash
+coven repository inspect /path/to/orchestration --json
+coven repository register /path/to/orchestration \
+  --path /path/to/checkout --base '<full lowercase commit ID>' \
+  --delivery-target refs/heads/main \
+  --expect-repository-revision repository-unregistered:v1 --json
+coven repository inspect /path/to/orchestration --verify --json
+```
+
+`state/repository.json` pins checkout locators, base commit/root tree, and intended
+target immutably. Dirty changes are allowed, excluded, and never copied. Default
+inspect is source-free: no Git, lock, or fsync. `--verify` uses bounded local Git
+(2.48+) and retains stored facts/revision if the checkout becomes unavailable.
+Only the commit/root tree are validated; complete checkout availability remains
+unestablished. Exact retries use the original syntactic request and original
+unregistered token before reopening Git; different inputs conflict. Exit 0 means
+committed/readable, 1 prepublication failure or unavailable inspect, and 2 uncertain
+durability. There is no reset/replace/unregister, worktree provisioning, task binding,
+or automatic M2 rollout. See
+[REPOSITORY_REGISTRATION_CONTRACT.md](REPOSITORY_REGISTRATION_CONTRACT.md) for
+normalization, conservative Git exclusions, trust limits, and retry semantics.
 
 ## User interaction
 
