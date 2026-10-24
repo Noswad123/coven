@@ -284,6 +284,9 @@ revisions can cause rejection, not automatic revision bump/replay.
 - Socket checks require a same-user private Unix socket (no group/other mode bits),
   resolve parent aliases, and fence device/inode. Filesystem checks are not peer
   authentication, a sandbox, race elimination, or rollback/tamper-proof authority.
+  The shorter byte-encoded selected/resolved pathname is used for a single
+  connection attempt so parent-symlink expansion need not overflow the Unix-socket
+  address limit. Identity stays canonical; alias retargeting fails the fences.
 - Read requests can trigger Kitsune's existing housekeeping (expiry, event drainage,
   title sync, possible default-workspace creation/spawn). Snapshot receipt and
   persisted native references do not attest freshness or zero server-side effects.
@@ -337,7 +340,7 @@ coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
 
 ## Validation
 
-The full offline suite passes **589 tests**, including **107 group tests**:
+The full offline suite passes **599 tests**, including **107 group tests**:
 35 authority, 42 existing publisher, 12 existing CLI/workflow, and 18 new
 process-group workflow/publication tests. Run with:
 
@@ -352,9 +355,11 @@ empty agent inventory, classification independence, stable moves/mapping races,
 shared deadline/read-budget exhaustion, uncertain promotion/confirmation, and zero
 reservations/writes on failed evidence. Existing interruption, durable reservation,
 lost-ack, and phase-accounting tests remain green. Architecture and safety reviews
-found no blocking issues; diff whitespace checks pass. Previous
-[live validation](KITSUNE_PROCESS_LIVE_VALIDATION.md) tested process **observation**,
-not this new end-to-end group binding/publication path or native lifecycle.
+found no blocking issues; diff whitespace checks pass. Ten additional socket-alias
+transport regressions cover short/long pathname selection and unchanged safety
+checks. [Live group validation](GROUPS_LIVE_VALIDATION.md) now confirms add/publish,
+visible labels, process exit, quiet-terminal TTL expiry and explicit replacement
+rebind against installed Linux binaries. It does not establish native lifecycle.
 
 ## Related files
 
@@ -366,4 +371,6 @@ not this new end-to-end group binding/publication path or native lifecycle.
 - [runner/kitsune_process_observation.py](runner/kitsune_process_observation.py), [KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md) — bracketed process evidence and interpreter limits.
 - [tests/test_groups.py](tests/test_groups.py), [tests/test_group_publisher.py](tests/test_group_publisher.py), [tests/test_group_commands.py](tests/test_group_commands.py) — offline coverage, not live-server validation.
 - [tests/test_process_groups.py](tests/test_process_groups.py) — private fake-endpoint process add/rebind and publisher boundaries.
+- [tests/test_socket_alias_transport.py](tests/test_socket_alias_transport.py) — long canonical/selected Unix-socket paths and alias/transport safety regressions.
+- [GROUPS_LIVE_VALIDATION.md](GROUPS_LIVE_VALIDATION.md) — installed Linux end-to-end evidence, transport fix, cleanup and limits.
 - [APP_BOUNDARIES.md](APP_BOUNDARIES.md); optional sibling [Kitsune annotations](../kitsune/ANNOTATIONS.md) — presentation policy, not installation dependencies.

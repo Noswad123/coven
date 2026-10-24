@@ -194,10 +194,11 @@ reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
-The full offline suite passes **589 tests**, including 107 group tests. Previous
-[live validation](KITSUNE_PROCESS_LIVE_VALIDATION.md) covered observation, not
-end-to-end process group binding/publication. Existing native/task safety contracts
-are unchanged.
+The full offline suite passes **599 tests**, including 107 group tests and 10
+socket-alias regressions. [Live group validation](GROUPS_LIVE_VALIDATION.md)
+confirms add/publish, visible labels, process exit, timer-driven TTL expiry and
+explicit replacement rebind against installed Linux binaries. Existing native/task
+safety contracts are unchanged; native lifecycle/execution was not validated.
 
 ## Generated workspace layout
 

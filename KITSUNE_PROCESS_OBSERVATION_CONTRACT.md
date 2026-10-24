@@ -127,8 +127,10 @@ negative-argument, native Djinn, direct UI and post-exit behavior against instal
 Linux binaries, without model requests. It did not require recognition changes.
 
 Explicit opt-in group adoption and revalidation are now implemented under the
-[group contract](GROUPS_CONTRACT.md). The full offline suite after that slice passes
-589 tests, protecting this observer's unchanged public contract. Installed Linux
+[group contract](GROUPS_CONTRACT.md). The full offline suite now passes
+599 tests, protecting this observer's unchanged public contract and socket-alias
+transport safety. [Live group validation](GROUPS_LIVE_VALIDATION.md) also confirms
+label publication, exit/TTL behavior and explicit process rebind. Installed Linux
 native/UI forms are sampled, not universally certified across packaging/platforms;
 additional launcher forms, activity interpretation and native lifecycle remain
 separate work. Do not disable Kitsune built-ins based on executable-family

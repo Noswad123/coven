@@ -177,10 +177,11 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
    active-agent detection. Explicit process-evidence group add/rebind is now
    implemented; built-in removal, automatic adoption and native actions are not.
 
-The process-group slice passes the **589-test full offline suite**, including
-107 group tests. Architecture/safety review found no blocking issues. Prior
-[live validation](KITSUNE_PROCESS_LIVE_VALIDATION.md) tested observation, not this
-new end-to-end group path. Validation cases and limits are tracked in
+The current slice passes the **599-test full offline suite**, including 107 group
+tests and 10 socket-alias regressions. Architecture/safety review found no blocking
+issues. [Live group validation](GROUPS_LIVE_VALIDATION.md) confirms installed Linux
+binding/publication, exit/TTL and explicit rebind behavior, not native lifecycle.
+Validation cases and limits are tracked in
 [the group contract](GROUPS_CONTRACT.md#validation).
 
 The older worker/composer backlog is deferred, not invalidated. Native execution

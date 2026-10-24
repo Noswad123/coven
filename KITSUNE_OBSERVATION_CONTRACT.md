@@ -85,6 +85,10 @@ and requires one newline-terminated response followed by EOF, with no trailing
 data and a matching id. The overall deadline covers connection, send, receive,
 and a final post-validation deadline check, rather than restarting per chunk.
 It does not retry or fall back to another endpoint.
+One connection uses the shorter filesystem-byte encoding of the selected and
+resolved pathname. This avoids parent-symlink expansion overflowing the Unix-socket
+address limit without changing the canonical endpoint identity. Each fence also
+re-resolves the selected parent, rejecting alias retargeting.
 
 Only snapshot protocol **18** is accepted. This is an adapter compatibility limit,
 not a universal cross-app lifecycle requirement. Required inventories and known
@@ -138,10 +142,12 @@ this documentation update. Offline fixture validation is owned by the implementa
 The focused observation/CLI suite passes 31 tests using private fake endpoints,
 including fragmented responses, deadline/framing failures, native-reference and
 status semantics, workspace preservation, and the standalone wrapper. The full
-Coven offline suite now passes **565 tests**, including the separate opt-in
-process observation slice; no live Kitsune endpoint was queried.
-Shell syntax and diff whitespace checks pass. These results do not establish
-installed-runtime compatibility or native lifecycle guarantees.
+Coven offline suite now passes **599 tests**, including process observation/group
+workflows and 10 socket-alias transport regressions. Offline fixtures query no live
+endpoint. Diff whitespace checks pass. Separate
+[live group validation](GROUPS_LIVE_VALIDATION.md) exercised the transport fix and
+installed Linux workflow; neither establishes universal runtime compatibility or
+native lifecycle guarantees.
 
 ## Related files
 

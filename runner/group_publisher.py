@@ -94,7 +94,11 @@ def _request(socket_path, method, params, *, deadline, max_response_bytes=104857
                              ensure_ascii=True, allow_nan=False).encode() + b"\n"
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
             stream.settimeout(_remaining(deadline))
-            stream.connect(endpoint["path"])
+            # Transport spelling need not be the canonical identity: a short
+            # parent alias may be the only address that fits sockaddr_un (or
+            # vice versa). fence() still re-resolves the original selection.
+            address = min((endpoint["path"], socket_path), key=lambda p: len(os.fsencode(p)))
+            stream.connect(address)
             fence()
             stream.settimeout(_remaining(deadline))
             started_write = writing

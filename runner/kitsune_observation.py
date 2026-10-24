@@ -246,6 +246,9 @@ def _read_request(endpoint, method, params, *, deadline, max_response_bytes):
         raise _Failure("response_limit")
 
     def fence():
+        parent, leaf = os.path.split(endpoint["selected"])
+        if os.path.join(os.path.realpath(parent), leaf) != endpoint["resolved"]:
+            raise _Failure("endpoint_replaced")
         info = _endpoint_stat(endpoint["resolved"])
         if (info.st_dev, info.st_ino) != (endpoint["device"], endpoint["inode"]):
             raise _Failure("endpoint_replaced")
@@ -254,7 +257,11 @@ def _read_request(endpoint, method, params, *, deadline, max_response_bytes):
     request = json.dumps({"id": request_id, "method": method, "params": params}).encode() + b"\n"
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
         stream.settimeout(_remaining(deadline))
-        stream.connect(endpoint["resolved"])
+        # Parent aliases can expand beyond sockaddr_un even when the selected
+        # address fits. Choose one address up front; canonical identity stays
+        # frozen and the selected alias is rechecked at each fence. No retry.
+        address = min((endpoint["resolved"], endpoint["selected"]), key=lambda p: len(os.fsencode(p)))
+        stream.connect(address)
         fence()
         stream.settimeout(_remaining(deadline))
         stream.sendall(request)
