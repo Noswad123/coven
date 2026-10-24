@@ -5,9 +5,13 @@
 `runner/kitsune_observation.py` implements initial, opt-in observation of one
 caller-selected **existing** Kitsune API socket. It is a compatibility bridge,
 not extraction of Kitsune's built-in agent behavior or a native lifecycle or
-reliability attestation. Annotation presentation and Coven grouping are not shipped.
+reliability attestation. Grouping and foreground annotation publishing are separate
+implemented paths; see [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md).
 
-The adapter sends only the existing `session.snapshot` read method. **This does
+The default adapter sends only the existing `session.snapshot` read method. The
+opt-in `--process-pane` mode uses a separate
+[process observation contract](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md) and report;
+the default behavior documented here is unchanged. **This does
 not promise zero server-side effects:** although Kitsune's snapshot builder takes
 `&self`, its existing dispatch pipeline expires metadata, drains internal events,
 synchronizes titles, and may ensure a default workspace in an empty session,
@@ -88,7 +92,7 @@ fields are validated; additive fields are allowed within bounds. Agents must
 match corresponding pane locators/status/reference fields; duplicate pane or
 terminal ids within either inventory are rejected.
 
-Independent future path (not implemented or required by observation):
+Independent optional path (implemented separately, not required by observation):
 
 ```text
 user-enabled annotation producer -> generic bounded annotations -> Kitsune
@@ -134,7 +138,8 @@ this documentation update. Offline fixture validation is owned by the implementa
 The focused observation/CLI suite passes 31 tests using private fake endpoints,
 including fragmented responses, deadline/framing failures, native-reference and
 status semantics, workspace preservation, and the standalone wrapper. The full
-Coven offline suite passes **464 tests**; no live Kitsune endpoint was queried.
+Coven offline suite now passes **565 tests**, including the separate opt-in
+process observation slice; no live Kitsune endpoint was queried.
 Shell syntax and diff whitespace checks pass. These results do not establish
 installed-runtime compatibility or native lifecycle guarantees.
 

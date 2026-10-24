@@ -34,6 +34,10 @@ additive `pane.annotate` and optional snapshot `annotations` capability/epoch
 discovery (binary protocol 18 unchanged). Broader future interfaces remain
 undecided. The initial observation bridge uses the existing Kitsune API; see
 [KITSUNE_OBSERVATION_CONTRACT.md](KITSUNE_OBSERVATION_CONTRACT.md).
+An opt-in [Djinn process-family shadow slice](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md)
+interprets generic foreground-process evidence in Coven, without using Kitsune's
+agent classification. It establishes neither active-agent nor native lifecycle
+identity and does not replace built-in detection or group bindings.
 Start with discovery/status observations, not a universal
 execution API. Djinn is the first runtime adapter, not the required native model
 for all agents. Future runtimes expose supported capabilities; missing guarantees
@@ -96,7 +100,8 @@ acceptance interpretation without overwriting native execution facts.
   Timer-driven expiry hides labels even on quiet terminals; disconnect is not
   immediately detected, so accepted text can last until TTL. Source conflicts
   cannot grant terminal control or agent/group authority.
-- The observation adapter requests only `session.snapshot`, but existing Kitsune
+- Default observation requests only `session.snapshot`; the explicit process-pane
+  shadow mode also requests `pane.process_info`. Existing Kitsune
   dispatch housekeeping can expire metadata, drain events, sync titles, or create
   a default workspace (potentially spawning a shell). Zero server-side effects
   are not promised. Snapshot receipt does not establish server freshness.
@@ -131,8 +136,11 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
 4. First optional generic terminal-border annotation slice implemented in Kitsune;
    explicit Coven foreground publishing implemented; broader workspace/presentation work remains open.
 5. Explicit groups/roles for existing agents implemented in Coven before further
-   worker/worktree implementation. Native group status/scheduling, automatic following,
-   and extraction are not shipped.
+    worker/worktree implementation. Native group status/scheduling, automatic following,
+    and extraction are not shipped.
+6. One-pane generic process evidence and Coven-owned Djinn executable-family
+   interpretation are implemented as an opt-in shadow mode. Recognition is not
+   active-agent detection; built-in removal and group adoption remain separate work.
 
 The older worker/composer backlog is deferred, not invalidated. Native execution
 contracts remain necessary for future execution, not for observing existing agents.

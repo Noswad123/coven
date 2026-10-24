@@ -181,7 +181,7 @@ def _inventory(snapshot):
     return snapshot
 
 
-def _snapshot(payload, request_id):
+def _result(payload, request_id, result_type):
     root = _decode(payload)
     _require(isinstance(root, dict) and root.get("id") == request_id)
     _require(("result" in root) != ("error" in root))
@@ -192,8 +192,12 @@ def _snapshot(payload, request_id):
         _string(error.get("message"))
         raise _Failure("server_error")
     result = root["result"]
-    _require(isinstance(result, dict) and result.get("type") == "session_snapshot")
-    return _inventory(result.get("snapshot"))
+    _require(isinstance(result, dict) and result.get("type") == result_type)
+    return result
+
+
+def _snapshot(payload, request_id):
+    return _inventory(_result(payload, request_id, "session_snapshot").get("snapshot"))
 
 
 def _endpoint_stat(path):
@@ -205,9 +209,7 @@ def _endpoint_stat(path):
     return info
 
 
-def inspect(socket_path: str, *, timeout: float = 3.0,
-            max_response_bytes: int = 1048576) -> dict:
-    """Observe once. Caller errors raise ValueError; runtime failures are envelopes."""
+def _arguments(socket_path, timeout, max_response_bytes):
     if (not isinstance(socket_path, str) or not socket_path.startswith("/")
             or "\0" in socket_path or ".." in socket_path.split("/")
             or socket_path.endswith("/")):
@@ -223,6 +225,61 @@ def inspect(socket_path: str, *, timeout: float = 3.0,
         raise ValueError("timeout must be finite and in (0, 30]")
     if type(max_response_bytes) is not int or not 1024 <= max_response_bytes <= 8 * 1024 * 1024:
         raise ValueError("response budget must be between 1024 and 8388608")
+
+
+def _remaining(deadline):
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise _Failure("timeout")
+    return left
+
+
+def _read_request(endpoint, method, params, *, deadline, max_response_bytes):
+    """Internal read-only transport, fenced to an already selected endpoint.
+
+    Budget includes LF; EOF is required, not just a complete JSON frame. Callers
+    performing multiple reads must subtract returned wire bytes from their budget.
+    """
+    if method not in {"session.snapshot", "pane.process_info"}:
+        raise ValueError("unsupported observation method")
+    if max_response_bytes <= 0:
+        raise _Failure("response_limit")
+
+    def fence():
+        info = _endpoint_stat(endpoint["resolved"])
+        if (info.st_dev, info.st_ino) != (endpoint["device"], endpoint["inode"]):
+            raise _Failure("endpoint_replaced")
+
+    request_id = uuid.uuid4().hex
+    request = json.dumps({"id": request_id, "method": method, "params": params}).encode() + b"\n"
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
+        stream.settimeout(_remaining(deadline))
+        stream.connect(endpoint["resolved"])
+        fence()
+        stream.settimeout(_remaining(deadline))
+        stream.sendall(request)
+        data = bytearray()
+        while True:
+            stream.settimeout(_remaining(deadline))
+            chunk = stream.recv(min(65536, max_response_bytes - len(data) + 1))
+            if not chunk:
+                break
+            data.extend(chunk)
+            if len(data) > max_response_bytes:
+                raise _Failure("response_limit")
+            newline = data.find(b"\n")
+            if newline >= 0 and newline != len(data) - 1:
+                raise _Failure("trailing_data")
+        if not data.endswith(b"\n"):
+            raise _Failure("incomplete_response")
+        fence()
+    return bytes(data[:-1]), request_id, len(data)
+
+
+def inspect(socket_path: str, *, timeout: float = 3.0,
+            max_response_bytes: int = 1048576) -> dict:
+    """Observe once. Caller errors raise ValueError; runtime failures are envelopes."""
+    _arguments(socket_path, timeout, max_response_bytes)
     started = time.monotonic()
     deadline = started + timeout
     report = {
@@ -236,12 +293,6 @@ def inspect(socket_path: str, *, timeout: float = 3.0,
         "assessment": "unavailable", "diagnostics": [],
     }
 
-    def remaining():
-        left = deadline - time.monotonic()
-        if left <= 0:
-            raise _Failure("timeout")
-        return left
-
     try:
         # Resolve parent aliases (not the leaf), notably macOS /var -> /private/var.
         parent, leaf = os.path.split(socket_path)
@@ -249,35 +300,11 @@ def inspect(socket_path: str, *, timeout: float = 3.0,
         report["endpoint"]["resolved"] = resolved
         before = _endpoint_stat(resolved)
         report["endpoint"].update(device=before.st_dev, inode=before.st_ino)
-        request_id = uuid.uuid4().hex
-        request = json.dumps({"id": request_id, "method": "session.snapshot", "params": {}}).encode() + b"\n"
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
-            stream.settimeout(remaining())
-            stream.connect(resolved)
-            after = _endpoint_stat(resolved)
-            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
-                raise _Failure("endpoint_replaced")
-            stream.settimeout(remaining())
-            stream.sendall(request)
-            data = bytearray()
-            while True:
-                stream.settimeout(remaining())
-                chunk = stream.recv(min(65536, max_response_bytes - len(data) + 1))
-                if not chunk:
-                    break
-                data.extend(chunk)
-                if len(data) > max_response_bytes:
-                    raise _Failure("response_limit")
-                newline = data.find(b"\n")
-                if newline >= 0 and newline != len(data) - 1:
-                    raise _Failure("trailing_data")
-            if not data.endswith(b"\n"):
-                raise _Failure("incomplete_response")
-            final = _endpoint_stat(resolved)
-            if (before.st_dev, before.st_ino) != (final.st_dev, final.st_ino):
-                raise _Failure("endpoint_replaced")
-        snapshot = _snapshot(bytes(data[:-1]), request_id)
-        remaining()
+        payload, request_id, _ = _read_request(
+            report["endpoint"], "session.snapshot", {}, deadline=deadline,
+            max_response_bytes=max_response_bytes)
+        snapshot = _snapshot(payload, request_id)
+        _remaining(deadline)
         agents = []
         for item in snapshot["agents"]:
             status = item["agent_status"]

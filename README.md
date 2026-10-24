@@ -117,6 +117,22 @@ native completion or job success; native references may be persisted and freshne
 is unknown. Nonobserved reports safely return empty agents, not runtime failure
 inferences. Exits: 0 observed, 1 unavailable, 2 incompatible.
 
+An optional shadow mode interprets generic foreground-process evidence in Coven,
+independently of Kitsune's agent inventory:
+
+```bash
+coven observe kitsune --socket /absolute/path/to/existing-api.sock \
+  --process-pane w18:p85 --json
+```
+
+This selects **one exact pane**, brackets `pane.process_info` with snapshots, and
+recognizes only literal `djinn`/`djinn-ui` executable basenames from structured argv.
+Its separate report contains `observations`, not `agents` or group participants.
+Recognition is executable-family evidence (including help/maintenance modes), not
+an authenticated binary, active agent, verified session, or lifecycle fact. No
+launch/resume/detection behavior is removed. See
+[KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md).
+
 **Read method does not mean zero server-side effects:** existing Kitsune dispatch
 housekeeping may expire metadata, drain events, sync titles, or create a default
 workspace (potentially spawning a shell). No live connections were run for this

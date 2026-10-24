@@ -24,6 +24,7 @@ from typing import Any, Callable
 
 if __package__:
     from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories, kitsune_observation, groups, group_publisher
+    from . import kitsune_process_observation
 else:
     import records
     import storage
@@ -37,6 +38,7 @@ else:
     import execution_v2
     import repositories
     import kitsune_observation
+    import kitsune_process_observation
     import groups
     import group_publisher
 
@@ -1678,8 +1680,13 @@ def command_observe_kitsune(args: argparse.Namespace) -> int:
     # No workspace authority, executable, or implicit endpoint selection. This
     # one-shot observation has no annotation/UI return path or native actions.
     try:
-        value = kitsune_observation.inspect(args.socket, timeout=args.timeout,
-                                            max_response_bytes=args.max_response_bytes)
+        if args.process_pane is not None:
+            value = kitsune_process_observation.inspect(
+                args.socket, args.process_pane, timeout=args.timeout,
+                max_response_bytes=args.max_response_bytes)
+        else:
+            value = kitsune_observation.inspect(args.socket, timeout=args.timeout,
+                                                max_response_bytes=args.max_response_bytes)
     except ValueError as exc:
         raise storage.StorageError(f"Invalid Kitsune observation request: {exc}") from exc
     print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
@@ -3764,8 +3771,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     observe_sub = observe.add_subparsers(dest="observation_adapter", required=True)
     observe_kitsune = observe_sub.add_parser("kitsune", help="Read an existing selected JSON API socket; no discovery, autostart, or annotations")
     observe_kitsune.add_argument("--socket", required=True, help="Explicit absolute path to an existing private Kitsune JSON API socket")
+    observe_kitsune.add_argument("--process-pane", help="Opt-in shadow Djinn executable-family observation for one exact pane ID; no lifecycle or control")
     observe_kitsune.add_argument("--timeout", type=float, default=3.0, help="Overall observation seconds, finite and in (0, 30]")
-    observe_kitsune.add_argument("--max-response-bytes", type=int, default=1048576, help="Response budget including LF, 1024 through 8388608")
+    observe_kitsune.add_argument("--max-response-bytes", type=int, default=1048576, help="Total response budget including LF, 1024 through 8388608")
     observe_kitsune.add_argument("--json", action="store_true", help="Compact ASCII-escaped JSON observation report")
     observe_kitsune.set_defaults(func=command_observe_kitsune)
 
