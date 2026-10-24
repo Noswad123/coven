@@ -53,6 +53,221 @@ class GroupTests(unittest.TestCase):
     def write(self, state):
         self.path.write_text(json.dumps(state), encoding="utf-8")
 
+    def process_binding(self, terminal="terminal-1"):
+        binding = self.binding(terminal)
+        binding["evidence"].update(
+            provenance="kitsune.pane.process_info",
+            process_evidence={"interpreter": "coven.kitsune.djinn-process.v1", "matches": [
+                {"pid": 7, "executable_family": "djinn", "rule": "exact_posix_argv0_basename"},
+                {"pid": 2**32 - 1, "executable_family": "djinn-ui", "rule": "exact_posix_argv0_basename"}]})
+        return binding
+
+    def test_process_schema_variants_are_strict_and_reads_never_migrate(self):
+        self.create()
+        self.add()
+        original = self.read()
+        for version in (1, 2):
+            state = deepcopy(original["state"])
+            state["schema_version"] = version
+            for binding in (self.binding(), self.binding(native={
+                    "source": "snapshot", "agent": "djinn", "kind": "id", "value": "native"}),
+                    self.process_binding()):
+                state["groups"][0]["members"][0]["binding"] = binding
+                self.write(state)
+                raw = self.path.read_bytes()
+                groups._binding(binding)
+                with patch.object(storage, "atomic_replace_bytes", side_effect=AssertionError("rewrite")):
+                    if version == 1 and "process_evidence" in binding["evidence"]:
+                        with self.assertRaises(groups.GroupError):
+                            self.read()
+                    else:
+                        self.assertEqual(self.read()["state"], state)
+                self.assertEqual(self.path.read_bytes(), raw)
+        for version in (True, False, 0, 3, 2.0, "2", None):
+            state = deepcopy(original["state"])
+            state["schema_version"] = version
+            with self.subTest(version=version), self.assertRaises(groups.GroupError):
+                groups._validate(state)
+        state = deepcopy(original["state"])
+        state["schema_version"] = 2
+        self.assertEqual(groups._revision(state), original["revision"])
+
+    def test_process_evidence_strict_fields_values_bounds_and_order(self):
+        self.create()
+        self.add()
+        self.reserve()
+        original = self.read()["state"]
+        invalid = []
+        evidence = self.process_binding()["evidence"]
+        for field in evidence:
+            value = deepcopy(evidence)
+            del value[field]
+            invalid.append(value)
+        for updates in ({"extra": 1}, {"provenance": "unknown"},
+                        {"provenance": "kitsune.session.snapshot"},
+                        {"agent_kind_hint": None}, {"agent_kind_hint": "Djinn"},
+                        {"native_reference": {"source": "s", "agent": "djinn", "kind": "id", "value": "x"}},
+                        {"native_binding": "observed_reference"}):
+            invalid.append(deepcopy(evidence) | updates)
+        details = evidence["process_evidence"]
+        for value in (None, [], {}, {"interpreter": details["interpreter"]},
+                      {"matches": details["matches"]}, details | {"extra": 1},
+                      details | {"interpreter": "coven.kitsune.djinn-process.v2"}):
+            invalid.append(deepcopy(evidence) | {"process_evidence": value})
+        match = details["matches"][0]
+        bad_matches = [None, {}, [], [None], [match] * 1025,
+                       list(reversed(details["matches"])), [match, match | {"executable_family": "djinn-ui"}]]
+        for field in match:
+            value = deepcopy(match)
+            del value[field]
+            bad_matches.append([value])
+        for updates in ([{"pid": pid} for pid in (True, False, 0, -1, 2**32, 7.0, "7", None)]
+                        + [{"executable_family": family} for family in ("Djinn", "other", None, [])]
+                        + [{"rule": rule} for rule in ("basename", None, [])] + [{"extra": 1}]):
+            bad_matches.append([match | updates])
+        for matches in bad_matches:
+            invalid.append(deepcopy(evidence) | {"process_evidence": details | {"matches": matches}})
+        raw = self.path.read_bytes()
+        for index, value in enumerate(invalid):
+            binding = self.process_binding()
+            binding["evidence"] = value
+            with self.subTest(index=index):
+                with self.assertRaises(groups.GroupError):
+                    groups._binding(binding)
+                with self.assertRaises(groups.GroupError):
+                    self.add(binding=binding, rebind=True)
+                self.assertEqual(self.path.read_bytes(), raw)
+                state = deepcopy(original)
+                state["schema_version"] = 2
+                state["groups"][0]["members"][0]["binding"] = binding
+                self.write(state)
+                stored = self.path.read_bytes()
+                with self.assertRaises(groups.GroupError):
+                    self.read()
+                self.assertEqual(self.path.read_bytes(), stored)
+                self.write(original)
+                raw = self.path.read_bytes()
+        binding = self.process_binding()
+        binding["evidence"]["process_evidence"]["matches"] = [
+            match | {"pid": pid} for pid in range(1, 1025)]
+        self.add(binding=binding, rebind=True)
+        self.assertEqual(self.read()["state"]["groups"][0]["members"][0]["binding"], binding)
+
+    def test_process_rebind_promotes_once_atomically_preserving_identity_and_counters(self):
+        self.create()
+        first = self.add()
+        self.reserve()
+        before = self.read()
+        publish = storage.atomic_replace_bytes
+        def check_publication(path, data):
+            self.assertEqual(self.read(), before)
+            candidate = groups._validate(json.loads(data))
+            self.assertEqual(candidate["schema_version"], 2)
+            self.assertEqual(candidate["content_revision"], before["state"]["content_revision"] + 1)
+            self.assertEqual(candidate["groups"][0]["members"][0]["binding"], self.process_binding())
+            publish(path, data)
+        with patch.object(storage, "atomic_replace_bytes", side_effect=check_publication) as writer:
+            result = self.add(binding=self.process_binding(), rebind=True, expected_revision=before["revision"])
+        self.assertEqual(writer.call_count, 1)
+        after = self.read()
+        self.assertEqual(result["revision"], after["revision"])
+        self.assertEqual(result["delivery"]["outcome"], "durably_committed")
+        self.assertEqual(result["member"]["participant_id"], first["member"]["participant_id"])
+        for field in ("workspace_id", "publication_counters"):
+            self.assertEqual(after["state"][field], before["state"][field])
+        self.assertEqual(result["group"]["group_id"], first["group"]["group_id"])
+        self.assertEqual(self.reserve()["reservations"], {"terminal-1": 2})
+        raw = self.path.read_bytes()
+        moved = self.process_binding()
+        moved["evidence"]["observed_at"] = "2026-10-23T13:00:00+00:00"
+        moved["presentation"]["pane_id_at_binding"] = "pane-2"
+        with patch.object(storage, "atomic_replace_bytes", side_effect=AssertionError("rewrite")):
+            self.assertEqual(self.add(binding=moved)["outcome"], "unchanged")
+        self.assertEqual(self.path.read_bytes(), raw)
+        for binding in (self.binding(), self.process_binding()):
+            self.add(binding=binding, rebind=True)
+            self.assertEqual(self.read()["state"]["schema_version"], 2)
+        groups.remove_member(self.workspace, "review", "reviewer")
+        self.assertEqual(self.read()["state"]["schema_version"], 2)
+        self.add()
+        self.assertEqual(self.reserve()["reservations"], {"terminal-1": 3})
+        self.assertEqual(self.read()["state"]["schema_version"], 2)
+
+    def test_process_stable_evidence_requires_explicit_rebind(self):
+        self.create()
+        first = self.add(binding=self.process_binding())
+        bindings = [self.binding()]
+        for updates in ({"pid": 8}, {"executable_family": "djinn-ui"}):
+            binding = self.process_binding()
+            binding["evidence"]["process_evidence"]["matches"][0].update(updates)
+            bindings.append(binding)
+        for binding in bindings:
+            self.add(binding=self.process_binding(), rebind=True)
+            raw = self.path.read_bytes()
+            with self.assertRaisesRegex(groups.GroupError, "explicit rebind"):
+                self.add(binding=binding)
+            self.assertEqual(self.path.read_bytes(), raw)
+            rebound = self.add(binding=binding, rebind=True)
+            self.assertEqual(rebound["member"]["participant_id"], first["member"]["participant_id"])
+        # Unsupported interpreters are invalid even with explicit rebind.
+        binding = self.process_binding()
+        binding["evidence"]["process_evidence"]["interpreter"] += ".other"
+        raw = self.path.read_bytes()
+        with self.assertRaises(groups.GroupError):
+            self.add(binding=binding, rebind=True)
+        self.assertEqual(self.path.read_bytes(), raw)
+
+    def test_failed_process_promotions_preserve_bytes_ids_counters_and_cas(self):
+        self.create()
+        self.add()
+        self.reserve()
+        before = self.read()
+        raw = self.path.read_bytes()
+        attempts = [lambda: self.add(binding=self.process_binding()),
+                    lambda: self.add(binding=self.process_binding(), rebind=True, expected_revision=groups.UNINITIALIZED),
+                    lambda: self.add("duplicate", binding=self.process_binding()),
+                    lambda: groups.add_member(self.workspace, "missing", "m", "Role", self.process_binding())]
+        with patch.object(storage, "atomic_replace_bytes", side_effect=AssertionError("write")):
+            for attempt in attempts:
+                with self.assertRaises(groups.GroupError):
+                    attempt()
+                self.assertEqual(self.path.read_bytes(), raw)
+                self.assertEqual(self.read(), before)
+        with patch.object(storage, "atomic_replace_bytes", side_effect=storage.StorageError("prepublish")):
+            with self.assertRaises(storage.StorageError):
+                self.add(binding=self.process_binding(), rebind=True)
+        self.assertEqual(self.path.read_bytes(), raw)
+        state = deepcopy(before["state"])
+        state["content_revision"] = 2**64 - 1
+        self.write(state)
+        raw = self.path.read_bytes()
+        with self.assertRaises(groups.GroupError):
+            self.add(binding=self.process_binding(), rebind=True)
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.write(before["state"])
+        result = self.add(binding=self.process_binding(), rebind=True, expected_revision=before["revision"])
+        raw = self.path.read_bytes()
+        with self.assertRaises(groups.GroupError):
+            self.add(binding=self.process_binding(), expected_revision=before["revision"])
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.assertEqual(self.reserve(expected_revision=result["revision"])["reservations"], {"terminal-1": 2})
+
+    def test_concurrent_process_add_promotions_have_one_cas_winner(self):
+        first = self.create()
+        def conditional(index):
+            try:
+                return self.add(f"m{index}", binding=self.process_binding(f"t{index}"),
+                                expected_revision=first["revision"])
+            except groups.GroupError:
+                return None
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(conditional, range(4)))
+        self.assertEqual(sum(result is not None for result in results), 1)
+        state = self.read()["state"]
+        self.assertEqual(state["schema_version"], 2)
+        self.assertEqual(state["content_revision"], 2)
+        self.assertEqual(len(state["groups"][0]["members"]), 1)
+
     def test_missing_read_is_pure_and_only_create_initializes(self):
         with patch.object(storage, "workspace_lock", side_effect=AssertionError("lock")), patch(
                 "os.fsync", side_effect=AssertionError("sync")):

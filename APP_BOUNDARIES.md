@@ -5,7 +5,8 @@
 Decision date: **2026-10-22**. Status: **accepted target; initial read-only
 observation implemented in Coven; production opt-in terminal-border annotations
 implemented in Kitsune; explicit participant groups/roles and a foreground publisher
-implemented in Coven; native group status/scheduling, automatic following, extraction,
+implemented in Coven, including explicit process-evidence group binding independent
+of Kitsune's agent inventory; native group status/scheduling, automatic following, extraction,
 and workspace annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
 This decision rebaselines near-term priorities; it does not remove current features.
@@ -37,7 +38,10 @@ undecided. The initial observation bridge uses the existing Kitsune API; see
 An opt-in [Djinn process-family shadow slice](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md)
 interprets generic foreground-process evidence in Coven, without using Kitsune's
 agent classification. It establishes neither active-agent nor native lifecycle
-identity and does not replace built-in detection or group bindings.
+identity and does not replace built-in detection. Explicit
+`group add --process-evidence` now consumes fresh bracketed process evidence for a participant
+binding, without requiring inventory membership or importing a saved observation.
+Default snapshot group binding is unchanged; neither mode grants native actions.
 Start with discovery/status observations, not a universal
 execution API. Djinn is the first runtime adapter, not the required native model
 for all agents. Future runtimes expose supported capabilities; missing guarantees
@@ -84,6 +88,20 @@ observation: Kitsune -> Coven adapter -> sourced observations
 annotation: user-enabled producer -> pane.annotate -> Kitsune terminal border
 ```
 
+Process binding is an explicit local declaration, not automatic enrollment:
+`group add --process-evidence` brackets `pane.process_info` with snapshots and stores
+canonical PID/family/rule matches. Successful process add/rebind atomically promotes
+the group authority from schema 1 (snapshot only) to schema 2 (mixed bindings).
+This is an explicit minimum-reader-version opt-in: older readers reject schema 2
+and fail closed. UUIDs/counters and `groups-v1` token format/CAS remain intact; that prefix
+is not an authority version. Removal or snapshot rebind never downgrades schema 2.
+
+Before any reservation/write, publication resolves current panes and reobserves
+every process member: one initial snapshot + three reads per process member under
+one 3-second cycle deadline and aggregate 1 MiB read budget. Missing, unrecognized
+or changed evidence stops publication without fallback/rebind. Snapshot-only and
+generic annotation-write behavior, including 6000 ms TTL, remain unchanged.
+
 Coven-owned participant grouping/display roles and explicit label publication are
 implemented; native group lifecycle/progress interpretation and scheduling remain open.
 Native facts remain runtime authority.
@@ -101,10 +119,16 @@ acceptance interpretation without overwriting native execution facts.
   immediately detected, so accepted text can last until TTL. Source conflicts
   cannot grant terminal control or agent/group authority.
 - Default observation requests only `session.snapshot`; the explicit process-pane
-  shadow mode also requests `pane.process_info`. Existing Kitsune
+  shadow mode and explicit process group binding also request `pane.process_info`. Existing Kitsune
   dispatch housekeeping can expire metadata, drain events, sync titles, or create
   a default workspace (potentially spawning a shell). Zero server-side effects
   are not promised. Snapshot receipt does not establish server freshness.
+- Process bindings ignore valid Kitsune native-reference/classification changes,
+  but snapshot validation still includes the legacy agent shape. Only observation
+  time and pane-at-binding are excluded from stable binding comparison; canonical
+  match ordering is not meaningful. Other evidence changes require explicit
+  `--rebind`. Stable same-terminal moves are allowed, but PID reuse/ABA remains a
+  caveat. Djinn-family evidence includes help/maintenance, not active-agent truth.
 - Coven must be usable headless or with other multiplexers; a missing pane does
   not erase an agent/session or prove completion. This is a target, not a claim
   that every current workflow already supports headless operation.
@@ -117,11 +141,21 @@ acceptance interpretation without overwriting native execution facts.
 
 ## Example usage
 
-Current workflow: a user groups already-running agents from Kitsune's inventory in
+Current workflow: a user groups already-running participants from Kitsune's inventory in
 Coven and assigns display roles, with optional native references (not fresh identity
 or lifecycle verification). The explicit foreground publisher sends generic group/role
 labels; only the Kitsune presentation adapter is supported in v1. See the
 [quick start](GROUPS_CONTRACT.md#quick-start-existing-agents-separate-orchestration-workspace).
+For inventory-independent binding to one current pane, explicitly opt in:
+
+```sh
+coven group add WORKSPACE auth-review --member backend --role Investigator \
+  --socket ABS --pane w18:p85 --process-evidence
+```
+
+Use an existing Coven workspace, an explicit absolute API socket, and an inspected
+current pane; add `--rebind` for changed stable evidence and optionally
+`--expect-revision '<current group token>'`. No execution/identity grant follows.
 Disconnecting Coven leaves terminals
 usable; accepted annotations expire by TTL, not immediate disconnect detection.
 No session is started or cancelled by grouping. The working manual build-label
@@ -140,7 +174,14 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
     and extraction are not shipped.
 6. One-pane generic process evidence and Coven-owned Djinn executable-family
    interpretation are implemented as an opt-in shadow mode. Recognition is not
-   active-agent detection; built-in removal and group adoption remain separate work.
+   active-agent detection. Explicit process-evidence group add/rebind is now
+   implemented; built-in removal, automatic adoption and native actions are not.
+
+The process-group slice passes the **589-test full offline suite**, including
+107 group tests. Architecture/safety review found no blocking issues. Prior
+[live validation](KITSUNE_PROCESS_LIVE_VALIDATION.md) tested observation, not this
+new end-to-end group path. Validation cases and limits are tracked in
+[the group contract](GROUPS_CONTRACT.md#validation).
 
 The older worker/composer backlog is deferred, not invalidated. Native execution
 contracts remain necessary for future execution, not for observing existing agents.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Coven can group **already-running agents**, assign display roles, and explicitly
+Coven can group **already-running participants**, assign display roles, and explicitly
 publish `GROUP NAME · ROLE` through Kitsune's generic annotations. Group and
 participant UUIDs are Coven declarations, with human selectors for CLI use; they
 are independent of task authority, the workspace agent roster, and native runtime
@@ -10,7 +10,7 @@ identity. Roles do not change Djinn policy, personas, prompts, or configuration.
 
 Only the Kitsune presentation adapter is implemented in v1. The model is not
 Djinn-specific, but this is not universal runtime support, native group status,
-scheduling, agent-feature extraction, or automatic following of replacement agents.
+scheduling, complete agent-feature extraction, or automatic following of replacement agents.
 No agent is launched, resumed, sent terminal input, or cancelled by these commands.
 
 ### Quick start: existing agents, separate orchestration workspace
@@ -38,10 +38,23 @@ coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
 coven group list WORKSPACE --json
 ```
 
-Choose the **actual current pane ID from `observe`'s `agents` inventory** (the
-example ID is not a lookup by name). Agents without a native reference can join;
-an arbitrary pane absent from the agent inventory cannot. `add` reads a fresh
-snapshot and writes local membership only; it sends no annotation or other UI write.
+By default, choose the **actual current pane ID from `observe`'s `agents` inventory**
+(the example ID is not a lookup by name). Agents without a native reference can
+join; a pane absent from that inventory cannot join through default binding.
+Alternatively, explicitly opt into fresh Coven process evidence, independently of
+the agent inventory:
+
+```sh
+coven observe kitsune --socket ABS --process-pane w18:p85 --json
+coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
+  --socket ABS --pane w18:p85 --process-evidence
+```
+
+The observation is for inspection, not an import: `add --process-evidence` reads
+fresh bracketed evidence itself and recognizes only reported `djinn`/`djinn-ui`
+executable families. It explicitly opts the group authority into schema 2, which
+older readers reject. Both add modes write local membership only; neither sends
+an annotation or other UI write.
 The older one-shot `observe` command still has no annotation-write capability.
 
 For labels, the user must first manually enable a dedicated source in Kitsune's
@@ -77,7 +90,7 @@ are optional; replace `TOKEN` with a freshly inspected group revision.
 
 ```text
 coven group create WORKSPACE auth-review --name 'Authentication review' [--expect-revision TOKEN] [--json]
-coven group add WORKSPACE auth-review --member backend --role 'Investigator' --socket ABS --pane w18:p85 [--rebind] [--expect-revision TOKEN] [--json]
+coven group add WORKSPACE auth-review --member backend --role 'Investigator' --socket ABS --pane w18:p85 [--process-evidence] [--rebind] [--expect-revision TOKEN] [--json]
 coven group remove WORKSPACE auth-review --member backend [--expect-revision TOKEN] [--json]
 coven group list WORKSPACE [--json]
 coven group publish WORKSPACE auth-review --socket ABS --source coven [--duration SECONDS] [--json]
@@ -94,8 +107,14 @@ must already be enabled. Output is JSON in both modes; `--json` makes it compact
   accepts the newly observed binding while preserving that participant UUID.
   Stable comparison excludes only `observed_at` and `pane_id_at_binding`: a fresh
   observation timestamp or same-terminal pane move alone is an unchanged retry,
-  not a binding refresh. Endpoint, terminal, agent-kind and native-reference changes
-  are not ignored.
+  not a binding refresh. All other binding fields are stable, including endpoint,
+  terminal, provenance, process interpreter/matches, agent hint and native reference.
+  Process matches are canonicalized before comparison; response ordering alone
+  is not a change. Switching evidence variants also requires `--rebind`.
+- `add --process-evidence`: fresh `session.snapshot` -> `pane.process_info` ->
+  `session.snapshot` reads must agree on the selected pane mapping. No saved
+  observation import, inventory fallback, native identity or execution grant exists.
+  Omit the flag to retain the default agent-inventory snapshot binding.
 - `remove`: removes membership only, including an unchanged result when absent.
   It neither clears remote labels nor cancels agents; publication counters remain.
   Removing then re-adding creates a new participant UUID.
@@ -114,13 +133,14 @@ optional CAS checks the fresh current token even for an otherwise unchanged retr
 
 ### Exact authority schema and limits
 
-`state/groups.json` is a separate, bounded schema-1 authority, not a task-ledger
-projection. All objects below have exactly the listed fields; unknown/duplicate
+`state/groups.json` is a separate, bounded authority, not a task-ledger projection.
+Schema 1 permits snapshot bindings only; schema 2 permits mixed snapshot/process
+bindings. All objects below have exactly the listed fields; unknown/duplicate
 JSON keys are rejected. The existing workspace needs a regular `coven.json` and
 nonsymlink `state/` directory, not a healthy task/agent/execution authority.
 
 ```text
-root = {schema_version: 1, workspace_id: UUID, content_revision: u64,
+root = {schema_version: 1|2, workspace_id: UUID, content_revision: u64,
         groups: [group], publication_counters: [counter]}
 group = {group_id: UUID, key: selector, name: display, members: [member]}
 member = {participant_id: UUID, key: selector, role: display, binding: binding}
@@ -129,14 +149,31 @@ presentation = {adapter: "kitsune", endpoint: endpoint,
                 terminal_id: string, pane_id_at_binding: string}
 endpoint = {path: resolved_absolute_path, device: nonnegative_integer,
             inode: nonnegative_integer}
-evidence = {provenance: "kitsune.session.snapshot", observed_at: UTC_ISO_timestamp,
-            agent_kind_hint: string|null, native_reference: native|null,
-            native_binding: "unestablished"|"observed_reference"}
+evidence = snapshot_evidence | process_evidence_variant
+snapshot_evidence = {provenance: "kitsune.session.snapshot", observed_at: UTC_ISO_timestamp,
+             agent_kind_hint: string|null, native_reference: native|null,
+             native_binding: "unestablished"|"observed_reference"}
+process_evidence_variant = {provenance: "kitsune.pane.process_info",
+            observed_at: UTC_ISO_timestamp, agent_kind_hint: "djinn",
+            native_reference: null, native_binding: "unestablished",
+            process_evidence: {interpreter: "coven.kitsune.djinn-process.v1",
+                               matches: [match]}}
+match = {pid: positive_u32, executable_family: "djinn"|"djinn-ui",
+         rule: "exact_posix_argv0_basename"}
 native = {source: string, agent: string, kind: "id"|"path", value: string}
 counter = {endpoint: endpoint, source: source_ID, epoch: nonempty_string,
            watermarks: {terminal_id: positive_u64}}
 ```
 
+- New authorities start at schema 1. Only a successful explicit process add/rebind
+  promotes 1 -> 2, atomically inside that group mutation. UUIDs, publication
+  counters and the CAS algorithm are preserved; ordinary changed-content revision
+  rules still apply. Schema 2 is a minimum-reader-version opt-in: older schema-1
+  readers fail closed. Removal of process members or rebind to snapshots never
+  downgrades it. Reads and snapshot-only operations do not initiate promotion.
+- Process matches are nonempty, at most 1024 entries, with unique PIDs (integers
+  1..2^32-1, never booleans), sorted by `(pid, executable_family, rule)`. Stored
+  noncanonical order and variant-inappropriate fields are rejected.
 - UUIDs are canonical; group/participant UUIDs are unique across the authority.
   The workspace UUID is allocated by first group creation, not borrowed from the
   task ledger. Selectors match `[a-z0-9][a-z0-9_-]{0,63}`; group keys are globally
@@ -166,6 +203,8 @@ This is a whole-group-content token, **not an exact-file-byte hash**:
 `publication_counters`, schema metadata, and JSON formatting are excluded.
 Content revisions increment on changed declarations, not no-ops or reservations;
 overflow is rejected. Counter updates alone do not invalidate CAS/publisher content.
+The `groups-v1` prefix denotes the **token format**, not authority schema 1;
+schema-2 authorities retain that prefix and hashing algorithm.
 
 All declaration mutations and cycle reservations reload under the persistent
 `state/.workspace.lock`; changes atomically replace the one authority with file and
@@ -193,12 +232,20 @@ revisions can cause rejection, not automatic revision bump/replay.
 
 ## Data Flow
 
-1. `add` validates local selectors/group/CAS, then reads only `session.snapshot`
-   outside the mutation lock (3-second transport deadline, 1 MiB response budget).
-   It binds one exact current agent inventory entry, then commits under the lock.
+1. `add` validates local selectors/group/CAS, then observes outside the mutation
+   lock. Default binding reads one `session.snapshot` and selects an exact agent
+   entry. `--process-evidence` instead performs three bracketed reads of the exact
+   pane, with a shared 3-second deadline and aggregate 1 MiB read budget. Successful
+    evidence is committed under the lock with a fresh check of any supplied CAS token.
 2. `publish` freezes the whole-content revision and endpoint, takes the lease,
    and reads a fresh snapshot each cycle. It requires annotation support, the
-   selected enabled source, the same endpoint, and unchanged terminal/native hints.
+   selected enabled source and the same endpoint. Snapshot members require unchanged
+   agent/native hints. Process members use the current **panes** lookup, then each
+   gets three fresh bracketed reads pinned to its bound terminal; stable evidence
+   must match before any counter reservation or annotation write. Thus a cycle
+   with process members uses one initial snapshot + three reads per process member,
+   sharing one 3-second cycle deadline and aggregate 1 MiB read budget. Snapshot-only
+   behavior is unchanged; generic annotation writes retain their existing budget.
 3. It finds each bound terminal's **current pane**, builds fresh labels and pins
    writes to terminal ID + pane ID + annotation epoch + source. Same-terminal pane
    moves need no membership mutation. The membership does not bind an annotation
@@ -218,9 +265,19 @@ revisions can cause rejection, not automatic revision bump/replay.
   identity/endpoint/epoch, disabled source, or group-content drift stops the run.
   No automatic retry, revision bump, payload replay, rebind, or counter reset.
   Partial remote effects are possible; earlier acknowledgements are not rolled back.
-- A changed agent-kind hint or native reference (including null -> reported),
+- For snapshot members, a changed agent-kind hint or native reference (including null -> reported),
   missing bound terminal, or replacement socket inode after handoff needs explicit
   inspection and, for changed bindings, `add --rebind`. No automatic adoption.
+- For process members, missing/unrecognized/changed evidence stops the cycle before
+  any reservation or write, with no snapshot fallback or automatic rebind. Valid
+  native-reference/classification changes in Kitsune are ignored for this variant;
+  snapshots still validate the legacy agent shape. Same-terminal pane moves are
+  allowed once bracketed evidence is stable. PID reuse/ABA and intervening mapping
+  changes remain possible: matching samples are not atomic process identity.
+- Djinn-family recognition includes help/maintenance modes, not active-agent truth.
+  Missing argv, launcher/renamed binaries, background or headless work may remain
+  unrecognized; unknown does not prove absence. There is no automatic enrollment,
+  migration fallback, replacement following, or new native action.
 - Group edits after a cycle is admitted can still allow that cycle's old label to
   be sent. They stop publication on the next content check, not retroactively;
   stopping/removing membership does not cancel admitted writes. Text expires by TTL.
@@ -268,26 +325,45 @@ coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
 coven group remove WORKSPACE auth-review --member backend --json
 ```
 
-For changed binding evidence, inspect the selected agent first and explicitly add
-`--rebind`; never treat a stale revision or native-reference change as an automatic retry.
+For changed binding evidence, inspect the selected participant first and explicitly
+add `--rebind`; never treat a stale revision or evidence change as an automatic retry.
+For a process binding, retain `--process-evidence` on role updates/rebinds:
+
+```sh
+coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
+  --socket ABS --pane w18:p85 --process-evidence --rebind \
+  --expect-revision '<current group token>' --json
+```
 
 ## Validation
 
-The focused group suite passes **83 tests**: 29 authority, 42 publisher, and 12
-CLI/workflow tests. Coverage includes unresolved native references, durable
-reservations, concurrent mutations, process death, publisher lease release,
-trace-injected interrupt boundaries, private fake socket acknowledgements, and the
-real wrapper. The complete Coven offline suite passes **547 tests** (317 seconds).
-Shell syntax and diff whitespace checks pass; review found no outstanding material
-issues. These results are not live-server or native-lifecycle validation. No user
-configuration, handoff, agent process, or live annotation was changed during this slice.
+The full offline suite passes **589 tests**, including **107 group tests**:
+35 authority, 42 existing publisher, 12 existing CLI/workflow, and 18 new
+process-group workflow/publication tests. Run with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
+```
+
+Coverage for this slice includes strict schema variants/PID bounds/order,
+atomic promotion preserving IDs/counters, failed promotion and concurrent CAS,
+mixed groups, canonical comparison, explicit variant/process rebind, no downgrade,
+empty agent inventory, classification independence, stable moves/mapping races,
+shared deadline/read-budget exhaustion, uncertain promotion/confirmation, and zero
+reservations/writes on failed evidence. Existing interruption, durable reservation,
+lost-ack, and phase-accounting tests remain green. Architecture and safety reviews
+found no blocking issues; diff whitespace checks pass. Previous
+[live validation](KITSUNE_PROCESS_LIVE_VALIDATION.md) tested process **observation**,
+not this new end-to-end group binding/publication path or native lifecycle.
 
 ## Related files
 
 - [runner/groups.py](runner/groups.py) — exact schema, CAS, declarations and reservations.
-- [runner/group_publisher.py](runner/group_publisher.py) — snapshot binding, transport, phases and foreground loop.
+- [runner/group_publisher.py](runner/group_publisher.py) — snapshot/process binding, transport, phases and foreground loop.
 - [runner/coven.py](runner/coven.py) — group/observe commands and parser.
 - [runner/storage.py](runner/storage.py), [STORAGE_CONTRACT.md](STORAGE_CONTRACT.md) — local locks and single-file durability.
 - [runner/kitsune_observation.py](runner/kitsune_observation.py), [KITSUNE_OBSERVATION_CONTRACT.md](KITSUNE_OBSERVATION_CONTRACT.md) — shared snapshot validation and read-only observation.
+- [runner/kitsune_process_observation.py](runner/kitsune_process_observation.py), [KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md) — bracketed process evidence and interpreter limits.
 - [tests/test_groups.py](tests/test_groups.py), [tests/test_group_publisher.py](tests/test_group_publisher.py), [tests/test_group_commands.py](tests/test_group_commands.py) — offline coverage, not live-server validation.
+- [tests/test_process_groups.py](tests/test_process_groups.py) — private fake-endpoint process add/rebind and publisher boundaries.
 - [APP_BOUNDARIES.md](APP_BOUNDARIES.md); optional sibling [Kitsune annotations](../kitsune/ANNOTATIONS.md) — presentation policy, not installation dependencies.

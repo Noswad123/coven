@@ -96,8 +96,31 @@ def _binding(value):
     pane = presentation["pane_id_at_binding"]
     _string(pane)
     _require(pane.isprintable() and not any(c.isspace() for c in pane), "noncanonical pane ID")
-    _fields(evidence, "provenance observed_at agent_kind_hint native_reference native_binding")
-    _require(evidence["provenance"] == "kitsune.session.snapshot")
+    _require(isinstance(evidence, dict))
+    process = evidence.get("provenance") == "kitsune.pane.process_info"
+    _fields(evidence, "provenance observed_at agent_kind_hint native_reference native_binding"
+            + (" process_evidence" if process else ""))
+    _require(process or evidence["provenance"] == "kitsune.session.snapshot")
+    if process:
+        _require(evidence["agent_kind_hint"] == "djinn"
+                 and evidence["native_reference"] is None
+                 and evidence["native_binding"] == "unestablished")
+        details = evidence["process_evidence"]
+        _fields(details, "interpreter matches")
+        _require(details["interpreter"] == "coven.kitsune.djinn-process.v1")
+        matches = details["matches"]
+        _require(isinstance(matches, list) and 1 <= len(matches) <= 1024)
+        pids, order = set(), []
+        for match in matches:
+            _fields(match, "pid executable_family rule")
+            pid, family, rule = match["pid"], match["executable_family"], match["rule"]
+            _require(type(pid) is int and 1 <= pid <= 2**32 - 1 and pid not in pids,
+                     "unique positive unsigned 32-bit PID required")
+            _require(isinstance(family, str) and family in {"djinn", "djinn-ui"})
+            _require(rule == "exact_posix_argv0_basename")
+            pids.add(pid)
+            order.append((pid, family, rule))
+        _require(order == sorted(order), "canonical process match order required")
     stamp = evidence["observed_at"]
     _string(stamp, 64)
     try:
@@ -133,7 +156,7 @@ def _source(source):
 
 def _validate(state):
     _fields(state, "schema_version workspace_id content_revision groups publication_counters")
-    _require(type(state["schema_version"]) is int and state["schema_version"] == 1)
+    _require(type(state["schema_version"]) is int and state["schema_version"] in (1, 2))
     _uuid(state["workspace_id"])
     _uint(state["content_revision"])
     groups, counters = state["groups"], state["publication_counters"]
@@ -160,6 +183,8 @@ def _validate(state):
             _display(member["role"])
             _require(len((group["name"] + " \u00b7 " + member["role"]).encode("utf-8")) <= 256)
             _binding(member["binding"])
+            _require(state["schema_version"] == 2 or member["binding"]["evidence"]["provenance"]
+                     == "kitsune.session.snapshot", "process bindings require schema 2")
             presentation = member["binding"]["presentation"]
             association = (*_endpoint_key(presentation["endpoint"]), presentation["terminal_id"])
             _require(member["participant_id"] not in identities and member["key"] not in keys,
@@ -341,6 +366,8 @@ def _mutate(workspace, key, operation, expected_revision, *, name=None, member_k
                     member.update(role=role, binding=deepcopy(binding))
                     changed = True
         if changed:
+            if operation == "add" and binding["evidence"]["provenance"] == "kitsune.pane.process_info":
+                state["schema_version"] = 2
             _require(state["content_revision"] < _U64, "content revision overflow")
             state["content_revision"] += 1
         delivery = _finish(root, state, data, changed)

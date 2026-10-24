@@ -1717,7 +1717,7 @@ def command_group_list(args: argparse.Namespace) -> int:
 def command_group_add(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     # Deterministic invalid input and absent groups must not contact a server or
-    # create a lock. The fresh snapshot is read outside the mutation lock.
+    # create a lock. Fresh evidence is read outside the mutation lock.
     groups._selector(args.group)
     groups._selector(args.member)
     groups._display(args.role)
@@ -1729,8 +1729,12 @@ def command_group_add(args: argparse.Namespace) -> int:
     groups._group(view["state"], args.group)
     try:
         import time
-        fresh = group_publisher.read_publication_snapshot(args.socket, deadline=time.monotonic() + 3.0)
-        binding = group_publisher.binding_from_snapshot(fresh, args.pane)
+        if args.process_evidence:
+            binding = group_publisher.binding_from_process(
+                args.socket, args.pane, deadline=time.monotonic() + 3.0)
+        else:
+            fresh = group_publisher.read_publication_snapshot(args.socket, deadline=time.monotonic() + 3.0)
+            binding = group_publisher.binding_from_snapshot(fresh, args.pane)
     except (ValueError, group_publisher.PublisherError) as exc:
         code = exc.code if isinstance(exc, group_publisher.PublisherError) else str(exc)
         raise groups.GroupError(f"Cannot observe selected group participant: {code}") from exc
@@ -3742,8 +3746,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     group_add.add_argument("--member", required=True, help="Stable human participant selector within this group")
     group_add.add_argument("--role", required=True, help="Display role only, not a native agent configuration or execution policy")
     group_add.add_argument("--socket", required=True, help="Explicit existing Kitsune API socket")
-    group_add.add_argument("--pane", required=True, help="Exact current pane ID from the agent inventory")
-    group_add.add_argument("--rebind", action="store_true", help="Explicitly accept changed terminal/native-reference evidence")
+    group_add.add_argument("--pane", required=True, help="Exact current pane ID; default requires an agent inventory entry")
+    group_add.add_argument("--process-evidence", action="store_true", help="Opt into Coven-observed Djinn executable-family evidence and schema-2 storage (older Coven readers reject it); no native identity or execution grant")
+    group_add.add_argument("--rebind", action="store_true", help="Explicitly accept changed provenance/terminal/native-reference/process evidence")
     group_add.add_argument("--expect-revision")
     group_add.add_argument("--json", action="store_true")
     group_add.set_defaults(func=command_group_add)

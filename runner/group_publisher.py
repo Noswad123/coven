@@ -18,10 +18,12 @@ import uuid
 if __package__:
     from . import groups, storage
     from . import kitsune_observation as observation
+    from . import kitsune_process_observation as process_observation
 else:
     import groups
     import storage
     import kitsune_observation as observation
+    import kitsune_process_observation as process_observation
 
 _INTERVAL = 2.0
 _CYCLE_BUDGET = 3.0
@@ -144,12 +146,15 @@ def _request(socket_path, method, params, *, deadline, max_response_bytes=104857
         raise PublisherError(code, "uncertain" if started_write else "unsent") from None
 
 
-def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=1048576):
+def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=1048576,
+                              read_budget=None):
     """Read a strict, minimal inventory, even before annotation capability opt-in."""
     _arguments(socket_path, deadline, max_response_bytes)
     payload, request_id, endpoint = _request(
         socket_path, "session.snapshot", {}, deadline=deadline,
-        max_response_bytes=max_response_bytes)
+        max_response_bytes=max_response_bytes if read_budget is None else read_budget.remaining)
+    if read_budget is not None:
+        read_budget.remaining -= len(payload) + 1
     try:
         snapshot = observation._snapshot(payload, request_id)
         epoch, sources = None, None
@@ -174,7 +179,9 @@ def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=10485
         return {"endpoint": endpoint, "epoch": epoch,
                 "sources": None if sources is None else list(sources),
                 "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "agents": agents}
+                "agents": agents,
+                "panes": [{key: pane[key] for key in observation._LOCATORS}
+                          for pane in snapshot["panes"]]}
     except observation._Failure as exc:
         raise PublisherError(exc.code) from None
 
@@ -197,6 +204,44 @@ def binding_from_snapshot(snapshot, pane_id):
                      "native_reference": None if native is None else dict(native),
                      "native_binding": "unestablished" if native is None else "observed_reference"},
     }
+
+
+def binding_from_process(socket_path, pane_id, *, deadline, read_budget=None,
+                         frozen_endpoint=None, expected_terminal_id=None):
+    """Fresh process-family evidence only; no saved report or native fallback."""
+    _arguments(socket_path, deadline, 1048576)
+    process_observation._pane_id(pane_id)
+    try:
+        endpoint = _endpoint(socket_path)
+        if frozen_endpoint is not None and endpoint != frozen_endpoint:
+            raise PublisherError("endpoint_replaced")
+        selected = {"selected": socket_path, "resolved": endpoint["path"],
+                    "device": endpoint["device"], "inode": endpoint["inode"]}
+        item = process_observation._read_evidence(
+            selected, pane_id, deadline=deadline,
+            budget=observation._ReadBudget(1048576) if read_budget is None else read_budget,
+            expected_terminal_id=expected_terminal_id)
+        if item["recognition"] != "djinn_executable_family":
+            raise PublisherError("process_not_recognized")
+        matches = sorted(item["matches"], key=lambda p: (p["pid"], p["executable_family"], p["rule"]))
+        binding = {
+            "presentation": {"adapter": "kitsune", "endpoint": endpoint,
+                             "terminal_id": item["locators"]["terminal_id"],
+                             "pane_id_at_binding": pane_id},
+            "evidence": {"provenance": "kitsune.pane.process_info",
+                         "observed_at": item["sample_received_at"], "agent_kind_hint": "djinn",
+                         "native_reference": None, "native_binding": "unestablished",
+                         "process_evidence": {"interpreter": item["interpreter"], "matches": matches}},
+        }
+        groups._binding(binding)
+        _remaining(deadline)
+        return binding
+    except observation._Failure as exc:
+        raise PublisherError(exc.code) from None
+    except OSError as exc:
+        raise PublisherError("timeout" if isinstance(exc, TimeoutError) else "io_error") from None
+    except groups.GroupError:
+        raise PublisherError("process_binding_invalid") from None
 
 
 def _read_group(groups, workspace, group_key, revision=None):
@@ -283,7 +328,13 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60):
                 _, group, current_endpoint = _read_group(groups, workspace, group_key, revision)
                 if current_endpoint != endpoint:
                     raise PublisherError("group_endpoint_mismatch")
-                fresh = read_publication_snapshot(socket_path, deadline=deadline)
+                process_bound = any(m["binding"]["evidence"]["provenance"] == "kitsune.pane.process_info"
+                                    for m in group["members"])
+                read_budget = observation._ReadBudget(1048576) if process_bound else None
+                if process_bound:
+                    fresh = read_publication_snapshot(socket_path, deadline=deadline, read_budget=read_budget)
+                else:
+                    fresh = read_publication_snapshot(socket_path, deadline=deadline)
                 if fresh["endpoint"] != endpoint:
                     raise PublisherError("endpoint_replaced")
                 if fresh["epoch"] is None:
@@ -294,18 +345,29 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60):
                     raise PublisherError("annotation_epoch_changed")
                 epoch = fresh["epoch"]
                 by_terminal = {agent["terminal_id"]: agent for agent in fresh["agents"]}
+                panes_by_terminal = {pane["terminal_id"]: pane for pane in fresh["panes"]}
                 plan = []
                 for member in group["members"]:
                     binding = member["binding"]
                     terminal = binding["presentation"]["terminal_id"]
-                    agent = by_terminal.get(terminal)
-                    if agent is None:
-                        raise PublisherError("bound_agent_missing")
                     evidence = binding["evidence"]
-                    if (agent["agent"] != evidence["agent_kind_hint"]
-                            or agent["agent_session"] != evidence["native_reference"]):
-                        raise PublisherError("rebind_required")
-                    plan.append({"pane_id": agent["pane_id"], "expected_terminal_id": terminal,
+                    if evidence["provenance"] == "kitsune.pane.process_info":
+                        pane = panes_by_terminal.get(terminal)
+                        if pane is None:
+                            raise PublisherError("bound_terminal_missing")
+                        observed = binding_from_process(
+                            socket_path, pane["pane_id"], deadline=deadline, read_budget=read_budget,
+                            frozen_endpoint=endpoint, expected_terminal_id=terminal)
+                        if groups._stable(observed) != groups._stable(binding):
+                            raise PublisherError("rebind_required")
+                    else:
+                        pane = by_terminal.get(terminal)
+                        if pane is None:
+                            raise PublisherError("bound_agent_missing")
+                        if (pane["agent"] != evidence["agent_kind_hint"]
+                                or pane["agent_session"] != evidence["native_reference"]):
+                            raise PublisherError("rebind_required")
+                    plan.append({"pane_id": pane["pane_id"], "expected_terminal_id": terminal,
                                  "annotation_epoch": epoch, "source": source,
                                  "text": group["name"] + " · " + member["role"], "ttl_ms": _TTL_MS})
                 _remaining(deadline)

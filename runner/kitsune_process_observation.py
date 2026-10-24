@@ -66,13 +66,48 @@ def _processes(payload, request_id, pane_id):
     return matches
 
 
+def _pane_id(pane_id):
+    if (not isinstance(pane_id, str) or not pane_id or len(pane_id) > 4096
+            or not pane_id.isprintable() or any(char.isspace() for char in pane_id)):
+        raise ValueError("an exact current pane ID is required")
+
+
+def _read_evidence(endpoint, pane_id, *, deadline, budget, expected_terminal_id=None):
+    """Internal bracketed read with caller-owned endpoint, deadline and budget.
+
+    Publication must pin its selected terminal before the first process query;
+    equal bracket samples alone cannot establish that selected association.
+    """
+    def read(method, params):
+        return budget.read(endpoint, method, params, deadline=deadline)
+
+    before = _pane(observation._snapshot(*read("session.snapshot", {})), pane_id)
+    if expected_terminal_id is not None and before["terminal_id"] != expected_terminal_id:
+        raise observation._Failure("pane_mapping_changed")
+    matches = _processes(*read("pane.process_info", {"pane_id": pane_id}), pane_id)
+    sampled_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    after = _pane(observation._snapshot(*read("session.snapshot", {})), pane_id)
+    if before != after:
+        raise observation._Failure("pane_mapping_changed")
+    observation._remaining(deadline)
+    return {
+        "provenance": "kitsune.pane.process_info",
+        "interpreter": ADAPTER_CONTRACT,
+        "locators": {"endpoint": dict(endpoint), **before},
+        "sample_received_at": sampled_at,
+        "mapping_evidence": "matching_bracketing_samples",
+        "recognition": "djinn_executable_family" if matches else "unknown",
+        "matches": matches,
+        "activity": "unknown", "attention": "unknown",
+        "native_lifecycle": "unestablished", "job_completion": "unestablished",
+    }
+
+
 def inspect(socket_path: str, pane_id: str, *, timeout: float = 3.0,
             max_response_bytes: int = 1048576) -> dict:
     """Three bounded reads; caller errors raise ValueError, failures are envelopes."""
     observation._arguments(socket_path, timeout, max_response_bytes)
-    if (not isinstance(pane_id, str) or not pane_id or len(pane_id) > 4096
-            or not pane_id.isprintable() or any(char.isspace() for char in pane_id)):
-        raise ValueError("an exact current pane ID is required")
+    _pane_id(pane_id)
     started = time.monotonic()
     deadline = started + timeout
     report = {
@@ -85,40 +120,15 @@ def inspect(socket_path: str, pane_id: str, *, timeout: float = 3.0,
         "limitations": list(observation.LIMITATIONS) + list(LIMITATIONS),
         "assessment": "unavailable", "diagnostics": [], "observations": [],
     }
-    budget = max_response_bytes
-
-    def read(method, params):
-        nonlocal budget
-        payload, request_id, consumed = observation._read_request(
-            report["endpoint"], method, params, deadline=deadline,
-            max_response_bytes=budget)
-        budget -= consumed
-        return payload, request_id
-
     try:
         parent, leaf = os.path.split(socket_path)
         resolved = os.path.join(os.path.realpath(parent), leaf)
         report["endpoint"]["resolved"] = resolved
         info = observation._endpoint_stat(resolved)
         report["endpoint"].update(device=info.st_dev, inode=info.st_ino)
-        before = _pane(observation._snapshot(*read("session.snapshot", {})), pane_id)
-        matches = _processes(*read("pane.process_info", {"pane_id": pane_id}), pane_id)
-        sampled_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        after = _pane(observation._snapshot(*read("session.snapshot", {})), pane_id)
-        if before != after:
-            raise observation._Failure("pane_mapping_changed")
-        observation._remaining(deadline)
-        report.update(assessment="observed", observations=[{
-            "provenance": "kitsune.pane.process_info",
-            "interpreter": ADAPTER_CONTRACT,
-            "locators": {"endpoint": dict(report["endpoint"]), **before},
-            "sample_received_at": sampled_at,
-            "mapping_evidence": "matching_bracketing_samples",
-            "recognition": "djinn_executable_family" if matches else "unknown",
-            "matches": matches,
-            "activity": "unknown", "attention": "unknown",
-            "native_lifecycle": "unestablished", "job_completion": "unestablished",
-        }])
+        item = _read_evidence(report["endpoint"], pane_id, deadline=deadline,
+                              budget=observation._ReadBudget(max_response_bytes))
+        report.update(assessment="observed", observations=[item])
     except observation._Failure as exc:
         report.update(assessment=exc.assessment, diagnostics=[exc.code])
     except TimeoutError:

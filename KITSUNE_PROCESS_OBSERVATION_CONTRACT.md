@@ -4,9 +4,11 @@
 
 Coven can interpret one selected pane's **generic process evidence** without
 using Kitsune's agent classification. This is a bounded, opt-in shadow slice:
-Kitsune's detection, lifecycle reporting, start/resume, existing snapshot adapter,
-group bindings and publisher remain unchanged. No Kitsune or Djinn API changes
-are required.
+Kitsune's detection, lifecycle reporting, start/resume and existing snapshot adapter
+remain unchanged. Default snapshot group bindings remain supported; a separate,
+explicit [process group binding path](GROUPS_CONTRACT.md) can now consume fresh
+evidence. The observer alone still never changes membership or publishes labels.
+No Kitsune or Djinn API changes are required.
 
 This is **executable-family recognition**, not active-agent detection. A process
 named `djinn` may be running help, configuration, session listing or maintenance.
@@ -98,8 +100,10 @@ Failures have an empty `observations` list and safe diagnostic codes.
 - Socket checks are not peer authentication. Read requests can trigger existing
   Kitsune dispatch housekeeping, including default-workspace/shell creation.
   Read-only client behavior does not promise zero server-side effects.
-- Group membership still requires the existing explicit binding path. This shadow
-  report grants no membership, participant identity, policy or execution authority.
+- Group membership requires a separate explicit binding command. The opt-in
+  `group add --process-evidence` reads fresh evidence itself; it cannot import this
+  report. Observation grants no membership, participant identity, policy or
+  execution authority.
 
 ## Validation and next boundary
 
@@ -117,9 +121,15 @@ shadow-observation tests:
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
 ```
 
-`git diff --check` passes. No live Kitsune/Djinn endpoint was queried.
+`git diff --check` passes. This initial offline validation queried no live endpoint.
+Subsequent [live validation](KITSUNE_PROCESS_LIVE_VALIDATION.md) confirmed shell,
+negative-argument, native Djinn, direct UI and post-exit behavior against installed
+Linux binaries, without model requests. It did not require recognition changes.
 
-Next slices can compare these observations with real process evidence, support
-additional proven launcher forms, and explicitly design group adoption. Activity
-interpretation and native lifecycle remain separate work. Do not disable Kitsune
-built-ins based on executable-family recognition alone.
+Explicit opt-in group adoption and revalidation are now implemented under the
+[group contract](GROUPS_CONTRACT.md). The full offline suite after that slice passes
+589 tests, protecting this observer's unchanged public contract. Installed Linux
+native/UI forms are sampled, not universally certified across packaging/platforms;
+additional launcher forms, activity interpretation and native lifecycle remain
+separate work. Do not disable Kitsune built-ins based on executable-family
+recognition alone.

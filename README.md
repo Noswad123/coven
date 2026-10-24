@@ -7,7 +7,8 @@ See [APP_BOUNDARIES.md](APP_BOUNDARIES.md) for the 2026-10-22 target decision:
 independent apps, Coven-owned cross-runtime observation/grouping first, optional
 Kitsune annotations as a separate generic presentation path, and Djinn-owned native
 execution. Initial Kitsune observation, explicit participant groups/roles, and a
-foreground generic-annotation publisher are implemented in Coven. Native group
+foreground generic-annotation publisher are implemented in Coven, including explicit
+opt-in process-evidence binding independent of Kitsune's agent inventory. Native group
 status, scheduling, extraction, and automatic following are not shipped; see
 [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md).
 
@@ -127,7 +128,9 @@ coven observe kitsune --socket /absolute/path/to/existing-api.sock \
 
 This selects **one exact pane**, brackets `pane.process_info` with snapshots, and
 recognizes only literal `djinn`/`djinn-ui` executable basenames from structured argv.
-Its separate report contains `observations`, not `agents` or group participants.
+Its separate report contains `observations`, not `agents` or group participants;
+observing alone never enrolls a member. The separate `group add --process-evidence`
+path below reads fresh evidence rather than importing that report.
 Recognition is executable-family evidence (including help/maintenance modes), not
 an authenticated binary, active agent, verified session, or lifecycle fact. No
 launch/resume/detection behavior is removed. See
@@ -153,9 +156,32 @@ coven group list WORKSPACE --json
 coven group publish WORKSPACE auth-review --socket ABS --source coven --duration 60 --json
 ```
 
-Select current pane IDs from the observed **agent** inventory, including agents
-without native references. Roles are display-only. Adding membership reads a
-snapshot but sends no UI writes; publishing is a separate explicit foreground run.
+By default, select current pane IDs from the observed **agent** inventory,
+including agents without native references. Alternatively, explicitly bind one
+current pane using Coven's Djinn-family process evidence, even if absent from that
+inventory:
+
+```sh
+coven observe kitsune --socket ABS --process-pane w18:p85 --json
+coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
+  --socket ABS --pane w18:p85 --process-evidence
+```
+
+Use `--rebind` if that member already has different stable evidence, and optionally
+`--expect-revision '<current group token>'`. Roles are display-only. Both add modes
+read fresh evidence and send no UI writes; publishing is a separate foreground run.
+Process add/rebind atomically opts `state/groups.json` into schema 2 (mixed bindings
+allowed); older readers reject it. UUIDs/counters and `groups-v1` token format/CAS
+are preserved; removing process members or snapshot rebind never downgrades it.
+Default snapshot binding remains unchanged. There is no saved-report import,
+automatic enrollment/fallback/rebind, native identity or execution grant.
+
+Before any reservation/write, each publication cycle reobserves all process members
+via current panes and bracketed process reads: one initial snapshot + three reads
+per process member share a 3-second deadline and aggregate 1 MiB read budget.
+Missing/unrecognized/changed evidence stops the cycle; stable same-terminal moves
+are allowed. PID reuse remains possible, and help/maintenance modes also match;
+this is not active-agent truth. Generic annotation writes/6000 ms TTL are unchanged.
 First manually enable a dedicated source in Kitsune using array syntax:
 `[annotations]` with `sources = ["coven", "build"]`. Coven must come first if
 `build` previously claimed the target. Sources are not authentication; coordinate
@@ -168,6 +194,10 @@ reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
+The full offline suite passes **589 tests**, including 107 group tests. Previous
+[live validation](KITSUNE_PROCESS_LIVE_VALIDATION.md) covered observation, not
+end-to-end process group binding/publication. Existing native/task safety contracts
+are unchanged.
 
 ## Generated workspace layout
 

@@ -276,6 +276,20 @@ def _read_request(endpoint, method, params, *, deadline, max_response_bytes):
     return bytes(data[:-1]), request_id, len(data)
 
 
+class _ReadBudget:
+    """Internal shared wire-byte allowance for a bounded sequence of reads."""
+
+    def __init__(self, remaining):
+        self.remaining = remaining
+
+    def read(self, endpoint, method, params, *, deadline):
+        payload, request_id, consumed = _read_request(
+            endpoint, method, params, deadline=deadline,
+            max_response_bytes=self.remaining)
+        self.remaining -= consumed
+        return payload, request_id
+
+
 def inspect(socket_path: str, *, timeout: float = 3.0,
             max_response_bytes: int = 1048576) -> dict:
     """Observe once. Caller errors raise ValueError; runtime failures are envelopes."""
