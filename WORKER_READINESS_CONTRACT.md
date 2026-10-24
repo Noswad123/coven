@@ -102,6 +102,13 @@ kernel or malicious-code containment claims.
 
 ## Current native evidence and required next contracts
 
+The separate [persisted-folder observation contract](DJINN_OBSERVATION_CONTRACT.md)
+now consumes `djinn session observe ABS_FOLDER --json` through an explicit trusted
+binary. This is bounded, non-application-writing folder evidence, not the required
+per-attempt admission, immutable accepted policy, live lifecycle or result-binding
+contract. The help-only readiness inspector does not invoke it, change its help
+allowlist, or upgrade any capability; it still never declares `compatible`.
+
 The inspected installation advertises session/run/status/watch, ask, and agent
 description help. It does not advertise a version flag, so native version remains
 null. The installed help-only probe returns `unknown`, with no authorization.

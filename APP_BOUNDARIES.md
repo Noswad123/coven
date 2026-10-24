@@ -25,6 +25,14 @@ decision neither removes them immediately nor claims extraction is complete.
 
 ## API / Interfaces
 
+The first native persisted-evidence slice is implemented separately from Kitsune:
+[`coven observe djinn --executable ABS_BINARY --folder ABS_FOLDER --json`](DJINN_OBSERVATION_CONTRACT.md).
+One trusted selected binary supplies bounded root manifest/event evidence through
+Djinn's native `session observe` contract. No live/native-store/UI status, group
+enrollment, help-only readiness upgrade, per-attempt admission or dispatch follows.
+No status/list/watch fallback is allowed; their recovery/probing semantics remain
+unchanged. Djinn's core stays Coven-neutral.
+
 Target dependency direction: Coven adapters consume supported runtime and
 multiplexer capabilities. Kitsune and Djinn have no core dependency on Coven or
 each other. Optional Djinn reporting and optional Kitsune external decoration
@@ -189,11 +197,11 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
    active-agent detection. Explicit process-evidence group add/rebind is now
    implemented; built-in removal, automatic adoption and native actions are not.
 
-The full offline suite passes **617 tests**, including the existing 107 group
-tests, 10 socket-alias regressions and 18 new generic snapshot contract test methods.
-Focused and baseline strict suites also pass. No stored schema, protocol, public
-API output, CLI flags or native
-authorization changes in this slice. [Live group validation](GROUPS_LIVE_VALIDATION.md) confirms installed Linux
+The full offline suite now passes **645 tests**, including 28 native-observation
+tests, the existing 107 group tests, 10 socket-alias regressions and 18 generic
+snapshot contract test methods. The native observer also passed eight compiled
+producer/consumer fixture cases; it does not verify running agents or change native
+authorization. [Live group validation](GROUPS_LIVE_VALIDATION.md) confirms installed Linux
 binding/publication, exit/TTL and explicit rebind behavior, not native lifecycle.
 Those historical runs used valid real-server snapshots, not the artificial
 malformed-legacy payloads covered offline in this slice.

@@ -104,6 +104,24 @@ priority is existing-session observation/grouping and generic presentation befor
 further worker/worktree implementation; initial declarations/publishing are now
 implemented, while extraction and native lifecycle/scheduling remain open.
 
+## Current Djinn persisted-evidence observation
+
+```sh
+coven observe djinn --executable /absolute/path/to/trusted/djinn \
+  --folder /absolute/path/to/session-folder --json
+```
+
+One explicit trusted binary, one fixed native `session observe` call, bounded
+output and supervised cleanup; no workspace, PATH selection, help/status fallback,
+group enrollment or readiness upgrade. Recorded folder metadata/events are not
+live status, job success or authorization. The binary is not sandboxed and can
+ignore arguments. Exits: 0 observed, 1 unavailable, 2 incompatible (unlike native
+Djinn's exit 0 for any generated report). See
+[DJINN_OBSERVATION_CONTRACT.md](DJINN_OBSERVATION_CONTRACT.md) for fields, bounds,
+identity checks and trust limits. Help-only worker readiness remains unchanged.
+Requires a Djinn build containing the new command; checkout validation used
+`../djinn/target/debug/djinn` without replacing the installed binary.
+
 ## Current Kitsune observation
 
 ```bash
@@ -205,15 +223,17 @@ reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
-The full offline suite passes **617 tests**, including the existing 107 group
-tests, 10 socket-alias regressions and 18 generic snapshot contract test methods.
+The full offline suite now passes **645 tests**, including 28 Djinn-native
+observation tests, the existing 107 group tests, 10 socket-alias regressions and
+18 generic snapshot contract test methods.
 [Live group validation](GROUPS_LIVE_VALIDATION.md)
 confirms add/publish, visible labels, process exit, timer-driven TTL expiry and
 explicit replacement rebind against installed Linux binaries. Existing native/task
 safety contracts are unchanged; native lifecycle/execution was not validated.
 Those historical live runs used valid real-server snapshots, not artificial
-malformed-legacy payloads. No stored schema, protocol, public API output, CLI flag
-or native authorization changes in this slice.
+malformed-legacy payloads. The generic snapshot slice changed no existing stored
+schema, protocol, API output or authorization; native observation is a separate
+additive command/contract and grants no execution authority.
 
 ## Generated workspace layout
 
