@@ -200,6 +200,41 @@ def _snapshot(payload, request_id):
     return _inventory(_result(payload, request_id, "session_snapshot").get("snapshot"))
 
 
+def _pane_snapshot(payload, request_id):
+    """Generic pane identity projection, not a relaxed legacy agent validator.
+
+    Unconsumed fields still pass through the globally bounded JSON decoder, but
+    their agent/UI schemas cannot determine whether process evidence is usable.
+    Annotation presence is preserved; only publication interprets its descriptor.
+    """
+    snapshot = _result(payload, request_id, "session_snapshot").get("snapshot")
+    _require(isinstance(snapshot, dict))
+    _string(snapshot.get("version"))
+    protocol = snapshot.get("protocol")
+    _require(type(protocol) is int and 0 <= protocol <= 2**32 - 1)
+    if protocol != 18:
+        raise _Failure("unsupported_protocol", "incompatible")
+    items = snapshot.get("panes")
+    _require(isinstance(items, list) and len(items) <= 1024)
+    panes, pane_ids, terminals = [], set(), set()
+    for item in items:
+        _require(isinstance(item, dict))
+        pane = {}
+        for key in _LOCATORS:
+            value = item.get(key)
+            _string(value)
+            _require(bool(value) and value.isprintable() and not any(c.isspace() for c in value))
+            pane[key] = value
+        _require(pane["pane_id"] not in pane_ids and pane["terminal_id"] not in terminals)
+        pane_ids.add(pane["pane_id"])
+        terminals.add(pane["terminal_id"])
+        panes.append(pane)
+    result = {"version": snapshot["version"], "protocol": protocol, "panes": panes}
+    if "annotations" in snapshot:
+        result["annotations"] = snapshot["annotations"]
+    return result
+
+
 def _endpoint_stat(path):
     info = os.lstat(path)
     if not stat.S_ISSOCK(info.st_mode):

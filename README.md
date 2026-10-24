@@ -131,6 +131,10 @@ recognizes only literal `djinn`/`djinn-ui` executable basenames from structured 
 Its separate report contains `observations`, not `agents` or group participants;
 observing alone never enrolls a member. The separate `group add --process-evidence`
 path below reads fresh evidence rather than importing that report.
+Process brackets use a generic version/protocol/pane-locator projection, ignoring
+absent or semantically malformed legacy agent/UI metadata. The entire JSON response
+still passes shared syntax and resource limits before projection; malformed JSON
+is never accepted. Default observation retains strict legacy validation.
 Recognition is executable-family evidence (including help/maintenance modes), not
 an authenticated binary, active agent, verified session, or lifecycle fact. No
 launch/resume/detection behavior is removed. See
@@ -182,6 +186,13 @@ per process member share a 3-second deadline and aggregate 1 MiB read budget.
 Missing/unrecognized/changed evidence stops the cycle; stable same-terminal moves
 are allowed. PID reuse remains possible, and help/maintenance modes also match;
 this is not active-agent truth. Generic annotation writes/6000 ms TTL are unchanged.
+All process brackets are generic, even in mixed groups. The initial cycle snapshot
+is generic only for pure-process groups; mixed and snapshot-only groups retain
+strict legacy validation and snapshot-member native-hint checks. Selection uses
+validated member provenance before parsing, with no strict-to-generic fallback.
+Process observation/add need no annotation opt-in and ignore descriptor semantics;
+publication still strictly requires a valid descriptor (present null is an error),
+an enabled source and the expected epoch.
 First manually enable a dedicated source in Kitsune using array syntax:
 `[annotations]` with `sources = ["coven", "build"]`. Coven must come first if
 `build` previously claimed the target. Sources are not authentication; coordinate
@@ -194,11 +205,15 @@ reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
-The full offline suite passes **599 tests**, including 107 group tests and 10
-socket-alias regressions. [Live group validation](GROUPS_LIVE_VALIDATION.md)
+The full offline suite passes **617 tests**, including the existing 107 group
+tests, 10 socket-alias regressions and 18 generic snapshot contract test methods.
+[Live group validation](GROUPS_LIVE_VALIDATION.md)
 confirms add/publish, visible labels, process exit, timer-driven TTL expiry and
 explicit replacement rebind against installed Linux binaries. Existing native/task
 safety contracts are unchanged; native lifecycle/execution was not validated.
+Those historical live runs used valid real-server snapshots, not artificial
+malformed-legacy payloads. No stored schema, protocol, public API output, CLI flag
+or native authorization changes in this slice.
 
 ## Generated workspace layout
 

@@ -236,7 +236,7 @@ revisions can cause rejection, not automatic revision bump/replay.
    lock. Default binding reads one `session.snapshot` and selects an exact agent
    entry. `--process-evidence` instead performs three bracketed reads of the exact
    pane, with a shared 3-second deadline and aggregate 1 MiB read budget. Successful
-    evidence is committed under the lock with a fresh check of any supplied CAS token.
+   evidence is committed under the lock with a fresh check of any supplied CAS token.
 2. `publish` freezes the whole-content revision and endpoint, takes the lease,
    and reads a fresh snapshot each cycle. It requires annotation support, the
    selected enabled source and the same endpoint. Snapshot members require unchanged
@@ -245,7 +245,7 @@ revisions can cause rejection, not automatic revision bump/replay.
    must match before any counter reservation or annotation write. Thus a cycle
    with process members uses one initial snapshot + three reads per process member,
    sharing one 3-second cycle deadline and aggregate 1 MiB read budget. Snapshot-only
-   behavior is unchanged; generic annotation writes retain their existing budget.
+    behavior is unchanged; generic annotation writes retain their existing budget.
 3. It finds each bound terminal's **current pane**, builds fresh labels and pins
    writes to terminal ID + pane ID + annotation epoch + source. Same-terminal pane
    moves need no membership mutation. The membership does not bind an annotation
@@ -261,6 +261,37 @@ revisions can cause rejection, not automatic revision bump/replay.
 
 ## Edge Cases
 
+### Snapshot contract selection
+
+All process brackets (observation, add/rebind, and publication, including mixed
+groups) use the [generic pane projection](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md#generic-pane-snapshot-projection),
+not the unchanged strict legacy `_snapshot` validator. For the **initial snapshot
+of each publication cycle**, the contract is selected before parsing from validated
+group-member provenance:
+
+| Group members | Initial snapshot | Process brackets |
+| --- | --- | --- |
+| Process only | Generic pane projection | Generic pane projection |
+| Mixed process/snapshot | Strict legacy validation | Generic pane projection |
+| Snapshot only | Strict legacy validation | None |
+
+There is no strict-to-generic fallback. Mixed and snapshot-only groups retain
+legacy inventory consistency and snapshot-member agent/native-hint checks exactly
+as before. Generic snapshots require version, protocol 18 and at most 1024 panes
+with all four bounded, nonempty printable whitespace-free opaque locators; pane
+and terminal IDs must each be globally unique. Workspace/tab IDs may repeat.
+Only version/protocol/pane locators and optional annotation-descriptor presence
+survive projection. Legacy metadata may be absent or semantically malformed, but
+all unused JSON must still satisfy the shared decoder's global bounds and syntax;
+no fields are filtered before decoding.
+
+Process observation/add ignore annotation-descriptor semantics and need no
+annotation opt-in. Publication always validates the descriptor strictly: absent
+means unsupported, present null or malformed is an error. Enabled-source/epoch
+checks remain unchanged. Publication checks the expected bound terminal in the
+first bracket snapshot before querying process info; endpoint/mapping fences,
+aggregate byte budgets, deadlines and post-decode deadline checks are unchanged.
+
 - Any rejection, missing/invalid acknowledgement, uncertain delivery, changed
   identity/endpoint/epoch, disabled source, or group-content drift stops the run.
   No automatic retry, revision bump, payload replay, rebind, or counter reset.
@@ -270,8 +301,9 @@ revisions can cause rejection, not automatic revision bump/replay.
   inspection and, for changed bindings, `add --rebind`. No automatic adoption.
 - For process members, missing/unrecognized/changed evidence stops the cycle before
   any reservation or write, with no snapshot fallback or automatic rebind. Valid
-  native-reference/classification changes in Kitsune are ignored for this variant;
-  snapshots still validate the legacy agent shape. Same-terminal pane moves are
+  native-reference/classification changes in Kitsune are ignored for this variant,
+  as are absent or semantically malformed legacy fields on generic reads. A mixed
+  group's initial snapshot still requires strict legacy validation. Same-terminal pane moves are
   allowed once bracketed evidence is stable. PID reuse/ABA and intervening mapping
   changes remain possible: matching samples are not atomic process identity.
 - Djinn-family recognition includes help/maintenance modes, not active-agent truth.
@@ -340,9 +372,12 @@ coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
 
 ## Validation
 
-The full offline suite passes **599 tests**, including **107 group tests**:
+The full offline suite passes **617 tests**, including the existing **107 group tests**:
 35 authority, 42 existing publisher, 12 existing CLI/workflow, and 18 new
-process-group workflow/publication tests. Run with:
+process-group workflow/publication tests. The generic snapshot slice adds 18 test
+methods covering projections and isolated strict/process/mixed paths. This slice
+changes no stored schema, protocol, public API output, CLI flags or native
+authorization. Run with:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
@@ -360,6 +395,8 @@ transport regressions cover short/long pathname selection and unchanged safety
 checks. [Live group validation](GROUPS_LIVE_VALIDATION.md) now confirms add/publish,
 visible labels, process exit, quiet-terminal TTL expiry and explicit replacement
 rebind against installed Linux binaries. It does not establish native lifecycle.
+Those historical runs used valid real-server snapshots, not this slice's artificial
+malformed-legacy payloads; that coverage is offline only.
 
 ## Related files
 
@@ -371,6 +408,7 @@ rebind against installed Linux binaries. It does not establish native lifecycle.
 - [runner/kitsune_process_observation.py](runner/kitsune_process_observation.py), [KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md) — bracketed process evidence and interpreter limits.
 - [tests/test_groups.py](tests/test_groups.py), [tests/test_group_publisher.py](tests/test_group_publisher.py), [tests/test_group_commands.py](tests/test_group_commands.py) — offline coverage, not live-server validation.
 - [tests/test_process_groups.py](tests/test_process_groups.py) — private fake-endpoint process add/rebind and publisher boundaries.
+- [tests/test_process_snapshot_contract.py](tests/test_process_snapshot_contract.py) — generic projection, conditional mixed-group validation and unchanged strict paths.
 - [tests/test_socket_alias_transport.py](tests/test_socket_alias_transport.py) — long canonical/selected Unix-socket paths and alias/transport safety regressions.
 - [GROUPS_LIVE_VALIDATION.md](GROUPS_LIVE_VALIDATION.md) — installed Linux end-to-end evidence, transport fix, cleanup and limits.
 - [APP_BOUNDARIES.md](APP_BOUNDARIES.md); optional sibling [Kitsune annotations](../kitsune/ANNOTATIONS.md) — presentation policy, not installation dependencies.

@@ -102,6 +102,17 @@ one 3-second cycle deadline and aggregate 1 MiB read budget. Missing, unrecogniz
 or changed evidence stops publication without fallback/rebind. Snapshot-only and
 generic annotation-write behavior, including 6000 ms TTL, remain unchanged.
 
+Process reads use a generic pane-locator projection, separate from unchanged strict
+legacy snapshot validation. All process brackets are generic, including mixed-group
+brackets. A publication cycle's initial snapshot is generic only for pure-process
+groups; mixed and snapshot-only groups retain strict legacy validation and
+snapshot-member agent/native-hint checks. Validated member provenance selects the
+contract before parsing, with no strict-to-generic fallback. Projection ignores
+legacy metadata semantics, not JSON safety: the whole response must pass shared
+decoding/bounds before filtering. Process observation/add need no annotation opt-in;
+publication retains strict descriptor-presence, enabled-source and epoch checks
+(absent descriptor is unsupported; present null is invalid).
+
 Coven-owned participant grouping/display roles and explicit label publication are
 implemented; native group lifecycle/progress interpretation and scheduling remain open.
 Native facts remain runtime authority.
@@ -123,8 +134,9 @@ acceptance interpretation without overwriting native execution facts.
   dispatch housekeeping can expire metadata, drain events, sync titles, or create
   a default workspace (potentially spawning a shell). Zero server-side effects
   are not promised. Snapshot receipt does not establish server freshness.
-- Process bindings ignore valid Kitsune native-reference/classification changes,
-  but snapshot validation still includes the legacy agent shape. Only observation
+- Process bindings ignore Kitsune native-reference/classification metadata, even
+  absent or semantically malformed legacy fields on generic reads. Mixed groups'
+  initial snapshots still require the legacy agent shape. Only observation
   time and pane-at-binding are excluded from stable binding comparison; canonical
   match ordering is not meaningful. Other evidence changes require explicit
   `--rebind`. Stable same-terminal moves are allowed, but PID reuse/ABA remains a
@@ -177,10 +189,14 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
    active-agent detection. Explicit process-evidence group add/rebind is now
    implemented; built-in removal, automatic adoption and native actions are not.
 
-The current slice passes the **599-test full offline suite**, including 107 group
-tests and 10 socket-alias regressions. Architecture/safety review found no blocking
-issues. [Live group validation](GROUPS_LIVE_VALIDATION.md) confirms installed Linux
+The full offline suite passes **617 tests**, including the existing 107 group
+tests, 10 socket-alias regressions and 18 new generic snapshot contract test methods.
+Focused and baseline strict suites also pass. No stored schema, protocol, public
+API output, CLI flags or native
+authorization changes in this slice. [Live group validation](GROUPS_LIVE_VALIDATION.md) confirms installed Linux
 binding/publication, exit/TTL and explicit rebind behavior, not native lifecycle.
+Those historical runs used valid real-server snapshots, not the artificial
+malformed-legacy payloads covered offline in this slice.
 Validation cases and limits are tracked in
 [the group contract](GROUPS_CONTRACT.md#validation).
 

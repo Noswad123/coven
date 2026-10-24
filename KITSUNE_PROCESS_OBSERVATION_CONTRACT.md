@@ -45,16 +45,50 @@ budget covers all three response frames including LF; a separate allowance is
 not granted per request. Responses require strict JSON, matching generated IDs,
 the expected result type, LF followed by EOF, and no trailing data. Snapshots
 currently require protocol 18; this is a compatibility gate, not feature discovery.
-The shared snapshot validator still checks legacy agent inventory shape and
-consistency. Recognition does not use those classifications, but accepting a
-snapshot still depends on their current schema during this compatibility slice.
 Missing `foreground_processes` is an empty list, as Kitsune omits empty vectors.
+
+### Generic pane snapshot projection
+
+All process brackets use `observation._pane_snapshot`, separate from the unchanged
+strict legacy `_snapshot`. Both share `_result`/`_decode`, response-envelope checks
+and the protocol-18 gate. The generic contract requires only:
+
+- A snapshot object with `version: string`, `protocol: 18`, and `panes`, a list of
+  at most 1024 objects.
+- All four locators on every pane: `pane_id`, `terminal_id`, `workspace_id`,
+  `tab_id`. Each is a nonempty, printable, whitespace-free UTF-8 string of at most
+  4096 characters. IDs are exact opaque values: no prefix, ASCII, UUID, or
+  relationship between ID spellings is required or inferred.
+- Unique pane IDs and unique terminal IDs across the entire panes list, not just
+  the selected pane. Workspace and tab IDs may repeat.
+
+The projection retains only version, protocol, pane locators, and `annotations`
+when present (including null). It ignores the semantics of `agents`, `workspaces`,
+`tabs`, `layouts`, focus/revision metadata and pane agent/native fields, whether
+absent or malformed against the legacy schema. **This is not lenient JSON:** the
+entire response is decoded before projection. Unused JSON still counts against the
+wire-byte budget, depth limit 32, 4096-entry object/array limits and shared string
+limits (normally 4096 characters, selected path/value fields 8192). Invalid UTF-8,
+surrogates, duplicate keys, nonfinite numbers and malformed JSON are rejected,
+even in unused fields and even within size limits.
+
+Standalone process observation and `add --process-evidence` do not interpret the
+annotation descriptor or require annotation opt-in. Publication always validates
+descriptor presence strictly: absent means unsupported; present null or malformed
+is an error. Enabled-source and epoch checks are unchanged.
 
 The selected pane must appear in both snapshots with identical pane, terminal,
 workspace and tab IDs. The process response's pane ID must match. Only after the
 final successful fence is an observation published. Failed final reads, missing
 panes, mapping changes, endpoint replacement, malformed data and exhausted budgets
 discard all positive evidence. No cached active result survives a failure.
+
+Publication also checks the expected bound terminal in the first bracket snapshot,
+before querying process info. All process brackets are generic, including those
+in mixed groups. Only a pure-process group's initial cycle snapshot is generic;
+mixed and legacy-only groups retain strict initial validation and snapshot-member
+native-hint checks. The contract is selected from validated member provenance
+before parsing, never by falling back after strict validation fails.
 
 ## Interpretation and output
 
@@ -114,8 +148,8 @@ deadlines, CLI/wrapper behavior, and no runtime/file invocation in the adapter.
 Existing observation/CLI tests protect the unchanged default path. No installed
 runtime compatibility or live lifecycle guarantee follows from these tests.
 
-Validation for this slice passes **565 tests**, including 18 new
-shadow-observation tests:
+The initial shadow-observation slice recorded **565 passing tests**, including
+18 shadow-observation tests:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
@@ -128,10 +162,24 @@ Linux binaries, without model requests. It did not require recognition changes.
 
 Explicit opt-in group adoption and revalidation are now implemented under the
 [group contract](GROUPS_CONTRACT.md). The full offline suite now passes
-599 tests, protecting this observer's unchanged public contract and socket-alias
-transport safety. [Live group validation](GROUPS_LIVE_VALIDATION.md) also confirms
+**617 tests**, protecting this observer's unchanged public contract and
+socket-alias transport safety. The generic snapshot slice adds 18 test methods in
+`tests/test_process_snapshot_contract.py`; focused and baseline strict suites also
+pass. No stored schema, protocol,
+public API output, CLI flag or native authorization changes in this slice.
+[Live group validation](GROUPS_LIVE_VALIDATION.md) also confirms
 label publication, exit/TTL behavior and explicit process rebind. Installed Linux
 native/UI forms are sampled, not universally certified across packaging/platforms;
 additional launcher forms, activity interpretation and native lifecycle remain
 separate work. Do not disable Kitsune built-ins based on executable-family
 recognition alone.
+
+Those historical live runs used valid real-server snapshots; they do not cover
+the artificial malformed-legacy payloads exercised by this slice's offline tests.
+
+## Related files
+
+- [runner/kitsune_observation.py](runner/kitsune_observation.py) — shared decoder and separate snapshot contracts.
+- [runner/kitsune_process_observation.py](runner/kitsune_process_observation.py) — process brackets and recognition.
+- [runner/group_publisher.py](runner/group_publisher.py), [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) — conditional initial snapshot validation and publication fences.
+- [tests/test_process_snapshot_contract.py](tests/test_process_snapshot_contract.py) — generic projection and strict-path regressions.

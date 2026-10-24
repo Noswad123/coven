@@ -255,7 +255,7 @@ class ProcessObservationTests(unittest.TestCase):
             self.assertEqual(len(requests), request_count)
 
     def test_final_validation_exhausts_deadline(self):
-        original = observation._snapshot
+        original = observation._pane_snapshot
         clock, validations = [100.0], []
 
         def validate(*args):
@@ -266,7 +266,7 @@ class ProcessObservationTests(unittest.TestCase):
             return value
 
         with mock.patch.object(observation.time, "monotonic", side_effect=lambda: clock[0]), \
-                mock.patch.object(observation, "_snapshot", side_effect=validate):
+                mock.patch.object(observation, "_pane_snapshot", side_effect=validate):
             report, requests = self.observe(sequence([process(argv=["djinn"])]), timeout=0.5)
         self.assertEqual(len(requests), 3)
         self.assertEqual(report["diagnostics"], ["timeout"])

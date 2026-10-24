@@ -81,12 +81,12 @@ def _read_evidence(endpoint, pane_id, *, deadline, budget, expected_terminal_id=
     def read(method, params):
         return budget.read(endpoint, method, params, deadline=deadline)
 
-    before = _pane(observation._snapshot(*read("session.snapshot", {})), pane_id)
+    before = _pane(observation._pane_snapshot(*read("session.snapshot", {})), pane_id)
     if expected_terminal_id is not None and before["terminal_id"] != expected_terminal_id:
         raise observation._Failure("pane_mapping_changed")
     matches = _processes(*read("pane.process_info", {"pane_id": pane_id}), pane_id)
     sampled_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    after = _pane(observation._snapshot(*read("session.snapshot", {})), pane_id)
+    after = _pane(observation._pane_snapshot(*read("session.snapshot", {})), pane_id)
     if before != after:
         raise observation._Failure("pane_mapping_changed")
     observation._remaining(deadline)

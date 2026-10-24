@@ -151,16 +151,19 @@ def _request(socket_path, method, params, *, deadline, max_response_bytes=104857
 
 
 def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=1048576,
-                              read_budget=None):
-    """Read a strict, minimal inventory, even before annotation capability opt-in."""
+                              read_budget=None, process_only=False):
+    """Choose a contract before parsing; never retry a strict failure as generic."""
     _arguments(socket_path, deadline, max_response_bytes)
+    if type(process_only) is not bool:
+        raise ValueError("process_only must be boolean")
     payload, request_id, endpoint = _request(
         socket_path, "session.snapshot", {}, deadline=deadline,
         max_response_bytes=max_response_bytes if read_budget is None else read_budget.remaining)
     if read_budget is not None:
         read_budget.remaining -= len(payload) + 1
     try:
-        snapshot = observation._snapshot(payload, request_id)
+        snapshot = (observation._pane_snapshot(payload, request_id) if process_only
+                    else observation._snapshot(payload, request_id))
         epoch, sources = None, None
         if "annotations" in snapshot:
             descriptor = snapshot["annotations"]
@@ -172,7 +175,7 @@ def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=10485
             observation._require(all(isinstance(s, str) and _SOURCE.fullmatch(s) for s in sources))
             observation._require(len(set(sources)) == len(sources))
         agents = []
-        for item in snapshot["agents"]:
+        for item in ([] if process_only else snapshot["agents"]):
             agent = {key: item[key] for key in observation._LOCATORS}
             agent["agent"] = item.get("agent")
             native = item.get("agent_session")
@@ -336,7 +339,10 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60):
                                     for m in group["members"])
                 read_budget = observation._ReadBudget(1048576) if process_bound else None
                 if process_bound:
-                    fresh = read_publication_snapshot(socket_path, deadline=deadline, read_budget=read_budget)
+                    process_only = all(m["binding"]["evidence"]["provenance"] == "kitsune.pane.process_info"
+                                       for m in group["members"])
+                    fresh = read_publication_snapshot(socket_path, deadline=deadline, read_budget=read_budget,
+                                                       process_only=process_only)
                 else:
                     fresh = read_publication_snapshot(socket_path, deadline=deadline)
                 if fresh["endpoint"] != endpoint:
