@@ -122,6 +122,22 @@ identity checks and trust limits. Help-only worker readiness remains unchanged.
 Requires a Djinn build containing the new command; checkout validation used
 `../djinn/target/debug/djinn` without replacing the installed binary.
 
+## Current Djinn live observation
+
+```sh
+coven observe djinn-live --file /absolute/private/RUNTIME_UUID.json \
+  --runtime RUNTIME_UUID --instance INSTANCE_UUID --session SESSION_ID --timeout 1 --json
+```
+
+Use actual explicitly inspected IDs from one selected private artifact; no scanning
+or automatic following. Requires producer opt-in at normal startup of a **new
+feature-bearing legacy full-TUI build**, not an old installed UI selected by
+`DJINN_UI_BIN`. No automatic installer, app restart, launch, HTTP, folder fallback,
+group enrollment or readiness upgrade. Fresh source samples establish only legacy
+runner busy ownership, never idle, health, progress or job completion. Cached reports
+cannot renew freshness. See [DJINN_LIVE_OBSERVATION_CONTRACT.md](DJINN_LIVE_OBSERVATION_CONTRACT.md)
+for manual setup, exact selectors/output, expiry, path checks and limitations.
+
 ## Current Kitsune observation
 
 ```bash
@@ -223,9 +239,12 @@ reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
-The full offline suite now passes **645 tests**, including 28 Djinn-native
-observation tests, the existing 107 group tests, 10 socket-alias regressions and
+The full offline suite now passes **672 tests**, including 27 new Djinn-live tests,
+28 Djinn-native observation tests, the existing 107 group tests, 10 socket-alias regressions and
 18 generic snapshot contract test methods.
+Live-source validation is limited to 54 focused opencode tests, 3 schema tests
+and both package Bun typechecks, not the full UI suite. Cross-TS→Python fixture
+interop is pending; no real UI/model calls have validated the live slice.
 [Live group validation](GROUPS_LIVE_VALIDATION.md)
 confirms add/publish, visible labels, process exit, timer-driven TTL expiry and
 explicit replacement rebind against installed Linux binaries. Existing native/task

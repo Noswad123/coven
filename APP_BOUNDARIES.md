@@ -25,6 +25,12 @@ decision neither removes them immediately nor claims extraction is complete.
 
 ## API / Interfaces
 
+The separate [Djinn live observer](DJINN_LIVE_OBSERVATION_CONTRACT.md) reads one
+explicitly pinned private heartbeat from a new, startup-enabled legacy full-TUI
+worker build. Fresh evidence is busy-only runner ownership, never idle, health,
+progress or completion. No app launch/restart, HTTP, folder fallback, group/readiness
+integration or dispatch follows; persisted folder observation remains independent.
+
 The first native persisted-evidence slice is implemented separately from Kitsune:
 [`coven observe djinn --executable ABS_BINARY --folder ABS_FOLDER --json`](DJINN_OBSERVATION_CONTRACT.md).
 One trusted selected binary supplies bounded root manifest/event evidence through
@@ -197,9 +203,12 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
    active-agent detection. Explicit process-evidence group add/rebind is now
    implemented; built-in removal, automatic adoption and native actions are not.
 
-The full offline suite now passes **645 tests**, including 28 native-observation
-tests, the existing 107 group tests, 10 socket-alias regressions and 18 generic
-snapshot contract test methods. The native observer also passed eight compiled
+The full offline suite now passes **672 tests**, including 27 new live-observer
+tests, 28 native-observation tests, the existing 107 group tests, 10 socket-alias
+regressions and 18 generic snapshot contract test methods. The live producer passed
+54 focused opencode tests, 3 schema tests and both Bun typechecks, not the full UI
+suite. Cross-TS→Python live fixture interop remains pending; no real UI/model calls
+have validated that slice. The separate persisted native observer passed eight compiled
 producer/consumer fixture cases; it does not verify running agents or change native
 authorization. [Live group validation](GROUPS_LIVE_VALIDATION.md) confirms installed Linux
 binding/publication, exit/TTL and explicit rebind behavior, not native lifecycle.

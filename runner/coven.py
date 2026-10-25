@@ -26,6 +26,7 @@ if __package__:
     from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories, kitsune_observation, groups, group_publisher
     from . import kitsune_process_observation
     from . import djinn_observation
+    from . import djinn_live_observation
 else:
     import records
     import storage
@@ -41,6 +42,7 @@ else:
     import kitsune_observation
     import kitsune_process_observation
     import djinn_observation
+    import djinn_live_observation
     import groups
     import group_publisher
 
@@ -1701,6 +1703,16 @@ def command_observe_djinn(args: argparse.Namespace) -> int:
                                           max_output_bytes=args.max_output_bytes)
     except ValueError as exc:
         raise storage.StorageError(f"Invalid Djinn observation request: {exc}") from exc
+    print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
+    return {"observed": 0, "unavailable": 1, "incompatible": 2}[value["assessment"]]
+
+
+def command_observe_djinn_live(args: argparse.Namespace) -> int:
+    try:
+        value = djinn_live_observation.inspect(args.file, args.runtime, args.instance,
+                                               args.session, timeout=args.timeout)
+    except ValueError as exc:
+        raise storage.StorageError(f"Invalid live Djinn observation request: {exc}") from exc
     print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
     return {"observed": 0, "unavailable": 1, "incompatible": 2}[value["assessment"]]
 
@@ -3800,6 +3812,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     observe_djinn.add_argument("--max-output-bytes", type=int, default=131072, help="Combined stdout/stderr budget, 1024 through 1048576")
     observe_djinn.add_argument("--json", action="store_true", help="Compact ASCII-escaped observation report")
     observe_djinn.set_defaults(func=command_observe_djinn)
+    observe_live = observe_sub.add_parser("djinn-live", help="Read one pinned existing private heartbeat; never starts a runtime or claims idle")
+    observe_live.add_argument("--file", required=True, help="Explicit private artifact named RUNTIME_UUID.json")
+    observe_live.add_argument("--runtime", required=True, help="Expected source runtime UUID; no automatic following after restart")
+    observe_live.add_argument("--instance", required=True, help="Expected source instance UUID; no directory/session inference")
+    observe_live.add_argument("--session", required=True, help="Exact opaque UI session ID, not a folder/native agent ID lookup")
+    observe_live.add_argument("--timeout", type=float, default=1.0, help="Positive acceptance deadline in (0, 1] seconds; does not interrupt filesystem syscalls")
+    observe_live.add_argument("--json", action="store_true", help="Compact ASCII-escaped live observation report")
+    observe_live.set_defaults(func=command_observe_djinn_live)
 
     repository = subparsers.add_parser("repository", help="Explicit immutable checkout/base facts; never authorizes Git writes or execution")
     repository_sub = repository.add_subparsers(dest="repository_command", required=True)
