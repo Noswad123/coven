@@ -718,6 +718,202 @@ class LivePublisherTests(unittest.TestCase):
             bounds.append(params["valid_until_unix_ms"])
         self.assertEqual(bounds, sorted(bounds, reverse=True))
 
+    def delayed_status(self, costs, before_read=None):
+        """Delay each final authority recheck, not receipt of a cached report."""
+        status, read_groups = group_live.status, groups.read_groups
+        calls = []
+
+        def read_status(*args, **kwargs):
+            index = len(calls)
+            calls.append(index)
+            if before_read is not None:
+                before_read(index)
+            reads = []
+
+            def read(*read_args, **read_kwargs):
+                view = read_groups(*read_args, **read_kwargs)
+                reads.append(view)
+                if len(reads) == 2 and index < len(costs):
+                    self.clock.advance(costs[index])
+                return view
+
+            with mock.patch.object(groups, "read_groups", side_effect=read):
+                return status(*args, **kwargs)
+
+        return mock.patch.object(group_live, "status", side_effect=read_status)
+
+    def test_same_evidence_slow_then_fast_cycle_cannot_regain_horizon(self):
+        with FakeServer(capable()) as server:
+            before = self.prepare(server)
+            original_bytes = self.path.read_bytes()
+            with self.delayed_status([300, 0]):
+                result = self.publish(server, duration=3)
+            writes = self.writes(server)
+            self.assertEqual(result["acknowledged"], 2)
+            self.assertEqual(writes[0]["valid_until_unix_ms"], SAMPLED + 2700)
+            self.assertLessEqual(writes[1]["valid_until_unix_ms"], writes[0]["valid_until_unix_ms"])
+            self.assertEqual(self.path.read_bytes(), original_bytes)
+            self.assertEqual(groups.read_groups(self.workspace)["state"]["groups"], before["state"]["groups"])
+
+    def test_same_evidence_fast_slow_fast_cycles_retain_tighter_horizon(self):
+        with FakeServer(capable()) as server:
+            self.prepare(server)
+            with mock.patch.object(publisher, "_INTERVAL", 0.5), self.delayed_status([0, 300, 0, 0]):
+                result = self.publish(server, duration=2)
+            deadlines = [p["valid_until_unix_ms"] for p in self.writes(server)]
+            self.assertEqual(result["acknowledged"], 4)
+            self.assertEqual(deadlines[0], SAMPLED + 3000)
+            self.assertLessEqual(deadlines[1], SAMPLED + 2700)
+            self.assertEqual(deadlines, sorted(deadlines, reverse=True))
+
+    def test_genuine_new_sequence_and_sample_may_establish_new_horizon(self):
+        with FakeServer(capable()) as server:
+            self.prepare(server)
+
+            def new_sample(index):
+                if index == 1:
+                    self.fixture["sequence"] += 1
+                    self.fixture["sampled_at_ms"] += 2000
+                    self.write_source()
+
+            with self.delayed_status([300, 0], new_sample):
+                result = self.publish(server, duration=3)
+            writes = self.writes(server)
+            self.assertEqual(result["acknowledged"], 2)
+            self.assertEqual(writes[0]["valid_until_unix_ms"], SAMPLED + 2700)
+            self.assertGreater(writes[1]["valid_until_unix_ms"], writes[0]["valid_until_unix_ms"])
+            self.assertLessEqual(writes[1]["valid_until_unix_ms"], SAMPLED + 5000)
+
+    def test_temporary_loss_and_identical_source_return_do_not_reset_horizon(self):
+        with FakeServer(capable()) as server:
+            self.prepare(server)
+            original_bytes = self.path.read_bytes()
+
+            def source_loss(index):
+                if index == 1:
+                    self.path.unlink()
+                elif index == 2:
+                    # New inode/read is not new sampled evidence.
+                    self.write_source()
+                    self.assertEqual(self.path.read_bytes(), original_bytes)
+
+            with mock.patch.object(publisher, "_INTERVAL", 0.5), self.delayed_status([300, 0, 0, 0], source_loss):
+                result = self.publish(server, duration=2)
+            writes = self.writes(server)
+            self.assertEqual(result["acknowledged"], 4)
+            self.assert_role(writes[1])
+            self.assertEqual(writes[0]["valid_until_unix_ms"], SAMPLED + 2700)
+            for params in writes[2:]:
+                self.assertLessEqual(params["valid_until_unix_ms"], writes[0]["valid_until_unix_ms"])
+
+    def test_send_boundary_reduction_survives_next_cycle(self):
+        with FakeServer(capable()) as server:
+            self.prepare(server)
+            request = publisher._request
+            delayed = []
+
+            def slow_prepare(*args, **kwargs):
+                if kwargs.get("prepare_send") is not None:
+                    prepare = kwargs["prepare_send"]
+
+                    def prepare_send():
+                        if not delayed:
+                            # Both clocks remain nondecreasing, but elapsed time
+                            # consumes more budget than the wall-clock progression.
+                            self.clock.mono_ms += 200
+                            delayed.append(True)
+                        prepare()
+
+                    kwargs["prepare_send"] = prepare_send
+                return request(*args, **kwargs)
+
+            with mock.patch.object(publisher, "_request", side_effect=slow_prepare):
+                result = self.publish(server, duration=3)
+            writes = self.writes(server)
+            self.assertEqual(result["acknowledged"], 2)
+            self.assertLessEqual(writes[0]["valid_until_unix_ms"], SAMPLED + 2800)
+            self.assertLessEqual(writes[1]["valid_until_unix_ms"], writes[0]["valid_until_unix_ms"])
+
+    def test_expired_retained_horizon_cannot_revive_after_temporary_loss(self):
+        with FakeServer(capable()) as server:
+            self.prepare(server)
+
+            def source_loss(index):
+                if index == 1:
+                    self.path.unlink()
+                elif index == 2:
+                    self.write_source()
+
+            with mock.patch.object(publisher, "_INTERVAL", 1.3), self.delayed_status([300, 0, 0], source_loss):
+                result = self.publish(server, duration=3)
+            writes = self.writes(server)
+            self.assertEqual(result["acknowledged"], 3)
+            self.assertEqual(writes[0]["valid_until_unix_ms"], SAMPLED + 2700)
+            self.assert_role(writes[1])
+            self.assert_role(writes[2])  # Same raw sample still has source TTL left.
+            self.assertIn("live_source_expired", result["diagnostics"])
+
+    def test_horizon_state_is_one_reused_current_record_per_participant(self):
+        state = {}
+        source = {"contract": live.NATIVE_CONTRACT, "runtime_id": RUNTIME,
+                  "instance_id": INSTANCE, "session_id": SESSION, "sequence": 1, "sampled_at_ms": SAMPLED}
+        candidate = {"wall": SAMPLED + 3000, "mono": 103, "sample": SAMPLED}
+        first = publisher._retain_live_horizon(state, "p0", source, "busy", candidate)
+        first.update(wall=SAMPLED + 2700, mono=102.7)  # Later boundary reductions.
+        same = publisher._retain_live_horizon(state, "p0", dict(source), "busy", candidate)
+        self.assertIs(same, first)
+        self.assertEqual((same["wall"], same["mono"]), (SAMPLED + 2700, 102.7))
+        self.assertIsNone(publisher._retain_live_horizon(state, "p0", source, "unknown", candidate))
+        self.assertEqual((first["wall"], first["mono"]), (SAMPLED + 2700, 102.7))
+        identities = {"p0": id(first)}
+        for sequence in range(2, 66):
+            for index in range(16):
+                participant = f"p{index}"
+                sample = SAMPLED + sequence * 1000
+                newer = {**source, "sequence": sequence, "sampled_at_ms": sample}
+                bound = {"wall": sample + 3000, "mono": 100 + sequence, "sample": sample}
+                current = publisher._retain_live_horizon(state, participant, newer, "busy", bound)
+                identities.setdefault(participant, id(current))
+                self.assertEqual(id(current), identities[participant])
+                self.assertEqual(current["source"], newer)
+                self.assertEqual(set(current), {"source", "activity", "sample", "wall", "mono"})
+            self.assertEqual(len(state), 16)
+
+    def test_replayed_or_contradictory_sampling_is_not_new_evidence(self):
+        for mode in ("sequence_rollback", "sample_rollback", "same_sequence_new_time",
+                     "new_sequence_same_time", "changed_activity", "new_unknown_then_old_busy"):
+            self.clock.wall_ms = SAMPLED + 100
+            self.clock.mono_ms = 100000
+            self.fixture = native_fixture()
+            self.fixture["sequence"] = 2
+            if mode == "new_unknown_then_old_busy":
+                self.fixture["instances"][0]["sessions"][0]["activity"] = "unknown"
+            self.write_source()
+            with self.subTest(mode=mode), FakeServer(capable()) as server:
+                self.prepare(server)
+
+                def contradictory(index):
+                    if index != 1:
+                        return
+                    if mode in ("sequence_rollback", "new_unknown_then_old_busy"):
+                        self.fixture["sequence"] = 1
+                        self.fixture["instances"][0]["sessions"][0]["activity"] = "busy"
+                    elif mode == "sample_rollback":
+                        self.fixture["sequence"] = 3
+                        self.fixture["sampled_at_ms"] -= 1
+                    elif mode == "same_sequence_new_time":
+                        self.fixture["sampled_at_ms"] += 400
+                    elif mode == "new_sequence_same_time":
+                        self.fixture["sequence"] = 3
+                    else:
+                        self.fixture["instances"][0]["sessions"][0]["activity"] = "unknown"
+                    self.write_source()
+
+                with mock.patch.object(publisher, "_INTERVAL", 0.5), self.delayed_status([0, 0], contradictory):
+                    result = self.publish(server, duration=1)
+                self.assertEqual(result["acknowledged"], 2)
+                self.assert_role(self.writes(server)[1])
+
     def test_cli_opt_in_exact_summary_exit_and_help(self):
         with FakeServer(capable()) as server:
             self.prepare(server)

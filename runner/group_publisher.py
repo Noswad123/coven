@@ -326,7 +326,30 @@ class _LiveClock:
         return mono, wall
 
 
-def _live_evidence(workspace, group_key, revision, group, deadline, clock, summary):
+def _retain_live_horizon(horizons, participant_id, source, activity, candidate):
+    """One current record per frozen participant, never an evidence history."""
+    previous = horizons.get(participant_id)
+    if previous is None:
+        previous = {**candidate, "source": source, "activity": activity}
+        horizons[participant_id] = previous
+    elif source == previous["source"]:
+        previous["wall"] = min(previous["wall"], candidate["wall"])
+        previous["mono"] = min(previous["mono"], candidate["mono"])
+        if activity != previous["activity"]:
+            return None  # Changed activity with the same sample is contradictory.
+    else:
+        old_source = previous["source"]
+        pins = ("contract", "runtime_id", "instance_id", "session_id")
+        if (any(source[k] != old_source[k] for k in pins)
+                or source["sequence"] <= old_source["sequence"]
+                or source["sampled_at_ms"] <= old_source["sampled_at_ms"]):
+            return None  # Replay/contradiction is unknown, not newly sampled evidence.
+        # Reuse the record: cycle-accounting references do not retain old leases.
+        previous.update(candidate, source=source, activity=activity)
+    return previous if activity == "busy" else None
+
+
+def _live_evidence(workspace, group_key, revision, group, deadline, clock, summary, horizons):
     """Fresh in-process status, with exact identity checks before reservation."""
     mono, wall = clock.check()  # Anchor BEFORE status, not at report receipt.
     timeout = min(1.0, _remaining(deadline))
@@ -377,11 +400,14 @@ def _live_evidence(workspace, group_key, revision, group, deadline, clock, summa
                     "selection": {k: attachment[k] for k in ("runtime_id", "instance_id", "session_id")}},
                     attachment)
                 remaining = row["expires_in_ms"]
-                if row["activity"] == "busy":
-                    lease = {"wall": min(source["sampled_at_ms"] + _LIVE_TTL_MS,
+                candidate = {"wall": min(source["sampled_at_ms"] + _LIVE_TTL_MS,
                                          math.floor(wall + remaining), 2**53 - 1),
                              "mono": mono + remaining / 1000,
                              "sample": source["sampled_at_ms"]}
+                # Keep valid unknown sampling too: replaying an older busy sample
+                # must not erase a newer observation. Read loss leaves state intact.
+                lease = _retain_live_horizon(horizons, member["participant_id"], source,
+                                             row["activity"], candidate)
             except observation._Failure:
                 pass  # Invalid source is unknown, never positive cached activity.
         if lease is None:
@@ -441,6 +467,7 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60, liv
                "limitations": ["Labels expire by TTL; stopping does not cancel admitted writes.",
                                "Filesystem fsync is not wall-clock bounded."]}
     clock = _LiveClock() if live else None
+    horizons = {} if live else None  # At most 16 current frozen participants, invocation-local.
     if live:
         summary.update(publication_mode="live", ttl_ms=None, static_ttl_ms=_TTL_MS,
                        live_max_age_ms=_LIVE_TTL_MS)
@@ -518,7 +545,7 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60, liv
                                  "text": group["name"] + " · " + member["role"], "ttl_ms": _TTL_MS})
                 leases = None
                 if live:
-                    leases = _live_evidence(workspace, group_key, revision, group, deadline, clock, summary)
+                    leases = _live_evidence(workspace, group_key, revision, group, deadline, clock, summary, horizons)
                     for params, lease in zip(plan, leases):
                         if lease is not None:
                             role_text = params["text"]
