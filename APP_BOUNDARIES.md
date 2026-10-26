@@ -7,8 +7,9 @@ observation implemented in Coven; production opt-in terminal-border annotations
 implemented in Kitsune; explicit participant groups/roles and a foreground publisher
 implemented in Coven, including explicit process-evidence group binding independent
 of Kitsune's agent inventory; explicit Djinn live attachments and read-only
-busy/unknown group status implemented; native lifecycle/scheduling, live UI labels,
-automatic following, extraction, and workspace annotations remain open**.
+busy/unknown group status and explicit expiry-bounded live publishing implemented;
+native lifecycle/scheduling, automatic following, extraction, and workspace
+annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
 This decision rebaselines near-term priorities; it does not remove current features.
 
@@ -95,10 +96,14 @@ workspace annotations, Kitsune-owned group membership/agent identity,
 seen/notifications, native success facts, or terminal-control authority are added.
 Coven owns its explicit group/source declarations and read-only busy/unknown
 projection; broader annotation ambitions, native lifecycle/scheduling, automatic
-following, and extraction remain open. Live status is not sent as annotation text:
-the static publisher never opens attachments and keeps its group/role-only 6000 ms
-TTL. The 3000 ms live-source TTL needs a generic end-to-end expiry contract before
-any live UI labels can be wired.
+following, and extraction remain open. The default static publisher never opens
+attachments and keeps its group/role-only 6000 ms TTL. Explicit `publish --live`
+requires generic `annotations.valid_until_unix_ms: true` discovery and deadline
+enforcement after server queueing. Only fresh pinned legacy-runner busy gains a
+scoped suffix, with decreasing source-age/wall/elapsed ceilings and no receipt TTL
+renewal; unknown is role-only. The composed frame expires together, without a hidden
+static layer or lower-source fallback. Compatible Unix clocks and normal monotonic
+progression are assumed, not arbitrary rollback/skew/suspend or pixel-expiry safety.
 This is not Coven taking over the UI.
 
 ## Data Flow
@@ -225,7 +230,7 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
 4. First optional generic terminal-border annotation slice implemented in Kitsune;
    explicit Coven foreground publishing implemented; broader workspace/presentation work remains open.
 5. Explicit groups/roles for existing agents implemented in Coven before further
-   worker/worktree implementation. Native lifecycle/scheduling, live UI labels,
+   worker/worktree implementation. Native lifecycle/scheduling,
    automatic following, and extraction are not shipped.
 6. One-pane generic process evidence and Coven-owned Djinn executable-family
    interpretation are implemented as an opt-in shadow mode. Recognition is not
@@ -234,10 +239,14 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
 7. Explicit live-source attach/detach and read-only group busy/unknown status are
    implemented in Coven; source declarations do not verify native/UI-session or
    terminal equivalence, authorize work, or change the static annotation publisher.
+8. Explicit `publish --live` composes fresh scoped busy using generic Kitsune absolute
+   expiry discovery, whole-target durable reservations and decreasing source budgets.
+   Static defaults stay unchanged; unsupported servers fail closed. Offline fixtures
+   are not actual Kitsune enforcement or live-runtime validation.
 
-The full offline suite now passes **730 tests**, including 24 live-attachment
-authority tests and 34 workflow/status tests alongside the existing observer,
-publisher and transport coverage. The separate live producer passed
+The full offline suite now passes **763 tests**, including 33 opt-in live-publisher
+tests, 24 live-attachment authority tests and 34 workflow/status tests alongside
+the existing observer, publisher and transport coverage. The separate live producer passed
 54 focused opencode tests, 3 schema tests and both Bun typechecks, not the full UI
 suite. The [live observer contract](DJINN_LIVE_OBSERVATION_CONTRACT.md#example-usage)
 records cross-TS→Python fixture interop; no real UI/model calls have validated that

@@ -3,8 +3,10 @@
 ## Overview
 
 Coven can group **already-running participants**, assign display roles, and explicitly
-publish `GROUP NAME · ROLE` through Kitsune's generic annotations. Group and
-participant UUIDs are Coven declarations, with human selectors for CLI use; they
+publish `GROUP NAME · ROLE` through Kitsune's generic annotations. Explicit
+`publish --live` can append fresh pinned ` · legacy runner busy` evidence using
+Kitsune's generic absolute-expiry capability; default publication stays static.
+Group and participant UUIDs are Coven declarations, with human selectors for CLI use; they
 are independent of task authority, the workspace agent roster, and native runtime
 identity. Roles do not change Djinn policy, personas, prompts, or configuration.
 
@@ -98,7 +100,7 @@ coven group list WORKSPACE [--json]
 coven group attach-live WORKSPACE GROUP --member KEY --file ABS_RUNTIME_UUID_JSON --runtime UUID --instance UUID --session ID [--reattach] [--expect-revision TOKEN] [--timeout SECONDS] [--json]
 coven group detach-live WORKSPACE GROUP --member KEY [--expect-revision TOKEN] [--json]
 coven group status WORKSPACE GROUP [--member KEY] [--timeout SECONDS] [--json]
-coven group publish WORKSPACE auth-review --socket ABS --source coven [--duration SECONDS] [--json]
+coven group publish WORKSPACE auth-review --socket ABS --source coven [--live] [--duration SECONDS] [--json]
 ```
 
 `create --name` defaults to the selector when omitted. `--duration` defaults to 60
@@ -230,9 +232,9 @@ overflow is rejected. Counter updates alone do not invalidate CAS/publisher cont
 The `groups-v1` prefix denotes the **token format**, not authority schema 1;
 schema-2/3 authorities retain that prefix and hashing algorithm. Attachments are
 covered group content, so declaration changes can stop a running publisher at its
-normal content fence. Publication never reads attachment artifacts or appends live
-activity; its static group/role labels retain their 6000 ms TTL. Live-source expiry
-must not be converted into labels without a generic end-to-end expiry contract.
+normal content fence. Default publication never reads attachment artifacts or
+appends live activity; its static group/role labels retain their 6000 ms TTL. The separate
+[live opt-in](#opt-in-live-publication) requires generic end-to-end expiry support.
 
 All declaration mutations and cycle reservations reload under the persistent
 `state/.workspace.lock`; changes atomically replace the one authority with file and
@@ -284,8 +286,78 @@ revisions can cause rejection, not automatic revision bump/replay.
 5. Serial `pane.annotate` writes require correlated `ok` acknowledgements. Cycle
    starts use a fixed 2-second interval and a shared 3-second cycle I/O budget,
    capped by the remaining run duration; at most 16 targets, no overlap or catch-up
-   bursts. TTL is always 6000 ms. Filesystem fsync is not universally wall-clock
+   bursts. Default TTL is always 6000 ms. Filesystem fsync is not universally wall-clock
    bounded, so these deadlines are not a hard bound on total process lifetime.
+
+### Opt-in live publication
+
+```text
+coven group publish WORKSPACE GROUP --socket ABS --source SOURCE --live [--duration SECONDS] [--json]
+```
+
+`--live` requires **literal** `annotations.valid_until_unix_ms: true` on every
+cycle's `session.snapshot`. Missing/false/null/nonboolean/lost support stops the
+invocation, even if every participant is unknown. Protocol 18, application version,
+ping or speculative writes cannot substitute for discovery. Existing epoch,
+enabled-source, endpoint and strict/generic snapshot selection fences still apply.
+An unsupported server remains usable through a separately selected static invocation.
+
+After **all** terminal/binding/process preflight, the publisher calls in-process
+`group_live.status`, outside the workspace lock, using at most one second of the
+remaining shared three-second cycle/run budget. It validates the exact frozen
+whole-content token, group identity, participant UUID set, keys/roles and attachment
+pins. Whole-projection/identity failure aborts before reservation. Individual source
+loss, incompatible/invalid/expired samples, changed generation or unattached rows
+are unknown and produce role-only text; there is no automatic reattach/follow.
+
+Only fresh scoped busy yields `GROUP NAME · ROLE · legacy runner busy`, with
+`ttl_ms: 3000` as a ceiling and integer `valid_until_unix_ms`. This is legacy runner
+ownership, not provider progress, idle, stopped, blocked, health, readiness, native
+lifecycle, success or job completion. Attachments are explicit declarations, not
+verified terminal/UI-session equivalence; shared pins do not prove distinct workers.
+Role-only requests keep `ttl_ms: 6000` and omit the absolute field. Without `--live`,
+the payload, summary and 6000 ms text remain unchanged, with zero attachment reads.
+
+Before status, anchor wall milliseconds `W0` and monotonic seconds `M0`. With the
+row's already-conservative remaining lifetime `R`, original sample `S` and `V=3000`:
+
+```text
+Dwall = min(S + V, floor(W0 + R))
+Dmono = M0 + R / 1000
+later remaining = min(Dwall - W, (Dmono - M) * 1000)
+outbound D = min(Dwall, floor(W + (Dmono - M) * 1000), prior derived D)
+```
+
+The absolute integer is bounded by `0..9007199254740991`; rounding never grants an
+extra millisecond. Call-start anchoring deliberately double-deducts some latency.
+Ceilings only decrease after later-member reads, group recheck, reservation/fsync,
+prior sends and at the transport send boundary after connection/serialization work.
+No receipt, timestamp on a report, attachment time, mtime, file copy or refresh
+grants a new three-second lease. Kitsune enforces the absolute ceiling at actual
+mutation after queueing and maps the residual validity to nonextending monotonic
+expiry; a queued expired request rejects with `annotation_expired`, not `ok`.
+
+Whole-target durable reservation/CAS/counter semantics are unchanged. If a busy
+target is still provably never sent but its evidence expires after reservation,
+it may be recomposed as role-only using that same burned revision. Exhausted cycle
+budget sends nothing more. Any rejection or ambiguous delivery stops without repair,
+retry, revision bump or replay; uncertainty never refunds a counter. A valid `ok`
+acknowledges bounded acceptance, not visibility or freshness when the reply arrives.
+
+The composed frame expires **as a whole**, including group/role text. A later normal
+refresh may restore role-only text at a higher revision; there is no hidden static
+layer, lower-source fallback or exit-time cleanup clear. Group state stores no
+activity/sample/sequence history/lease. Both modes share the existing lease and
+endpoint/source/epoch counter stream, with no new authority or native action.
+
+This pilot assumes compatible source/server Unix clocks, no disruptive wall change
+between evidence and acceptance, normal monotonic progression and suitable local
+filesystems. Observed backward wall progression or monotonic regression stops live
+publication without further writes, retaining burned counters; forward jumps can
+expire early. Discovery does **not** attest clock quality. Unknown skew or rollback
+before acceptance can overestimate validity; arbitrary rollback/skew/suspend safety
+and hard-real-time pixel expiry are not promised. Stronger deployments require a
+separately approved clock design, not another implicit handshake.
 
 ## Edge Cases
 
@@ -364,6 +436,14 @@ target phases are `unsent`, `in_flight`, `acknowledged`, `rejected`, or `uncerta
 These records derive the returned aggregate counts; they are not emitted as a
 per-target durable receipt log.
 
+Only live summaries additionally carry `publication_mode: live`, `ttl_ms: null`,
+`static_ttl_ms: 6000`, `live_max_age_ms: 3000`, and clock/scope limitations. Safe
+deduplicated diagnostics include `live_source_unknown` / `live_source_expired`;
+these can accompany a successful role-only refresh. Whole failures include
+`annotation_deadline_unsupported`, `live_status_invalid`, `live_status_unavailable`,
+`live_clock_regressed` or `live_clock_unavailable`. No native artifact bodies or
+distinct-worker counts are exposed. Static summaries remain unchanged.
+
 | Summary field | Meaning |
 | --- | --- |
 | `reservation_attempts`, `reservation_attempted_targets` | All recorded reservation attempts and their target counts. |
@@ -400,15 +480,23 @@ coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
 
 ## Validation
 
-The full offline suite passes **730 tests**, including 24 new live-attachment
-authority tests and 34 workflow/status tests. Existing snapshot/process bindings,
-publisher durability/interrupt handling, counters, and generic snapshot contracts
-remain covered. Schema 3 changes only explicit attachment declarations; no native
-authorization or live activity publication is added. Run with:
+The full offline suite passes **763 tests**, including 33 opt-in live-publisher
+tests, 24 live-attachment authority tests and 34 workflow/status tests. Existing
+snapshot/process bindings, publisher durability/interrupt handling, counters, and generic snapshot contracts
+remain covered. Schema 3 still stores declarations only; live publication is
+ephemeral and explicitly opted in, with no new native authorization. Run with:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
 ```
+
+Focused live-publisher checks use private source files, controlled clocks and fake
+AF_UNIX endpoints. They cover literal-true discovery, scoped text, source/generation
+loss, whole-content/participant/pin fences, later-read/reservation/connect/send
+delays, simulated queued rejection, residual acceptance/whole-frame expiry models,
+role-only restoration, observed clock regressions, malformed/lost acknowledgements,
+partial sends and reservation uncertainty. Actual Kitsune queue/render/quiet-expiry
+enforcement and cross-lane integration are not validated by these producer fixtures.
 
 Coverage for this slice includes strict schema variants/PID bounds/order,
 atomic promotion preserving IDs/counters, failed promotion and concurrent CAS,
@@ -435,6 +523,7 @@ malformed-legacy payloads; that coverage is offline only.
 - [runner/kitsune_observation.py](runner/kitsune_observation.py), [KITSUNE_OBSERVATION_CONTRACT.md](KITSUNE_OBSERVATION_CONTRACT.md) — shared snapshot validation and read-only observation.
 - [runner/kitsune_process_observation.py](runner/kitsune_process_observation.py), [KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md) — bracketed process evidence and interpreter limits.
 - [tests/test_groups.py](tests/test_groups.py), [tests/test_group_publisher.py](tests/test_group_publisher.py), [tests/test_group_commands.py](tests/test_group_commands.py) — offline coverage, not live-server validation.
+- [tests/test_group_live_publisher.py](tests/test_group_live_publisher.py) — opt-in discovery, scoped text, source/delivery expiry, identity and clock fences, role-only restoration and uncertainty fixtures; not actual Kitsune enforcement.
 - [tests/test_process_groups.py](tests/test_process_groups.py) — private fake-endpoint process add/rebind and publisher boundaries.
 - [tests/test_process_snapshot_contract.py](tests/test_process_snapshot_contract.py) — generic projection, conditional mixed-group validation and unchanged strict paths.
 - [tests/test_socket_alias_transport.py](tests/test_socket_alias_transport.py) — long canonical/selected Unix-socket paths and alias/transport safety regressions.

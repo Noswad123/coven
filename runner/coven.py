@@ -1801,7 +1801,7 @@ def command_group_status(args: argparse.Namespace) -> int:
 def command_group_publish(args: argparse.Namespace) -> int:
     try:
         value = group_publisher.publish_group(workspace_path(args.workspace), args.group,
-            args.socket, args.source, duration=args.duration)
+            args.socket, args.source, duration=args.duration, **({"live": True} if args.live else {}))
     except ValueError as exc:
         raise groups.GroupError(f"Invalid group publication request: {exc}") from exc
     print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
@@ -3847,6 +3847,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     group_publish.add_argument("--socket", required=True)
     group_publish.add_argument("--source", required=True, help="Dedicated source already enabled in Kitsune, e.g. coven")
     group_publish.add_argument("--duration", type=int, default=60, help="Foreground run seconds, 1..3600 (default: 60); Ctrl-C stops refreshing")
+    group_publish.add_argument("--live", action="store_true", help="Opt-in pinned legacy runner busy suffix; requires Kitsune deadline support and compatible clocks; unknown remains role-only, never idle or job completion")
     group_publish.add_argument("--json", action="store_true")
     group_publish.set_defaults(func=command_group_publish)
 

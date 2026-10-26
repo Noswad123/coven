@@ -6,8 +6,11 @@ An existing Coven participant can explicitly declare one pinned Djinn live sourc
 `group status` projects fresh **busy|unknown** evidence from declared artifacts;
 it never establishes idle, health, native lifecycle, job completion or execution
 permission. Attachment is a declaration, not verified terminal/session equivalence.
-No live UI labels or native control are added. See [groups](GROUPS_CONTRACT.md) for
-membership/bindings and the [live reader](DJINN_LIVE_OBSERVATION_CONTRACT.md) for source checks.
+Status itself adds no labels or native control. A separate explicit
+[`group publish --live`](GROUPS_CONTRACT.md#opt-in-live-publication) can publish fresh
+scoped busy evidence only with Kitsune's generic expiry capability. See
+[groups](GROUPS_CONTRACT.md) for membership/bindings and the
+[live reader](DJINN_LIVE_OBSERVATION_CONTRACT.md) for source checks.
 
 ## API / Interfaces
 
@@ -135,8 +138,13 @@ Schemas 1/2 project unattached/unknown rows without migration.
 - Persisted observation and worker readiness are unchanged. The static publisher
   never opens attachment artifacts or appends activity: labels remain group/role
   text with 6000 ms TTL. Declaration changes can stop it through normal whole-content
-  fencing. The live source's 3000 ms TTL is **not wired to labels**; that needs a
-  generic end-to-end expiry contract first.
+  fencing. Only explicit `publish --live` reads status in-process, verifies the frozen
+  revision/group/participant/pin identities before durable whole-target reservation,
+  and uses `valid_until_unix_ms` plus decreasing wall/elapsed source budgets. It
+  refuses unsupported servers. Unknown/lost/expired evidence becomes role-only;
+  a composed busy frame expires as a whole, with no lower-source fallback. See the
+  [publisher contract](GROUPS_CONTRACT.md#opt-in-live-publication) for delivery,
+  clock assumptions and uncertainty; this status command remains read-only.
 
 ## Example usage
 
@@ -152,9 +160,10 @@ coven group detach-live WORKSPACE auth-review --member backend --json
 
 ## Validation
 
-The full Coven offline suite passes **730 tests**, including **24 new attachment
-authority tests** and **34 workflow/status tests**. The actual `bin/coven` wrapper
-is exercised against private fixture artifacts, not an installed native runtime.
+The full Coven offline suite passes **763 tests**, including **33 opt-in publisher
+tests**, **24 attachment authority tests** and **34 workflow/status tests**. The
+actual `bin/coven` wrapper is exercised against private fixture artifacts, not an
+installed native runtime.
 Coverage includes promotion/idempotency, mandatory CAS and remove/re-add races,
 counter preservation, uncertain durability, source loss, later-read expiry, clock
 rollback during recheck, whole-projection deadlines, and static publisher isolation.

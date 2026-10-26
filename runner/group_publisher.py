@@ -16,10 +16,11 @@ import time
 import uuid
 
 if __package__:
-    from . import groups, storage
+    from . import group_live, groups, storage
     from . import kitsune_observation as observation
     from . import kitsune_process_observation as process_observation
 else:
+    import group_live
     import groups
     import storage
     import kitsune_observation as observation
@@ -28,6 +29,7 @@ else:
 _INTERVAL = 2.0
 _CYCLE_BUDGET = 3.0
 _TTL_MS = 6000
+_LIVE_TTL_MS = 3000
 _SOURCE = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z", re.ASCII)
 
 
@@ -71,7 +73,7 @@ def _endpoint(path):
 
 
 def _request(socket_path, method, params, *, deadline, max_response_bytes=1048576,
-             frozen_endpoint=None):
+             frozen_endpoint=None, prepare_send=None):
     """Narrow internal transport; sendall failure may include a partial write."""
     if method not in {"session.snapshot", "pane.annotate"}:
         raise ValueError("unsupported publication method")
@@ -100,6 +102,13 @@ def _request(socket_path, method, params, *, deadline, max_response_bytes=104857
             address = min((endpoint["path"], socket_path), key=lambda p: len(os.fsencode(p)))
             stream.connect(address)
             fence()
+            if prepare_send is not None:
+                # Still provably unsent: connection/serialization time cannot
+                # renew evidence. Keep this callback off the legacy path.
+                for _ in range(2):
+                    prepare_send()
+                    payload = json.dumps({"id": request_id, "method": method, "params": params},
+                                         ensure_ascii=True, allow_nan=False).encode() + b"\n"
             stream.settimeout(_remaining(deadline))
             started_write = writing
             stream.sendall(payload)
@@ -164,7 +173,7 @@ def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=10485
     try:
         snapshot = (observation._pane_snapshot(payload, request_id) if process_only
                     else observation._snapshot(payload, request_id))
-        epoch, sources = None, None
+        epoch, sources, valid_until = None, None, False
         if "annotations" in snapshot:
             descriptor = snapshot["annotations"]
             observation._require(isinstance(descriptor, dict))
@@ -174,6 +183,7 @@ def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=10485
             observation._require(isinstance(sources, list) and len(sources) <= 8)
             observation._require(all(isinstance(s, str) and _SOURCE.fullmatch(s) for s in sources))
             observation._require(len(set(sources)) == len(sources))
+            valid_until = descriptor.get("valid_until_unix_ms") is True
         agents = []
         for item in ([] if process_only else snapshot["agents"]):
             agent = {key: item[key] for key in observation._LOCATORS}
@@ -184,6 +194,7 @@ def read_publication_snapshot(socket_path, *, deadline, max_response_bytes=10485
             agents.append(agent)
         _remaining(deadline)
         return {"endpoint": endpoint, "epoch": epoch,
+                "valid_until_unix_ms": valid_until,
                 "sources": None if sources is None else list(sources),
                 "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "agents": agents,
@@ -297,7 +308,113 @@ def _publication_summary(summary, cycles):
     }
 
 
-def publish_group(workspace, group_key, socket_path, source, *, duration=60):
+class _LiveClock:
+    """Detect observed regressions, not unknown skew, rollback or suspend safety."""
+
+    def __init__(self):
+        self.previous = None
+
+    def check(self):
+        mono, wall = time.monotonic(), time.time() * 1000
+        if not math.isfinite(mono) or not math.isfinite(wall) or not 0 <= wall <= 2**53 - 1:
+            raise PublisherError("live_clock_unavailable")
+        if self.previous is not None:
+            old_mono, old_wall = self.previous
+            if mono < old_mono or wall < old_wall:
+                raise PublisherError("live_clock_regressed")
+        self.previous = mono, wall
+        return mono, wall
+
+
+def _live_evidence(workspace, group_key, revision, group, deadline, clock, summary):
+    """Fresh in-process status, with exact identity checks before reservation."""
+    mono, wall = clock.check()  # Anchor BEFORE status, not at report receipt.
+    timeout = min(1.0, _remaining(deadline))
+    try:
+        report = group_live.status(workspace, group_key, timeout=timeout)
+    except (storage.StorageError, ValueError, OSError):
+        raise PublisherError("live_status_unavailable") from None
+    clock.check()
+    _remaining(deadline)
+    try:
+        observation._require(isinstance(report, dict)
+            and type(report.get("schema_version")) is int and report["schema_version"] == 1
+            and report.get("contract") == group_live.STATUS_CONTRACT
+            and report.get("assessment") == "observed"
+            and report.get("revision") == revision
+            and report.get("group") == {k: group[k] for k in ("group_id", "key", "name")}
+            and report.get("authorization") == "none" and report.get("dispatchable") is False
+            and report.get("native_lifecycle") == "unestablished"
+            and report.get("job_completion") == "unestablished")
+        rows = report.get("participants")
+        observation._require(isinstance(rows, list) and len(rows) == len(group["members"]))
+        by_id = {}
+        for row in rows:
+            observation._require(isinstance(row, dict) and isinstance(row.get("participant_id"), str)
+                                 and row["participant_id"] not in by_id)
+            by_id[row["participant_id"]] = row
+        observation._require(set(by_id) == {m["participant_id"] for m in group["members"]})
+        for member in group["members"]:
+            row = by_id[member["participant_id"]]
+            observation._require(row.get("key") == member["key"] and row.get("role") == member["role"]
+                and row.get("live_attachment") == member.get("live_attachment")
+                and row.get("association_basis") == (
+                    "explicit_declaration" if member.get("live_attachment") is not None else "unattached"))
+    except observation._Failure:
+        raise PublisherError("live_status_invalid") from None
+
+    leases = []
+    for member in group["members"]:
+        row = by_id[member["participant_id"]]
+        attachment = member.get("live_attachment")
+        lease = None
+        if attachment is not None and row.get("assessment") == "observed":
+            try:
+                # The status contract supplies the adapter envelope; reuse its
+                # strict scoped-evidence boundary, including source generation pins.
+                source = group_live._accepted({**row, "schema_version": 1,
+                    "adapter_contract": group_live.live.ADAPTER_CONTRACT,
+                    "selection": {k: attachment[k] for k in ("runtime_id", "instance_id", "session_id")}},
+                    attachment)
+                remaining = row["expires_in_ms"]
+                if row["activity"] == "busy":
+                    lease = {"wall": min(source["sampled_at_ms"] + _LIVE_TTL_MS,
+                                         math.floor(wall + remaining), 2**53 - 1),
+                             "mono": mono + remaining / 1000,
+                             "sample": source["sampled_at_ms"]}
+            except observation._Failure:
+                pass  # Invalid source is unknown, never positive cached activity.
+        if lease is None:
+            _live_diagnostic(summary, "live_source_unknown")
+        leases.append(lease)
+    return leases
+
+
+def _live_diagnostic(summary, code):
+    if code not in summary["diagnostics"]:
+        summary["diagnostics"].append(code)
+
+
+def _prepare_live(params, role_text, lease, clock, deadline, summary):
+    """Only used for never-sent params; all ceilings can only decrease."""
+    mono, wall = clock.check()
+    _remaining(deadline)
+    if lease is None:
+        return
+    lease["wall"] = min(lease["wall"], math.floor(wall + (lease["mono"] - mono) * 1000))
+    remaining = min(lease["wall"] - wall, (lease["mono"] - mono) * 1000)
+    if wall < lease["sample"] or remaining <= 0:
+        params.update(text=role_text, ttl_ms=_TTL_MS)
+        params.pop("valid_until_unix_ms", None)
+        _live_diagnostic(summary, "live_source_expired")
+        return
+    # A frame previously reduced to role-only must never regain a busy suffix.
+    if params["text"] == role_text:
+        return
+    params["valid_until_unix_ms"] = lease["wall"]
+
+
+def publish_group(workspace, group_key, socket_path, source, *, duration=60, live=False):
     """Publish fresh serial cycles; summaries never include raw peer/state errors.
 
     Delivery counts partition reservation_attempted_targets. reserved_targets and
@@ -315,22 +432,39 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60):
         raise ValueError("group key must be a lowercase human selector of 1..64 characters")
     if type(duration) is not int or not 1 <= duration <= 3600:
         raise ValueError("duration must be an integer in 1..3600 seconds")
+    if type(live) is not bool:
+        raise ValueError("live must be boolean")
     summary = {"outcome": "completed", "diagnostics": [],
                "authorization": "annotation_publication_only",
                "native_execution_authorization": "none", "dispatchable": False,
                "ttl_ms": _TTL_MS,
                "limitations": ["Labels expire by TTL; stopping does not cancel admitted writes.",
                                "Filesystem fsync is not wall-clock bounded."]}
+    clock = _LiveClock() if live else None
+    if live:
+        summary.update(publication_mode="live", ttl_ms=None, static_ttl_ms=_TTL_MS,
+                       live_max_age_ms=_LIVE_TTL_MS)
+        summary["limitations"].extend([
+            "Busy is only pinned legacy runner ownership, not idle, health, progress or completion.",
+            "Attachments are declarations, not verified terminal/UI-session equivalence or distinct workers.",
+            "Expiry assumes compatible source/server Unix clocks, no disruptive wall changes and normal "
+            "monotonic progression; unknown skew, rollback, suspend and display lag are not bounded.",
+            "A composed live frame expires as a whole; later refresh may restore role-only text. "
+            "Clear/expiry never reveals a lower-priority source."])
     cycles = []
     try:
         revision, _, endpoint = _read_group(groups, workspace, group_key)
         root = Path(workspace)
         with storage.workspace_lock(root, root / "state/.group-publisher.lock", timeout=0):
+            if live:
+                clock.check()
             end = time.monotonic() + duration
             epoch = None
             first_cycle = True
             while time.monotonic() < end:
                 cycle_started = time.monotonic()
+                if live:
+                    clock.check()
                 deadline = min(end, cycle_started + _CYCLE_BUDGET)
                 _, group, current_endpoint = _read_group(groups, workspace, group_key, revision)
                 if current_endpoint != endpoint:
@@ -349,6 +483,8 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60):
                     raise PublisherError("endpoint_replaced")
                 if fresh["epoch"] is None:
                     raise PublisherError("annotations_unsupported")
+                if live and fresh.get("valid_until_unix_ms") is not True:
+                    raise PublisherError("annotation_deadline_unsupported")
                 if source not in fresh["sources"]:
                     raise PublisherError("source_disabled")
                 if epoch is not None and epoch != fresh["epoch"]:
@@ -380,10 +516,22 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60):
                     plan.append({"pane_id": pane["pane_id"], "expected_terminal_id": terminal,
                                  "annotation_epoch": epoch, "source": source,
                                  "text": group["name"] + " · " + member["role"], "ttl_ms": _TTL_MS})
+                leases = None
+                if live:
+                    leases = _live_evidence(workspace, group_key, revision, group, deadline, clock, summary)
+                    for params, lease in zip(plan, leases):
+                        if lease is not None:
+                            role_text = params["text"]
+                            params.update(text=role_text + " · legacy runner busy", ttl_ms=_LIVE_TTL_MS)
+                            _prepare_live(params, role_text, lease, clock, deadline, summary)
                 _remaining(deadline)
                 # Record possible burns BEFORE calling an interruptible storage helper.
                 cycle = {"reservation": "outcome_unknown",
                          "targets": [{"params": params, "phase": "unsent"} for params in plan]}
+                if live:
+                    for target, lease, member in zip(cycle["targets"], leases, group["members"]):
+                        target["live_lease"] = lease
+                        target["role_text"] = group["name"] + " · " + member["role"]
                 cycles.append(cycle)
                 try:
                     reserved = groups.reserve_cycle(
@@ -407,13 +555,25 @@ def publish_group(workspace, group_key, socket_path, source, *, duration=60):
                     params = target["params"]
                     params["revision"] = reserved["reservations"][params["expected_terminal_id"]]
                     try:
+                        if live:
+                            def prepare_send():
+                                _prepare_live(params, target["role_text"], target["live_lease"],
+                                              clock, deadline, summary)
+
+                            prepare_send()
                         target["phase"] = "in_flight"
-                        _request(socket_path, "pane.annotate", params, deadline=deadline,
-                                 frozen_endpoint=endpoint)
+                        if live:
+                            _request(socket_path=socket_path, method="pane.annotate", params=params, deadline=deadline,
+                                     frozen_endpoint=endpoint, prepare_send=prepare_send)
+                        else:
+                            _request(socket_path, "pane.annotate", params, deadline=deadline,
+                                     frozen_endpoint=endpoint)
                         target["phase"] = "acknowledged"
                     except PublisherError as exc:
                         target["phase"] = exc.delivery
                         raise
+                    if live:
+                        clock.check()
                 # Skip missed ticks: no overlapping cycles and no catch-up bursts.
                 now = time.monotonic()
                 next_tick = cycle_started + (math.floor((now - cycle_started) / _INTERVAL) + 1) * _INTERVAL

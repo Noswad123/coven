@@ -9,8 +9,9 @@ Kitsune annotations as a separate generic presentation path, and Djinn-owned nat
 execution. Initial Kitsune observation, explicit participant groups/roles, and a
 foreground generic-annotation publisher are implemented in Coven, including explicit
 opt-in process-evidence binding independent of Kitsune's agent inventory. Explicit
-Djinn live attachments and revision-scoped busy/unknown group status are implemented;
-native lifecycle, scheduling, extraction, automatic following and live UI labels
+Djinn live attachments, revision-scoped busy/unknown group status and explicit
+expiry-bounded `publish --live` are implemented;
+native lifecycle, scheduling, extraction and automatic following
 are not shipped. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) and
 [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md).
 
@@ -225,7 +226,7 @@ via current panes and bracketed process reads: one initial snapshot + three read
 per process member share a 3-second deadline and aggregate 1 MiB read budget.
 Missing/unrecognized/changed evidence stops the cycle; stable same-terminal moves
 are allowed. PID reuse remains possible, and help/maintenance modes also match;
-this is not active-agent truth. Generic annotation writes/6000 ms TTL are unchanged.
+this is not active-agent truth. Default annotation writes/6000 ms TTL are unchanged.
 All process brackets are generic, even in mixed groups. The initial cycle snapshot
 is generic only for pure-process groups; mixed and snapshot-only groups retain
 strict legacy validation and snapshot-member native-hint checks. Selection uses
@@ -238,16 +239,17 @@ First manually enable a dedicated source in Kitsune using array syntax:
 `build` previously claimed the target. Sources are not authentication; coordinate
 one dedicated source per workspace and do not manually reuse the publisher's source.
 
-Ctrl-C stops refresh, not agents; labels expire after 6000 ms, with **no lower-source
+Ctrl-C stops refresh, not agents; static labels expire after 6000 ms, with **no lower-source
 fallback even after expiry** until source-policy reset. Visibility needs spare
 top-border cells (no border in single-pane layouts). Coven never edits config or
 reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
-The full offline suite now passes **730 tests**, including 24 new live-attachment
-authority tests and 34 workflow/status tests, alongside the existing live/native
-observers, group publishers, socket aliases and generic snapshot contracts.
+The full offline suite now passes **763 tests**, including 33 opt-in live-publisher
+tests, 24 live-attachment authority tests and 34 workflow/status tests, alongside
+the existing live/native observers, group publishers, socket aliases and generic
+snapshot contracts.
 Live-source validation is limited to 54 focused opencode tests, 3 schema tests
 and both package Bun typechecks, not the full UI suite. The
 [live observer contract](DJINN_LIVE_OBSERVATION_CONTRACT.md#example-usage) records
@@ -288,11 +290,38 @@ or execution permission. Individual unavailable rows still permit exit 0; whole
 content drift, failed recheck or overall deadline expiry discards all rows and
 exits 1. Callers must continue reducing returned lifetimes during delivery/display.
 The static publisher never opens attachments or appends activity; its group/role
-labels retain 6000 ms TTL. No live UI labels are wired to the 3000 ms source TTL.
+labels retain 6000 ms TTL. For explicitly opted-in live labels after attaching
+sources, use:
+
+```sh
+coven group publish WORKSPACE auth-review --socket ABS --source coven --live --duration 60 --json
+```
+
+Live mode requires literal `annotations.valid_until_unix_ms: true` on every cycle
+snapshot, even for unknown rows; unsupported servers fail without a write or silent
+downgrade. Fresh pinned busy text is `GROUP NAME · ROLE · legacy runner busy`.
+It carries a 3000 ms TTL ceiling plus an absolute `valid_until_unix_ms` bounded by
+the original sample and continuously decreasing client wall/elapsed budgets through
+reads, reservation and sends; Kitsune must enforce it after server queueing.
+Unknown/unattached/lost/expired/invalid sources yield role-only text and 6000 ms TTL.
+The composed busy frame expires as a whole; later refresh can restore role-only
+text, never a hidden static layer, lower-source fallback or exit-time cleanup.
+All binding, revision, participant/pin, source/epoch and whole-target durable-counter
+fences remain; uncertain delivery or any rejection stops without retry/repair.
+No reattachment, restart following, native control, idle, health, provider progress,
+readiness or completion is inferred. Attachments do not verify terminal/UI sessions.
+
+Live expiry assumes compatible source/server Unix clocks, no disruptive wall changes
+and normal monotonic progression. Observed wall/monotonic regressions stop the run;
+unknown skew, arbitrary rollback, suspend and hard-real-time pixel expiry are not
+guaranteed. Capability discovery is not a clock-quality attestation. See
+[opt-in publication](GROUPS_CONTRACT.md#opt-in-live-publication) for arithmetic,
+whole-frame expiry and exact live summary fields; the default summary is unchanged.
 See [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md) for exact fields,
 expiry math, CAS, shared-pin and clock limitations. Offline tests exercise the real
 CLI wrapper with private fixtures; no existing groups or native runtimes were
-modified to validate this slice. Live observations are not sent to Kitsune labels.
+modified to validate the attachment/status slice. Live-publisher coverage uses
+private artifacts/fake endpoints, not installed Kitsune or native agents.
 
 ## Generated workspace layout
 

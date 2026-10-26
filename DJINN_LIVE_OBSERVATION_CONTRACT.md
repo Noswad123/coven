@@ -130,6 +130,11 @@ and `expires_in_ms: 0`; no positive cache or inferred stopped state is returned.
   terminal/native UI-session association, and shared pins do not prove distinct
   workers. The existing static publisher never reads attachments or appends activity;
   its 6000 ms role-label TTL must not replace the source's 3000 ms lifetime.
+  Separate explicit [`publish --live`](GROUPS_CONTRACT.md#opt-in-live-publication)
+  uses generic Kitsune `valid_until_unix_ms` discovery/enforcement, original source
+  age and decreasing wall/elapsed budgets; unknown is role-only. It never grants
+  three fresh seconds from report receipt and assumes compatible local clocks,
+  not arbitrary rollback/skew/suspend safety. No activity or lease is persisted.
 - `fresh_sample` is not provider progress, health, global activity/idle, readiness,
   lifecycle or completion. Mini/serve/browser/current-V2 execution, decisions,
   retries, durable lifecycle and job completion are unsupported. No HTTP/public
@@ -176,7 +181,7 @@ installed UI/provider activity has not been live-validated.
 ## Related files
 
 - `runner/djinn_live_observation.py`, `runner/coven.py` — reader and CLI.
-- [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md), `runner/group_live.py` — separate explicit attachment/status workflow, not automatic enrollment or live UI labels.
+- [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md), `runner/group_live.py` — explicit attachment/read-only status; live publication is a separate opt-in publisher, never automatic enrollment.
 - `runner/kitsune_observation.py` — shared bounded JSON decoder, not a socket fallback.
 - [Producer guide](../djinn/docs/live-observation.md) — optional sibling navigation;
   links source Schema, registry, publisher, RunState, Runner and worker lifecycle.
