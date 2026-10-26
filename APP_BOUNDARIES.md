@@ -66,6 +66,13 @@ execution API. Djinn is the first runtime adapter, not the required native model
 for all agents. Future runtimes expose supported capabilities; missing guarantees
 remain unsupported/unknown rather than being falsely normalized.
 
+The separate [interactive start/resume contract](INTERACTIVE_SESSION_CONTRACT.md)
+now composes Djinn UI requests in Coven. Preview is the default; explicit execution
+uses a pinned generic `pane.submit_command` API and the existing workspace transport
+gate. This is unrestricted interactive command input, not native worker admission,
+verified session identity, startup/readiness or task completion. Legacy commands
+remain available and approved-launch mode cannot be bypassed.
+
 Keep these concepts distinct:
 
 - native runtime/session identity, scoped to its runtime;

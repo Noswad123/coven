@@ -28,6 +28,7 @@ if __package__:
     from . import djinn_observation
     from . import djinn_live_observation
     from . import group_live
+    from . import interactive_sessions
 else:
     import records
     import storage
@@ -47,6 +48,7 @@ else:
     import group_live
     import groups
     import group_publisher
+    import interactive_sessions
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -2873,6 +2875,35 @@ def command_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_session(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).absolute()
+    try:
+        kitsune_observation._arguments(args.socket, args.timeout, 1048576)
+        plan = interactive_sessions.plan(str(workspace), args.session_operation, args.runtime,
+            args.executable, args.socket, args.pane, args.expected_terminal, getattr(args, "session", None))
+        if args.execute:
+            load_team(workspace)
+            with legacy_runtime_transport(workspace):
+                gate = _transport_gates.entries[str(workspace.resolve())]
+                report = interactive_sessions.execute(plan, gate=gate, timeout=args.timeout)
+        else:
+            report = interactive_sessions.preview(plan)
+    except ValueError as exc:
+        fail(str(exc))
+    if args.json:
+        print(json.dumps(report, ensure_ascii=True, allow_nan=False))
+    else:
+        print(f"{report['outcome']}: {report['operation']} Djinn UI in {report['pane_id']}")
+        print(f"Command: {shlex.join(report['argv'])}")
+        if report['outcome'] == 'preview':
+            print("Preview only; --execute explicitly submits to a quiescent empty shell prompt.")
+        else:
+            print("Input acknowledgement is not proof of native startup, resume or readiness.")
+        for diagnostic in report["diagnostics"]:
+            print(f"Diagnostic: {diagnostic}")
+    return interactive_sessions.exit_code(report)
+
+
 def command_agent_status(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     team = load_team(workspace)
@@ -3597,6 +3628,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     message = subparsers.add_parser("message", help="Append a message between agents")
     message.add_argument("items", nargs="+", help="Optional workspace, then sender recipient body")
     message.set_defaults(func=command_message)
+
+    session = subparsers.add_parser("session", help="Explicit interactive UI start/resume in an existing Kitsune pane; not worker dispatch")
+    session_sub = session.add_subparsers(dest="session_operation", required=True)
+    for operation in ("start", "resume"):
+        interactive = session_sub.add_parser(operation, help=f"Preview an interactive {operation}; --execute submits once")
+        interactive.add_argument("workspace", help="Existing Coven control workspace, not a cwd or sandbox")
+        interactive.add_argument("--runtime", choices=["djinn"], required=True)
+        interactive.add_argument("--executable", required=True, help="Absolute trusted native CLI; never executed during preview")
+        interactive.add_argument("--socket", required=True, help="Explicit existing local Kitsune API socket")
+        interactive.add_argument("--pane", required=True, help="Exact current public pane ID")
+        interactive.add_argument("--expected-terminal", required=True, help="Terminal ID copied from snapshot")
+        if operation == "resume":
+            interactive.add_argument("--session", required=True, help="Literal native UI/folder/name selector, not verified identity")
+        interactive.add_argument("--execute", action="store_true", help="Explicit unrestricted UI submission; requires a quiescent empty shell prompt")
+        interactive.add_argument("--timeout", type=float, default=3.0, help="API acceptance budget in seconds (0, 30]; gate acquisition is separately bounded")
+        interactive.add_argument("--json", action="store_true")
+        interactive.set_defaults(func=command_session)
 
     agent = subparsers.add_parser("agent", help="Target specific coven agents")
     agent_sub = agent.add_subparsers(dest="agent_command", required=True)

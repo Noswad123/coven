@@ -15,6 +15,13 @@ native lifecycle, scheduling, extraction and automatic following
 are not shipped. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) and
 [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md).
 
+Explicit interactive Djinn UI launch/resume is also available through `coven session
+start` and `coven session resume` into a selected existing Kitsune pane. Commands
+preview by default; `--execute` uses discovered, terminal-pinned generic command
+submission and the existing workspace transport gate. No worker readiness, prompt,
+scheduling, automatic following or native lifecycle acceptance is inferred. See
+[INTERACTIVE_SESSION_CONTRACT.md](INTERACTIVE_SESSION_CONTRACT.md) before using it.
+
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.
