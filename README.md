@@ -8,9 +8,11 @@ independent apps, Coven-owned cross-runtime observation/grouping first, optional
 Kitsune annotations as a separate generic presentation path, and Djinn-owned native
 execution. Initial Kitsune observation, explicit participant groups/roles, and a
 foreground generic-annotation publisher are implemented in Coven, including explicit
-opt-in process-evidence binding independent of Kitsune's agent inventory. Native group
-status, scheduling, extraction, and automatic following are not shipped; see
-[GROUPS_CONTRACT.md](GROUPS_CONTRACT.md).
+opt-in process-evidence binding independent of Kitsune's agent inventory. Explicit
+Djinn live attachments and revision-scoped busy/unknown group status are implemented;
+native lifecycle, scheduling, extraction, automatic following and live UI labels
+are not shipped. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) and
+[GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md).
 
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
@@ -77,6 +79,7 @@ coven/
 │   ├── workers.py         # help-only native adapter compatibility observations
 │   ├── kitsune_observation.py # bounded, explicit existing API socket observation
 │   ├── groups.py           # explicit participant/role authority and durable counters
+│   ├── group_live.py       # declared live-source pins and ephemeral group status
 │   ├── group_publisher.py  # foreground, pinned generic Kitsune annotation heartbeats
 │   ├── task_attempts.py   # preparation-only execution intent/receipts and facade
 │   ├── task_graphs.py     # pure bounded DAG/criteria/source manifests
@@ -137,6 +140,8 @@ group enrollment or readiness upgrade. Fresh source samples establish only legac
 runner busy ownership, never idle, health, progress or job completion. Cached reports
 cannot renew freshness. See [DJINN_LIVE_OBSERVATION_CONTRACT.md](DJINN_LIVE_OBSERVATION_CONTRACT.md)
 for manual setup, exact selectors/output, expiry, path checks and limitations.
+The one-shot observer never enrolls members. To explicitly attach a source to an
+existing participant, use the separate [group live workflow](GROUP_LIVE_STATUS_CONTRACT.md).
 
 ## Current Kitsune observation
 
@@ -208,8 +213,9 @@ coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
 Use `--rebind` if that member already has different stable evidence, and optionally
 `--expect-revision '<current group token>'`. Roles are display-only. Both add modes
 read fresh evidence and send no UI writes; publishing is a separate foreground run.
-Process add/rebind atomically opts `state/groups.json` into schema 2 (mixed bindings
-allowed); older readers reject it. UUIDs/counters and `groups-v1` token format/CAS
+Process add/rebind atomically promotes schema 1 of `state/groups.json` to schema 2
+(mixed bindings allowed), never reducing schema 3; older readers reject it.
+UUIDs/counters and `groups-v1` token format/CAS
 are preserved; removing process members or snapshot rebind never downgrades it.
 Default snapshot binding remains unchanged. There is no saved-report import,
 automatic enrollment/fallback/rebind, native identity or execution grant.
@@ -239,12 +245,13 @@ reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
-The full offline suite now passes **672 tests**, including 27 new Djinn-live tests,
-28 Djinn-native observation tests, the existing 107 group tests, 10 socket-alias regressions and
-18 generic snapshot contract test methods.
+The full offline suite now passes **730 tests**, including 24 new live-attachment
+authority tests and 34 workflow/status tests, alongside the existing live/native
+observers, group publishers, socket aliases and generic snapshot contracts.
 Live-source validation is limited to 54 focused opencode tests, 3 schema tests
-and both package Bun typechecks, not the full UI suite. Cross-TS→Python fixture
-interop is pending; no real UI/model calls have validated the live slice.
+and both package Bun typechecks, not the full UI suite. The
+[live observer contract](DJINN_LIVE_OBSERVATION_CONTRACT.md#example-usage) records
+cross-TS→Python fixture interop; no real UI/model calls have validated the live slice.
 [Live group validation](GROUPS_LIVE_VALIDATION.md)
 confirms add/publish, visible labels, process exit, timer-driven TTL expiry and
 explicit replacement rebind against installed Linux binaries. Existing native/task
@@ -253,6 +260,39 @@ Those historical live runs used valid real-server snapshots, not artificial
 malformed-legacy payloads. The generic snapshot slice changed no existing stored
 schema, protocol, API output or authorization; native observation is a separate
 additive command/contract and grants no execution authority.
+
+### Explicit live attachment and read-only group status
+
+For an **existing member**, use actual manually inspected source pins:
+
+```sh
+coven group attach-live WORKSPACE auth-review --member backend \
+  --file /absolute/private/RUNTIME_UUID.json --runtime RUNTIME_UUID \
+  --instance INSTANCE_UUID --session SESSION_ID --timeout 1 --json
+coven group status WORKSPACE auth-review --timeout 1 --json
+coven group detach-live WORKSPACE auth-review --member backend --json
+```
+
+First attach atomically opts the same group authority into schema 3; all members
+gain `live_attachment: null|metadata`. Older readers fail closed; reads never
+migrate and detach never downgrades. Only declarations are persisted, not activity
+or TTL. Every attach freshly reads the pinned source, then CAS-checks the preflight
+token and participant UUID under lock, even without `--expect-revision`.
+Changed pins need `--reattach`; unchanged pins preserve `attached_at`. A changed
+stable `group add --rebind` clears an attachment; role/pane/timestamp-only changes
+preserve it. Detach needs no artifact I/O and never deletes or controls the source.
+
+Status reads only groups and declared artifacts, writes nothing, and projects
+short-lived busy/unknown legacy-runner evidence, not terminal/session equivalence
+or execution permission. Individual unavailable rows still permit exit 0; whole
+content drift, failed recheck or overall deadline expiry discards all rows and
+exits 1. Callers must continue reducing returned lifetimes during delivery/display.
+The static publisher never opens attachments or appends activity; its group/role
+labels retain 6000 ms TTL. No live UI labels are wired to the 3000 ms source TTL.
+See [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md) for exact fields,
+expiry math, CAS, shared-pin and clock limitations. Offline tests exercise the real
+CLI wrapper with private fixtures; no existing groups or native runtimes were
+modified to validate this slice. Live observations are not sent to Kitsune labels.
 
 ## Generated workspace layout
 

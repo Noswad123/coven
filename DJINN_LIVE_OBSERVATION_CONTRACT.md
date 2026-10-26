@@ -10,8 +10,11 @@ Sparse status maps and persisted session records are not the source. Unobserved
 never means idle, stopped, completed, or ready.
 
 Coven does not launch/start/relaunch Djinn, open a listener/HTTP connection, scan
-for files, fall back to folders/status/list/watch, or read auth/config. No group,
-readiness, persisted-adapter integration, worker dispatch, or state write follows.
+for files, fall back to folders/status/list/watch, or read auth/config. The one-shot
+observer performs no group enrollment, readiness upgrade, persisted-adapter
+integration, worker dispatch, or state write. The separate explicit
+[group live workflow](GROUP_LIVE_STATUS_CONTRACT.md) freshly invokes this reader
+for existing-member attachment and read-only status; it never imports saved reports.
 The existing [native folder observer](DJINN_OBSERVATION_CONTRACT.md) is separate
 and unchanged: persisted `running` is not reinterpreted as current activity.
 
@@ -119,6 +122,14 @@ and `expires_in_ms: 0`; no positive cache or inferred stopped state is returned.
   all replay. Sequence is ordering metadata, not authentication. Touch/copy mtime
   does not retimestamp JSON. Returned/saved reports must expire without I/O refresh;
   cached-report reads cannot renew freshness.
+- Group attachment stores only declared path/pins and UTC declaration time in
+  schema 3 of `state/groups.json`, not source activity/sample/sequence/TTL. Its
+  `attached_at` has no freshness meaning; commit may outlast the accepted read lease.
+  Group status reduces all row lifetimes again after all reads and its content
+  recheck; callers must still deduct delivery time. Attachment does not verify a
+  terminal/native UI-session association, and shared pins do not prove distinct
+  workers. The existing static publisher never reads attachments or appends activity;
+  its 6000 ms role-label TTL must not replace the source's 3000 ms lifetime.
 - `fresh_sample` is not provider progress, health, global activity/idle, readiness,
   lifecycle or completion. Mini/serve/browser/current-V2 execution, decisions,
   retries, durable lifecycle and job completion are unsupported. No HTTP/public
@@ -144,7 +155,7 @@ UI contains the feature. There is no automatic installer; installed binaries sta
 untouched. Reading an unenabled existing runtime never relaunches it; do not
 restart a user's app to enable observation.
 
-Validation: full Coven suite **672 passing**, including 27 new live tests; producer
+Historical live-observer baseline: full Coven suite **672 passing**, including 27 live tests; producer
 **54 focused opencode tests** (including unchanged Runner/RunState/shutdown
 regressions), **3 schema tests**, and both Bun typechecks pass. Existing prompt/task
 cancellation coverage passed 78 tests with 1 existing skip; not the full UI suite.
@@ -165,6 +176,7 @@ installed UI/provider activity has not been live-validated.
 ## Related files
 
 - `runner/djinn_live_observation.py`, `runner/coven.py` — reader and CLI.
+- [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md), `runner/group_live.py` — separate explicit attachment/status workflow, not automatic enrollment or live UI labels.
 - `runner/kitsune_observation.py` — shared bounded JSON decoder, not a socket fallback.
 - [Producer guide](../djinn/docs/live-observation.md) — optional sibling navigation;
   links source Schema, registry, publisher, RunState, Runner and worker lifecycle.

@@ -149,6 +149,41 @@ def _stable(binding):
     return result
 
 
+def _attachment(value):
+    """Validate declarations lexically, without inspecting artifacts or freshness."""
+    _fields(value, "adapter source_contract artifact_path runtime_id instance_id session_id attached_at")
+    _require(value["adapter"] == "djinn_live"
+             and value["source_contract"] == "djinn.live-observation.v1")
+    for key in ("runtime_id", "instance_id"):
+        _uuid(value[key])
+        identity = uuid.UUID(value[key])
+        _require(identity.version == 4 and identity.variant == uuid.RFC_4122,
+                 "RFC 4122 UUID v4 required")
+    path = value["artifact_path"]
+    _string(path)
+    _require(os.path.isabs(path) and os.path.normpath(path) == path
+             and not path.startswith("//")
+             and all(ord(c) >= 32 and not 127 <= ord(c) <= 159 for c in path)
+             and os.path.basename(path) == value["runtime_id"] + ".json",
+             "normalized absolute artifact path with runtime UUID basename required")
+    _require(isinstance(value["session_id"], str)
+             and re.fullmatch(r"[!-~]{1,128}", value["session_id"]), "invalid session ID")
+    stamp = value["attached_at"]
+    _string(stamp, 64)
+    try:
+        attached = datetime.fromisoformat(stamp)
+        _require("T" in stamp and attached.tzinfo is not None
+                 and attached.utcoffset().total_seconds() == 0, "UTC ISO timestamp required")
+    except ValueError as exc:
+        raise GroupError("UTC ISO timestamp required") from exc
+
+
+def _stable_attachment(attachment):
+    result = attachment.copy()
+    del result["attached_at"]
+    return result
+
+
 def _source(source):
     _require(isinstance(source, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", source),
              "invalid publication source")
@@ -156,7 +191,7 @@ def _source(source):
 
 def _validate(state):
     _fields(state, "schema_version workspace_id content_revision groups publication_counters")
-    _require(type(state["schema_version"]) is int and state["schema_version"] in (1, 2))
+    _require(type(state["schema_version"]) is int and state["schema_version"] in (1, 2, 3))
     _uuid(state["workspace_id"])
     _uint(state["content_revision"])
     groups, counters = state["groups"], state["publication_counters"]
@@ -177,13 +212,16 @@ def _validate(state):
         _require(isinstance(members, list) and len(members) <= 16)
         keys = set()
         for member in members:
-            _fields(member, "participant_id key role binding")
+            _fields(member, "participant_id key role binding"
+                    + (" live_attachment" if state["schema_version"] == 3 else ""))
+            if state["schema_version"] == 3 and member["live_attachment"] is not None:
+                _attachment(member["live_attachment"])
             _uuid(member["participant_id"])
             _selector(member["key"])
             _display(member["role"])
             _require(len((group["name"] + " \u00b7 " + member["role"]).encode("utf-8")) <= 256)
             _binding(member["binding"])
-            _require(state["schema_version"] == 2 or member["binding"]["evidence"]["provenance"]
+            _require(state["schema_version"] >= 2 or member["binding"]["evidence"]["provenance"]
                      == "kitsune.session.snapshot", "process bindings require schema 2")
             presentation = member["binding"]["presentation"]
             association = (*_endpoint_key(presentation["endpoint"]), presentation["terminal_id"])
@@ -328,14 +366,21 @@ def _group(state, key):
 
 
 def _mutate(workspace, key, operation, expected_revision, *, name=None, member_key=None,
-            role=None, binding=None, rebind=False):
+            role=None, binding=None, rebind=False, attachment=None, expected_participant_id=None,
+            reattach=False):
     _selector(key)
+    if operation in {"attach", "detach"}:
+        _selector(member_key)
+        _uuid(expected_participant_id)
+        _require(isinstance(expected_revision, str) and re.fullmatch(
+            r"groups-v1:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}:(?:0|[1-9][0-9]{0,19}):[0-9a-f]{64}",
+            expected_revision), "current content revision required")
     root = _workspace(workspace)
     with storage.workspace_lock(root, root / "state" / ".workspace.lock"):
         _workspace(root)
         state, data = _read(root)
         _cas(state, expected_revision)
-        changed, member = False, None
+        changed, member, attachment_cleared = False, None, False
         if operation == "create":
             if state is None:
                 state = {"schema_version": 1, "workspace_id": str(uuid.uuid4()),
@@ -350,31 +395,57 @@ def _mutate(workspace, key, operation, expected_revision, *, name=None, member_k
         else:
             group = _group(state, key)
             member = next((m for m in group["members"] if m["key"] == member_key), None)
-            if operation == "remove":
+            if operation in {"attach", "detach"}:
+                _require(member is not None, "member does not exist")
+                _require(member["participant_id"] == expected_participant_id, "participant identity conflict")
+                old = member.get("live_attachment")
+                if operation == "attach":
+                    same = old is not None and _stable_attachment(old) == _stable_attachment(attachment)
+                    _require(old is None or same or reattach,
+                             "live attachment changed; explicit reattach required")
+                    if not same:
+                        if state["schema_version"] < 3:
+                            for existing_group in state["groups"]:
+                                for existing_member in existing_group["members"]:
+                                    existing_member["live_attachment"] = None
+                            state["schema_version"] = 3
+                        member["live_attachment"] = deepcopy(attachment)
+                        changed = True
+                elif old is not None:
+                    member["live_attachment"] = None
+                    changed = True
+            elif operation == "remove":
                 if member is not None:
                     group["members"].remove(member)
                     changed = True
             elif member is None:
                 member = {"participant_id": str(uuid.uuid4()), "key": member_key,
                           "role": role, "binding": deepcopy(binding)}
+                if state["schema_version"] == 3:
+                    member["live_attachment"] = None
                 group["members"].append(member)
                 changed = True
             else:
                 same = _stable(member["binding"]) == _stable(binding)
                 _require(same or rebind, "binding changed; explicit rebind required")
                 if not same or member["role"] != role:
+                    if not same and member.get("live_attachment") is not None:
+                        member["live_attachment"] = None
+                        attachment_cleared = True
                     member.update(role=role, binding=deepcopy(binding))
                     changed = True
         if changed:
             if operation == "add" and binding["evidence"]["provenance"] == "kitsune.pane.process_info":
-                state["schema_version"] = 2
+                state["schema_version"] = max(state["schema_version"], 2)
             _require(state["content_revision"] < _U64, "content revision overflow")
             state["content_revision"] += 1
         delivery = _finish(root, state, data, changed)
         result = {"outcome": "committed" if changed else "unchanged", "revision": _revision(state),
                   "group": group, "delivery": delivery, "authorization": "none", "dispatchable": False}
-        if operation in {"add", "remove"}:
+        if operation in {"add", "remove", "attach", "detach"}:
             result["member"] = member
+        if attachment_cleared:
+            result["live_attachment_cleared"] = True
         return result
 
 
@@ -396,6 +467,22 @@ def add_member(workspace, group_key, member_key, role, binding, *, rebind=False,
 def remove_member(workspace, group_key, member_key, expected_revision=None):
     _selector(member_key)
     return _mutate(workspace, group_key, "remove", expected_revision, member_key=member_key)
+
+
+def attach_live(workspace, group_key, member_key, attachment, *, expected_revision,
+                expected_participant_id, reattach=False):
+    """Declare pinned live metadata, without reading or authenticating its artifact."""
+    _attachment(attachment)
+    _require(type(reattach) is bool, "reattach must be boolean")
+    return _mutate(workspace, group_key, "attach", expected_revision, member_key=member_key,
+                   attachment=attachment, expected_participant_id=expected_participant_id,
+                   reattach=reattach)
+
+
+def detach_live(workspace, group_key, member_key, *, expected_revision, expected_participant_id):
+    """Clear only the association; never control or delete a native artifact."""
+    return _mutate(workspace, group_key, "detach", expected_revision, member_key=member_key,
+                   expected_participant_id=expected_participant_id)
 
 
 def reserve_cycle(workspace, group_key, expected_revision, endpoint: dict, source: str,

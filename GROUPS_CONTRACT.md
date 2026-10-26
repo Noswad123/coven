@@ -8,8 +8,10 @@ participant UUIDs are Coven declarations, with human selectors for CLI use; they
 are independent of task authority, the workspace agent roster, and native runtime
 identity. Roles do not change Djinn policy, personas, prompts, or configuration.
 
-Only the Kitsune presentation adapter is implemented in v1. The model is not
-Djinn-specific, but this is not universal runtime support, native group status,
+Only the Kitsune presentation adapter is implemented in v1. Explicit Djinn live
+attachments and read-only busy/unknown status are a separate opt-in path; see
+[GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md). The model is not
+Djinn-specific, but this is not universal runtime support, native group lifecycle,
 scheduling, complete agent-feature extraction, or automatic following of replacement agents.
 No agent is launched, resumed, sent terminal input, or cancelled by these commands.
 
@@ -52,8 +54,8 @@ coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
 
 The observation is for inspection, not an import: `add --process-evidence` reads
 fresh bracketed evidence itself and recognizes only reported `djinn`/`djinn-ui`
-executable families. It explicitly opts the group authority into schema 2, which
-older readers reject. Both add modes write local membership only; neither sends
+executable families. It explicitly opts the group authority into at least schema 2
+(preserving schema 3), which older readers reject. Both add modes write local membership only; neither sends
 an annotation or other UI write.
 The older one-shot `observe` command still has no annotation-write capability.
 
@@ -93,6 +95,9 @@ coven group create WORKSPACE auth-review --name 'Authentication review' [--expec
 coven group add WORKSPACE auth-review --member backend --role 'Investigator' --socket ABS --pane w18:p85 [--process-evidence] [--rebind] [--expect-revision TOKEN] [--json]
 coven group remove WORKSPACE auth-review --member backend [--expect-revision TOKEN] [--json]
 coven group list WORKSPACE [--json]
+coven group attach-live WORKSPACE GROUP --member KEY --file ABS_RUNTIME_UUID_JSON --runtime UUID --instance UUID --session ID [--reattach] [--expect-revision TOKEN] [--timeout SECONDS] [--json]
+coven group detach-live WORKSPACE GROUP --member KEY [--expect-revision TOKEN] [--json]
+coven group status WORKSPACE GROUP [--member KEY] [--timeout SECONDS] [--json]
 coven group publish WORKSPACE auth-review --socket ABS --source coven [--duration SECONDS] [--json]
 ```
 
@@ -117,33 +122,45 @@ must already be enabled. Output is JSON in both modes; `--json` makes it compact
   Omit the flag to retain the default agent-inventory snapshot binding.
 - `remove`: removes membership only, including an unchanged result when absent.
   It neither clears remote labels nor cancels agents; publication counters remain.
-  Removing then re-adding creates a new participant UUID.
+  Removing then re-adding creates a new participant UUID and no live attachment.
+- `attach-live` / `detach-live` / `status`: existing members only; see the
+  [live contract](GROUP_LIVE_STATUS_CONTRACT.md#api--interfaces) for exact fields,
+  schema-3 opt-in, mandatory preflight-token/participant CAS, expiry and exit codes.
+  Changed stable bindings via `add --rebind` atomically clear a nonnull attachment
+  and return `live_attachment_cleared: true`; role/timestamp/pane-only changes or
+  no-op rebind preserve it. Attachment never verifies terminal/session equivalence.
 - `list`: reads without peer contact, locks, file creation, or durability
   confirmation. Returns `initialized`, `revision`, `groups`, `authorization: none`,
   `dispatchable: false`, and unestablished native lifecycle/job completion. It
   intentionally omits internal counters. Uninitialized reads do not create a lock.
 
 Mutations return `outcome: committed|unchanged`, `revision`, `group`, `delivery`,
-`authorization: none`, and `dispatchable: false`; add/remove also return `member`
+`authorization: none`, and `dispatchable: false`; add/remove/attach/detach also return `member`
 (null for an absent removal). `delivery.outcome` is `durably_committed` or
 `durability_uncertain`. Success exits 0; uncertain mutation durability exits 2;
 ordinary errors exit 1 and argument-parser errors exit 2. There are no durable
 exact-request receipts or exactly-once retry promises. Inspect before retrying;
-optional CAS checks the fresh current token even for an otherwise unchanged retry.
+optional user CAS checks the fresh current token even for an otherwise unchanged
+retry. Attach/detach additionally always fence the captured preflight token and
+participant UUID, whether or not the user supplies a token.
 
 ### Exact authority schema and limits
 
 `state/groups.json` is a separate, bounded authority, not a task-ledger projection.
-Schema 1 permits snapshot bindings only; schema 2 permits mixed snapshot/process
-bindings. All objects below have exactly the listed fields; unknown/duplicate
+Schema 1 permits snapshot bindings only; schemas 2/3 permit mixed snapshot/process
+bindings. Schema 3 additionally requires `live_attachment` on every member.
+All objects below have exactly the listed fields; unknown/duplicate
 JSON keys are rejected. The existing workspace needs a regular `coven.json` and
 nonsymlink `state/` directory, not a healthy task/agent/execution authority.
 
 ```text
-root = {schema_version: 1|2, workspace_id: UUID, content_revision: u64,
+root = {schema_version: 1|2|3, workspace_id: UUID, content_revision: u64,
         groups: [group], publication_counters: [counter]}
 group = {group_id: UUID, key: selector, name: display, members: [member]}
-member = {participant_id: UUID, key: selector, role: display, binding: binding}
+member = member_1_or_2 (schema 1/2) | member_3 (schema 3)
+member_1_or_2 = {participant_id: UUID, key: selector, role: display, binding: binding}
+member_3 = {participant_id: UUID, key: selector, role: display, binding: binding,
+            live_attachment: null|attachment}
 binding = {presentation: presentation, evidence: evidence}
 presentation = {adapter: "kitsune", endpoint: endpoint,
                 terminal_id: string, pane_id_at_binding: string}
@@ -165,12 +182,19 @@ counter = {endpoint: endpoint, source: source_ID, epoch: nonempty_string,
            watermarks: {terminal_id: positive_u64}}
 ```
 
-- New authorities start at schema 1. Only a successful explicit process add/rebind
-  promotes 1 -> 2, atomically inside that group mutation. UUIDs, publication
-  counters and the CAS algorithm are preserved; ordinary changed-content revision
+- New authorities start at schema 1. A successful explicit process add/rebind
+  promotes 1 -> 2, atomically inside that group mutation, never reducing schema 3.
+  UUIDs, publication counters and the CAS algorithm are preserved; ordinary changed-content revision
   rules still apply. Schema 2 is a minimum-reader-version opt-in: older schema-1
   readers fail closed. Removal of process members or rebind to snapshots never
   downgrades it. Reads and snapshot-only operations do not initiate promotion.
+- First successful `attach-live` atomically promotes 1/2 -> 3, normalizes all
+  members to null, then sets the target attachment while preserving IDs, bindings
+  and counters and incrementing content revision once. Older readers fail closed;
+  reads never migrate and detach/removal never downgrade. Exact seven-field
+  [attachment metadata](GROUP_LIVE_STATUS_CONTRACT.md#stored-authority-schema-3)
+  contains no activity, sample, sequence or TTL. Detach on schema 1/2 is a no-op,
+  not promotion; schema-3 additions start with a null attachment.
 - Process matches are nonempty, at most 1024 entries, with unique PIDs (integers
   1..2^32-1, never booleans), sorted by `(pid, executable_family, rule)`. Stored
   noncanonical order and variant-inappropriate fields are rejected.
@@ -204,7 +228,11 @@ This is a whole-group-content token, **not an exact-file-byte hash**:
 Content revisions increment on changed declarations, not no-ops or reservations;
 overflow is rejected. Counter updates alone do not invalidate CAS/publisher content.
 The `groups-v1` prefix denotes the **token format**, not authority schema 1;
-schema-2 authorities retain that prefix and hashing algorithm.
+schema-2/3 authorities retain that prefix and hashing algorithm. Attachments are
+covered group content, so declaration changes can stop a running publisher at its
+normal content fence. Publication never reads attachment artifacts or appends live
+activity; its static group/role labels retain their 6000 ms TTL. Live-source expiry
+must not be converted into labels without a generic end-to-end expiry contract.
 
 All declaration mutations and cycle reservations reload under the persistent
 `state/.workspace.lock`; changes atomically replace the one authority with file and
@@ -372,12 +400,11 @@ coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
 
 ## Validation
 
-The full offline suite passes **617 tests**, including the existing **107 group tests**:
-35 authority, 42 existing publisher, 12 existing CLI/workflow, and 18 new
-process-group workflow/publication tests. The generic snapshot slice adds 18 test
-methods covering projections and isolated strict/process/mixed paths. This slice
-changes no stored schema, protocol, public API output, CLI flags or native
-authorization. Run with:
+The full offline suite passes **730 tests**, including 24 new live-attachment
+authority tests and 34 workflow/status tests. Existing snapshot/process bindings,
+publisher durability/interrupt handling, counters, and generic snapshot contracts
+remain covered. Schema 3 changes only explicit attachment declarations; no native
+authorization or live activity publication is added. Run with:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
@@ -400,6 +427,7 @@ malformed-legacy payloads; that coverage is offline only.
 
 ## Related files
 
+- [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md), [runner/group_live.py](runner/group_live.py) — explicit source declarations, schema 3 and ephemeral read-only status.
 - [runner/groups.py](runner/groups.py) — exact schema, CAS, declarations and reservations.
 - [runner/group_publisher.py](runner/group_publisher.py) — snapshot/process binding, transport, phases and foreground loop.
 - [runner/coven.py](runner/coven.py) — group/observe commands and parser.

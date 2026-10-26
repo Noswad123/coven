@@ -27,6 +27,7 @@ if __package__:
     from . import kitsune_process_observation
     from . import djinn_observation
     from . import djinn_live_observation
+    from . import group_live
 else:
     import records
     import storage
@@ -43,6 +44,7 @@ else:
     import kitsune_process_observation
     import djinn_observation
     import djinn_live_observation
+    import group_live
     import groups
     import group_publisher
 
@@ -1769,6 +1771,31 @@ def command_group_add(args: argparse.Namespace) -> int:
 def command_group_remove(args: argparse.Namespace) -> int:
     return print_group_result(groups.remove_member(workspace_path(args.workspace), args.group,
         args.member, expected_revision=args.expect_revision), args.json)
+
+
+def command_group_attach_live(args: argparse.Namespace) -> int:
+    try:
+        result = group_live.attach(workspace_path(args.workspace), args.group, args.member,
+            args.file, args.runtime, args.instance, args.session, reattach=args.reattach,
+            expected_revision=args.expect_revision, timeout=args.timeout)
+    except ValueError as exc:
+        raise groups.GroupError(f"Invalid group live attachment request: {exc}") from exc
+    return print_group_result(result, args.json)
+
+
+def command_group_detach_live(args: argparse.Namespace) -> int:
+    return print_group_result(group_live.detach(workspace_path(args.workspace), args.group,
+        args.member, expected_revision=args.expect_revision), args.json)
+
+
+def command_group_status(args: argparse.Namespace) -> int:
+    try:
+        result = group_live.status(workspace_path(args.workspace), args.group,
+                                   member_key=args.member, timeout=args.timeout)
+    except ValueError as exc:
+        raise groups.GroupError(f"Invalid group status request: {exc}") from exc
+    print(json.dumps(result, ensure_ascii=True, indent=None if args.json else 2))
+    return 0 if result["assessment"] == "observed" else 1
 
 
 def command_group_publish(args: argparse.Namespace) -> int:
@@ -3787,6 +3814,33 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     group_list.add_argument("workspace")
     group_list.add_argument("--json", action="store_true")
     group_list.set_defaults(func=command_group_list)
+    attach_live = group_sub.add_parser("attach-live", help="Explicitly associate one existing participant with a fresh pinned live source; opts into schema 3 (older readers reject it)")
+    attach_live.add_argument("workspace")
+    attach_live.add_argument("group")
+    attach_live.add_argument("--member", required=True)
+    attach_live.add_argument("--file", required=True)
+    attach_live.add_argument("--runtime", required=True)
+    attach_live.add_argument("--instance", required=True)
+    attach_live.add_argument("--session", required=True)
+    attach_live.add_argument("--reattach", action="store_true", help="Explicitly replace live-source pins only, never the terminal binding")
+    attach_live.add_argument("--expect-revision")
+    attach_live.add_argument("--timeout", type=float, default=1.0, help="Live-reader acceptance deadline in (0, 1] seconds")
+    attach_live.add_argument("--json", action="store_true")
+    attach_live.set_defaults(func=command_group_attach_live)
+    detach_live = group_sub.add_parser("detach-live", help="Remove a live-source declaration without reading/deleting its artifact or controlling agents")
+    detach_live.add_argument("workspace")
+    detach_live.add_argument("group")
+    detach_live.add_argument("--member", required=True)
+    detach_live.add_argument("--expect-revision")
+    detach_live.add_argument("--json", action="store_true")
+    detach_live.set_defaults(func=command_group_detach_live)
+    group_status = group_sub.add_parser("status", help="Read revision-scoped participant busy/unknown evidence; no writes, labels, idle or job-status inference")
+    group_status.add_argument("workspace")
+    group_status.add_argument("group")
+    group_status.add_argument("--member", help="Optional exact member selector; default inspects all declared members")
+    group_status.add_argument("--timeout", type=float, default=1.0, help="Whole-projection acceptance deadline in (0, 1] seconds, not a syscall interrupt")
+    group_status.add_argument("--json", action="store_true")
+    group_status.set_defaults(func=command_group_status)
     group_publish = group_sub.add_parser("publish", help="Foreground, annotation-only labels for an explicitly enabled source; never launches/stops agents")
     group_publish.add_argument("workspace")
     group_publish.add_argument("group")
