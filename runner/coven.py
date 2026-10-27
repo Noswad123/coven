@@ -29,6 +29,7 @@ if __package__:
     from . import djinn_live_observation
     from . import group_live
     from . import interactive_sessions
+    from . import session_inspection
 else:
     import records
     import storage
@@ -49,6 +50,7 @@ else:
     import groups
     import group_publisher
     import interactive_sessions
+    import session_inspection
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -2904,6 +2906,29 @@ def command_session(args: argparse.Namespace) -> int:
     return interactive_sessions.exit_code(report)
 
 
+def command_session_inspect(args: argparse.Namespace) -> int:
+    try:
+        report = session_inspection.inspect(Path(args.workspace), args.socket,
+            pane_id=getattr(args, "pane", None), expected_terminal_id=getattr(args, "expected_terminal", None),
+            runtime=args.runtime, timeout=args.timeout, max_response_bytes=args.max_response_bytes)
+    except ValueError as exc:
+        fail(str(exc))
+    if args.json or args.session_operation == "inspect":
+        print(json.dumps(report, indent=None if args.json else 2, ensure_ascii=True, allow_nan=False))
+    else:
+        print(f"Session target inspection: {report['assessment']}")
+        print("Scope: existing panes on the selected endpoint; native activity/readiness remains unknown.")
+        for target in report["targets"]:
+            declarations = "; ".join(f"{a['group_key']}/{a['member_key']}: {a['role']} [{a['binding_check']}]"
+                                     for a in target["associations"]) or "no matching declaration"
+            print(visible_text(f"{target['pane_id']}  {target['terminal_id']}  {target['recognition']}  {declarations}"))
+        if report["assessment"] == "observed":
+            print(f"Unmatched declarations: {len(report['declarations']['unmatched'])}")
+        for diagnostic in report["diagnostics"]:
+            print(f"Diagnostic: {diagnostic}")
+    return session_inspection.exit_code(report)
+
+
 def command_agent_status(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     team = load_team(workspace)
@@ -3629,8 +3654,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     message.add_argument("items", nargs="+", help="Optional workspace, then sender recipient body")
     message.set_defaults(func=command_message)
 
-    session = subparsers.add_parser("session", help="Explicit interactive UI start/resume in an existing Kitsune pane; not worker dispatch")
+    session = subparsers.add_parser("session", help="Read-only target inspection and explicit interactive UI submission; not worker dispatch")
     session_sub = session.add_subparsers(dest="session_operation", required=True)
+    for operation in ("list", "inspect"):
+        inspection = session_sub.add_parser(operation, help="Read-only generic pane/process evidence and declared group/role associations")
+        inspection.add_argument("workspace", help="Existing Coven workspace for read-only group declarations")
+        inspection.add_argument("--socket", required=True, help="Explicit existing local Kitsune API socket")
+        inspection.add_argument("--runtime", choices=["djinn"], default="djinn", help="Process-family interpreter, not a native execution request")
+        if operation == "inspect":
+            inspection.add_argument("--pane", required=True, help="Exact current pane ID")
+            inspection.add_argument("--expected-terminal", help="Optional terminal pin; never follows a replacement")
+        inspection.add_argument("--timeout", type=float, default=3.0, help="Shared API/filesystem acceptance budget in seconds (0, 30]")
+        inspection.add_argument("--max-response-bytes", type=int, default=1048576, help="Shared API wire-byte allowance (1024 through 8388608)")
+        inspection.add_argument("--json", action="store_true")
+        inspection.set_defaults(func=command_session_inspect)
     for operation in ("start", "resume"):
         interactive = session_sub.add_parser(operation, help=f"Preview an interactive {operation}; --execute submits once")
         interactive.add_argument("workspace", help="Existing Coven control workspace, not a cwd or sandbox")

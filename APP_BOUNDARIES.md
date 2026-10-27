@@ -73,6 +73,13 @@ gate. This is unrestricted interactive command input, not native worker admissio
 verified session identity, startup/readiness or task completion. Legacy commands
 remain available and approved-launch mode cannot be bypassed.
 
+The separate [session-target inspection contract](SESSION_INSPECTION_CONTRACT.md)
+adds bounded read-only list/inspect commands over generic Kitsune pane/process
+evidence, joined to existing Coven declarations by endpoint/terminal. No legacy
+agent inventory or live native artifact is interpreted, no new registry is created,
+and native lifecycle/readiness/activity/identity remain unestablished or unknown.
+Stale/changeable declarations never become native facts or control permissions.
+
 Keep these concepts distinct:
 
 - native runtime/session identity, scoped to its runtime;

@@ -22,6 +22,13 @@ submission and the existing workspace transport gate. No worker readiness, promp
 scheduling, automatic following or native lifecycle acceptance is inferred. See
 [INTERACTIVE_SESSION_CONTRACT.md](INTERACTIVE_SESSION_CONTRACT.md) before using it.
 
+Read-only `coven session list WORKSPACE --socket ABS_SOCKET` and `coven session
+inspect WORKSPACE --socket ABS_SOCKET --pane PANE` show generic pane/process-family
+evidence plus matching declared groups/roles. They do not depend on Kitsune's agent
+inventory, launch/probe native runtimes, read live artifacts or infer native activity,
+identity, readiness or completion. No authoritative session registry or state writes
+are added. See [SESSION_INSPECTION_CONTRACT.md](SESSION_INSPECTION_CONTRACT.md).
+
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.
