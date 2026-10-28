@@ -40,6 +40,11 @@ and applying the same view flags. `--json` emits JSONL samples then a scoped wat
 summary. No daemon, stored roster, stale positive fallback or native control follows.
 See [SESSION_WATCH_CONTRACT.md](SESSION_WATCH_CONTRACT.md).
 
+The optional `coven session prompt` command previews by default and, with explicit
+`--execute`, submits to an opted-in Djinn native prompt socket using runtime/session
+pins and a correlated message receipt. No Kitsune prompt/keystroke fallback or
+permission inheritance is used. See [SESSION_PROMPT_CONTRACT.md](SESSION_PROMPT_CONTRACT.md).
+
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.

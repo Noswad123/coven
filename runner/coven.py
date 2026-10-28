@@ -2906,6 +2906,39 @@ def command_session(args: argparse.Namespace) -> int:
     return interactive_sessions.exit_code(report)
 
 
+def session_prompts_module():
+    if __package__:
+        from . import session_prompts
+    else:
+        import session_prompts
+    return session_prompts
+
+
+def command_session_prompt(args: argparse.Namespace) -> int:
+    module = session_prompts_module()
+    try:
+        kitsune_observation._arguments(args.native_socket, args.timeout, 65536)
+        if args.session_operation == "prompt-capabilities":
+            report = module.capabilities(args.native_socket, timeout=args.timeout)
+            result = 130 if report.get("interrupted") else 0 if report["assessment"] == "observed" else 1
+        else:
+            workspace = Path(args.workspace).absolute()
+            plan = module.plan(str(workspace), args.native_socket, args.expected_runtime,
+                               args.session, args.request_id, args.prompt_file)
+            if args.execute:
+                load_team(workspace)
+                with legacy_runtime_transport(workspace):
+                    gate = _transport_gates.entries[str(workspace.resolve())]
+                    report = module.execute(plan, gate=gate, timeout=args.timeout)
+            else:
+                report = module.preview(plan)
+            result = module.exit_code(report)
+    except ValueError as exc:
+        fail(str(exc))
+    print(json.dumps(report, ensure_ascii=True, allow_nan=False, indent=None if args.json else 2))
+    return result
+
+
 def session_views_module():
     # These optional view/watch helpers are separate from native control paths.
     if __package__:
@@ -3744,6 +3777,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     session = subparsers.add_parser("session", help="Read-only target inspection and explicit interactive UI submission; not worker dispatch")
     session_sub = session.add_subparsers(dest="session_operation", required=True)
+    for operation in ("prompt", "prompt-capabilities"):
+        prompt = session_sub.add_parser(operation, help="Explicit native Djinn prompt admission; no terminal-input fallback")
+        prompt.add_argument("--native-socket", required=True, help="Explicit startup-enabled private Djinn prompt socket")
+        prompt.add_argument("--timeout", type=float, default=3.0)
+        prompt.add_argument("--json", action="store_true")
+        if operation == "prompt":
+            prompt.add_argument("workspace", help="Existing Coven control workspace, not a native cwd or sandbox")
+            prompt.add_argument("--expected-runtime", required=True, help="Exact native runtime UUID from explicit capability inspection")
+            prompt.add_argument("--session", required=True, help="Exact native ses_ identifier; never inferred from a pane")
+            prompt.add_argument("--request-id", required=True, help="Fresh caller UUID; not a durable retry/reconciliation key")
+            prompt.add_argument("--prompt-file", required=True, help="Explicit absolute UTF-8 text file, at most 65536 bytes")
+            prompt.add_argument("--execute", action="store_true", help="Explicitly admit native prompt; otherwise pure preview")
+        prompt.set_defaults(func=command_session_prompt)
     for operation in ("list", "inspect", "watch"):
         inspection = session_sub.add_parser(operation, help="Read-only generic pane/process evidence and declared group/role associations")
         inspection.add_argument("workspace", help="Existing Coven workspace for read-only group declarations")

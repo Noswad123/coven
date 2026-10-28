@@ -86,6 +86,12 @@ cohort/budget or turn failed observations into empty successes. Watch emits each
 fresh unavailable/unknown outcome rather than retaining old positive data; it
 adds no daemon, stored roster, role grant, native control or activity authority.
 
+The separate [native interactive prompt contract](SESSION_PROMPT_CONTRACT.md)
+adds explicit preview/execute against an opted-in Djinn-native socket. Native
+runtime/session pins replace pane identity; message acceptance is separate from
+worker-policy admission or completion. No Kitsune agent command, raw keystroke,
+V2 drain, permission inheritance, retry or default agent/model selection follows.
+
 Keep these concepts distinct:
 
 - native runtime/session identity, scoped to its runtime;
