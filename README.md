@@ -29,6 +29,17 @@ inventory, launch/probe native runtimes, read live artifacts or infer native act
 identity, readiness or completion. No authoritative session registry or state writes
 are added. See [SESSION_INSPECTION_CONTRACT.md](SESSION_INSPECTION_CONTRACT.md).
 
+List/inspect can select declared targets with `--group GROUP [--member MEMBER]`
+and/or `--recognized-only`. Selection happens only after the complete bounded
+observation; original observed counts and declaration qualifiers remain explicit.
+See [SESSION_VIEWS_CONTRACT.md](SESSION_VIEWS_CONTRACT.md).
+
+`coven session watch WORKSPACE --socket ABS_SOCKET` performs bounded foreground
+refreshes (default 60 seconds, two-second interval), optionally targeting one pane
+and applying the same view flags. `--json` emits JSONL samples then a scoped watch
+summary. No daemon, stored roster, stale positive fallback or native control follows.
+See [SESSION_WATCH_CONTRACT.md](SESSION_WATCH_CONTRACT.md).
+
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.

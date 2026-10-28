@@ -80,6 +80,12 @@ agent inventory or live native artifact is interpreted, no new registry is creat
 and native lifecycle/readiness/activity/identity remain unestablished or unknown.
 Stale/changeable declarations never become native facts or control permissions.
 
+Pure group/member/recognition views and a bounded foreground observation watch
+compose on top of those inspections. Selection cannot bypass the scanner's
+cohort/budget or turn failed observations into empty successes. Watch emits each
+fresh unavailable/unknown outcome rather than retaining old positive data; it
+adds no daemon, stored roster, role grant, native control or activity authority.
+
 Keep these concepts distinct:
 
 - native runtime/session identity, scoped to its runtime;

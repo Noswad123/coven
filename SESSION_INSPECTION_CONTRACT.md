@@ -5,6 +5,17 @@ coven session list WORKSPACE --socket ABS_SOCKET [--runtime djinn] [--timeout 3]
 coven session inspect WORKSPACE --socket ABS_SOCKET --pane PANE [--expected-terminal TERMINAL] [--runtime djinn] [--timeout 3] [--max-response-bytes 1048576] [--json]
 ```
 
+Optional `--group GROUP [--member MEMBER]` and `--recognized-only` apply a pure
+post-observation view, never a narrower scanner/authority boundary. Selected counts
+are distinguished from original observed counts; aggregate declaration counts keep
+their full-observation scope. Default no-filter reports are unchanged. See
+[SESSION_VIEWS_CONTRACT.md](SESSION_VIEWS_CONTRACT.md).
+
+The bounded foreground `session watch` command reuses these same inspections and
+view options, without a daemon/state cache or permission to control native apps.
+JSON watch output is JSONL samples followed by a watch-summary, not one inspection
+object. See [SESSION_WATCH_CONTRACT.md](SESSION_WATCH_CONTRACT.md).
+
 These commands observe **existing pane targets on one explicitly selected Kitsune
 API endpoint** and display any matching Coven declarations. They do not enumerate
 saved/native/headless sessions, prove interactive-agent identity, or maintain a new

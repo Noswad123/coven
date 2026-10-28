@@ -2906,18 +2906,64 @@ def command_session(args: argparse.Namespace) -> int:
     return interactive_sessions.exit_code(report)
 
 
-def command_session_inspect(args: argparse.Namespace) -> int:
-    try:
-        report = session_inspection.inspect(Path(args.workspace), args.socket,
-            pane_id=getattr(args, "pane", None), expected_terminal_id=getattr(args, "expected_terminal", None),
-            runtime=args.runtime, timeout=args.timeout, max_response_bytes=args.max_response_bytes)
-    except ValueError as exc:
-        fail(str(exc))
-    if args.json or args.session_operation == "inspect":
-        print(json.dumps(report, indent=None if args.json else 2, ensure_ascii=True, allow_nan=False))
+def session_views_module():
+    # These optional view/watch helpers are separate from native control paths.
+    if __package__:
+        from . import session_views
+    else:
+        import session_views
+    return session_views
+
+
+def session_watch_module():
+    if __package__:
+        from . import session_watch
+    else:
+        import session_watch
+    return session_watch
+
+
+def session_selection(args: argparse.Namespace) -> dict[str, Any]:
+    return {"group_key": getattr(args, "group", None), "member_key": getattr(args, "member", None),
+            "recognized_only": getattr(args, "recognized_only", False)}
+
+
+def validate_session_reader(args: argparse.Namespace) -> None:
+    kitsune_observation._arguments(args.socket, args.timeout, args.max_response_bytes)
+    pane, terminal = getattr(args, "pane", None), getattr(args, "expected_terminal", None)
+    if pane is not None:
+        kitsune_process_observation._pane_id(pane)
+    if terminal is not None:
+        kitsune_process_observation._pane_id(terminal)
+        if pane is None:
+            raise ValueError("expected terminal requires one explicit pane")
+    selection = session_selection(args)
+    if selection["group_key"] is not None or selection["member_key"] is not None or selection["recognized_only"]:
+        session_views_module().validate_selection(**selection)
+
+
+def observe_session_report(args: argparse.Namespace, *, timeout: float | None = None) -> dict[str, Any]:
+    report = session_inspection.inspect(Path(args.workspace), args.socket,
+        pane_id=getattr(args, "pane", None), expected_terminal_id=getattr(args, "expected_terminal", None),
+        runtime=args.runtime, timeout=args.timeout if timeout is None else timeout,
+        max_response_bytes=args.max_response_bytes)
+    selection = session_selection(args)
+    if selection["group_key"] is not None or selection["member_key"] is not None or selection["recognized_only"]:
+        report = session_views_module().select_report(report, **selection)
+    return report
+
+
+def print_session_report(report: dict[str, Any], *, json_output: bool, pretty: bool = False) -> None:
+    if json_output or pretty:
+        print(json.dumps(report, indent=2 if pretty and not json_output else None,
+                         ensure_ascii=True, allow_nan=False), flush=True)
     else:
         print(f"Session target inspection: {report['assessment']}")
         print("Scope: existing panes on the selected endpoint; native activity/readiness remains unknown.")
+        if "view" in report:
+            view = report["view"]
+            print(visible_text(f"View: group={view['group_key']} member={view['member_key']} recognized_only={view['recognized_only']}; selected {report['target_count']} of {view['observed_target_count']} observed pane targets."))
+            print("Declaration aggregate counts remain scoped to the full observation.")
         for target in report["targets"]:
             declarations = "; ".join(f"{a['group_key']}/{a['member_key']}: {a['role']} [{a['binding_check']}]"
                                      for a in target["associations"]) or "no matching declaration"
@@ -2926,7 +2972,49 @@ def command_session_inspect(args: argparse.Namespace) -> int:
             print(f"Unmatched declarations: {len(report['declarations']['unmatched'])}")
         for diagnostic in report["diagnostics"]:
             print(f"Diagnostic: {diagnostic}")
+
+
+def command_session_inspect(args: argparse.Namespace) -> int:
+    try:
+        validate_session_reader(args)
+        report = observe_session_report(args)
+    except ValueError as exc:
+        fail(str(exc))
+    print_session_report(report, json_output=args.json, pretty=args.session_operation == "inspect")
     return session_inspection.exit_code(report)
+
+
+def command_session_watch(args: argparse.Namespace) -> int:
+    try:
+        validate_session_reader(args)
+        watcher = session_watch_module()
+
+        def collect(remaining_seconds):
+            return observe_session_report(args, timeout=min(args.timeout, remaining_seconds))
+
+        def emit(event):
+            if args.json:
+                print(json.dumps(event, ensure_ascii=True, allow_nan=False), flush=True)
+                return
+            print(f"Watch sample {event['sequence']}: {event['assessment']}", flush=True)
+            if event["observation"] is None:
+                print("Observation unavailable; no previous targets are current.", flush=True)
+            else:
+                print_session_report(event["observation"], json_output=False)
+
+        summary = watcher.watch(collect, emit, duration=args.duration, interval=args.interval)
+    except ValueError as exc:
+        fail(str(exc))
+    # A broken output stream must not be retried just to print the summary.
+    if summary["outcome"] != "output_failed":
+        try:
+            if args.json:
+                print(json.dumps(summary, ensure_ascii=True, allow_nan=False), flush=True)
+            else:
+                print(f"Watch {summary['outcome']}; {summary['emitted']} observation(s) emitted. Native lifecycle remains unestablished.", flush=True)
+        except OSError:
+            return 1
+    return watcher.exit_code(summary)
 
 
 def command_agent_status(args: argparse.Namespace) -> int:
@@ -3656,18 +3744,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     session = subparsers.add_parser("session", help="Read-only target inspection and explicit interactive UI submission; not worker dispatch")
     session_sub = session.add_subparsers(dest="session_operation", required=True)
-    for operation in ("list", "inspect"):
+    for operation in ("list", "inspect", "watch"):
         inspection = session_sub.add_parser(operation, help="Read-only generic pane/process evidence and declared group/role associations")
         inspection.add_argument("workspace", help="Existing Coven workspace for read-only group declarations")
         inspection.add_argument("--socket", required=True, help="Explicit existing local Kitsune API socket")
         inspection.add_argument("--runtime", choices=["djinn"], default="djinn", help="Process-family interpreter, not a native execution request")
-        if operation == "inspect":
-            inspection.add_argument("--pane", required=True, help="Exact current pane ID")
+        if operation in {"inspect", "watch"}:
+            inspection.add_argument("--pane", required=operation == "inspect", help="Exact current pane ID; watch otherwise observes all targets")
             inspection.add_argument("--expected-terminal", help="Optional terminal pin; never follows a replacement")
+        inspection.add_argument("--group", help="Select only matching declared group associations after observation")
+        inspection.add_argument("--member", help="Select one declared member; requires --group")
+        inspection.add_argument("--recognized-only", action="store_true", help="Select executable-family hints, not readiness or native activity")
+        if operation == "watch":
+            inspection.add_argument("--duration", type=float, default=60.0, help="Bounded foreground watch seconds [0.1, 3600]")
+            inspection.add_argument("--interval", type=float, default=2.0, help="Serial refresh seconds [0.1, 60]; no catch-up bursts")
         inspection.add_argument("--timeout", type=float, default=3.0, help="Shared API/filesystem acceptance budget in seconds (0, 30]")
         inspection.add_argument("--max-response-bytes", type=int, default=1048576, help="Shared API wire-byte allowance (1024 through 8388608)")
-        inspection.add_argument("--json", action="store_true")
-        inspection.set_defaults(func=command_session_inspect)
+        inspection.add_argument("--json", action="store_true", help="JSON report, or JSONL watch samples followed by a watch summary")
+        inspection.set_defaults(func=command_session_watch if operation == "watch" else command_session_inspect)
     for operation in ("start", "resume"):
         interactive = session_sub.add_parser(operation, help=f"Preview an interactive {operation}; --execute submits once")
         interactive.add_argument("workspace", help="Existing Coven control workspace, not a cwd or sandbox")
