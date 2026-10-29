@@ -2877,6 +2877,28 @@ def command_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_handoff(args: argparse.Namespace) -> int:
+    if __package__:
+        from . import handoffs
+    else:
+        import handoffs
+    operation = args.handoff_operation
+    try:
+        if operation == "validate":
+            report = handoffs.validate_file(args.file)
+        elif operation == "collect":
+            report = handoffs.collect(args.workspace, args.file, expected_sha256=args.expect_sha256,
+                                      expected_tasks_revision=args.expect_tasks_revision)
+        elif operation == "inspect":
+            report = handoffs.inspect(args.workspace, args.collection_id)
+        else:
+            report = handoffs.list_collections(args.workspace, task_id=args.task)
+    except (ValueError, OSError):
+        raise handoffs.HandoffError("handoff_input_or_local_storage_unavailable") from None
+    print(json.dumps(report, ensure_ascii=True, allow_nan=False, indent=None if args.json else 2))
+    return 2 if report.get("delivery") == "durability_uncertain" else 0
+
+
 def command_session(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace).absolute()
     try:
@@ -3692,6 +3714,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     init.add_argument("--blank", action="store_true", help="Create structure without an example seed")
     init.add_argument("--force", action="store_true", help="Deprecated compatibility flag; never overwrites existing workspace files")
     init.set_defaults(func=command_init)
+
+    handoff = subparsers.add_parser("handoff", help="Validate/capture unverified worker claims; never mark tasks complete")
+    handoff_sub = handoff.add_subparsers(dest="handoff_operation", required=True)
+    for operation in ("validate", "collect", "inspect", "list"):
+        item = handoff_sub.add_parser(operation)
+        if operation != "validate":
+            item.add_argument("workspace", help="Explicit existing Coven workspace")
+        if operation == "validate":
+            item.add_argument("file", help="Selected bounded JSON handoff; no references are followed")
+        elif operation == "collect":
+            item.add_argument("--file", required=True)
+            item.add_argument("--expect-sha256", required=True, help="Exact raw handoff SHA256 from validation")
+            item.add_argument("--expect-tasks-revision", required=True, help="Current task-authority token, also declared in the handoff")
+        elif operation == "inspect":
+            item.add_argument("collection_id", help="Exact content ID printed by collect")
+        else:
+            item.add_argument("--task", help="Filter after validating all bounded collection artifacts")
+        item.add_argument("--json", action="store_true")
+        item.set_defaults(func=command_handoff)
 
     goal = subparsers.add_parser("goal", help="Set or show the unified goal")
     goal.add_argument("items", nargs="*", help="Optional workspace followed by goal text; defaults to current directory")

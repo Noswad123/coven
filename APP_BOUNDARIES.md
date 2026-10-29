@@ -92,6 +92,12 @@ runtime/session pins replace pane identity; message acceptance is separate from
 worker-policy admission or completion. No Kitsune agent command, raw keystroke,
 V2 drain, permission inheritance, retry or default agent/model selection follows.
 
+The [structured handoff capture](HANDOFF_CONTRACT.md) is Coven-owned local
+evidence: explicit worker claims bound to collection-time task context, not native
+execution facts, verified check/source receipts or task completion. It archives
+selected data without following references, probing Git/native apps, dispatching,
+releasing attempts, changing approvals or creating another task authority.
+
 Keep these concepts distinct:
 
 - native runtime/session identity, scoped to its runtime;

@@ -45,6 +45,11 @@ The optional `coven session prompt` command previews by default and, with explic
 pins and a correlated message receipt. No Kitsune prompt/keystroke fallback or
 permission inheritance is used. See [SESSION_PROMPT_CONTRACT.md](SESSION_PROMPT_CONTRACT.md).
 
+`coven handoff validate/collect/inspect/list` adds explicit structured worker-claim
+capture for review. Collection pins the raw input and current task revision/owner,
+then archives it without changing task status or trusting reported checks/source.
+Every collected result remains unverified. See [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md).
+
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.

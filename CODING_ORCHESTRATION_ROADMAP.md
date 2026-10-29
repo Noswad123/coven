@@ -654,8 +654,16 @@ can still conflict semantically; the composer must identify shared contracts.
 
 ### COV-09 — Collect exact-source handoffs
 
-**Current gap:** neither a structured coding result nor a source identity is
-required. The existing roadmap's summary contract is a good starting point.
+**Initial evidence-only slice implemented:** explicit versioned worker-claim
+validation and content-addressed local collection, with task revision/owner checks,
+historical inspection and no task/attempt transition. See
+[HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md). This does **not complete COV-09**:
+source/checks/native references remain unverified and no accepted result or
+composer readiness follows.
+
+**Remaining gap:** verified attempt/result/source/scope binding and accepted coding
+delivery. The schema below remains the future verified handoff target, not a claim
+about the evidence-only archive.
 
 **Build:** require a versioned result containing:
 
