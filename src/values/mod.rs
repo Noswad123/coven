@@ -90,6 +90,24 @@ pub enum Value {
     Object(Object),
 }
 impl Value {
+    pub(crate) fn set_field(&mut self, name: &str, value: Value) -> Result<()> {
+        let Self::Object(object) = self else {
+            return Err(crate::Error("invalid_object_update"));
+        };
+        if let Some((_, slot)) = object.entries.iter_mut().find(|(key, _)| key == name) {
+            *slot = value;
+        } else {
+            object.entries.push((name.to_owned(), value));
+        }
+        Ok(())
+    }
+    pub(crate) fn array_mut(&mut self) -> Result<&mut Vec<Value>> {
+        if let Self::Array(values) = self {
+            Ok(values)
+        } else {
+            Err(crate::Error("invalid_array_update"))
+        }
+    }
     pub fn integer(raw: &str) -> Result<Self> {
         Ok(Self::Number(Number::Integer(DecimalInteger::parse(raw)?)))
     }

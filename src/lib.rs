@@ -3,6 +3,7 @@ pub mod archive;
 mod canonical;
 pub mod error;
 pub mod handoff;
+pub mod ledger;
 mod output;
 mod platform;
 mod read_fs;

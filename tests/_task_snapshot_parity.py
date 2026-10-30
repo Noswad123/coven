@@ -123,7 +123,8 @@ def main(binary):
             if directory: selected.mkdir()
             else: selected.write_text("unparsed unsupported authority")
             result=native(workspace,1)
-            assert b'unsupported_native_authority' in result.stderr,result.stderr
+            code=b'invalid_compat_json' if relative=="state/task-authority.json" else b'unsupported_native_authority'
+            assert code in result.stderr,result.stderr
             if directory: selected.rmdir()
             else: selected.unlink()
             cases+=1
@@ -131,18 +132,19 @@ def main(binary):
         source.write_bytes(initial)
         marker=workspace/"state/task-authority.json"
         marker.symlink_to(root/"missing")
-        assert b'unsupported_native_authority' in native(workspace,1).stderr
+        assert b'unsafe_archive_path' in native(workspace,1).stderr
         marker.unlink()
         cases+=1
-        # Exercise refusal with a genuinely valid Python ledger and stale projection.
+        # The new authority reader validates the ledger, not its stale projection.
         revision=coven.read_task_snapshot(workspace)[0]
         assert invoke("state","import-tasks",workspace,"--expect-revision",revision,"--json")[0]==0
         source.write_text("broken projection")
         before=snapshot(workspace)
-        assert b'unsupported_native_authority' in native(workspace,1).stderr
+        result=native(workspace,0)
+        assert json.loads(result.stdout)==json.loads(invoke("task","list",workspace,"--json")[1])
         assert snapshot(workspace)==before
         cases+=1
-    print(json.dumps({"snapshot_cli_cases":cases,"native_ledger_or_writes_enabled":False}))
+    print(json.dumps({"snapshot_cli_cases":cases,"native_writes_enabled":False}))
 
 
 if __name__=="__main__":

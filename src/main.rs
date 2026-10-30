@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[command(
     name = "coven-rs",
     version,
-    about = "Native migration preview: read-only handoff and snapshot task readers; Python coven remains the default"
+    about = "Native migration preview: read-only handoff and task authority readers; Python coven remains the default"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -17,6 +17,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    State {
+        #[command(subcommand)]
+        command: State,
+    },
     Task {
         #[command(subcommand)]
         command: Task,
@@ -24,6 +28,16 @@ enum Command {
     Handoff {
         #[command(subcommand)]
         command: Handoff,
+    },
+}
+
+#[derive(Subcommand)]
+enum State {
+    Inspect {
+        #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, required = true)]
+        json: bool,
     },
 }
 
@@ -61,6 +75,9 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<String> {
     match cli.command {
+        Command::State {
+            command: State::Inspect { workspace, json: _ },
+        } => tasks::inspect_json_argument(&workspace),
         Command::Task {
             command: Task::List { workspace, json: _ },
         } => tasks::list_json_argument(&workspace),

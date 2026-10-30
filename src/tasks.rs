@@ -3,7 +3,7 @@
 use crate::{
     Error, Result, canonical,
     error::require,
-    read_fs,
+    ledger, read_fs,
     records::{self, TaskRecords, TeamRecord},
     values::{self, Profile, Value},
 };
@@ -62,6 +62,18 @@ fn authority_fence(root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn runtime_fence(root: &Path) -> Result<()> {
+    read_fs::managed(root, Path::new("state"), true)?;
+    for relative in ["state/runtime-launch-control.json", "state/actions"] {
+        match fs::symlink_metadata(root.join(relative)) {
+            Ok(_) => return Err(Error("unsupported_native_authority")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
 fn optional_bytes(root: &Path, relative: &str, limit: usize) -> Result<Option<Vec<u8>>> {
     let path = read_fs::managed(root, Path::new(relative), false)?;
     match fs::symlink_metadata(&path) {
@@ -83,11 +95,14 @@ fn checkpoint(root: &Path, relative: &str) -> Result<()> {
     Ok(())
 }
 
-fn preflight(root: &Path) -> Result<()> {
+fn preflight(root: &Path, active_ledger: bool, full: bool) -> Result<()> {
     for relative in DIRECTORIES {
         read_fs::managed(root, Path::new(relative), true)?;
     }
     for relative in FILES {
+        if active_ledger && *relative == "state/tasks.json" {
+            continue;
+        }
         read_fs::managed(root, Path::new(relative), false)?;
     }
     checkpoint(root, "checkpoints/plan-approval.md")?;
@@ -165,7 +180,7 @@ fn preflight(root: &Path) -> Result<()> {
             .or(configured.as_deref())
             .unwrap_or("herdr"),
     )?;
-    for agent in team.agent_ids()? {
+    for agent in if full { team.agent_ids()? } else { Vec::new() } {
         for relative in [
             format!("agents/{agent}.md"),
             format!("prompts/{agent}.md"),
@@ -174,12 +189,14 @@ fn preflight(root: &Path) -> Result<()> {
             read_fs::managed(root, Path::new(&relative), false)?;
         }
     }
-    records::agents(&optional_json(
-        root,
-        "state/agents.json",
-        Value::Array(Vec::new()),
-    )?)?;
-    records::lead(&optional_json(root, "state/lead.json", Value::Null)?)?;
+    if full {
+        records::agents(&optional_json(
+            root,
+            "state/agents.json",
+            Value::Array(Vec::new()),
+        )?)?;
+        records::lead(&optional_json(root, "state/lead.json", Value::Null)?)?;
+    }
     Ok(())
 }
 
@@ -205,8 +222,14 @@ impl Snapshot {
 pub fn read_snapshot(workspace: &Path) -> Result<Snapshot> {
     let root: PathBuf = read_fs::workspace(workspace)?;
     authority_fence(&root)?; // Before any projection/snapshot preflight or read.
-    preflight(&root)?;
-    let raw = optional_bytes(&root, "state/tasks.json", values::MAX_INPUT)?;
+    preflight(&root, false, true)?;
+    let snapshot = capture_snapshot(&root)?;
+    authority_fence(&root)?;
+    Ok(snapshot)
+}
+
+fn capture_snapshot(root: &Path) -> Result<Snapshot> {
+    let raw = optional_bytes(root, "state/tasks.json", values::MAX_INPUT)?;
     let revision = raw
         .as_deref()
         .map(|raw| format!("tasks-sha256:{}", canonical::digest(raw)))
@@ -217,13 +240,105 @@ pub fn read_snapshot(workspace: &Path) -> Result<Snapshot> {
         .transpose()?
         .unwrap_or(Value::Array(Vec::new()));
     let records = TaskRecords::validate(value)?;
-    authority_fence(&root)?;
     Ok(Snapshot { revision, records })
 }
 
+struct CapturedReport {
+    root: PathBuf,
+    view: Option<ledger::View>,
+    report: Value,
+    pending: bool,
+}
+impl CapturedReport {
+    fn finish(self) -> Result<Value> {
+        runtime_fence(&self.root)?;
+        if let Some(view) = &self.view {
+            view.fence(&self.root)?;
+        } else {
+            require(
+                ledger::pending(&self.root)? == self.pending,
+                "task_authority_changed_during_read",
+            )?;
+        }
+        Ok(self.report)
+    }
+}
+
+fn capture_listing(root: PathBuf) -> Result<CapturedReport> {
+    runtime_fence(&root)?;
+    let view = ledger::read(&root)?;
+    if view.is_none() {
+        require(!ledger::pending(&root)?, "unsupported_native_authority")?;
+    }
+    preflight(&root, view.is_some(), true)?;
+    let report = if let Some(view) = &view {
+        view.report(&root)?
+    } else {
+        capture_snapshot(&root)?.report()?
+    };
+    Ok(CapturedReport {
+        root,
+        view,
+        report,
+        pending: false,
+    })
+}
+
+fn capture_inspection(root: PathBuf) -> Result<CapturedReport> {
+    runtime_fence(&root)?;
+    let view = ledger::read(&root)?;
+    preflight(&root, view.is_some(), false)?;
+    let mut observed_pending = false;
+    let report = if let Some(view) = &view {
+        view.report(&root)?
+    } else {
+        observed_pending = ledger::pending(&root)?;
+        match capture_snapshot(&root) {
+            Ok(snapshot) => Value::object(vec![
+                (
+                    "authority".to_owned(),
+                    Value::String("snapshot-v1".to_owned()),
+                ),
+                ("revision".to_owned(), Value::String(snapshot.revision)),
+                ("tasks".to_owned(), snapshot.records.into_value()),
+                ("import_pending".to_owned(), Value::Bool(observed_pending)),
+            ])?,
+            Err(error) if observed_pending => Value::object(vec![
+                (
+                    "authority".to_owned(),
+                    Value::String("snapshot-v1".to_owned()),
+                ),
+                ("import_pending".to_owned(), Value::Bool(true)),
+                (
+                    "source_error".to_owned(),
+                    Value::String(error.code().to_owned()),
+                ),
+            ])?,
+            Err(error) => return Err(error),
+        }
+    };
+    Ok(CapturedReport {
+        root,
+        view,
+        report,
+        pending: observed_pending,
+    })
+}
+
 pub fn list_json(workspace: &Path) -> Result<String> {
-    let bytes = read_snapshot(workspace)?.report()?.compact()?;
-    crate::output::ascii_json(std::str::from_utf8(&bytes)?)
+    let report = capture_listing(read_fs::workspace(workspace)?)?
+        .finish()?
+        .compact()?;
+    crate::output::ascii_json(std::str::from_utf8(&report)?)
+}
+
+pub fn inspect_state(workspace: &Path) -> Result<Value> {
+    capture_inspection(read_fs::workspace(workspace)?)?.finish()
+}
+
+pub fn inspect_json_argument(workspace: &Path) -> Result<String> {
+    let report = inspect_state(&crate::platform::workspace_argument(workspace)?)?.compact()?;
+    crate::output::ascii_json(std::str::from_utf8(&report)?)
 }
 
 /// Normalize only CLI spelling; the library's Path APIs remain literal.
@@ -234,6 +349,15 @@ pub fn list_json_argument(workspace: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn minimal() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("coven.json"),
+            r#"{"name":"test","agents":["operator"]}"#,
+        )
+        .unwrap();
+        root
+    }
     #[test]
     fn authority_fence_is_rechecked_not_remembered_as_absence() {
         let root = tempfile::tempdir().unwrap();
@@ -247,6 +371,64 @@ mod tests {
         assert_eq!(
             authority_fence(root.path()).unwrap_err().code(),
             "unsupported_native_authority"
+        );
+    }
+    #[test]
+    fn captured_snapshot_never_returns_after_marker_or_runtime_publication() {
+        for runtime in [false, true] {
+            let root = minimal();
+            let captured = capture_listing(root.path().to_owned()).unwrap();
+            fs::create_dir(root.path().join("state")).unwrap();
+            let relative = if runtime {
+                "state/runtime-launch-control.json"
+            } else {
+                ledger::MARKER
+            };
+            fs::write(root.path().join(relative), "appeared after capture").unwrap();
+            assert!(captured.finish().is_err());
+        }
+    }
+    #[test]
+    fn pending_inspection_transition_is_checked_before_report_return() {
+        let root = minimal();
+        fs::create_dir_all(root.path().join(ledger::DIRECTORY)).unwrap();
+        let captured = capture_inspection(root.path().to_owned()).unwrap();
+        fs::remove_dir(root.path().join(ledger::DIRECTORY)).unwrap();
+        assert_eq!(
+            captured.finish().unwrap_err().code(),
+            "task_authority_changed_during_read"
+        );
+    }
+    #[test]
+    #[cfg(unix)]
+    fn captured_active_listing_and_inspection_reject_changed_marker() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("control");
+        let code = "from runner import coven;import sys;w=sys.argv[1];coven.main(['init',w,'--blank','--agents','operator']);r=coven.read_task_snapshot(__import__('pathlib').Path(w))[0];coven.main(['state','import-tasks',w,'--expect-revision',r,'--json'])";
+        let output = std::process::Command::new("python3")
+            .arg("-c")
+            .arg(code)
+            .arg(&workspace)
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .env("COVEN_MULTIPLEXER", "")
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let listing = capture_listing(workspace.clone()).unwrap();
+        let inspection = capture_inspection(workspace.clone()).unwrap();
+        fs::remove_file(workspace.join(ledger::MARKER)).unwrap();
+        assert_eq!(
+            listing.finish().unwrap_err().code(),
+            "task_authority_changed_during_read"
+        );
+        assert_eq!(
+            inspection.finish().unwrap_err().code(),
+            "task_authority_changed_during_read"
         );
     }
 }
