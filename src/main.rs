@@ -1,5 +1,6 @@
+use clap::builder::TypedValueParser;
 use clap::{Parser, Subcommand};
-use coven::{Result, archive};
+use coven::{Result, archive, tasks};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -7,7 +8,7 @@ use std::path::PathBuf;
 #[command(
     name = "coven-rs",
     version,
-    about = "Native migration preview: read-only handoff validation/history only; Python coven remains the default"
+    about = "Native migration preview: read-only handoff and snapshot task readers; Python coven remains the default"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -16,9 +17,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Task {
+        #[command(subcommand)]
+        command: Task,
+    },
     Handoff {
         #[command(subcommand)]
         command: Handoff,
+    },
+}
+
+#[derive(Subcommand)]
+enum Task {
+    List {
+        #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, required = true)]
+        json: bool,
     },
 }
 
@@ -46,6 +61,9 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<String> {
     match cli.command {
+        Command::Task {
+            command: Task::List { workspace, json: _ },
+        } => tasks::list_json_argument(&workspace),
         Command::Handoff {
             command: Handoff::Validate { file, json },
         } => archive::output(&archive::validate_file(&file)?, json),

@@ -311,20 +311,7 @@ pub fn output<T: Serialize>(report: &T, compact: bool) -> Result<String> {
     } else {
         serde_json::to_string_pretty(report)?
     };
-    let mut escaped = String::new();
-    use std::fmt::Write;
-    for character in json.chars() {
-        if character < '\u{7f}' {
-            escaped.push(character);
-        } else {
-            let mut units = [0_u16; 2];
-            for unit in character.encode_utf16(&mut units) {
-                write!(&mut escaped, "\\u{unit:04x}")
-                    .map_err(|_| Error("report_encoding_failed"))?;
-            }
-        }
-    }
-    Ok(escaped)
+    crate::output::ascii_json(&json)
 }
 
 #[cfg(test)]
