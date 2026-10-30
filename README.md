@@ -56,6 +56,16 @@ with Herdr by default. Tmux remains available as an opt-in runtime.
 
 ## Install
 
+### Rust migration preview
+
+An additive native `coven-rs` binary currently implements read-only handoff
+validation and historical inspect/list. The default `bin/coven` remains Python;
+other native commands fail closed without delegation. This is not yet a complete
+Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,
+compatibility limits and the remaining migration matrix.
+
+### Current default CLI
+
 Homebrew tap install:
 
 ```bash
