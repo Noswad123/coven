@@ -1,6 +1,7 @@
 //! Native migration core. Only explicitly supported read-only workflows are live.
 pub mod archive;
 mod canonical;
+pub mod collection;
 pub mod error;
 pub mod handoff;
 pub mod ledger;

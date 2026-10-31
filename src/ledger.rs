@@ -258,6 +258,9 @@ pub struct View {
     request_ids: HashSet<String>,
 }
 impl View {
+    pub(crate) fn into_task_values(self) -> (String, Value) {
+        (self.revision, self.tasks)
+    }
     fn apply(&mut self, payload: Value, digest: String) -> Result<()> {
         object(
             &payload,

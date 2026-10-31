@@ -18,3 +18,10 @@ pub(crate) fn unlock_workspace(_: &File) {}
 pub(crate) fn workspace_argument(_: &Path) -> Result<std::path::PathBuf> {
     Err(Error("unsupported_platform"))
 }
+
+pub(crate) fn mkdir_private(_: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn sync_directory(_: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}

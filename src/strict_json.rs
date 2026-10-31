@@ -66,7 +66,7 @@ impl<'de> Deserialize<'de> for Strict {
     }
 }
 
-pub(crate) fn decode(raw: &[u8]) -> Result<Value> {
+pub(crate) fn check_depth(raw: &[u8], limit: usize) -> Result<()> {
     let mut depth = 0_usize;
     let mut quoted = false;
     let mut escaped = false;
@@ -83,11 +83,16 @@ pub(crate) fn decode(raw: &[u8]) -> Result<Value> {
             quoted = true;
         } else if byte == b'[' || byte == b'{' {
             depth += 1;
-            require(depth <= 16, "json_nesting_limit")?;
+            require(depth <= limit, "json_nesting_limit")?;
         } else if byte == b']' || byte == b'}' {
             depth = depth.saturating_sub(1);
         }
     }
+    Ok(())
+}
+
+pub(crate) fn decode(raw: &[u8]) -> Result<Value> {
+    check_depth(raw, 16)?;
     let Strict(value) = serde_json::from_slice(raw)?;
     Ok(value)
 }

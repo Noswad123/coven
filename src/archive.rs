@@ -1,4 +1,5 @@
-//! Read-only historical evidence. No current task/roster or writable authority.
+//! Evidence model/encoding and read-only history. Collection uses these formats
+//! without turning worker claims into task/native execution authority.
 use crate::{
     Error, Result, canonical,
     error::require,
@@ -12,17 +13,17 @@ use std::{
 };
 
 pub const CONTRACT: &str = "coven.handoff-collection.v1";
-const MAX_ARCHIVE: usize = 1_048_576;
-const MAX_ENTRIES: usize = 256;
-const MAX_RETAINED: u64 = 32 * 1_048_576;
+pub(crate) const MAX_ARCHIVE: usize = 1_048_576;
+pub(crate) const MAX_ENTRIES: usize = 256;
+pub(crate) const MAX_RETAINED: u64 = 32 * 1_048_576;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskBinding {
-    task_id: Identifier,
-    owner: Identifier,
-    revision: TaskRevision,
-    task_sha256: Digest,
+    pub(crate) task_id: Identifier,
+    pub(crate) owner: Identifier,
+    pub(crate) revision: TaskRevision,
+    pub(crate) task_sha256: Digest,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,7 +80,10 @@ pub struct ClaimReport<T: Serialize> {
 }
 
 impl<T: Serialize> ClaimReport<T> {
-    fn new(assessment: &'static str, handoff: ValidatedHandoff, details: T) -> Self {
+    pub(crate) fn details(&self) -> &T {
+        &self.details
+    }
+    pub(crate) fn new(assessment: &'static str, handoff: ValidatedHandoff, details: T) -> Self {
         Self {
             schema_version: 1,
             contract: CONTRACT,
@@ -203,14 +207,25 @@ fn scan_metadata(path: &Path, inert: bool) -> Result<Option<fs::Metadata>> {
     }
 }
 
-fn scan(root: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) struct Scan {
+    pub paths: Vec<PathBuf>,
+    pub total: u64,
+    pub count: usize,
+}
+pub(crate) fn scan(root: &Path) -> Result<Scan> {
     let directory = read_fs::managed(root, Path::new("output/handoffs"), true)?;
     if !directory.exists() {
-        return Ok(Vec::new());
+        return Ok(Scan {
+            paths: Vec::new(),
+            total: 0,
+            count: 0,
+        });
     }
     let mut total = 0_u64;
     let mut paths = Vec::new();
+    let mut count = 0;
     for (index, entry) in fs::read_dir(directory)?.enumerate() {
+        count = index + 1;
         require(index < MAX_ENTRIES, "handoff_archive_entry_limit")?;
         let entry = entry?;
         let name = entry.file_name();
@@ -240,7 +255,37 @@ fn scan(root: &Path) -> Result<Vec<PathBuf>> {
         paths.push(selected);
     }
     paths.sort();
-    Ok(paths)
+    Ok(Scan {
+        paths,
+        total,
+        count,
+    })
+}
+
+pub(crate) fn capture_bytes(
+    raw: &[u8],
+    binding: TaskBinding,
+    root: &Path,
+) -> Result<(String, Vec<u8>)> {
+    let workspace = read_fs::path_text(root)?;
+    handoff::text(&workspace, 8192, false, false)?;
+    let payload = Payload {
+        handoff_json: std::str::from_utf8(raw)?.to_owned(),
+        handoff_sha256: Digest::parse(&canonical::digest(raw))?,
+        handoff_bytes: raw.len(),
+        task_binding: binding,
+        workspace_at_collection: workspace,
+    };
+    let identity = canonical::collection_id(&payload)?;
+    let envelope = Envelope {
+        schema_version: 1,
+        contract: CONTRACT.to_owned(),
+        collection_id: Digest::parse(&identity)?,
+        payload,
+    };
+    let encoded = canonical::envelope(&envelope)?;
+    require(encoded.len() <= MAX_ARCHIVE, "handoff_archive_size_limit")?;
+    Ok((identity, encoded))
 }
 
 #[derive(Debug, Serialize)]
@@ -270,6 +315,7 @@ pub fn list(workspace: &Path, task_id: Option<&str>) -> Result<ListReport> {
     let selected_task = task_id.map(Identifier::parse).transpose()?;
     let root = read_fs::workspace(workspace)?;
     let reports = scan(&root)?
+        .paths
         .into_iter()
         .map(|path| read_archive(&path))
         .collect::<Result<Vec<_>>>()?;

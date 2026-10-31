@@ -1,6 +1,7 @@
 use crate::Result;
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::fs::DirBuilderExt;
 use std::{ffi::OsString, path::PathBuf};
 use std::{
     fs::{File, OpenOptions},
@@ -82,4 +83,16 @@ pub(crate) fn workspace_argument(path: &Path) -> Result<PathBuf> {
         expanded.push(b'/');
     }
     Ok(PathBuf::from(OsString::from_vec(expanded)))
+}
+
+pub(crate) fn mkdir_private(path: &Path) -> std::io::Result<()> {
+    std::fs::DirBuilder::new().mode(0o700).create(path)
+}
+
+pub(crate) fn sync_directory(path: &Path) -> std::io::Result<()> {
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(path)?
+        .sync_all()
 }

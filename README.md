@@ -59,10 +59,12 @@ with Herdr by default. Tmux remains available as an opt-in runtime.
 ### Rust migration preview
 
 An additive native `coven-rs` binary implements read-only handoff
-validation/history, bounded snapshot/ledger `task list --json`, and read-only
+validation/capture/history, bounded snapshot/ledger `task list --json`, and read-only
 `state inspect --json`. It also has typed
 finite task values and a mixed-language-tested library workspace lock primitive.
-The default `bin/coven` remains Python; state-changing workflows are not yet native.
+The default `bin/coven` remains Python. Explicit native handoff collection writes
+only local unverified evidence; task/authority mutations and runtime effects are
+not yet native.
 Unsupported native commands fail closed without delegation.
 This is not yet a complete
 Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,

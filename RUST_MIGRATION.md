@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native read-only handoff and task-authority preview**, not a complete Rust replacement.
+Status: **native handoff evidence capture and read-only task authority**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -10,6 +10,7 @@ the Rust crate is built.
 
 ```sh
 cargo run --offline --locked --bin coven-rs -- handoff validate FILE --json
+cargo run --offline --locked --bin coven-rs -- handoff collect WORKSPACE --file FILE --expect-sha256 HEX --expect-tasks-revision TOKEN --json
 cargo run --offline --locked --bin coven-rs -- handoff inspect WORKSPACE COLLECTION_ID --json
 cargo run --offline --locked --bin coven-rs -- handoff list WORKSPACE --task TASK_ID --json
 cargo run --offline --locked --bin coven-rs -- task list WORKSPACE --json
@@ -19,12 +20,13 @@ cargo run --offline --locked --bin coven-rs -- state inspect WORKSPACE --json
 The compiled `target/debug/coven-rs` can also be invoked directly, including with
 Python absent from PATH. Its production code has no Python, subprocess, runtime
 or network dependency. Python is needed only for migration-oracle tests and the
-existing default CLI. Unsupported commands, including `handoff collect`, reject
+existing default CLI. Unsupported commands, including task mutation/import/recovery, reject
 at argument parsing before effects; there is **no automatic Python fallback**.
 
-These readers preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
+These commands preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
 handoffs remain worker claims, collected history remains unverified, authorization
-none, dispatchable false and current task binding not checked. No source/check/
+none and dispatchable false. Historical reads report current task binding not
+checked; collection checks only its explicit current local context. No source/check/
 native reference is followed or verified. Reads create no lock, directory,
 dashboard, repair, migration marker or runtime state.
 
@@ -37,12 +39,13 @@ src/
   strict_json.rs     UTF-8, duplicate-key, finite-number and depth safeguards
   canonical.rs       Closed-domain v1 evidence encoding and SHA256
   archive.rs         Historical archive verification, bounded list/filter reports
+  collection.rs      Pinned unverified capture with locked context revalidation
   read_fs.rs         Bounded read-only file/managed-path operations
   values/            Finite compatibility values, duplicate profiles and encoders
   records.rs         Extension-preserving validated workspace/task views
   tasks.rs           Preflight, captured task/state reports and authority fences
   ledger.rs          Complete bounded selected task-ledger replay/projection health
-  storage.rs         Explicit library-only shared workspace flock primitive
+  storage.rs         Shared workspace guard and immutable evidence publication
   output.rs          Bounded safely escaped CLI presentation
   platform/          Compile-gated OS open flags and unsupported-platform refusal
 ```
@@ -51,7 +54,8 @@ Serde/serde_json provide typed JSON, clap the CLI, sha2 the existing digest
 algorithm, and Unix libc the descriptor/lock operations. Ryu supplies shortest
 ties-to-even float digits; the compatibility encoder separately applies Python's
 formatting policy. TOML parses the existing workspace runtime configuration.
-Tempfile is test-only. All are conventional cached crates, not an external agent,
+Tempfile creates exclusive private same-directory evidence temps. All are
+conventional cached crates, not an external agent,
 interpreter/daemon dependency or a new plugin framework.
 
 Current filesystem support is POSIX Linux/macOS, matching existing Coven scope;
@@ -169,7 +173,7 @@ refuses. They are not silently rewritten or misrepresented as current authority.
 Parser node budget is not a promise about arbitrary programmatically built values;
 encoding separately enforces depth/container/string/output limits.
 
-`storage::WorkspaceGuard` is a **library-only** primitive for future workflows.
+`storage::WorkspaceGuard` underpins explicit native handoff capture.
 Explicit `acquire` may create a persistent mode-0600 lock; `existing` cannot create
 a missing lock/directory. The token is root/PID/thread owned and not Send/Sync,
 uses the same kernel flock/inode as Python, never steals/unlinks/replaces it, and
@@ -177,6 +181,48 @@ releases on normal exit or process death. The destructor avoids explicitly
 unlocking a parent's inherited open-file description after fork. Task and handoff
 reads do **not** acquire this token. No native task writer, authority publication,
 import, recovery or automatic dispatch is enabled by its availability.
+
+## Explicit unverified handoff collection
+
+`handoff collect` is the first native write command: it captures **local evidence
+only**, not accepted execution/results. It requires explicit raw SHA256 and task
+revision pins, validates the selected handoff once, and retains its bytes even if
+the worker changes the file later. It never follows references or runs checks,
+Git, native apps or tools. Fixed reports remain `collected_unverified`,
+authorization none, dispatchable false and `local_artifact_capture_only`.
+
+The collector has a dedicated context path, not task-command preflight. It checks
+strict depth-16/duplicate-free JSON for roster (64 KiB) and actual legacy snapshot
+(1 MiB), or selects/replays active task authority without reading its projection.
+Pending/corrupt task authority refuses. Expected/current/claimed revision and exact
+task/owner/current roster membership must agree before effects and again under
+the shared exclusive flock. Full-task hash includes all extensions using the
+existing `coven.handoff-task.v1` domain and compatibility codec. Separate corrupt
+runtime/execution controls neither authorize nor block evidence capture. Prepared
+attempts remain reserved, and all task/ledger/control/log/dashboard bytes stay put.
+
+Native context uses the bounded finite value profile as well as byte/depth caps:
+some Python-valid contexts, such as a 65,537-item extension array, are explicitly
+unsupported. This is a tested preview restriction, not a corrupt-authority or
+snapshot-fallback classification. Existing historical reads remain independent.
+
+Directory preparation, publication and confirmation all require a matching owned
+`WorkspaceGuard`. New output dirs request mode0700; each dir and its parent are
+synced, including existing parents on retry. A mode0600 temp is created in the
+destination directory, written/synced, then exclusively hard-linked to the final
+content ID. No overwrite/rename fallback. A pre-link failure leaves no final; a
+post-link directory-sync failure retains final bytes and returns
+`durability_uncertain`/exit2. Cleanup only attempts this operation's own temp;
+orphan temps stay inert. Entry/byte accounting reserves both links before publish.
+
+Exact existing bytes are observed under the guard before directory preparation.
+A private-field `ObservedEvidence` token preserves that fact for confirmation.
+Later operational read/open/metadata/file-sync/dir-sync failures return existing
+uncertainty, not ordinary rejection; mismatched bytes and unsafe paths still fail
+without replacement. Identical Python/Rust retries preserve ID, bytes, inode and
+mtime. No timestamp/index/secondary log or authority transaction is added. Context
+must still be current on recollection; this is not frozen task-ledger command
+receipt replay or permission to repeat an uncertain native task.
 
 ## Validation
 
@@ -190,7 +236,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 34 tests, including an integration harness with **109 handoff parity
+The native suite has 51 tests, including an integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
 missing, literal integer versions, Unicode/byte boundaries, source-state claims,
@@ -226,6 +272,17 @@ unsupported raw encoding, and invalid final frames. Native unit tests exercise
 captured-command transitions, exact temp recognition, frame/history/directory
 boundary checks and overflow. Reads leave bytes/modes/namespace/lock inode unchanged.
 
+Collection adds **16 mixed Python/native producer cases**: native-first and
+Python-first exact archive bytes/IDs, existing inode/mtime preservation, concurrent
+collectors, active ledger with bad/FIFO projection, unrelated FIFO controls,
+real prepared reservation preservation, stale/hash/owner/roster/duplicate/pending/
+corrupt/path/capacity refusals and an explicit out-of-native-profile context.
+Internal fault fixtures cover mkdir/temp/write/partial-write/file-sync/link/
+pre/post-link directory-sync/cleanup, replay read/open/metadata faults, authority
+changes before locked capture, wrong guard, integrity/unsafe-path refusal and
+exact/over byte reservations. CLI uncertainty maps to exit2. Fault injection is
+internal to tests, never activated by production environment variables.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Native fault
 injection and mixed Python/Rust contention will be required for writers.
@@ -235,9 +292,9 @@ injection and mixed Python/Rust contention will be required for writers.
 | Surface | Current implementation | Next gate |
 | --- | --- | --- |
 | Handoff schema, validate, historical inspect/list | Native Rust preview; Python still default | Close documented path gap before default parity |
-| Handoff collection/publication | Python only | Shared storage/locks, uncertainty and mixed-writer tests |
+| Handoff collection/publication | Native bounded unverified capture; Python still default | Close profile limits/cross-platform validation before default parity |
 | Finite values, ordered extensions, records, snapshot task JSON listing | Native bounded preview; Python still default | Close stated acceptance limits before full legacy parity |
-| Persistent workspace flock | Native library primitive, mixed-language tests | Publication/uncertainty primitives and native writer guard ordering |
+| Persistent workspace flock and immutable evidence publication | Native guarded primitives, mixed-language/fault tests | Task-authority publication and native writer guard ordering |
 | Workspace init/refresh and task mutations | Python only | Storage/authority guards and mixed-writer fault tests |
 | Task-ledger authority read/replay and projection diagnostics | Native bounded read-only preview | Close supported-profile limits before full parity |
 | Task-ledger mutations/import/recovery | Python only | Receipt lookup/order, publication/uncertainty and fault tests |
