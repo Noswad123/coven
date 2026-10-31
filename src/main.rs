@@ -1,14 +1,14 @@
 use clap::builder::TypedValueParser;
 use clap::{Parser, Subcommand};
-use coven::{Result, archive, collection, storage::Delivery, tasks};
+use coven::{Result, archive, collection, execution, storage::Delivery, tasks};
 use std::io::Write;
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
-    name = "coven-rs",
+    name = "coven",
     version,
-    about = "Native migration preview: handoff evidence capture and task authority readers; Python coven remains the default"
+    about = "Native migration preview: evidence capture and historical authority readers; Python coven remains the default"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -17,6 +17,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Execution {
+        #[command(subcommand)]
+        command: Execution,
+    },
     State {
         #[command(subcommand)]
         command: State,
@@ -28,6 +32,17 @@ enum Command {
     Handoff {
         #[command(subcommand)]
         command: Handoff,
+    },
+}
+
+#[derive(Subcommand)]
+enum Execution {
+    /// Replay retained v1 preparation history, not current-source or durability assessment.
+    History {
+        #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, required = true)]
+        json: bool,
     },
 }
 
@@ -86,6 +101,9 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<(String, u8)> {
     let report = match cli.command {
+        Command::Execution {
+            command: Execution::History { workspace, json: _ },
+        } => execution::history_json_argument(&workspace),
         Command::Handoff {
             command:
                 Handoff::Collect {

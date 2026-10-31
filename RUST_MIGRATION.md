@@ -1,23 +1,38 @@
 # Coven Rust migration
 
-Status: **native handoff evidence capture and read-only task authority**, not a complete Rust replacement.
+Status: **native handoff capture and read-only task/execution-v1 authority**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
 the Rust crate is built.
 
+## One command, one replacement
+
+The Rust crate defines exactly one binary target, **`coven`**. Development and
+parity tests invoke its explicit Cargo/build path, never the installed command
+or an automatically selected implementation. There is no second native command
+or compatibility alias to maintain.
+
+Python remains temporarily as the current entrypoint and migration oracle while
+coverage is incomplete. This is a staged replacement, not a dual-implementation
+product: the final package will ship only Rust `coven`. Cutover must update the
+existing entrypoint/install assets and remove Python runtime packaging after the
+remaining parity gates pass; the Rust binary will not delegate unsupported work
+to Python. Renaming the build target does not authorize an early install/cutover.
+
 ## Native commands available
 
 ```sh
-cargo run --offline --locked --bin coven-rs -- handoff validate FILE --json
-cargo run --offline --locked --bin coven-rs -- handoff collect WORKSPACE --file FILE --expect-sha256 HEX --expect-tasks-revision TOKEN --json
-cargo run --offline --locked --bin coven-rs -- handoff inspect WORKSPACE COLLECTION_ID --json
-cargo run --offline --locked --bin coven-rs -- handoff list WORKSPACE --task TASK_ID --json
-cargo run --offline --locked --bin coven-rs -- task list WORKSPACE --json
-cargo run --offline --locked --bin coven-rs -- state inspect WORKSPACE --json
+cargo run --offline --locked --bin coven -- handoff validate FILE --json
+cargo run --offline --locked --bin coven -- handoff collect WORKSPACE --file FILE --expect-sha256 HEX --expect-tasks-revision TOKEN --json
+cargo run --offline --locked --bin coven -- handoff inspect WORKSPACE COLLECTION_ID --json
+cargo run --offline --locked --bin coven -- handoff list WORKSPACE --task TASK_ID --json
+cargo run --offline --locked --bin coven -- task list WORKSPACE --json
+cargo run --offline --locked --bin coven -- state inspect WORKSPACE --json
+cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 ```
 
-The compiled `target/debug/coven-rs` can also be invoked directly, including with
+The compiled `target/debug/coven` can also be invoked directly, including with
 Python absent from PATH. Its production code has no Python, subprocess, runtime
 or network dependency. Python is needed only for migration-oracle tests and the
 existing default CLI. Unsupported commands, including task mutation/import/recovery, reject
@@ -45,6 +60,7 @@ src/
   records.rs         Extension-preserving validated workspace/task views
   tasks.rs           Preflight, captured task/state reports and authority fences
   ledger.rs          Complete bounded selected task-ledger replay/projection health
+  execution.rs       Historical execution-v1 replay, receipts and reservations
   storage.rs         Shared workspace guard and immutable evidence publication
   output.rs          Bounded safely escaped CLI presentation
   platform/          Compile-gated OS open flags and unsupported-platform refusal
@@ -224,6 +240,60 @@ mtime. No timestamp/index/secondary log or authority transaction is added. Conte
 must still be current on recollection; this is not frozen task-ledger command
 receipt replay or permission to repeat an uncertain native task.
 
+## Historical execution-control v1 reader
+
+`execution history WORKSPACE --json` is a new native preview report, not a port of
+Python's current-source execution inspection or mutation delivery envelope. It
+requires only an existing directory, not current `coven.json`, task, checkpoint or
+runtime files. It loads only managed `state/execution/control.json`. Missing
+directory/control means disabled; a directory without control is pending and
+refuses. Present null, malformed authority, unsafe types, unreadable data and
+unsupported schemas never become disabled or an empty reservation report.
+
+The reader fully replays v1 enable, enrollment/source rebind, preparation and
+cancellation. It checks exact schemas and literal integers, generation/history,
+unique request keys, every expected prefix revision with final extensions, retained
+source identities/rosters/task records, ledger task-content digests, complete
+enrollment/preparation snapshots, domain-separated task/intent hashes, predecessor
+and numbering rules, unique identities and the sole permissible frozen results.
+Snapshot revisions retain their raw-byte meaning: parsed historical tasks cannot
+reconstruct an unavailable original snapshot's raw hash. Final canonical length
+plus LF and 512 KiB per prepared attempt must fit Python's 16 MiB authority budget.
+
+Reports retain enrollments, attempts, receipts and extensions. Cancellation changes
+derived attempt state but never rewrites the earlier preparation receipt's
+`state: prepared`. Sorted `reserved_task_ids` lists only still-prepared tasks;
+enrollment, staleness or unrelated current-file changes cannot grant or release a
+reservation. Status active means valid v1 historical authority, not active execution.
+Both active/disabled reports say authorization none, dispatchable false,
+assessment historical_authority_only and current_source/durability not_assessed.
+
+Reads do not create/acquire a lock, fsync, publish, repair, archive or load current
+sources. The observed revision is not a latest/linearizable, authenticated or
+durability-confirmed view. Historical reservation observation is **not** a reusable
+mutation guard: writers still need receipt-before-mutable-state ordering, matching
+lock ownership and durable authority confirmation. No enable/enroll/prepare/cancel,
+upgrade, graph approval, task mutation or runtime admission command is enabled.
+Task and handoff readers/collectors retain their existing independence from this
+execution history path. Execution v2 explicitly returns unsupported_execution_v2;
+its legacy prefix cannot stand in for graph-era reservations or approval history.
+
+Native profile: 8 MiB raw input, the shared finite value/output bounds, at most
+1024 entries, and conservative prefix preflight `(canonical_length + 32) * entries
+<= 256 MiB` before prefix cloning/encoding. All reducer canonical comparisons and
+hash encodings also charge a 256 MiB aggregate accepted-work budget. A refusal may
+perform one further encoding capped at 32 MiB before charging; this is neither a
+strict CPU/memory ceiling nor a linear replay algorithm. Final compact and escaped
+ASCII reports each have their own 32 MiB bound and finish before stdout is written.
+
+Timestamp acceptance is deliberately narrower than Python's `fromisoformat`:
+ASCII `YYYY-MM-DD[T or space]HH:MM:SS[.1..6 digits](Z|+/-HH:MM)`, years 0001..9999,
+Gregorian calendar/leap-day checks, hours/offset hours 00..23, minutes/seconds/offset
+minutes 00..59. Spelling including `-00:00` is preserved; no chronology is invented.
+Other Python-valid ISO forms return unsupported_execution_timestamp_profile.
+These limits are explicit preview restrictions, not a claim that refused Python
+authorities are corrupt, nor a reason for fallback or persisted-value rewriting.
+
 ## Validation
 
 Use the existing installed Rust toolchain; this slice was exercised with Rust/
@@ -236,7 +306,8 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 51 tests, including an integration harness with **109 handoff parity
+The native suite has 60 tests, including a build/CLI-name regression test and an
+integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
 missing, literal integer versions, Unicode/byte boundaries, source-state claims,
@@ -283,6 +354,19 @@ changes before locked capture, wrong guard, integrity/unsafe-path refusal and
 exact/over byte reservations. CLI uncertainty maps to exit2. Fault injection is
 internal to tests, never activated by production environment variables.
 
+Execution adds **120 oracle cases**: 35 accepted reports, 70 corruption/path/capacity
+refusals and 15 Python-valid native-profile refusals. Real Python histories cover
+snapshot/ledger source rebind, cancellation/reprepare, multiple reservations and
+frozen preparation receipts after cancellation. Re-signed downstream prefixes
+isolate semantic corruption from hash failure. Tests retain numeric/Unicode values,
+move identities, ignore malformed/missing/FIFO current files, reject unsafe managed
+paths and valid v2 reservations, and establish success without Python on PATH.
+They snapshot namespace/bytes/modes/inodes/mtimes on success and refusal. Native
+unit tests cover exact work/history/capacity limits and timestamp calendar bounds;
+a valid small control with DEL text exercises final ASCII expansion refusal with
+empty stdout and no writes. Source inspection, rather than syscall tracing, also
+establishes the absence of network/runtime/fsync operations in this isolated path.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Native fault
 injection and mixed Python/Rust contention will be required for writers.
@@ -298,14 +382,16 @@ injection and mixed Python/Rust contention will be required for writers.
 | Workspace init/refresh and task mutations | Python only | Storage/authority guards and mixed-writer fault tests |
 | Task-ledger authority read/replay and projection diagnostics | Native bounded read-only preview | Close supported-profile limits before full parity |
 | Task-ledger mutations/import/recovery | Python only | Receipt lookup/order, publication/uncertainty and fault tests |
-| Execution v1/v2, graph/preparation guards | Python only | Identity/approval/reservation compatibility, not dispatch |
+| Execution v1 historical replay/receipts/reservation observation | Native bounded read-only preview | Close profile limits; add durable writer guard and receipt lookup ordering |
+| Execution v2, graph/preparation guards | Python only | Full v2 graph/review/reservation compatibility before mutation, not dispatch |
 | Checkpoints/actions/repository authority | Python only | Existing scoped approval/publication/uncertainty contracts |
 | Observers, groups, watch/publication | Python only | Private endpoint/artifact differential tests, expiry/no stale fallback |
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive stage is execution/approval authority readers and guarded
-publication/recovery primitives. Writers must preserve persistent flock inode/order,
+The next substantive stage is execution-v2/approval authority readers and guarded
+publication/recovery primitives. Historical receipt reports are not yet a mutation
+retry API. Writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old
 preparation, observation, collected claim or runtime-launch receipt may become a

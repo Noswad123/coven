@@ -28,7 +28,7 @@ fn snapshot_cli_preflight_authority_and_no_write_parity() {
     let result = std::process::Command::new("python3")
         .arg(root.join("tests/_task_snapshot_parity.py"))
         .arg("--binary")
-        .arg(env!("CARGO_BIN_EXE_coven-rs"))
+        .arg(env!("CARGO_BIN_EXE_coven"))
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .env("COVEN_MULTIPLEXER", "")
         .env("PYTHONINTMAXSTRDIGITS", "4300")

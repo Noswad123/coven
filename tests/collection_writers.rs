@@ -5,7 +5,7 @@ fn native_and_python_capture_identical_evidence_under_shared_flock() {
     let result = std::process::Command::new("python3")
         .arg(root.join("tests/_collection_parity.py"))
         .arg("--binary")
-        .arg(env!("CARGO_BIN_EXE_coven-rs"))
+        .arg(env!("CARGO_BIN_EXE_coven"))
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .env("PYTHONINTMAXSTRDIGITS", "4300")
         .env("COVEN_MULTIPLEXER", "")

@@ -7,7 +7,7 @@ description = "Coven's native orchestration core (incremental migration)"
 license = "MIT"
 
 [[bin]]
-name = "coven-rs"
+name = "coven"
 path = "src/main.rs"
 
 [dependencies]
