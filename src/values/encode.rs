@@ -4,6 +4,7 @@ use crate::Error;
 #[derive(Clone, Copy)]
 pub(super) enum Mode {
     Canonical,
+    SortedSpaced,
     Storage,
     Compact,
 }
@@ -43,6 +44,7 @@ impl Encoder {
     fn value(&mut self, value: &Value, depth: usize) -> Result<()> {
         require(depth <= MAX_DEPTH, "unsupported_json_depth_profile")?;
         let pretty = matches!(self.mode, Mode::Storage);
+        let spaced = matches!(self.mode, Mode::SortedSpaced);
         match value {
             Value::Null => self.push("null"),
             Value::Bool(value) => self.push(if *value { "true" } else { "false" }),
@@ -55,7 +57,7 @@ impl Encoder {
                 self.push("[")?;
                 for (index, value) in values.iter().enumerate() {
                     if index > 0 {
-                        self.push(",")?;
+                        self.push(if spaced { ", " } else { "," })?;
                     }
                     if pretty {
                         self.push("\n")?;
@@ -76,20 +78,20 @@ impl Encoder {
                     "unsupported_json_object_profile",
                 )?;
                 let mut entries = object.entries.iter().collect::<Vec<_>>();
-                if matches!(self.mode, Mode::Canonical) {
+                if matches!(self.mode, Mode::Canonical | Mode::SortedSpaced) {
                     entries.sort_by(|a, b| a.0.cmp(&b.0));
                 }
                 self.push("{")?;
                 for (index, (key, value)) in entries.iter().enumerate() {
                     if index > 0 {
-                        self.push(",")?;
+                        self.push(if spaced { ", " } else { "," })?;
                     }
                     if pretty {
                         self.push("\n")?;
                         self.indent(depth + 1)?;
                     }
                     self.string(key)?;
-                    self.push(if pretty { ": " } else { ":" })?;
+                    self.push(if pretty || spaced { ": " } else { ":" })?;
                     self.value(value, depth + 1)?;
                 }
                 if pretty && !entries.is_empty() {
@@ -161,4 +163,39 @@ fn python_float(value: FiniteFloat) -> Result<String> {
         }
     }
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sorted_spaced_is_a_separate_python_plan_encoding() {
+        let value = crate::values::parse(
+            br#"{"z":[1,1.0,-0.0,{"punctuation":", : \\\""}],"a":18446744073709551617}"#,
+            Profile::Authority,
+        )
+        .unwrap();
+        assert_eq!(
+            value.sorted_spaced().unwrap(),
+            br#"{"a": 18446744073709551617, "z": [1, 1.0, -0.0, {"punctuation": ", : \\\""}]}"#
+        );
+        assert_eq!(
+            value.canonical().unwrap(),
+            br#"{"a":18446744073709551617,"z":[1,1.0,-0.0,{"punctuation":", : \\\""}]}"#
+        );
+        assert_eq!(
+            value.compact().unwrap(),
+            br#"{"z":[1,1.0,-0.0,{"punctuation":", : \\\""}],"a":18446744073709551617}"#
+        );
+        let unicode = crate::values::parse(
+            "{\"🦊\":[\"λ\",[]],\"a\":{}}".as_bytes(),
+            Profile::Authority,
+        )
+        .unwrap();
+        assert_eq!(
+            unicode.sorted_spaced().unwrap(),
+            "{\"a\": {}, \"🦊\": [\"λ\", []]}".as_bytes()
+        );
+    }
 }

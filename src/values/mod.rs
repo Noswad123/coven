@@ -152,6 +152,10 @@ impl Value {
     pub fn storage(&self) -> Result<Vec<u8>> {
         encode::encode(self, encode::Mode::Storage)
     }
+    /// Python json.dumps(sort_keys=True) spacing used only by frozen plan validation.
+    pub(crate) fn sorted_spaced(&self) -> Result<Vec<u8>> {
+        encode::encode(self, encode::Mode::SortedSpaced)
+    }
     pub fn compact(&self) -> Result<Vec<u8>> {
         encode::encode(self, encode::Mode::Compact)
     }

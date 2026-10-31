@@ -1,6 +1,8 @@
 //! Native migration core. Only explicit readers and local evidence capture are live.
+pub mod actions;
 pub mod archive;
 mod canonical;
+pub mod checkpoints;
 pub mod collection;
 pub mod error;
 pub mod execution;

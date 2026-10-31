@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native handoff capture and read-only task/execution-v1/v2 authority**, not a complete Rust replacement.
+Status: **native evidence capture and read-only task/execution/action authority**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -30,6 +30,7 @@ cargo run --offline --locked --bin coven -- handoff list WORKSPACE --task TASK_I
 cargo run --offline --locked --bin coven -- task list WORKSPACE --json
 cargo run --offline --locked --bin coven -- state inspect WORKSPACE --json
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
+cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
 ```
 
 The compiled `target/debug/coven` can also be invoked directly, including with
@@ -38,7 +39,7 @@ or network dependency. Python is needed only for migration-oracle tests and the
 existing default CLI. Unsupported commands, including task mutation/import/recovery, reject
 at argument parsing before effects; there is **no automatic Python fallback**.
 
-These commands preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
+Handoff commands preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
 handoffs remain worker claims, collected history remains unverified, authorization
 none and dispatchable false. Historical reads report current task binding not
 checked; collection checks only its explicit current local context. No source/check/
@@ -63,6 +64,10 @@ src/
   execution.rs       Historical execution replay state, v1 rules and report boundary
   execution/v2.rs    Upgrade bridge, graph reviews and v2 preparation replay
   execution/graphs.rs Pure bounded graph validation, refreezing and source matching
+  actions.rs         Captured launch-control/bundle/checkpoint inspection
+  actions/authority.rs Pure all-claim validation, reference lookup and work budget
+  actions/plans.rs   Pure deterministic tmux/Herdr frozen-plan validation
+  checkpoints.rs     Pure byte-oriented checkpoint views and framed scope hashes
   storage.rs         Shared workspace guard and immutable evidence publication
   output.rs          Bounded safely escaped CLI presentation
   platform/          Compile-gated OS open flags and unsupported-platform refusal
@@ -97,8 +102,14 @@ round trip, distinguishes floats (including signed zero), and preserves insertio
 order. Its legacy snapshot profile is last-wins without moving an existing key;
 its authority profile rejects duplicates. Canonical encoding sorts keys/compact/
 no LF; storage encoding preserves order with indent=2 and a terminal LF. The
-general codec is used by bounded read-only ledger replay, not authority writers. Never
+general codec is used by bounded read-only authority validation, not authority writers. Never
 silently adopt Serde/JCS encoding under existing v1 digest domains.
+
+Frozen launch plans use an additional private sorted/spaced mode equivalent to
+Python `json.dumps(sort_keys=True, ensure_ascii=False)`, with default `, ` / `: `
+separators and no LF. This is separate from compact digest encoding, insertion-order
+storage and report presentation. Existing canonical/storage/compact behavior is
+unchanged; plans are compared and size-checked in their own encoding domain.
 
 The first native preview deliberately refuses historical artifact reporting
 under non-UTF-8 POSIX paths (`non_unicode_path_unsupported`). Python can represent
@@ -339,6 +350,79 @@ Other Python-valid ISO forms return unsupported_execution_timestamp_profile.
 These limits are explicit preview restrictions, not a claim that refused Python
 authorities are corrupt, nor a reason for fallback or persisted-value rewriting.
 
+## Runtime-launch action inspection and checkpoint decisions
+
+`action inspect [WORKSPACE] ACTION_ID --json` requires only an existing root; one
+operand means an action ID in the current directory, while two supply an explicit
+workspace (including quoted empty workspace and tilde expansion). No coven.json
+marker or current task/config/runtime preflight is required. The command validates
+the complete launch control before selecting a claim, then reads only that action's
+bundle and dedicated `runtime-launch-<id>` checkpoint. It neither scans other
+bundles nor follows frozen inventory paths, environment values or shell strings.
+
+Control validates all claims, including unselected ones: exact schemas and literal
+integers/booleans, UUID/reference tokens, head membership, unique claim IDs, status/
+acknowledgement/report rules, and every frozen plan. Actual resolved root/device/
+inode must match persisted identity. Platform code alone acquires OS identity;
+persisted arbitrary decimal integers are compared without truncation. Root aliases
+resolve normally; copies/moves never silently rebind launch authority. Non-UTF-8
+actual roots explicitly refuse. A missing control disables only without an actions
+directory; present null, orphan bundles, unsafe paths and corrupt controls refuse.
+
+Plans are rebuilt exactly for tmux or Herdr, preserving ordered agents, literal
+commands/starters/environment, typed handles/output selectors, argv, steps and
+integer sleep values. No executor, executable lookup, sleep or environment capture
+exists in this module. Plan validation is structure, not permission. Terminal
+reports follow Python's intentionally permissive schema: step counts/indices and
+handle inventories are not inferred from plan length or backend. Acknowledged
+terminal claims and late results on an older claim remain valid.
+
+Bundles validate their own identity and plan while keeping `inputs` an opaque
+finite object. They need not match today's activation/control revision for
+inspection. Manifest/control token labels are not hash preimage domains: each
+hashes sorted compact UTF-8 values without LF. An internal classifier compares
+only validated consumed manifest/checkpoint/decision references, with no optional
+evidence/current-source callbacks. It is not a durable retry or submit API.
+
+Successful output preserves Python's inspection envelope and `outcome: inspected`;
+exit is zero even when a retained claim is claimed, outcome_unknown or failed.
+Full control and selected claim remain independently visible despite ordinary
+missing/corrupt/unsafe bundle or checkpoint artifacts. Existing diagnostic string
+slots use stable native codes rather than Python OS/exception prose:
+`action_bundle_missing`, `action_bundle_unsafe_path`, `action_bundle_unavailable`,
+`action_bundle_invalid`, and checkpoint unsafe_path/unavailable/invalid equivalents.
+Missing checkpoint is a successful missing view, not a diagnostic. These fields
+are not a fresh approval, readiness, coherent latest snapshot, authentication or
+durability claim. No new grant fields or durable mutation envelopes are invented.
+
+The pure checkpoint API ports Python's exact byte scanner, not a general Markdown
+parser. It preserves LF/CRLF/bare-CR offsets, fences, comments, list nesting,
+reserved three-line blocks, direct checkboxes and history separator/trailer rules.
+Only specified presentation/machinery spans are excluded, and remaining original
+bytes are concatenated and length-framed once for the scope hash. Snapshot hashes
+cover every original byte; missing and empty differ. Contradiction takes precedence
+over stale scope; stale changes-requested remains rejected. Decided-at is scalar
+text, not an ISO timestamp requirement. Linked external content is never read.
+The standalone `checkpoint inspect` CLI is **not ported yet**: its broad Python
+workspace preflight is a separate compatibility gate, not silently bypassed here.
+
+Native profile: raw action authority at most 8 MiB, UTF-8 without BOM, existing
+finite value limits, compact canonical authority at most 16 MiB, sorted/spaced plan
+at most 8 MiB, selected checkpoint at most 1 MiB. Python accepts some BOM/UTF-16/32
+authority encodings; native returns `unsupported_action_encoding_profile`, even for
+optional bundles, rather than labeling this profile gap ordinary corruption.
+One command-scoped 256 MiB accepted serialization budget covers control/plans/
+reports/bundle/final compact and escaped output. A refusal may encode one additional
+bounded value before charging; this is not a CPU/peak-memory ceiling. Compact and
+escaped reports each have an independent 32 MiB bound, both complete before stdout.
+Library inspection charges compact output only; CLI also charges ASCII presentation.
+
+Resource/profile errors anywhere are fatal with no success stdout—even inside
+malformed checkpoint machinery or an optional bundle. Ordinary malformed optional
+content remains diagnostic. No lock acquisition/inspection, fsync, transport,
+publication, recovery, current input/task/projection validation or runtime/provider
+call is performed. Existing task/runtime fences remain unchanged.
+
 ## Validation
 
 Use the existing installed Rust toolchain; this slice was exercised with Rust/
@@ -351,7 +435,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 72 tests, including a build/CLI-name regression test and an
+The native suite has 105 tests, including a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -435,6 +519,27 @@ precharged MAX_WORK success/one-over refusal; deliberately resetting the embedde
 meter was verified to fail the regression. CLI work-profile fixtures separately
 cover conservative combined preflight, not this private shared-meter invariant.
 
+Action inspection adds **132 cases**: 54 accepted parity, 53 control refusals,
+16 native-profile refusals, 4 resource-policy refusals and 5 unsupported-CLI refusals.
+Real Python enable/prepare/review/claim/outcome fixtures never execute runtime submit.
+Cases cover both plan backends, all-claim validation, stale/opaque bundles, claimed/
+unknown/terminal and acknowledged late outcomes, consumed-reference independence,
+current-file/lock FIFO and held-lock independence, optional artifact diagnostics,
+copy/move refusal and actual device/inode plus 2^64 truncation traps. Recorded
+claims are duplicated in output; a dedicated DEL fixture proves the escaped report
+can exceed 32 MiB even when control alone and compact output fit, with empty stdout.
+Independently calculated work formulas and precharged command seams pin exhaustion
+inside optional bundle validation, compact output and ASCII output without huge
+allocations. Plan units cover sorted/spaced exact limits and frozen Python vectors.
+
+Pure checkpoint inspection adds **2,761 byte-level oracle cases**: 2,212 accepted
+views and 549 rejected inputs, including 12 exact resource refusals. These cover
+framed digest vectors, Unicode status/trim/lowercase, line endings, scanner and
+machinery precedence, nested examples, trailers/internal history, presentation
+contradiction and stale scope. Parser resource errors retain their classification
+through action inspection; ordinary malformed JSON remains a diagnostic retaining
+the known claim. Existing storage/numeric corpora also protect unchanged codec modes.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Native fault
 injection and mixed Python/Rust contention will be required for writers.
@@ -452,13 +557,14 @@ injection and mixed Python/Rust contention will be required for writers.
 | Task-ledger mutations/import/recovery | Python only | Receipt lookup/order, publication/uncertainty and fault tests |
 | Execution v1/v2 historical replay, graph reviews, receipts/reservation observation | Native bounded read-only preview | Close profile limits; durable writer guard and receipt lookup ordering still required |
 | Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
-| Checkpoints/actions/repository authority | Python only | Existing scoped approval/publication/uncertainty contracts |
+| Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits; standalone checkpoint preflight and writers remain |
+| Checkpoint CLI/mutations, action consumption/outcomes, repository authority | Python only | Existing scoped approval, receipt ordering, publication/recovery and uncertainty contracts |
 | Observers, groups, watch/publication | Python only | Private endpoint/artifact differential tests, expiry/no stale fallback |
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive stage is runtime-launch/checkpoint approval authority readers
-and guarded publication/recovery primitives. Historical receipt reports are not yet a mutation
+The next substantive stage is standalone checkpoint CLI/preflight parity and guarded
+publication/recovery primitives. Historical receipt reports are not yet a mutation
 retry API. Writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old

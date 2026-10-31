@@ -66,7 +66,11 @@ bounded snapshot/ledger `task list --json`, read-only `state inspect --json`, an
 reader reports historical reservations and frozen receipts, not current-source
 validity, durable mutation permission or execution authorization. V2 also replays
 graph proposals/reviews and graph-bound preparations without granting fresh
-approval or running graph operations. It also has typed
+approval or running graph operations. `action inspect [WORKSPACE] ACTION_ID --json`
+also validates captured launch control, frozen plans and the dedicated checkpoint
+without running transport or checking current runtime inputs. Recorded claims
+remain visible despite ordinary bundle/checkpoint diagnostic errors; inspection
+is not fresh launch permission or durability confirmation. It also has typed
 finite task values and a mixed-language-tested library workspace lock primitive.
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.

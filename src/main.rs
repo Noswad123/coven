@@ -1,6 +1,6 @@
 use clap::builder::TypedValueParser;
 use clap::{Parser, Subcommand};
-use coven::{Result, archive, collection, execution, storage::Delivery, tasks};
+use coven::{Result, actions, archive, collection, execution, storage::Delivery, tasks};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -17,6 +17,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Action {
+        #[command(subcommand)]
+        command: Action,
+    },
     Execution {
         #[command(subcommand)]
         command: Execution,
@@ -36,8 +40,21 @@ enum Command {
 }
 
 #[derive(Subcommand)]
+enum Action {
+    /// Inspect captured launch authority and its checkpoint without runtime effects.
+    Inspect {
+        #[arg(value_name = "WORKSPACE_OR_ACTION_ID", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace_or_action: PathBuf,
+        #[arg(value_name = "ACTION_ID")]
+        action_id: Option<String>,
+        #[arg(long, required = true)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum Execution {
-    /// Replay retained v1 preparation history, not current-source or durability assessment.
+    /// Replay retained v1/v2 preparation history, not current-source or durability assessment.
     History {
         #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         workspace: PathBuf,
@@ -101,6 +118,17 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<(String, u8)> {
     let report = match cli.command {
+        Command::Action {
+            command:
+                Action::Inspect {
+                    workspace_or_action,
+                    action_id,
+                    json: _,
+                },
+        } => {
+            let (workspace, action_id) = action_arguments(workspace_or_action, action_id)?;
+            actions::inspect_json_argument(&workspace, &action_id)
+        }
         Command::Execution {
             command: Execution::History { workspace, json: _ },
         } => execution::history_json_argument(&workspace),
@@ -148,6 +176,16 @@ fn run(cli: Cli) -> Result<(String, u8)> {
     Ok((report?, 0))
 }
 
+fn action_arguments(first: PathBuf, action_id: Option<String>) -> Result<(PathBuf, String)> {
+    match action_id {
+        Some(id) => Ok((first, id)),
+        None => Ok((
+            PathBuf::from("."),
+            std::str::from_utf8(first.as_os_str().as_encoded_bytes())?.to_owned(),
+        )),
+    }
+}
+
 fn main() -> std::process::ExitCode {
     match run(Cli::parse()) {
         Ok((report, code)) => {
@@ -179,5 +217,33 @@ mod tests {
     fn uncertain_capture_has_exit_two_not_success_or_rejection() {
         assert_eq!(collection_exit(Delivery::DurabilityUncertain), 2);
         assert_eq!(collection_exit(Delivery::Committed), 0);
+    }
+
+    #[test]
+    fn action_inspection_operands_do_not_require_a_workspace_marker() {
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        for (operands, workspace) in [
+            (vec![id], "."),
+            (vec!["", id], ""),
+            (vec!["/workspace with spaces", id], "/workspace with spaces"),
+        ] {
+            let args = [vec!["coven", "action", "inspect"], operands, vec!["--json"]].concat();
+            let cli = Cli::try_parse_from(args).unwrap();
+            let Command::Action {
+                command:
+                    Action::Inspect {
+                        workspace_or_action,
+                        action_id,
+                        ..
+                    },
+            } = cli.command
+            else {
+                panic!("wrong command");
+            };
+            let (actual_workspace, actual_id) =
+                action_arguments(workspace_or_action, action_id).unwrap();
+            assert_eq!(actual_workspace, PathBuf::from(workspace));
+            assert_eq!(actual_id, id);
+        }
     }
 }

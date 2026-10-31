@@ -1,7 +1,7 @@
 use crate::Result;
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::{ffi::OsString, path::PathBuf};
 use std::{
     fs::{File, OpenOptions},
@@ -11,6 +11,19 @@ use std::{
 
 pub(crate) fn ensure_supported() -> Result<()> {
     Ok(())
+}
+
+pub(crate) fn workspace_location(root: &Path) -> Result<super::WorkspaceLocation> {
+    let metadata = root.metadata()?;
+    crate::error::require(metadata.is_dir(), "invalid_action_workspace")?;
+    Ok(super::WorkspaceLocation {
+        root: root
+            .to_str()
+            .ok_or(crate::Error("non_unicode_path_unsupported"))?
+            .to_owned(),
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
 }
 
 pub(crate) fn open_readonly(path: &Path) -> Result<File> {
