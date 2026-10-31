@@ -1,4 +1,4 @@
-//! Read-only execution-control v1 history. This is historical preparation
+//! Read-only execution-control v1/v2 history. This is historical preparation
 //! authority, never execution admission, delivery, or a durability assessment.
 //!
 //! Native restrictions: Authority JSON input is at most 8 MiB (Python permits
@@ -16,6 +16,9 @@ use crate::{
 };
 use sha2::{Digest as _, Sha256};
 use std::{collections::HashSet, fs, path::Path};
+
+mod graphs;
+mod v2;
 
 const DISABLED: &str = "execution-disabled:v1";
 const MAX_HISTORY: usize = 1024;
@@ -442,6 +445,25 @@ impl Replay {
         generation: usize,
         work: &mut Work,
     ) -> Result<Value> {
+        self.apply_with_preparation(control, binding, op, effect, generation, work, None)
+    }
+
+    // Bindings are checked by the replay driver. V2 supplies its derived intent
+    // and graph binding directly, never a fabricated v1 authorization token.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep checked replay inputs explicit while sharing v1/v2 preparation guards"
+    )]
+    fn apply_with_preparation(
+        &mut self,
+        control: &Value,
+        binding: &Value,
+        op: &str,
+        effect: &Value,
+        generation: usize,
+        work: &mut Work,
+        preparation: Option<(&Value, &Value)>,
+    ) -> Result<Value> {
         let authority = get(control, "execution_authority_id")?;
         let snapshot = get(control, "snapshot_source_id")?;
         let mut result = object(vec![
@@ -606,7 +628,10 @@ impl Replay {
                 work.equal(get(last, "task_authority_identity")?, identity)?,
                 "execution_enrollment_source_mismatch",
             )?;
-            let explicit = get(params, "intent")?;
+            let explicit = match preparation {
+                Some((explicit, _)) => explicit,
+                None => get(params, "intent")?,
+            };
             let owner = text(get(explicit, "owner")?)?;
             require(
                 task.as_object()
@@ -622,9 +647,19 @@ impl Replay {
             let record = get(effect, "prepared")?;
             fields(
                 record,
-                "schema_version attempt_id task_id enrollment_id attempt_number previous_attempt_id execution_authority_id task_authority_identity task_source_revision complete_task_snapshot task_snapshot_digest intent intent_digest prepared_at",
+                if preparation.is_some() {
+                    "schema_version attempt_id task_id enrollment_id attempt_number previous_attempt_id execution_authority_id task_authority_identity task_source_revision complete_task_snapshot task_snapshot_digest intent intent_digest prepared_at graph_binding"
+                } else {
+                    "schema_version attempt_id task_id enrollment_id attempt_number previous_attempt_id execution_authority_id task_authority_identity task_source_revision complete_task_snapshot task_snapshot_digest intent intent_digest prepared_at"
+                },
             )?;
-            version(get(record, "schema_version")?)?;
+            require(
+                exact_integer(
+                    get(record, "schema_version")?,
+                    if preparation.is_some() { 2 } else { 1 },
+                ),
+                "unsupported_execution_version",
+            )?;
             let id = uuid(get(record, "attempt_id")?)?;
             timestamp(get(record, "prepared_at")?)?;
             require(
@@ -633,7 +668,10 @@ impl Replay {
             )?;
             let older: Vec<_> = self.attempts.iter().filter(|a| a.task == task_id).collect();
             let mut expected = object(vec![
-                ("schema_version", integer(1)?),
+                (
+                    "schema_version",
+                    integer(if preparation.is_some() { 2 } else { 1 })?,
+                ),
                 ("attempt_id", string(id)),
                 ("task_id", string(task_id)),
                 ("enrollment_id", string(&enrolled.id)),
@@ -663,9 +701,20 @@ impl Replay {
             ] {
                 payload.set_field(key, get(&expected, key)?.clone())?;
             }
+            if let Some((_, graph_binding)) = preparation {
+                expected.set_field("graph_binding", graph_binding.clone())?;
+                payload.set_field("graph_binding", graph_binding.clone())?;
+            }
             expected.set_field(
                 "intent_digest",
-                string(work.digest(b"coven-task-attempt-intent-v1\0", &payload)?),
+                string(work.digest(
+                    if preparation.is_some() {
+                        b"coven-task-attempt-intent-v2\0"
+                    } else {
+                        b"coven-task-attempt-intent-v1\0"
+                    },
+                    &payload,
+                )?),
             )?;
             require(
                 work.equal(record, &expected)?,
@@ -702,8 +751,22 @@ fn replay(control: &Value) -> Result<Value> {
         .and_then(|o| o.get("schema_version"))
         .is_some_and(|v| exact_integer(v, 2))
     {
-        return Err(Error("unsupported_execution_v2"));
+        return v2::replay(control);
     }
+    let replayed = replay_v1(control, &mut Work::default())?;
+    report(control, replayed, 1)
+}
+
+struct Replayed {
+    state: Replay,
+    revision: String,
+    receipts: Vec<(String, Value)>,
+    requests: HashSet<String>,
+}
+
+// Keep validated state separate from presentation so an upgrade carries the
+// original attempts, cancellation IDs, and receipts without a second replay.
+fn replay_v1(control: &Value, work: &mut Work) -> Result<Replayed> {
     fields(
         control,
         "schema_version execution_authority_id snapshot_source_id generation history extensions",
@@ -722,7 +785,6 @@ fn replay(control: &Value) -> Result<Value> {
         exact_integer(get(control, "generation")?, history.len()),
         "invalid_execution_generation",
     )?;
-    let mut work = Work::default();
     let encoded = work.encode(control)?;
     preflight(encoded.len(), history.len())?;
     let revision = format!(
@@ -741,9 +803,12 @@ fn replay(control: &Value) -> Result<Value> {
             "invalid_execution_history_generation",
         )?;
         let key = request_key(get(entry, "request_id")?, false)?;
-        require(requests.insert(key), "duplicate_execution_request_id")?;
+        require(
+            requests.insert(key.to_owned()),
+            "duplicate_execution_request_id",
+        )?;
         let b = get(entry, "binding")?;
-        let op = binding(b, &mut work)?;
+        let op = binding(b, work)?;
         if index > 0 {
             // Final extensions are intentional even for early prefix hashes.
             let mut prefix = object(vec![
@@ -767,7 +832,7 @@ fn replay(control: &Value) -> Result<Value> {
                 "execution_history_revision_mismatch",
             )?;
         }
-        let result = state.apply(control, b, op, get(entry, "effect")?, generation, &mut work)?;
+        let result = state.apply(control, b, op, get(entry, "effect")?, generation, work)?;
         require(
             work.equal(&result, get(entry, "result")?)?,
             "execution_receipt_effect_mismatch",
@@ -779,8 +844,23 @@ fn replay(control: &Value) -> Result<Value> {
         encoded.len(),
         state.attempts.iter().filter(|a| a.active()).count(),
     )?;
+    Ok(Replayed {
+        state,
+        revision,
+        receipts,
+        requests,
+    })
+}
+
+fn report(control: &Value, replayed: Replayed, schema: usize) -> Result<Value> {
+    let Replayed {
+        state,
+        revision,
+        receipts,
+        ..
+    } = replayed;
     let mut report = envelope("active", revision)?;
-    report.set_field("schema_version", integer(1)?)?;
+    report.set_field("schema_version", integer(schema)?)?;
     for key in [
         "execution_authority_id",
         "snapshot_source_id",
@@ -1061,11 +1141,11 @@ mod tests {
         );
         assert_eq!(
             replay(&parse(r#"{"schema_version":2}"#)).unwrap_err().0,
-            "unsupported_execution_v2"
+            "invalid_execution_fields"
         );
-        assert_ne!(
+        assert_eq!(
             replay(&parse(r#"{"schema_version":2.0}"#)).unwrap_err().0,
-            "unsupported_execution_v2"
+            "invalid_execution_fields"
         );
     }
 
@@ -1074,6 +1154,415 @@ mod tests {
         get(get(first, "effect").unwrap(), "source")
             .unwrap()
             .clone()
+    }
+
+    fn upgraded(legacy: Value) -> Value {
+        let revision = replay_v1(&legacy, &mut Work::default()).unwrap().revision;
+        let metadata = object(vec![
+            ("upgrade_id", string("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
+            ("source_revision", string(&revision)),
+            ("source_sha256", string("0".repeat(64))),
+            ("source_mode", integer(4095).unwrap()),
+            (
+                "backup_path",
+                string(
+                    "state/execution/upgrades/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/control-v1.bytes",
+                ),
+            ),
+        ])
+        .unwrap();
+        let generation = get(&legacy, "history").unwrap().as_array().unwrap().len() + 1;
+        let authority = get(&legacy, "execution_authority_id").unwrap().clone();
+        let result = object(vec![
+            ("operation", string("upgrade")),
+            ("generation", integer(generation).unwrap()),
+            ("execution_authority_id", authority.clone()),
+            ("upgrade_id", get(&metadata, "upgrade_id").unwrap().clone()),
+            (
+                "backup_path",
+                get(&metadata, "backup_path").unwrap().clone(),
+            ),
+            ("source_revision", string(&revision)),
+        ])
+        .unwrap();
+        let entry = object(vec![
+            ("generation", integer(generation).unwrap()),
+            ("request_id", string("upgrade")),
+            (
+                "binding",
+                object(vec![
+                    ("schema_version", integer(2).unwrap()),
+                    ("operation", string("upgrade")),
+                    ("parameters", object(vec![]).unwrap()),
+                    ("expected_execution_revision", string(revision)),
+                    ("expected_tasks_revision", Value::Null),
+                ])
+                .unwrap(),
+            ),
+            ("effect", metadata.clone()),
+            ("result", result),
+        ])
+        .unwrap();
+        object(vec![
+            ("schema_version", integer(2).unwrap()),
+            ("execution_authority_id", authority),
+            (
+                "snapshot_source_id",
+                get(&legacy, "snapshot_source_id").unwrap().clone(),
+            ),
+            ("extensions", get(&legacy, "extensions").unwrap().clone()),
+            ("generation", integer(generation).unwrap()),
+            ("legacy_v1", legacy),
+            ("upgrade", metadata),
+            ("history", Value::Array(vec![entry])),
+        ])
+        .unwrap()
+    }
+
+    #[test]
+    fn extracted_state_retains_receipts_cancellations_and_work() {
+        let mut control = enabled();
+        enroll(&mut control);
+        let first = "ffffffffffffffffffffffffffffffff";
+        let second = "11111111111111111111111111111111";
+        prepare(&mut control, first, Value::Null, 1);
+        cancel(&mut control, first, "dddddddddddddddddddddddddddddddd");
+        prepare(&mut control, second, string(first), 2);
+        cancel(&mut control, second, "22222222222222222222222222222222");
+        let mut work = Work::default();
+        let extracted = replay_v1(&control, &mut work).unwrap();
+        // Frozen canonical-encoding charges, not a dynamically calibrated budget.
+        const V1_WORK: usize = 54_929;
+        const V2_WORK: usize = 81_919;
+        assert_eq!(work.0, V1_WORK);
+        assert_eq!(extracted.state.enrollments.len(), 1);
+        assert_eq!(extracted.requests.len(), 6);
+        assert_eq!(extracted.receipts.len(), 6);
+        assert_eq!(extracted.state.attempts.len(), 2);
+        assert!(
+            extracted
+                .state
+                .attempts
+                .iter()
+                .all(|a| !a.active() && a.transitions.len() == 1)
+        );
+        assert_eq!(
+            extracted.state.cancellations,
+            HashSet::from([
+                "dddddddddddddddddddddddddddddddd".to_owned(),
+                "22222222222222222222222222222222".to_owned(),
+            ])
+        );
+        assert_eq!(
+            text(get(&extracted.state.attempts[1].prepared, "previous_attempt_id").unwrap())
+                .unwrap(),
+            first
+        );
+        let frozen = get(&extracted.receipts[2].1, "result").unwrap();
+        assert_eq!(text(get(frozen, "state").unwrap()).unwrap(), "prepared");
+        assert_eq!(
+            report(&control, extracted, 1).unwrap().canonical().unwrap(),
+            replay(&control).unwrap().canonical().unwrap()
+        );
+        let mut exact = Work(MAX_WORK - V1_WORK);
+        replay_v1(&control, &mut exact).unwrap();
+        assert_eq!(exact.0, MAX_WORK);
+        let mut exhausted = Work(MAX_WORK - V1_WORK + 1);
+        assert_eq!(
+            replay_v1(&control, &mut exhausted).err().unwrap().0,
+            "unsupported_execution_work_profile"
+        );
+        assert_eq!(exhausted.0, MAX_WORK + 1);
+
+        let control = upgraded(control);
+        let mut work = Work::default();
+        let report = v2::replay_with_work(&control, &mut work).unwrap();
+        assert_eq!(work.0, V2_WORK);
+        assert!(work.0 > V1_WORK);
+        let mut exact = Work(MAX_WORK - V2_WORK);
+        assert_eq!(
+            v2::replay_with_work(&control, &mut exact)
+                .unwrap()
+                .canonical()
+                .unwrap(),
+            report.canonical().unwrap()
+        );
+        assert_eq!(exact.0, MAX_WORK);
+        let mut exhausted = Work(MAX_WORK - V2_WORK + 1);
+        assert_eq!(
+            v2::replay_with_work(&control, &mut exhausted)
+                .unwrap_err()
+                .0,
+            "unsupported_execution_work_profile"
+        );
+        assert_eq!(exhausted.0, MAX_WORK + 1);
+    }
+
+    fn cancel(control: &mut Value, attempt: &str, cancellation: &str) {
+        append(
+            control,
+            "cancel",
+            object(vec![
+                ("attempt_id", string(attempt)),
+                ("reason", string("withdraw")),
+            ])
+            .unwrap(),
+            object(vec![
+                ("cancel_id", string(cancellation)),
+                ("attempt_id", string(attempt)),
+                ("reason", string("withdraw")),
+                ("cancelled_at", string("0001-01-01T00:00:00+00:00")),
+            ])
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn upgrade_report_is_closed_and_does_not_assess_backup_bytes() {
+        let control = upgraded(enabled());
+        let report = replay(&control).unwrap();
+        fields(&report, "status revision authorization dispatchable current_source durability assessment schema_version execution_authority_id snapshot_source_id generation extensions reserved_task_ids enrollments attempts receipts graph_id current_graph_revision graphs graph_managed_tasks").unwrap();
+        assert!(matches!(get(&report, "graph_id").unwrap(), Value::Null));
+        assert!(
+            get(&report, "revision")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .starts_with("execution-control-v2:")
+        );
+        assert_eq!(
+            get(&report, "receipts")
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .entries()
+                .len(),
+            2
+        );
+        for mode in [
+            string("4095"),
+            Value::Bool(true),
+            integer(4096).unwrap(),
+            parse("1.0"),
+            parse("-1"),
+        ] {
+            let mut bad = control.clone();
+            let mut metadata = get(&bad, "upgrade").unwrap().clone();
+            metadata.set_field("source_mode", mode).unwrap();
+            bad.set_field("upgrade", metadata).unwrap();
+            assert!(replay(&bad).is_err());
+        }
+        let mut bad = control.clone();
+        let mut entries = get(&bad, "history").unwrap().as_array().unwrap().to_vec();
+        entries[0]
+            .set_field("request_id", string("enable"))
+            .unwrap();
+        bad.set_field("history", Value::Array(entries)).unwrap();
+        assert_eq!(
+            replay(&bad).unwrap_err().0,
+            "duplicate_execution_request_id"
+        );
+        let mut oversized = control.clone();
+        oversized
+            .set_field(
+                "history",
+                Value::Array(vec![
+                    get(&control, "history").unwrap().as_array().unwrap()[0]
+                        .clone();
+                    MAX_HISTORY
+                ]),
+            )
+            .unwrap();
+        assert_eq!(
+            replay(&oversized).unwrap_err().0,
+            "unsupported_execution_history_profile"
+        );
+    }
+
+    #[test]
+    fn v2_standalone_preparation_uses_null_graph_binding_and_v2_domain() {
+        let mut legacy = enabled();
+        enroll(&mut legacy);
+        let previous = "11111111111111111111111111111111";
+        let cancelled = "dddddddddddddddddddddddddddddddd";
+        prepare(&mut legacy, previous, Value::Null, 1);
+        cancel(&mut legacy, previous, cancelled);
+        let generation = get(&legacy, "history").unwrap().as_array().unwrap().len() + 2;
+        let mut control = upgraded(legacy.clone());
+        let revision = get(&replay(&control).unwrap(), "revision").unwrap().clone();
+        prepare(
+            &mut legacy,
+            "ffffffffffffffffffffffffffffffff",
+            string(previous),
+            2,
+        );
+        let old_entry = get(&legacy, "history")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap();
+        let mut effect = get(old_entry, "effect").unwrap().clone();
+        let mut record = get(&effect, "prepared").unwrap().clone();
+        record
+            .set_field("schema_version", integer(2).unwrap())
+            .unwrap();
+        record.set_field("graph_binding", Value::Null).unwrap();
+        let mut payload = object(vec![
+            ("explicit_intent", get(&record, "intent").unwrap().clone()),
+            ("graph_binding", Value::Null),
+        ])
+        .unwrap();
+        for key in [
+            "execution_authority_id",
+            "enrollment_id",
+            "task_authority_identity",
+            "task_source_revision",
+            "complete_task_snapshot",
+        ] {
+            payload
+                .set_field(key, get(&record, key).unwrap().clone())
+                .unwrap();
+        }
+        record
+            .set_field(
+                "intent_digest",
+                string(
+                    Work::default()
+                        .digest(b"coven-task-attempt-intent-v2\0", &payload)
+                        .unwrap(),
+                ),
+            )
+            .unwrap();
+        effect.set_field("prepared", record.clone()).unwrap();
+        let mut b = get(old_entry, "binding").unwrap().clone();
+        b.set_field("schema_version", integer(2).unwrap()).unwrap();
+        b.set_field("expected_execution_revision", revision)
+            .unwrap();
+        let mut result = get(old_entry, "result").unwrap().clone();
+        result
+            .set_field("generation", integer(generation).unwrap())
+            .unwrap();
+        result.set_field("attempt", record.clone()).unwrap();
+        let entry = object(vec![
+            ("generation", integer(generation).unwrap()),
+            ("request_id", string("v2-prepare")),
+            ("binding", b),
+            ("effect", effect),
+            ("result", result),
+        ])
+        .unwrap();
+        let mut entries = get(&control, "history")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .to_vec();
+        entries.push(entry);
+        control
+            .set_field("history", Value::Array(entries.clone()))
+            .unwrap();
+        control
+            .set_field("generation", integer(generation).unwrap())
+            .unwrap();
+        let report = replay(&control).unwrap();
+        let attempt = string("ffffffffffffffffffffffffffffffff");
+        let transition = object(vec![
+            ("cancel_id", string(cancelled)),
+            ("attempt_id", attempt.clone()),
+            ("reason", string("withdraw")),
+            ("cancelled_at", string("0001-01-01T00:00:00+00:00")),
+        ])
+        .unwrap();
+        let duplicate = object(vec![
+            ("generation", integer(generation + 1).unwrap()),
+            ("request_id", string("v2-cancel")),
+            (
+                "binding",
+                object(vec![
+                    ("schema_version", integer(2).unwrap()),
+                    ("operation", string("cancel")),
+                    (
+                        "parameters",
+                        object(vec![
+                            ("attempt_id", attempt.clone()),
+                            ("reason", string("withdraw")),
+                        ])
+                        .unwrap(),
+                    ),
+                    (
+                        "expected_execution_revision",
+                        get(&report, "revision").unwrap().clone(),
+                    ),
+                    ("expected_tasks_revision", Value::Null),
+                ])
+                .unwrap(),
+            ),
+            ("effect", transition.clone()),
+            (
+                "result",
+                object(vec![
+                    ("operation", string("cancel")),
+                    ("generation", integer(generation + 1).unwrap()),
+                    (
+                        "execution_authority_id",
+                        get(&control, "execution_authority_id").unwrap().clone(),
+                    ),
+                    ("attempt_id", attempt),
+                    ("state", string("cancelled_before_submission")),
+                    ("transition", transition),
+                ])
+                .unwrap(),
+            ),
+        ])
+        .unwrap();
+        let mut bad = control.clone();
+        let mut duplicate_entries = entries.clone();
+        duplicate_entries.push(duplicate);
+        bad.set_field("history", Value::Array(duplicate_entries))
+            .unwrap();
+        bad.set_field("generation", integer(generation + 1).unwrap())
+            .unwrap();
+        assert_eq!(
+            replay(&bad).unwrap_err().0,
+            "duplicate_execution_cancellation_id"
+        );
+        assert_eq!(
+            get(
+                get(
+                    get(&report, "attempts").unwrap(),
+                    "ffffffffffffffffffffffffffffffff"
+                )
+                .unwrap(),
+                "prepared"
+            )
+            .unwrap()
+            .canonical()
+            .unwrap(),
+            record.canonical().unwrap()
+        );
+        record
+            .set_field("graph_binding", object(vec![]).unwrap())
+            .unwrap();
+        let mut effect = get(&entries[1], "effect").unwrap().clone();
+        effect.set_field("prepared", record).unwrap();
+        entries[1].set_field("effect", effect).unwrap();
+        control.set_field("history", Value::Array(entries)).unwrap();
+        assert_eq!(
+            replay(&control).unwrap_err().0,
+            "execution_prepared_effect_mismatch"
+        );
+        let mut active = enabled();
+        enroll(&mut active);
+        prepare(
+            &mut active,
+            "ffffffffffffffffffffffffffffffff",
+            Value::Null,
+            1,
+        );
+        assert_eq!(
+            replay(&upgraded(active)).unwrap_err().0,
+            "execution_upgrade_has_prepared_attempts"
+        );
     }
     fn enroll(control: &mut Value) {
         let s = source_fixture(control);

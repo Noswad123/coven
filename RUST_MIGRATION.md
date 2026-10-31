@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native handoff capture and read-only task/execution-v1 authority**, not a complete Rust replacement.
+Status: **native handoff capture and read-only task/execution-v1/v2 authority**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -60,7 +60,9 @@ src/
   records.rs         Extension-preserving validated workspace/task views
   tasks.rs           Preflight, captured task/state reports and authority fences
   ledger.rs          Complete bounded selected task-ledger replay/projection health
-  execution.rs       Historical execution-v1 replay, receipts and reservations
+  execution.rs       Historical execution replay state, v1 rules and report boundary
+  execution/v2.rs    Upgrade bridge, graph reviews and v2 preparation replay
+  execution/graphs.rs Pure bounded graph validation, refreezing and source matching
   storage.rs         Shared workspace guard and immutable evidence publication
   output.rs          Bounded safely escaped CLI presentation
   platform/          Compile-gated OS open flags and unsupported-platform refusal
@@ -240,7 +242,7 @@ mtime. No timestamp/index/secondary log or authority transaction is added. Conte
 must still be current on recollection; this is not frozen task-ledger command
 receipt replay or permission to repeat an uncertain native task.
 
-## Historical execution-control v1 reader
+## Historical execution-control v1/v2 reader
 
 `execution history WORKSPACE --json` is a new native preview report, not a port of
 Python's current-source execution inspection or mutation delivery envelope. It
@@ -264,7 +266,7 @@ Reports retain enrollments, attempts, receipts and extensions. Cancellation chan
 derived attempt state but never rewrites the earlier preparation receipt's
 `state: prepared`. Sorted `reserved_task_ids` lists only still-prepared tasks;
 enrollment, staleness or unrelated current-file changes cannot grant or release a
-reservation. Status active means valid v1 historical authority, not active execution.
+reservation. Status active means valid v1/v2 historical authority, not active execution.
 Both active/disabled reports say authorization none, dispatchable false,
 assessment historical_authority_only and current_source/durability not_assessed.
 
@@ -275,14 +277,57 @@ mutation guard: writers still need receipt-before-mutable-state ordering, matchi
 lock ownership and durable authority confirmation. No enable/enroll/prepare/cancel,
 upgrade, graph approval, task mutation or runtime admission command is enabled.
 Task and handoff readers/collectors retain their existing independence from this
-execution history path. Execution v2 explicitly returns unsupported_execution_v2;
-its legacy prefix cannot stand in for graph-era reservations or approval history.
+execution history path. Unsupported or malformed schemas refuse rather than
+returning partial legacy state or an empty reservation report.
+
+### Complete v2 historical graph/review replay
+
+V2 validates its complete embedded v1 authority before any graph-era history:
+no active legacy preparations, unchanged identities/extensions, exact upgrade
+metadata and first/unique upgrade request. Raw source SHA is shape-validated, not
+reconstructed from canonical values; the exact backup path and mode are retained
+data only. Missing, corrupt, unsafe or FIFO backups are never opened. Original
+legacy bindings, record schemas, receipts, cancellations and attempt order carry
+forward directly as validated state, not by reparsing a legacy report.
+
+All v2 requests bind the exact prior revision, starting at the validated legacy
+revision. Prefixes include the embedded authority, upgrade and final extensions.
+Every v2 prefix, not only the final state, must retain 512 KiB per prepared attempt
+and 512 KiB for an approved current graph head within Python's 16 MiB limit.
+Embedded v1 keeps its original final-only reserve policy.
+
+Pure graph helpers enforce closed schemas, 1..64 unique nodes, at most 256 edges,
+no duplicate/dangling/self/cyclic dependencies, inclusive 1 MiB canonical document
+and manifest limits, and exact task/node/manifest digest domains. Persisted node
+and dependency order stays intact; lexical topology is validation, not a rewrite.
+Proposal replay re-freezes the document against the retained **full** source and
+replayed enrollment bindings, including current retained task extensions rather
+than an enrollment's older snapshot. A self-consistent manifest alone is not enough.
+
+Historical approval and graph preparation match all selected nodes against their
+entry's retained source. Unrelated full-source revision drift may still be current;
+selected snapshot, authority, enrollment or roster drift cannot. Graph family/head,
+successor, globally unique decision IDs and latest decision binding are checked.
+Managed task IDs remain sticky across removed/superseded nodes, so standalone
+preparation cannot bypass graph rules. Dependencies do not gate preparation.
+Revocation never cancels preparations; cancellation never revokes review.
+V2 intent hashes include graph_binding, including explicit null for standalone
+unmanaged preparations; legacy v1 records are not given new fields or digests.
+
+Schema2 reports add graph_id, current_graph_revision, graphs and sorted
+graph_managed_tasks to the existing historical envelope. Graph review states and
+source_match inside frozen receipts are historical facts only: no fresh approval,
+preparation eligibility, current-source match, durable writer guard or execution
+admission is inferred. No graph mutation or upgrade command is enabled.
 
 Native profile: 8 MiB raw input, the shared finite value/output bounds, at most
-1024 entries, and conservative prefix preflight `(canonical_length + 32) * entries
-<= 256 MiB` before prefix cloning/encoding. All reducer canonical comparisons and
-hash encodings also charge a 256 MiB aggregate accepted-work budget. A refusal may
-perform one further encoding capped at 32 MiB before charging; this is neither a
+1024 total entries across legacy plus v2, and conservative prefix preflight
+`(whole_control_canonical_length + 32) * total_entries <= 256 MiB` before either
+version clones/encodes history prefixes. Standalone v1 keeps its existing profile.
+All reducer canonical comparisons and hash encodings, including graph helpers and
+embedded legacy replay, charge one shared 256 MiB aggregate accepted-work budget.
+A refusal may perform one further encoding capped at 32 MiB before charging;
+this is neither a
 strict CPU/memory ceiling nor a linear replay algorithm. Final compact and escaped
 ASCII reports each have their own 32 MiB bound and finish before stdout is written.
 
@@ -306,7 +351,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 60 tests, including a build/CLI-name regression test and an
+The native suite has 72 tests, including a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -354,18 +399,41 @@ changes before locked capture, wrong guard, integrity/unsafe-path refusal and
 exact/over byte reservations. CLI uncertainty maps to exit2. Fault injection is
 internal to tests, never activated by production environment variables.
 
-Execution adds **120 oracle cases**: 35 accepted reports, 70 corruption/path/capacity
-refusals and 15 Python-valid native-profile refusals. Real Python histories cover
+The original execution corpus has **120 oracle cases**: 36 accepted reports,
+70 corruption/path/capacity refusals and 14 Python-valid native-profile refusals
+(the previously refused valid v2 history is now accepted). Real Python histories cover
 snapshot/ledger source rebind, cancellation/reprepare, multiple reservations and
 frozen preparation receipts after cancellation. Re-signed downstream prefixes
 isolate semantic corruption from hash failure. Tests retain numeric/Unicode values,
 move identities, ignore malformed/missing/FIFO current files, reject unsafe managed
-paths and valid v2 reservations, and establish success without Python on PATH.
+paths, retain v2 reservations, and establish success without Python on PATH.
 They snapshot namespace/bytes/modes/inodes/mtimes on success and refusal. Native
 unit tests cover exact work/history/capacity limits and timestamp calendar bounds;
 a valid small control with DEL text exercises final ASCII expansion refusal with
 empty stdout and no writes. Source inspection, rather than syscall tracing, also
 establishes the absence of network/runtime/fsync operations in this isolated path.
+
+The v2 corpus adds **175 cases**: 56 accepted reports, 117 semantic/schema/path
+refusals and 2 Python-valid native-profile refusals. It covers actual backed-up
+Python upgrades, mixed-era receipts/attempts, standalone/null graph bindings,
+snapshot/ledger proposals, repeated reviews, downstream-first graph preparation,
+revocation/cancellation independence, successors and sticky membership, unrelated
+source drift, full-source refreezing, and invalid early reserve prefixes followed
+by valid final states. Semantic corruptions re-sign all downstream prefixes;
+representative uniqueness/head/managed-task/reserve fixtures repair corresponding
+receipts and pin both oracle diagnostics and native error codes. Backups/current
+files and lock paths may be absent, malformed, unsafe, FIFO or held without becoming
+reader dependencies. Success/refusal snapshots retain bytes, namespace, modes,
+inodes and mtimes; success without Python on PATH remains covered.
+
+Focused graph units exercise exact node/edge/size limits, lexical topology without
+array normalization, digest vectors, stale enrollment snapshot refreezing and
+source-match reason ordering. Extraction units carry actual cancellation identities,
+immutable receipts and predecessor state. Fixed work totals (54,929 v1 bytes and
+81,919 through v2 upgrade for one fixture) pin the shared meter, with exact
+precharged MAX_WORK success/one-over refusal; deliberately resetting the embedded
+meter was verified to fail the regression. CLI work-profile fixtures separately
+cover conservative combined preflight, not this private shared-meter invariant.
 
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Native fault
@@ -382,15 +450,15 @@ injection and mixed Python/Rust contention will be required for writers.
 | Workspace init/refresh and task mutations | Python only | Storage/authority guards and mixed-writer fault tests |
 | Task-ledger authority read/replay and projection diagnostics | Native bounded read-only preview | Close supported-profile limits before full parity |
 | Task-ledger mutations/import/recovery | Python only | Receipt lookup/order, publication/uncertainty and fault tests |
-| Execution v1 historical replay/receipts/reservation observation | Native bounded read-only preview | Close profile limits; add durable writer guard and receipt lookup ordering |
-| Execution v2, graph/preparation guards | Python only | Full v2 graph/review/reservation compatibility before mutation, not dispatch |
+| Execution v1/v2 historical replay, graph reviews, receipts/reservation observation | Native bounded read-only preview | Close profile limits; durable writer guard and receipt lookup ordering still required |
+| Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
 | Checkpoints/actions/repository authority | Python only | Existing scoped approval/publication/uncertainty contracts |
 | Observers, groups, watch/publication | Python only | Private endpoint/artifact differential tests, expiry/no stale fallback |
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive stage is execution-v2/approval authority readers and guarded
-publication/recovery primitives. Historical receipt reports are not yet a mutation
+The next substantive stage is runtime-launch/checkpoint approval authority readers
+and guarded publication/recovery primitives. Historical receipt reports are not yet a mutation
 retry API. Writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old

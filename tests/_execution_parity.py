@@ -56,15 +56,19 @@ def snapshot(root):
 def report(view):
     if view is None:
         return {"status": "disabled", "revision": execution.DISABLED, **FIXED}
-    assert getattr(view, "schema_version", 1) == 1
-    return {"status": "active", "schema_version": 1,
+    schema = getattr(view, "schema_version", 1)
+    graph = ({"graph_id": view.graph_id,
+              "current_graph_revision": view.current_graph_revision,
+              "graphs": view.graphs,
+              "graph_managed_tasks": sorted(view.managed_tasks)} if schema == 2 else {})
+    return {"status": "active", "schema_version": schema,
             "execution_authority_id": view.authority_id,
             "snapshot_source_id": view.snapshot_source_id,
             "generation": view.generation, "revision": view.revision,
             "enrollments": view.enrollments, "attempts": view.attempts,
             "receipts": view.receipts, "extensions": view.extensions,
             "reserved_task_ids": sorted({a["prepared"]["task_id"]
-                for a in view.attempts.values() if a["state"] == "prepared"}), **FIXED}
+                for a in view.attempts.values() if a["state"] == "prepared"}), **graph, **FIXED}
 
 
 def resign(control, start=1):
@@ -363,15 +367,15 @@ def main(binary, oracle_only=False):
             check(target, accepted=False)
             assert (snapshot(evidence) if evidence.is_dir() else evidence.read_bytes()) == before
 
-        # Real Python v2 upgrade plus a live reservation: never report an empty
-        # v1 map merely because the v2 reducer is not implemented natively.
+        # Real Python v2 upgrade plus a live reservation retains all v1 state
+        # and adds the exact graph projection, even when no graph exists yet.
         upgraded = clone(cancelled_fixture, "valid-v2")
         store = execution.Store(upgraded)
         with storage.workspace_lock(upgraded, upgraded / "state/.workspace.lock") as lock:
             execution_v2.upgrade(store, store.read().revision, "upgrade", lock)
         mutate(upgraded, "prepare", {"task_id": "zeta", "intent": intent()}, "prepare-v2")
         assert any(a["state"] == "prepared" for a in store.read().attempts.values())
-        check(upgraded, accepted=False, unsupported=True)
+        check(upgraded)
 
         # Supported timestamp variants must also update the immutable result.
         for index, timestamp in enumerate(("2026-01-02T03:04:05Z", "2026-01-02 03:04:05+02:30",
@@ -532,7 +536,7 @@ def main(binary, oracle_only=False):
     print(json.dumps({**counts, "total": sum(counts.values()), "oracle_only": oracle_only,
         "native_writes_enabled": False,
         "native_profile": {"control_bytes": 8*1024*1024, "history_entries": 1024,
-            "canonical_prefix_bytes": 256*1024*1024, "schema_versions": [1],
+            "canonical_prefix_bytes": 256*1024*1024, "schema_versions": [1, 2],
             "timestamps": "YYYY-MM-DD[T or space]HH:MM:SS[.1..6](Z|+/-HH:MM)"}}))
 
 

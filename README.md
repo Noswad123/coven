@@ -62,10 +62,11 @@ The Rust replacement builds a single binary named `coven`, currently exercised
 through `cargo run --offline --locked --bin coven -- ...` or `target/debug/coven`
 rather than installation or PATH changes. It implements handoff validation/capture/history,
 bounded snapshot/ledger `task list --json`, read-only `state inspect --json`, and
-`execution history --json` for retained v1 preparation authority. The execution
+`execution history --json` for retained v1/v2 preparation authority. The execution
 reader reports historical reservations and frozen receipts, not current-source
-validity, durable mutation permission or execution authorization; v2 explicitly
-refuses. It also has typed
+validity, durable mutation permission or execution authorization. V2 also replays
+graph proposals/reviews and graph-bound preparations without granting fresh
+approval or running graph operations. It also has typed
 finite task values and a mixed-language-tested library workspace lock primitive.
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
