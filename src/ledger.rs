@@ -1,9 +1,10 @@
-//! Bounded ledger replay, frozen receipts, selected confirmation and explicit
-//! SDK baseline activation/recovery. No task mutation, projection repair or
-//! delivery pipeline is enabled. Invalid authority never becomes snapshot.
+//! Bounded ledger replay, frozen receipts, selected confirmation, baseline
+//! activation/recovery and guarded task-frame publication. Command delivery lives
+//! in the task service; invalid selected authority never becomes a snapshot.
 mod activation;
 mod confirmation;
 mod publication;
+mod writer;
 use crate::{
     Error, Result, canonical,
     error::require,
@@ -22,6 +23,9 @@ use std::{
     fs,
     io::Read,
     path::Path,
+};
+pub(crate) use writer::{
+    LedgerCommit, commit_task, event_fields, projection_status, publish_projection,
 };
 
 pub const MARKER: &str = "state/task-authority.json";
@@ -302,7 +306,7 @@ fn entries(root: &Path, relative: &str, directories: &[&str]) -> Result<Vec<Stri
     Ok(names)
 }
 
-fn alias(value: &str) -> String {
+pub(crate) fn alias(value: &str) -> String {
     let mut output = String::new();
     let mut invalid = false;
     for character in records::trimmed(value).to_lowercase().chars() {
@@ -372,6 +376,7 @@ pub struct View {
     marker_raw: Vec<u8>,
     receipts: HashMap<String, Receipt>,
     receipt_bytes: usize,
+    history_bytes: usize,
 }
 impl View {
     /// Looks only in fully validated captured history, never in current state or files.
@@ -824,12 +829,14 @@ fn validate_epoch(root: &Path, marker_raw: Vec<u8>) -> Result<CandidateEpoch> {
         marker_raw,
         receipts: HashMap::new(),
         receipt_bytes: 0,
+        history_bytes: total,
     };
     for name in frames.iter().skip(1) {
         let raw = bytes(root, &format!("{base}/frames/{name}"))?;
         total = history_bytes(total, raw.len())?;
         view.apply(payload(&raw)?, canonical::digest(&raw))?;
     }
+    view.history_bytes = total;
     Ok(CandidateEpoch { view, manifest })
 }
 
@@ -850,6 +857,7 @@ mod tests {
             marker_raw: Vec::new(),
             receipts: HashMap::new(),
             receipt_bytes: 0,
+            history_bytes: 0,
         }
     }
     fn json(raw: &str) -> Value {
@@ -1275,6 +1283,7 @@ mod tests {
             marker_raw: b"original marker".to_vec(),
             receipts: HashMap::new(),
             receipt_bytes: 0,
+            history_bytes: 0,
         };
         view.fence(root.path()).unwrap();
         fs::write(&marker, b"different marker").unwrap();

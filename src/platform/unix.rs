@@ -46,6 +46,17 @@ pub(crate) fn open_readonly(path: &Path) -> Result<File> {
         .open(path)?)
 }
 
+pub(crate) fn open_append(path: &Path) -> Result<File> {
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    crate::error::require(file.metadata()?.is_file(), "unsafe_event_log_type")?;
+    Ok(file)
+}
+
 pub(crate) fn replacement_mode(path: &Path) -> std::io::Result<Option<u32>> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_file() => Ok(Some(metadata.mode() & 0o7777)),
@@ -185,5 +196,49 @@ mod tests {
             super::uuid_hex_from_reader(Failing).unwrap_err().code(),
             "input_or_storage_unavailable"
         );
+    }
+
+    #[test]
+    fn event_append_descriptors_are_private_append_nonblocking_regular_files() {
+        use std::io::Write;
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("event.jsonl");
+        let mut file = super::open_append(&path).unwrap();
+        let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_ne!(flags & libc::O_APPEND, 0);
+        assert_ne!(flags & libc::O_NONBLOCK, 0);
+        let fd_flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFD) };
+        assert_ne!(fd_flags & libc::FD_CLOEXEC, 0);
+        assert_eq!(
+            file.metadata().unwrap().permissions().mode() & !0o600 & 0o7777,
+            0
+        );
+        file.write_all(b"first\n").unwrap();
+        drop(file);
+        super::open_append(&path)
+            .unwrap()
+            .write_all(b"second\n")
+            .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"first\nsecond\n");
+        let link = root.path().join("link");
+        symlink(&path, &link).unwrap();
+        assert!(super::open_append(&link).is_err());
+        let fifo = root.path().join("fifo");
+        let c_path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        assert!(super::open_append(&fifo).is_err()); // no reader, must not block
+        let _reader = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&fifo)
+            .unwrap();
+        assert_eq!(
+            super::open_append(&fifo).unwrap_err().code(),
+            "unsafe_event_log_type"
+        );
+        assert!(super::open_append(std::path::Path::new("/dev/null")).is_err());
     }
 }

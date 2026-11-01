@@ -1,7 +1,10 @@
 use clap::builder::TypedValueParser;
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use coven::{
-    Result, actions, archive, checkpoint_workspace, collection, execution, storage::Delivery, tasks,
+    Result, actions, archive, checkpoint_workspace, collection, execution,
+    storage::Delivery,
+    task_mutation::{self, TaskOutput},
+    tasks,
 };
 use std::io::Write;
 use std::path::PathBuf;
@@ -10,7 +13,7 @@ use std::path::PathBuf;
 #[command(
     name = "coven",
     version,
-    about = "Native migration preview: evidence capture and historical authority readers; Python coven remains the default"
+    about = "Native migration preview: local task commands, evidence capture and authority readers; Python coven remains the default"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -93,6 +96,32 @@ enum State {
 
 #[derive(Subcommand)]
 enum Task {
+    #[command(infer_long_args = true)]
+    Add {
+        #[arg(value_name = "WORKSPACE_OR_TITLE", required = true, num_args = 1.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 1, allow_negative_numbers = true)]
+        owner: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 1, allow_negative_numbers = true)]
+        notes: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 1, allow_negative_numbers = true)]
+        expect_revision: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 1, allow_negative_numbers = true)]
+        request_id: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
+    #[command(infer_long_args = true)]
+    Assign {
+        #[arg(value_name = "WORKSPACE_OR_SELECTOR", required = true, num_args = 1.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 1, allow_negative_numbers = true)]
+        expect_revision: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 1, allow_negative_numbers = true)]
+        request_id: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
     List {
         #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         workspace: PathBuf,
@@ -134,8 +163,44 @@ enum Handoff {
     },
 }
 
-fn run(cli: Cli) -> Result<(String, u8)> {
+fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Task {
+            command:
+                Task::Add {
+                    items,
+                    owner,
+                    notes,
+                    expect_revision,
+                    request_id,
+                    json,
+                },
+        } => {
+            let result = task_mutation::add_arguments(
+                &items,
+                owner.last().map(String::as_str),
+                notes.last().map(String::as_str).unwrap_or(""),
+                expect_revision.last().map(String::as_str),
+                request_id.last().map(String::as_str),
+            )?;
+            return task_mutation::render_result(&result, !json.is_empty(), "add");
+        }
+        Command::Task {
+            command:
+                Task::Assign {
+                    items,
+                    expect_revision,
+                    request_id,
+                    json,
+                },
+        } => {
+            let result = task_mutation::assign_arguments(
+                &items,
+                expect_revision.last().map(String::as_str),
+                request_id.last().map(String::as_str),
+            )?;
+            return task_mutation::render_result(&result, !json.is_empty(), "assign");
+        }
         Command::Checkpoint {
             command: Checkpoint::Inspect { items, json: _ },
         } => checkpoint_workspace::inspect_json_arguments(&items),
@@ -166,7 +231,11 @@ fn run(cli: Cli) -> Result<(String, u8)> {
             let report =
                 collection::collect(&workspace, &file, &expect_sha256, &expect_tasks_revision)?;
             let code = collection_exit(report.delivery());
-            return Ok((archive::output(&report, json)?, code));
+            return Ok(TaskOutput {
+                stdout: archive::output(&report, json)?,
+                warnings: Vec::new(),
+                exit_code: code,
+            });
         }
         Command::State {
             command: State::Inspect { workspace, json: _ },
@@ -194,7 +263,11 @@ fn run(cli: Cli) -> Result<(String, u8)> {
                 },
         } => archive::output(&archive::list(&workspace, task.as_deref())?, json),
     };
-    Ok((report?, 0))
+    Ok(TaskOutput {
+        stdout: report?,
+        warnings: Vec::new(),
+        exit_code: 0,
+    })
 }
 
 fn action_arguments(first: PathBuf, action_id: Option<String>) -> Result<(PathBuf, String)> {
@@ -210,16 +283,21 @@ fn action_arguments(first: PathBuf, action_id: Option<String>) -> Result<(PathBu
 fn main() -> std::process::ExitCode {
     let arguments: Vec<_> = std::env::args_os().collect();
     let has_terminator = arguments.iter().any(|argument| argument == "--");
-    let matches = Cli::command().get_matches_from(arguments);
+    let matches = Cli::command().get_matches_from(&arguments);
     validate_checkpoint_option_order(&matches, has_terminator).unwrap_or_else(|error| error.exit());
+    validate_task_option_order(&matches, &arguments).unwrap_or_else(|error| error.exit());
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     match run(cli) {
-        Ok((report, code)) => {
-            if writeln!(std::io::stdout().lock(), "{report}").is_ok() {
-                std::process::ExitCode::from(code)
-            } else {
-                std::process::ExitCode::FAILURE
+        Ok(output) => {
+            if writeln!(std::io::stdout().lock(), "{}", output.stdout).is_err() {
+                return std::process::ExitCode::FAILURE;
             }
+            for warning in output.warnings {
+                if writeln!(std::io::stderr().lock(), "{warning}").is_err() {
+                    return std::process::ExitCode::FAILURE;
+                }
+            }
+            std::process::ExitCode::from(output.exit_code)
         }
         Err(error) => {
             let _ = writeln!(std::io::stderr().lock(), "[ERROR] {error}");
@@ -254,6 +332,66 @@ fn validate_checkpoint_option_order(
         }
     }
     Ok(())
+}
+
+fn validate_task_option_order(
+    matches: &clap::ArgMatches,
+    arguments: &[std::ffi::OsString],
+) -> std::result::Result<(), clap::Error> {
+    let Some(task) = matches.subcommand_matches("task") else {
+        return Ok(());
+    };
+    let (command, flags): (&clap::ArgMatches, &[&str]) =
+        if let Some(add) = task.subcommand_matches("add") {
+            (
+                add,
+                &["owner", "notes", "expect_revision", "request_id", "json"],
+            )
+        } else if let Some(assign) = task.subcommand_matches("assign") {
+            (assign, &["expect_revision", "request_id", "json"])
+        } else {
+            return Ok(());
+        };
+    let Some(items) = command.indices_of("items") else {
+        return Ok(());
+    };
+    let items: Vec<_> = items.collect();
+    let (Some(first), Some(last)) = (items.first(), items.last()) else {
+        return Ok(());
+    };
+    let has_terminator = arguments.iter().any(|argument| argument == "--");
+    let interrupted = flags.iter().any(|flag| {
+        command.indices_of(flag).is_some_and(|indices| {
+            indices
+                .into_iter()
+                .any(|index| index > *first && (index < *last || has_terminator))
+        })
+    });
+    // The supported Python oracle accepts negative digit prefixes, including
+    // exponent and trailing-dot forms, but does not treat -inf/-nan as operands.
+    let non_operand_number = arguments
+        .iter()
+        .skip(3)
+        .take_while(|arg| *arg != "--")
+        .any(|arg| {
+            arg.to_str().is_some_and(|value| {
+                if !value.starts_with('-')
+                    || value.starts_with("--")
+                    || value.parse::<f64>().is_err()
+                {
+                    return false;
+                }
+                let tail = &value[1..];
+                let tail = tail.strip_prefix('.').unwrap_or(tail);
+                !tail.as_bytes().first().is_some_and(u8::is_ascii_digit)
+            })
+        });
+    if interrupted || non_operand_number {
+        Err(Cli::command().error(clap::error::ErrorKind::UnknownArgument,
+            "task options must precede or follow the operand group; use -- for option-like literals"))
+    } else {
+        Ok(())
+    }
 }
 
 fn collection_exit(delivery: Delivery) -> u8 {
@@ -335,5 +473,58 @@ mod tests {
                 clap::error::ErrorKind::UnknownArgument
             );
         }
+    }
+
+    #[test]
+    fn task_parser_retains_repeated_options_and_checks_original_grouping() {
+        for operands in [
+            vec![
+                "workspace",
+                "title",
+                "--owner",
+                "missing",
+                "--owner",
+                "worker",
+                "--json",
+                "--json",
+            ],
+            vec!["--json", "workspace", "-1e3"],
+            vec!["workspace", "-1.", "--json"],
+            vec!["workspace", "title", "--notes=-inf", "--json"],
+            vec!["--json", "--", "workspace", "-inf"],
+        ] {
+            let argv: Vec<std::ffi::OsString> = [vec!["coven", "task", "add"], operands]
+                .concat()
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            let matches = Cli::command().try_get_matches_from(&argv).unwrap();
+            validate_task_option_order(&matches, &argv).unwrap();
+        }
+        for operands in [
+            vec![
+                "workspace",
+                "--owner",
+                "worker",
+                "title",
+                "--owner",
+                "other",
+                "--json",
+            ],
+            vec!["workspace", "title", "--json", "extra", "--json"],
+            vec!["workspace", "-inf", "--json"],
+            vec!["workspace", "-nan", "--json"],
+        ] {
+            let argv: Vec<std::ffi::OsString> = [vec!["coven", "task", "add"], operands]
+                .concat()
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            if let Ok(matches) = Cli::command().try_get_matches_from(&argv) {
+                assert!(validate_task_option_order(&matches, &argv).is_err());
+            }
+        }
+        assert!(Cli::try_parse_from(["coven", "task", "add"]).is_err());
+        assert!(Cli::try_parse_from(["coven", "task", "assign"]).is_err());
     }
 }

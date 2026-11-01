@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native evidence capture, authority readers and SDK baseline activation/recovery**, not a complete Rust replacement.
+Status: **native task add/assign, evidence capture, authority readers and SDK baseline activation/recovery**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -28,6 +28,8 @@ cargo run --offline --locked --bin coven -- handoff collect WORKSPACE --file FIL
 cargo run --offline --locked --bin coven -- handoff inspect WORKSPACE COLLECTION_ID --json
 cargo run --offline --locked --bin coven -- handoff list WORKSPACE --task TASK_ID --json
 cargo run --offline --locked --bin coven -- task list WORKSPACE --json
+cargo run --offline --locked --bin coven -- task add WORKSPACE "Task title" --owner AGENT --json
+cargo run --offline --locked --bin coven -- task assign WORKSPACE TASK_ID AGENT --json
 cargo run --offline --locked --bin coven -- state inspect WORKSPACE --json
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
@@ -37,7 +39,7 @@ cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPO
 The compiled `target/debug/coven` can also be invoked directly, including with
 Python absent from PATH. Its production code has no Python, subprocess, runtime
 or network dependency. Python is needed only for migration-oracle tests and the
-existing default CLI. Unsupported commands, including task mutation/import/recovery, reject
+existing default CLI. Unsupported commands, including other task mutations and import/recovery CLI routes, reject
 at argument parsing before effects; there is **no automatic Python fallback**.
 
 Handoff commands preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
@@ -61,21 +63,28 @@ src/
   values/            Finite compatibility values, duplicate profiles and encoders
   records.rs         Extension-preserving validated workspace/task views
   tasks.rs           Preflight, captured task/state reports and authority fences
+  task_mutation.rs   End-to-end snapshot/ledger add/assign, receipt and delivery policy
+  task_admission.rs  Prepublication response/list capacity and bounded warning codes
+  task_delivery.rs   Guarded JSONL append and dashboard capture/format/publication
+  task_delivery/unicode.rs Frozen Unicode 16 printability for dashboard labels
+  task_time.rs       UTC ISO metadata and hyphenated command/event UUIDs
+  workspace.rs       Neutral ordered workspace loading and optional-root selection
   ledger.rs          Complete bounded selected task-ledger replay/projection health
   ledger/confirmation.rs Explicit locked selected-history synchronization
   ledger/activation.rs SDK baseline planning, marker-last activation, resume/archive
   ledger/publication.rs Private typed no-overwrite artifact publication
+  ledger/writer.rs   Guarded task-frame commit and fresh selected projection publication
   execution.rs       Historical execution replay state, v1 rules and report boundary
   execution/v2.rs    Upgrade bridge, graph reviews and v2 preparation replay
   execution/graphs.rs Pure bounded graph validation, refreezing and source matching
-  execution/guards.rs SDK-only confirmed reservation checks under a borrowed guard
+  execution/guards.rs Confirmed reservation checks under a borrowed writer guard
   actions.rs         Captured launch-control/bundle/checkpoint inspection
   actions/authority.rs Pure all-claim validation, reference lookup and work budget
   actions/plans.rs   Pure deterministic tmux/Herdr frozen-plan validation
   checkpoints.rs     Pure byte-oriented checkpoint views and framed scope hashes
   checkpoint_workspace.rs Ordered standalone workspace selection and checkpoint preflight
   storage.rs         Shared workspace guard and immutable evidence publication
-  storage/replacement.rs Guarded atomic mutable-file replacement, no domain callers
+  storage/replacement.rs Guarded atomic mutable-file replacement
   output.rs          Bounded safely escaped CLI presentation
   platform/          Compile-gated OS open flags and unsupported-platform refusal
 ```
@@ -109,7 +118,7 @@ round trip, distinguishes floats (including signed zero), and preserves insertio
 order. Its legacy snapshot profile is last-wins without moving an existing key;
 its authority profile rejects duplicates. Canonical encoding sorts keys/compact/
 no LF; storage encoding preserves order with indent=2 and a terminal LF. The
-general codec is used by bounded read-only authority validation, not authority writers. Never
+general codec is used by bounded authority validation and admitted task/baseline writers. Never
 silently adopt Serde/JCS encoding under existing v1 digest domains.
 
 Frozen launch plans use an additional private sorted/spaced mode equivalent to
@@ -197,8 +206,8 @@ UTF-8 native profile. Native retains raw bytes for digests/projection but still
 requires supported parsing and source/frame comparison; unsupported input is not
 rewritten, accepted via hashes alone or replaced by a projection. The read view now
 retains validated historical receipts for the pure library lookup below. Mutation
-retry coordination and delivery must still be ported before writers, not inferred
-from lookup, inspection or the explicit synchronization API below.
+retry coordination and delivery are supplied by the task workflow below, not
+inferred from lookup, inspection or the explicit synchronization API alone.
 
 ### Frozen task-ledger receipts (library only)
 
@@ -232,8 +241,8 @@ Missing authority/pending import and a missing key inside a valid active view ar
 different conditions. `None` from lookup means only absence from that captured
 history—not current receipt absence, permission to execute, fresh CAS success or
 durability acknowledgement. A private test-only route proves hit/conflict handling
-precedes a fresh-request continuation, not that a writer or durable retry pipeline
-has been implemented. Future task-command preflight remains a separate contract.
+precedes a fresh-request continuation; that seam alone is not a writer or durable
+retry pipeline. Native task-command coordination remains a separate contract.
 
 A separate 256 MiB retained-canonical-data limit counts UTF-8 key bytes plus
 canonical binding and frozen-result bytes with checked accumulation. Raw history
@@ -264,13 +273,14 @@ uses the same kernel flock/inode as Python, never steals/unlinks/replaces it, an
 releases on normal exit or process death. The destructor avoids explicitly
 unlocking a parent's inherited open-file description after fork. Task and handoff
 reads do **not** acquire this token. Acquiring it never activates authority or
-dispatches work. Only explicit SDK activation/recovery calls below may publish a
-baseline or archive pending state; no task mutation or recovery CLI is enabled.
+dispatches work. Explicit baseline SDK calls may publish/archive import state;
+task add/assign use it only inside the separate pipelines below. No recovery CLI
+or automatic dispatch is enabled.
 
 ### Guarded mutable replacement (library only)
 
-`storage::atomic_replace_bytes(guard, relative, bytes)` is a low-level foundation,
-with no production CLI/domain-writer callers. The matching root/PID/thread guard
+`storage::atomic_replace_bytes(guard, relative, bytes)` is a low-level transport,
+now used by task snapshots, ledger projections and dashboard publication. The matching root/PID/thread guard
 proves coordination only—not CAS, approval, receipt absence, execution permission
 or whole-ledger confirmation. Parent directories must already exist and managed
 paths must remain safe. Both `.workspace.lock` and `.runtime-transport.lock`
@@ -364,8 +374,8 @@ WorkspaceGuard currently requires a regular coven.json marker, unlike Python's
 low-level stores; it does not parse configuration. This inherited acquisition
 restriction remains explicit, while marker-free historical readers stay unchanged.
 These confirmation APIs themselves publish nothing or select a new authority.
-The SDK baseline protocol below calls the reservation guard explicitly; no CLI,
-task writer, provider/runtime request or receipt-delivery pipeline is enabled.
+The SDK baseline and native task protocols call them explicitly; no provider/runtime
+request is implied by a reservation check or confirmed historical receipt.
 Static cooperating filesystem
 assumptions remain; no hostile namespace sandbox or universal crash durability is
 claimed.
@@ -534,8 +544,9 @@ Reads do not create/acquire a lock, fsync, publish, repair, archive or load curr
 sources. The observed revision is not a latest/linearizable, authenticated or
 durability-confirmed view. Historical reservation observation is **not** a reusable
 mutation guard: writers still need receipt-before-mutable-state ordering, matching
-lock ownership and durable authority confirmation. No enable/enroll/prepare/cancel,
-upgrade, graph approval, task mutation or runtime admission command is enabled.
+lock ownership and durable authority confirmation. No execution enable/enroll/prepare/cancel,
+upgrade, graph approval or runtime admission command is enabled. Native task writes
+call the separate confirmed guards rather than treating history as permission.
 Task and handoff readers/collectors retain their existing independence from this
 execution history path. Unsupported or malformed schemas refuse rather than
 returning partial legacy state or an empty reservation report.
@@ -738,6 +749,138 @@ the bounded sorted scan. Compact and escaped presentation each finish within
 ceiling. No locks, fsync, publication, repair, approval, task/control mutation,
 transport, runtime/provider call or Python fallback is added.
 
+## Native task add/assign workflow
+
+The native binary now supports a complete task loop in existing workspaces:
+
+```sh
+target/debug/coven task add WORKSPACE "Review parser" --owner operator --notes "Check edge cases" --json
+target/debug/coven task list WORKSPACE --json
+target/debug/coven task assign WORKSPACE TASK_ID other-agent --json
+target/debug/coven task list WORKSPACE --json
+```
+
+Use the returned task ID (slug collisions append `-2`, `-3`, etc.) and declared
+roster IDs, not display labels. No native init is required for an already-created
+workspace, but native init itself is still unported. Human add/assign output is
+the default; `--json` selects the established structured envelope. Marker-based
+optional workspace selection, title-word joining, assignment's ignored extra
+operands, last-wins repeated flags and long-option prefixes follow the characterized
+Python CLI. Parser behavior is checked against Python 3.14.8, not every Python
+release; use `--` for option-like literal operands. Human output escapes controls
+and non-ASCII with JSON-style spellings; machine values and persisted bytes retain
+their exact text. JSON carries warnings in its envelope; human warnings use stderr.
+
+`--expect-revision` is optional CAS against the whole current task authority token
+from `task list --json`. Snapshot CAS hashes exact source bytes, including whitespace;
+ledger CAS uses the ledger revision rather than its independent head-frame digest.
+Snapshot workspaces reject `--request-id` because they have no durable request
+deduplication. Existing imported ledgers require it on every add/assign:
+
+```sh
+target/debug/coven task add WORKSPACE "Review parser" --owner operator --request-id review-parser-1 --json
+```
+
+Retries must reuse the original raw title/notes/selectors, optional revision token,
+and request ID. Do not replace an original pin with the current revision on retry:
+that changes the binding. A replay can return the old task/owner/revision while
+delivery reports the captured current head and projection health. It is not fresh
+assignment, worker acceptance, task completion, or runtime execution permission.
+
+### Authority and commit order
+
+Workspace loading is now a neutral internal adapter, mechanically extracted from
+the checkpoint wrapper. It retains ordered path/config/runtime-control validation,
+all three ledger observations, native TOML limits and existing checkpoint behavior.
+Loaded state is data, not a cached mutation permit. New task writes accept valid
+runtime-launch control, refuse invalid control/orphan authority and never inspect
+bundle children or execute frozen plans. **Existing native list/state readers keep
+their conservative runtime/actions and pending-import fences.** Consequently write
+support in a valid runtime-controlled workspace does not imply native list/runtime
+parity there; normal snapshot and active-ledger loops above are supported.
+
+Snapshot mutations preflight a disposable draft, CAS and both event/message logs
+before lock creation. They reload and reselect authority under the shared guard,
+discard the unlocked draft, recheck CAS/logs, create the fresh effect and confirm
+the target's execution reservation before replacement. A queued snapshot writer
+cannot overwrite a projection after import wins the lock. Assigning to the same
+owner is still a fresh mutation and is not exempt from reservation blocking.
+
+Ledger mutation first checks raw receipt identity/conflict, then selected-history
+confirmation. A hit returns before projection admission, fresh CAS, current owner
+resolution or execution checks, with no projection/event/dashboard backfill.
+For a miss, the service checks projection **before CAS**; the low-level fresh writer
+independently reloads revision/head, rechecks receipt absence, checks CAS **before
+projection**, then confirms the target's execution guard. This intentional ordering
+matches the existing two-layer protocol.
+
+The complete canonical frame is parsed and applied before immutable publication.
+This preserves canonical key order in newly replayed tasks/projections while
+untouched baseline records retain their insertion order. Raw history bytes, frame
+count, retained receipts and directory capacities are admitted before linking.
+Events use the original draft's nested task order, not a substituted canonical
+receipt object. Snapshot records retain storage order, unknown extensions, missing
+versus null fields and numeric identity. New task/event metadata uses tested UTC
+ISO `+00:00` timestamps with microseconds omitted only at zero; add makes separate
+created/updated calls. Snapshot/event UUIDs are hyphenated; ledger mutation IDs use
+32 lowercase hex digits.
+
+### Outcomes, secondaries and bounded output
+
+Confirmed snapshot/ledger commits attempt secondary delivery independently:
+projection first for ledger, then event, then dashboard. Failure does not roll back
+authority, suppress later attempts, or change a committed exit to failure. Native
+warning prose uses bounded static codes in the existing fields, not Python's OS
+exception text. Snapshot logs are validated before commit; malformed observational
+log contents do not gate ledger authority or receipt replay.
+
+Known snapshot replacement uncertainty returns its task/revisions/mutation ID,
+exit `2`, and no secondaries. A known receipt with uncertain confirmation returns
+uncertain replay delivery; an uncertain confirmation with no receipt refuses a
+fresh effect. A newly uncertain ledger frame follows Python's **fresh authority
+reread and matching lookup** policy. Failed reread/missing/conflicting receipt stays
+a hard error, rather than substituting execution's cached-proposal policy. No
+secondary delivery runs on replay or authority uncertainty. Exit `1`, broken output
+or interrupted transport is therefore not universal proof of no effect; inspect
+state or reuse the exact durable request key instead of blindly changing keys.
+
+Exit `0` means confirmed commit/replay, including secondary warnings. Structured
+known authority uncertainty exits `2`; parser errors also exit `2` but have no
+mutation JSON on stdout. Ordinary validation/CAS/busy/guard failures exit `1`.
+Fresh proposals admit actual snapshot storage (8 MiB plus legacy-reader roundtrip)
+or complete frame (8 MiB plus real Authority parse/apply), and both the result and
+next full task-list compact/ASCII response before publication. An 8 KiB reserve
+is proved sufficient for five warnings, 128-byte safe codes and bounded projection
+metadata. Late projection-health I/O failure becomes bounded unreadable diagnostics
+and preserves a confirmed result. Capacity refusal happens before the fresh
+authoritative effect; stdio transport failure remains inherently observable later.
+
+Events are compact literal-UTF-8 JSONL objects with correct backend-specific
+metadata, finite last-wins parsing, no truncated final line, and no dedup/tail
+repair. Native limits are 8 MiB total/file, 65536 physical LF lines including blanks,
+and existing per-record value bounds. The complete new line and projected growth
+are checked before append. Under the guard, event delivery creates an absent safe
+`logs/` using Python's default mkdir policy, then revalidates directory/file paths;
+snapshot preflight itself remains noncreating. Appends use private-mode, regular,
+nofollow/nonblocking descriptors and file fsync. Partial append is left as evidence
+with a warning; no truncation or rollback is attempted.
+
+Dashboard capture/render/publication remain under the same guard, read authoritative
+tasks rather than repairing a projection, and preserve Python Markdown bytes—raw
+task titles/statuses intentionally remain unescaped. Only display labels receive
+Python printability/HTML/Markdown escaping, using a provenance-tagged frozen Unicode
+16.0.0 property table, not runtime Python. Goal text uses universal newline handling;
+checkpoint rows use effective status. Render failure preserves the old dashboard.
+Goal/checkpoint reads are capped at 1 MiB; dashboard output at 32 MiB. Projection or
+dashboard sync uncertainty after a confirmed task is a secondary warning, not new
+task-authority uncertainty.
+
+No automatic import/repair, native init/import/recovery CLI, broader lifecycle
+commands, runtime/provider call, installed entrypoint change or Python fallback is
+included. Manual recovery still uses the retained Python command until that CLI
+family is ported. Input/path/TOML/log/output and Linux-only execution qualifications
+remain explicit preview limits, not claims of complete application parity.
+
 ## Validation
 
 Use the existing installed Rust toolchain; this slice was exercised with Rust/
@@ -750,7 +893,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 183 tests, including a build/CLI-name regression test and an
+The native suite has 247 tests, including a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -931,9 +1074,29 @@ without changing the parent test process's umask. Complete/short/failed entropy
 reads and UUIDv4 shape are independently tested. Crash/power-loss behavior and a
 real nonmember-group SGID setup are not claimed.
 
+Task add/assign adds **262 real CLI cases** across both backends: add/list/assign/list,
+JSON and human output, exact storage/frame/projection/event/dashboard bytes,
+dynamic UUID/time format and allocation, CAS, aliases, parser ordering/repeats,
+strict reader/output profiles, prepared guards, receipt-first replay/no backfill,
+secondary warnings, missing event parents, runtime controls and mixed Python/native
+writers/import races. Native invocations run with no Python/runtime executables
+on PATH. A deterministic native-first assignment/Python preparation test on both
+backends proves lock contention, committed owner change, stale preparation CAS,
+no attempt/receipt and stable lock inode; prepare-first is also covered.
+
+Private fault tests pin snapshot pre/post replacement, confirmation hit/miss,
+uncertain-frame matching/missing/corrupt/conflicting rereads, exact backend error
+precedence, fresh guarded drafts and independent later secondary effects. A maximal
+admitted receipt plus five warnings/health metadata renders below the output cap.
+Low-level append tests exercise actual partial writes/fsync errors and descriptor
+flags, symlink/FIFO/device refusal. Dashboard golden bytes and all Unicode scalars
+are compared against the version-pinned oracle. The neutral workspace extraction
+retains the 280-case checkpoint and 43-case task-reader corpora; still-unported
+mutation inventories now test remove/complete rather than newly supported add/assign.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
-tests; a passing Python suite alone is not proof of Rust coverage. Native fault
-injection and mixed Python/Rust contention will be required for writers.
+tests; a passing Python suite alone is not proof of Rust coverage. Remaining writer
+families need equivalent differential/fault/coordination gates, not just these passes.
 
 ## Migration coverage and next gates
 
@@ -942,11 +1105,12 @@ injection and mixed Python/Rust contention will be required for writers.
 | Handoff schema, validate, historical inspect/list | Native Rust preview; Python still default | Close documented path gap before default parity |
 | Handoff collection/publication | Native bounded unverified capture; Python still default | Close profile limits/cross-platform validation before default parity |
 | Finite values, ordered extensions, records, snapshot task JSON listing | Native bounded preview; Python still default | Close stated acceptance limits before full legacy parity |
-| Persistent workspace flock, evidence/ledger immutable publication and mutable replacement | Native guarded library primitives, mixed-language/fault tests | End-to-end domain-writer integration and delivery policy |
-| Workspace init/refresh and task mutations | Python only | Storage/authority guards and mixed-writer fault tests |
+| Persistent workspace flock, evidence/ledger immutable publication and mutable replacement | Native guarded primitives used by task/baseline pipelines | Integrate remaining writer families without changing their policies |
+| Workspace init/refresh CLI | Python only; internal dashboard refresh is native | Asset/preflight/init reservation and command-level parity |
 | Task-ledger read/replay, frozen receipt lookup, selected confirmation and projection diagnostics | Native bounded library/read-only preview | Close supported-profile limits; durable retry coordination/delivery still required |
 | Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK only | CLI preflight/delivery integration and remaining profile/cross-platform gates |
-| Task add/assign, projection repair and secondary delivery | Python only | Receipt/head/CAS/guard writer pipeline, uncertain result delivery and mixed-writer fault tests |
+| Task add/assign, commit projection, events and dashboard | Native snapshot/active-ledger commands with CAS/replay/delivery | Close documented profiles and list/runtime gap before default parity |
+| Manual projection repair and import/recovery CLI | Python only; baseline recovery SDK native | Recovery preflight, durable diagnostics and command integration |
 | Execution v1/v2 historical replay, graph reviews and confirmed reservation checks | Native bounded SDK/read-only preview | Close profile limits; writer integration and receipt delivery/order still required |
 | Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
 | Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits before default parity |
@@ -956,9 +1120,9 @@ injection and mixed Python/Rust contention will be required for writers.
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive stage is the receipt/head/CAS/guard task-writer pipeline and
-uncertain-result delivery, followed by projection/secondary effects and CLI gates.
-The SDK baseline protocol does not supply a task-mutation retry API. Writers must preserve persistent flock inode/order,
+The next substantive milestones are native workspace init/refresh and state import/
+recovery command routes, then the remaining mutation/observation/runtime families.
+The task milestone does not authorize default-entrypoint cutover. Remaining writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old
 preparation, observation, collected claim or runtime-launch receipt may become a

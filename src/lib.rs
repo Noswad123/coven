@@ -1,4 +1,5 @@
-//! Native migration core. Only explicit readers and local evidence capture are live.
+//! Incremental native Coven: explicit readers and guarded task, baseline and
+//! evidence operations. No automatic runtime execution or Python fallback.
 pub mod actions;
 pub mod archive;
 mod canonical;
@@ -15,7 +16,12 @@ mod read_fs;
 pub mod records;
 pub mod storage;
 mod strict_json;
+mod task_admission;
+mod task_delivery;
+pub mod task_mutation;
+mod task_time;
 pub mod tasks;
 pub mod values;
+mod workspace;
 
 pub use error::{Error, Result};

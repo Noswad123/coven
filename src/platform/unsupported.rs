@@ -13,6 +13,9 @@ pub(crate) fn workspace_location(_: &Path) -> Result<super::WorkspaceLocation> {
 pub(crate) fn open_readonly(_: &Path) -> Result<File> {
     Err(Error("unsupported_platform"))
 }
+pub(crate) fn open_append(_: &Path) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
 pub(crate) fn replacement_mode(_: &Path) -> std::io::Result<Option<u32>> {
     Err(std::io::ErrorKind::Unsupported.into())
 }

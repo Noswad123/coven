@@ -271,9 +271,10 @@ def main(binary):
         first=ledger._payload((base(allowed)/"frames/00000000000000000000.frame").read_bytes())
         value["result"]["after_revision"]=ledger._revision(value["workspace_id"],value["epoch_id"],1,first["tasks"]+[value["result"]["task"]])
         store_frame(path,value);compare(allowed)
-        # Unsupported mutations remain parser refusals with no recovery/write.
+        # Add/assign are now command-tested separately; unported mutations remain
+        # parser refusals with no recovery/write.
         before=snapshot(history)
-        for command in (("state","recover-tasks"),("state","import-tasks"),("task","add"),("task","assign")):
+        for command in (("state","recover-tasks"),("state","import-tasks"),("task","remove"),("task","complete")):
             native(command,history,2)
             assert snapshot(history)==before
             cases+=1

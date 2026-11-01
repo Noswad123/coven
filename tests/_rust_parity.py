@@ -176,7 +176,7 @@ def main(binary):
         absent = root / "must-not-exist"
         before = snapshot(workspace)
         for args in (("execution","enable",absent), ("init",absent),
-                     ("session","prompt",absent,"--execute"), ("task","assign",absent,"x","y")):
+                     ("session","prompt",absent,"--execute"), ("task","remove",absent,"x")):
             native(*args,expected=2)
             assert not absent.exists()
             assert snapshot(workspace) == before
