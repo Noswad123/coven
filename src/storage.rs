@@ -1,5 +1,8 @@
-//! Shared persistent workspace lock and guarded immutable evidence publication.
+//! Shared persistent workspace lock, immutable publication, and mutable replacement.
 //! Never replace/unlink a lock inode or steal it based on process metadata.
+mod replacement;
+pub use replacement::atomic_replace_bytes;
+
 use crate::{Result, error::require, platform, read_fs};
 use serde::Serialize;
 use std::io::Write;

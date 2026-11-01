@@ -10,6 +10,18 @@ pub(crate) fn workspace_location(_: &Path) -> Result<super::WorkspaceLocation> {
 pub(crate) fn open_readonly(_: &Path) -> Result<File> {
     Err(Error("unsupported_platform"))
 }
+pub(crate) fn replacement_mode(_: &Path) -> std::io::Result<Option<u32>> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn apply_replacement_mode(_: &File, _: u32) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn verify_replacement_mode(_: &File, _: u32) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn rename_replace(_: &Path, _: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
 
 pub(crate) fn open_workspace_lock(_: &Path, _: bool) -> Result<File> {
     Err(Error("unsupported_platform"))

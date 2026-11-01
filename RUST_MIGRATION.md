@@ -71,6 +71,7 @@ src/
   checkpoints.rs     Pure byte-oriented checkpoint views and framed scope hashes
   checkpoint_workspace.rs Ordered standalone workspace selection and checkpoint preflight
   storage.rs         Shared workspace guard and immutable evidence publication
+  storage/replacement.rs Guarded atomic mutable-file replacement, no domain callers
   output.rs          Bounded safely escaped CLI presentation
   platform/          Compile-gated OS open flags and unsupported-platform refusal
 ```
@@ -190,9 +191,57 @@ never promoted or deleted.
 Python supports some raw source encodings or numeric spellings outside the finite
 UTF-8 native profile. Native retains raw bytes for digests/projection but still
 requires supported parsing and source/frame comparison; unsupported input is not
-rewritten, accepted via hashes alone or replaced by a projection. The read view
-retains request IDs for validation, not a public frozen-receipt lookup API. Mutation
-receipt replay must be ported before writers, not inferred from inspection success.
+rewritten, accepted via hashes alone or replaced by a projection. The read view now
+retains validated historical receipts for the pure library lookup below. Mutation
+retry confirmation and delivery must still be ported before writers, not inferred
+from lookup or inspection success.
+
+### Frozen task-ledger receipts (library only)
+
+`ledger::RequestKey` and `RequestBinding` have validated, private representations;
+bindings can be parsed from compatibility values or built with explicit add/assign
+arguments. `View::lookup` returns an immutable `FrozenResult`, a missing captured
+key, or `request_key_binding_conflict`. Only complete successful replay constructs
+frozen results. There is no new lookup CLI, mutation, acknowledgement or recovery
+command and no public unchecked result constructor.
+
+Binding equality compares canonical bytes, ignoring only object insertion order.
+Raw selector case/whitespace, notes/title spelling, operation and null versus
+concrete expected-revision tokens remain part of identity. Historical alias
+equivalence in an effect does not make different request bindings interchangeable.
+Lookup does not compare an old expected revision to the current head: replay still
+validates its CAS at the frame's original position. Later assignments cannot rewrite
+an earlier result's complete task, owner, after_revision or historical sequence.
+Large integers, floating signed zero and unknown extensions retain `values` identity.
+Borrowed results are immutable and owned clones cannot mutate retained receipts.
+
+Receipt retention replaces the request-ID set as the sole uniqueness authority.
+Each receipt is inserted only after all frame/effect/result checks; every selected
+frame, including a corrupt tail after a matching key, validates before a view is
+returned. Existing marker checks remain, but do not authenticate append-only history
+or detect every removed suffix, pin the latest head, or make an unlocked prefix
+linearizable. Captured lookup itself takes no filesystem/root/guard/current-state
+arguments. Explicit fencing is separate; known historical results remain known if
+the marker later changes or becomes unreadable.
+
+Missing authority/pending import and a missing key inside a valid active view are
+different conditions. `None` from lookup means only absence from that captured
+history—not current receipt absence, permission to execute, fresh CAS success or
+durability acknowledgement. A private test-only route proves hit/conflict handling
+precedes a fresh-request continuation, not that a writer or durable retry pipeline
+has been implemented. Future task-command preflight remains a separate contract.
+
+A separate 256 MiB retained-canonical-data limit counts UTF-8 key bytes plus
+canonical binding and frozen-result bytes with checked accumulation. Raw history
+remains independently capped at 256 MiB and 4096 frames. This is not a heap/peak
+memory bound; retaining receipts adds per-frame result storage and encoding work,
+without cloning the whole accumulated map on each frame.
+
+Known-result policies must not be silently unified during later writer work:
+Python ledger confirmation can fail hard during a current-authority reread outside
+its sync-uncertainty wrapper, whereas execution preserves known results after
+verification failure. Pure lookup adds no delivery fields and changes neither
+policy. Historical `result.outcome: committed` is not a new fsync confirmation.
 
 General JSON preview bounds: 8 MiB input, depth 64, 262144 parsed value nodes,
 16384 object members, 65536 array items, 1 MiB decoded strings, 8192-byte number
@@ -212,6 +261,39 @@ releases on normal exit or process death. The destructor avoids explicitly
 unlocking a parent's inherited open-file description after fork. Task and handoff
 reads do **not** acquire this token. No native task writer, authority publication,
 import, recovery or automatic dispatch is enabled by its availability.
+
+### Guarded mutable replacement (library only)
+
+`storage::atomic_replace_bytes(guard, relative, bytes)` is a low-level foundation,
+with no production CLI/domain-writer callers. The matching root/PID/thread guard
+proves coordination only—not CAS, approval, receipt absence, execution permission
+or whole-ledger confirmation. Parent directories must already exist and managed
+paths must remain safe. Both `.workspace.lock` and `.runtime-transport.lock`
+basenames are rejected in every directory, preserving the persistent flock inode.
+
+An exclusive same-directory `.<target>.<random>.tmp` receives all bytes, then
+descriptor mode application, descriptor mode verification and file fsync. Existing
+07777 mode bits are preserved; absent targets receive 0600. Mode is applied after
+writing because writes may clear special bits. A successful chmod can also silently
+clear SGID; descriptor verification rejects any mismatch before publication, leaving
+the old target intact. Ownership, ACLs and xattrs are not part of preservation.
+
+After path/parent recheck, atomic rename is the visibility boundary, followed by
+parent-directory sync. Pre-rename errors leave old bytes/mode/inode intact (or the
+target absent). Successful rename plus failed parent sync returns known-new
+`Delivery::DurabilityUncertain`; there is no post-rename reread, rollback or claim
+that nothing happened. Cleanup touches only the owned temp and never masks the
+primary outcome. Inert orphans are neither adopted nor broadly removed.
+
+The independent 32 MiB byte-transport cap does not raise domain limits or native
+reader profiles. Existing immutable evidence publication retains its 8 MiB cap and
+hard-link no-overwrite semantics. Ledger frames/manifests/baselines, the initial
+task-authority marker and action bundles must never use mutable replacement.
+No such call sites are introduced. Domain-safe immutable publication, activation-
+last ancestor syncing, locked selected-history confirmation and recovery remain
+future work. Local ordinary rename-error semantics and static cooperating paths
+are assumed; this is not a hostile-path sandbox, distributed unknown-rename
+protocol or universal power-loss guarantee.
 
 ## Explicit unverified handoff collection
 
@@ -503,7 +585,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 117 tests, including a build/CLI-name regression test and an
+The native suite has 135 tests, including a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -622,6 +704,28 @@ scan boundaries and controlled authority changes between independent ledger read
 An independent nested TOML scalar/runtime-field corpus protects calendar and numeric
 profile behavior; parser grouping tests preserve semantic arity checks after preflight.
 
+Frozen receipt lookup adds **95 direct-library oracle cases**: 25 results/misses,
+16 changed-binding conflicts, 8 invalid keys, 38 invalid bindings, 2 absent/pending
+authorities and 6 corrupt-tail read refusals. Python-produced histories preserve
+old bindings/results after later owner changes; raw aliases, stale original CAS,
+object order, extensions, numeric identity, clones, poisoned current files and
+marker changes are characterized without CLI or writer activation. The corpus
+has a 60-second isolated child-process watchdog with parent-owned fixture cleanup
+so accidental FIFO reads cannot hang the suite. Units pin multi-receipt accounting,
+exact budget/overflow, programmatic string bounds, raw float version spellings and
+the pre-existing replay validation precedence.
+
+Mutable replacement adds a **120-combination fault matrix** across existing/absent
+targets, permission modes, I/O boundaries and cleanup outcomes, plus a silent-SGID-
+loss regression using the real descriptor verifier. Failures before rename preserve
+old bytes/mode/inode; post-rename parent-sync failure retains new bytes as uncertain.
+Tests cover wrong ownership tokens, unsafe paths/FIFOs, both lock names, missing
+parents, exact/over transport cap and inert orphans. A local mixed Python/Rust test
+performs 65 Python and 64 Rust writes under the same persistent flock, checks whole
+payload observations from both writers, 16 exclusion checks, preserved special
+mode bits and unchanged lock device/inode. The SGID regression simulates the kernel
+result; no administrator/nonmember-group setup or crash/power-loss test is claimed.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Native fault
 injection and mixed Python/Rust contention will be required for writers.
@@ -633,10 +737,10 @@ injection and mixed Python/Rust contention will be required for writers.
 | Handoff schema, validate, historical inspect/list | Native Rust preview; Python still default | Close documented path gap before default parity |
 | Handoff collection/publication | Native bounded unverified capture; Python still default | Close profile limits/cross-platform validation before default parity |
 | Finite values, ordered extensions, records, snapshot task JSON listing | Native bounded preview; Python still default | Close stated acceptance limits before full legacy parity |
-| Persistent workspace flock and immutable evidence publication | Native guarded primitives, mixed-language/fault tests | Task-authority publication and native writer guard ordering |
+| Persistent workspace flock, immutable evidence publication and mutable replacement | Native guarded library primitives, mixed-language/fault tests | Domain-safe authority publication, confirmation and writer guard ordering |
 | Workspace init/refresh and task mutations | Python only | Storage/authority guards and mixed-writer fault tests |
-| Task-ledger authority read/replay and projection diagnostics | Native bounded read-only preview | Close supported-profile limits before full parity |
-| Task-ledger mutations/import/recovery | Python only | Receipt lookup/order, publication/uncertainty and fault tests |
+| Task-ledger read/replay, frozen receipt lookup and projection diagnostics | Native bounded library/read-only preview | Close supported-profile limits; locked confirmation still required for durable retries |
+| Task-ledger mutations/import/recovery | Python only | Durable receipt delivery/order, immutable publication/uncertainty, recovery and fault tests |
 | Execution v1/v2 historical replay, graph reviews, receipts/reservation observation | Native bounded read-only preview | Close profile limits; durable writer guard and receipt lookup ordering still required |
 | Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
 | Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits before default parity |
@@ -646,9 +750,9 @@ injection and mixed Python/Rust contention will be required for writers.
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive stage is frozen receipt lookup/order and guarded authority
-publication/recovery primitives. Historical receipt reports are not yet a mutation
-retry API. Writers must preserve persistent flock inode/order,
+The next substantive stage is locked selected-authority confirmation, durable
+execution guards and domain-safe immutable publication/recovery. Frozen lookup and
+replacement are not yet a mutation retry API. Writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old
 preparation, observation, collected claim or runtime-launch receipt may become a

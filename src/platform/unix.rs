@@ -1,7 +1,7 @@
 use crate::Result;
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::{ffi::OsString, path::PathBuf};
 use std::{
     fs::{File, OpenOptions},
@@ -32,6 +32,33 @@ pub(crate) fn open_readonly(path: &Path) -> Result<File> {
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?)
+}
+
+pub(crate) fn replacement_mode(path: &Path) -> std::io::Result<Option<u32>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(Some(metadata.mode() & 0o7777)),
+        Ok(_) => Err(std::io::Error::other("unsafe replacement target type")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) fn apply_replacement_mode(file: &File, mode: u32) -> std::io::Result<()> {
+    file.set_permissions(std::fs::Permissions::from_mode(mode & 0o7777))
+}
+
+pub(crate) fn verify_replacement_mode(file: &File, mode: u32) -> std::io::Result<()> {
+    // fchmod may succeed while silently clearing SGID on a nonmember group.
+    // Refuse before rename if the filesystem cannot retain the requested bits.
+    if file.metadata()?.mode() & 0o7777 == mode & 0o7777 {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("replacement mode was not retained"))
+    }
+}
+
+pub(crate) fn rename_replace(source: &Path, target: &Path) -> std::io::Result<()> {
+    std::fs::rename(source, target)
 }
 
 pub(crate) fn open_workspace_lock(path: &Path, create: bool) -> Result<File> {

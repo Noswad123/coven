@@ -1,5 +1,5 @@
 //! Complete bounded task-ledger read/replay. No mutation, import, repair, fsync or
-//! receipt lookup activation. A selected invalid authority never becomes snapshot.
+//! delivery activation. A selected invalid authority never becomes snapshot.
 use crate::{
     Error, Result, canonical,
     error::require,
@@ -8,15 +8,120 @@ use crate::{
     values::{self, Number, Object, Profile, Value},
 };
 use sha2::{Digest as _, Sha256};
-use std::{collections::HashSet, fs, io::Read, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    io::Read,
+    path::Path,
+};
 
 pub const MARKER: &str = "state/task-authority.json";
 pub const DIRECTORY: &str = "state/task-ledger";
 pub const MAX_FRAMES: usize = 4096;
 pub const MAX_FRAME_BYTES: usize = 8 * 1_048_576;
 pub const MAX_HISTORY_BYTES: usize = 256 * 1_048_576;
+/// Retained canonical data, not an estimate of heap usage or raw history size.
+pub const MAX_RECEIPT_BYTES: usize = 256 * 1_048_576;
 pub const MAX_DIRECTORY_ENTRIES: usize = 16_384;
 pub const MAX_PROJECTION_BYTES: usize = 256 * 1_048_576;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestKey(String);
+impl RequestKey {
+    pub fn parse(value: &str) -> Result<Self> {
+        require(request_key(value), "invalid_request_key")?;
+        Ok(Self(value.to_owned()))
+    }
+}
+
+/// Exact request identity: raw selectors and null/token distinctions are retained.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestBinding(Vec<u8>);
+impl RequestBinding {
+    pub fn parse(value: Value) -> Result<Self> {
+        binding(&value)?;
+        Ok(Self(value.canonical()?))
+    }
+    pub fn add(
+        title: &str,
+        owner: Option<&str>,
+        notes: &str,
+        expected_revision: Option<&str>,
+    ) -> Result<Self> {
+        Self::new(
+            "add",
+            vec![
+                ("title", Value::String(title.to_owned())),
+                (
+                    "owner",
+                    owner.map_or(Value::Null, |v| Value::String(v.to_owned())),
+                ),
+                ("notes", Value::String(notes.to_owned())),
+            ],
+            expected_revision,
+        )
+    }
+    pub fn assign(task_id: &str, agent: &str, expected_revision: Option<&str>) -> Result<Self> {
+        Self::new(
+            "assign",
+            vec![
+                ("task_id", Value::String(task_id.to_owned())),
+                ("agent", Value::String(agent.to_owned())),
+            ],
+            expected_revision,
+        )
+    }
+    fn new(
+        operation: &str,
+        args: Vec<(&str, Value)>,
+        expected_revision: Option<&str>,
+    ) -> Result<Self> {
+        Self::parse(Value::object(vec![
+            ("version".to_owned(), Value::integer("1")?),
+            ("operation".to_owned(), Value::String(operation.to_owned())),
+            (
+                "args".to_owned(),
+                Value::object(args.into_iter().map(|(k, v)| (k.to_owned(), v)).collect())?,
+            ),
+            (
+                "expected_revision".to_owned(),
+                expected_revision.map_or(Value::Null, |v| Value::String(v.to_owned())),
+            ),
+        ])?)
+    }
+}
+
+/// Validated historical result. `committed` is not a fresh durability acknowledgement.
+/// No reread, confirmation or delivery is performed here. Python ledger known-result
+/// rereads can fail hard; execution's verification-failed delivery is a separate policy.
+#[derive(Debug, Clone)]
+pub struct FrozenResult(Value);
+impl FrozenResult {
+    pub fn value(&self) -> &Value {
+        &self.0
+    }
+    pub fn to_value(&self) -> Value {
+        self.0.clone()
+    }
+}
+
+struct Receipt {
+    binding: RequestBinding,
+    result: FrozenResult,
+}
+
+fn receipt_bytes(total: usize, key: usize, binding: usize, result: usize) -> Result<usize> {
+    let total = total
+        .checked_add(key)
+        .and_then(|n| n.checked_add(binding))
+        .and_then(|n| n.checked_add(result))
+        .ok_or(Error("unsupported_ledger_receipt_bytes"))?;
+    require(
+        total <= MAX_RECEIPT_BYTES,
+        "unsupported_ledger_receipt_bytes",
+    )?;
+    Ok(total)
+}
 
 fn history_bytes(total: usize, increment: usize) -> Result<usize> {
     let total = total
@@ -202,7 +307,7 @@ fn alias(value: &str) -> String {
     }
     output.trim_matches('-').to_owned()
 }
-fn binding<'a>(value: &'a Value, current_revision: &str) -> Result<(&'a str, &'a Object)> {
+fn binding_revision(value: &Value) -> Result<&Value> {
     object(
         value,
         &["version", "operation", "args", "expected_revision"],
@@ -211,11 +316,11 @@ fn binding<'a>(value: &'a Value, current_revision: &str) -> Result<(&'a str, &'a
     let expected = get(value, "expected_revision")?;
     if !null(expected) {
         handoff::TaskRevision::parse(string(expected)?)?;
-        require(
-            eq_text(expected, current_revision),
-            "ledger_expected_revision_mismatch",
-        )?;
     }
+    Ok(expected)
+}
+fn binding(value: &Value) -> Result<(&str, &Object)> {
+    binding_revision(value)?;
     let operation = string(get(value, "operation")?)?;
     let args = get(value, "args")?;
     match operation {
@@ -255,9 +360,25 @@ pub struct View {
     head_digest: String,
     baseline_projection: Option<Vec<u8>>,
     marker_raw: Vec<u8>,
-    request_ids: HashSet<String>,
+    receipts: HashMap<String, Receipt>,
+    receipt_bytes: usize,
 }
 impl View {
+    /// Looks only in fully validated captured history, never in current state or files.
+    /// `None` means only that the key is absent from this captured history, not that
+    /// it is currently absent, durable, or permitted for fresh execution. Missing
+    /// authority and pending imports are handled outside `View`, not by this lookup.
+    pub fn lookup(
+        &self,
+        key: &RequestKey,
+        binding: &RequestBinding,
+    ) -> Result<Option<&FrozenResult>> {
+        let Some(receipt) = self.receipts.get(&key.0) else {
+            return Ok(None);
+        };
+        require(receipt.binding == *binding, "request_key_binding_conflict")?;
+        Ok(Some(&receipt.result))
+    }
     pub(crate) fn into_task_values(self) -> (String, Value) {
         (self.revision, self.tasks)
     }
@@ -286,10 +407,17 @@ impl View {
         )?;
         let key = string(get(&payload, "request_id")?)?;
         require(
-            request_key(key) && !self.request_ids.contains(key),
+            request_key(key) && !self.receipts.contains_key(key),
             "invalid_or_duplicate_ledger_request",
         )?;
-        let (operation, args) = binding(get(&payload, "binding")?, &self.revision)?;
+        let binding_value = get(&payload, "binding")?;
+        let expected = binding_revision(binding_value)?;
+        // Replay CAS stays before operation/effect validation; lookup never does CAS.
+        require(
+            null(expected) || eq_text(expected, &self.revision),
+            "ledger_expected_revision_mismatch",
+        )?;
+        let (operation, args) = binding(binding_value)?;
         let result = get(&payload, "result")?;
         object(
             result,
@@ -389,7 +517,21 @@ impl View {
                 && exact_integer(get(result, "sequence")?, sequence),
             "invalid_ledger_frozen_result",
         )?;
-        self.request_ids.insert(key.to_owned());
+        let binding = RequestBinding(binding_value.canonical()?);
+        let retained = receipt_bytes(
+            self.receipt_bytes,
+            key.len(),
+            binding.0.len(),
+            result.canonical()?.len(),
+        )?;
+        self.receipts.insert(
+            key.to_owned(),
+            Receipt {
+                binding,
+                result: FrozenResult(result.clone()),
+            },
+        );
+        self.receipt_bytes = retained;
         self.sequence = sequence;
         self.revision = revision;
         self.head_digest = digest;
@@ -656,7 +798,8 @@ pub fn read(root: &Path) -> Result<Option<View>> {
         head_digest: digest,
         baseline_projection: source.or(Some(b"[]\n".to_vec())),
         marker_raw,
-        request_ids: HashSet::new(),
+        receipts: HashMap::new(),
+        receipt_bytes: 0,
     };
     for name in frames.iter().skip(1) {
         let raw = bytes(root, &format!("{base}/frames/{name}"))?;
@@ -670,6 +813,426 @@ pub fn read(root: &Path) -> Result<Option<View>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn empty_view() -> View {
+        let tasks = Value::Array(Vec::new());
+        View {
+            revision: revision(&"a".repeat(32), &"b".repeat(32), 0, &tasks).unwrap(),
+            tasks,
+            workspace_id: "a".repeat(32),
+            epoch_id: "b".repeat(32),
+            sequence: 0,
+            head_digest: "c".repeat(64),
+            baseline_projection: None,
+            marker_raw: Vec::new(),
+            receipts: HashMap::new(),
+            receipt_bytes: 0,
+        }
+    }
+    fn json(raw: &str) -> Value {
+        values::parse(raw.as_bytes(), Profile::Authority).unwrap()
+    }
+    fn apply_task(view: &mut View, key: &str, binding: Value, task: Value) -> Result<()> {
+        let sequence = view.sequence + 1;
+        let mut tasks = view.tasks.clone();
+        if get(&binding, "operation")?.as_str() == Some("add") {
+            tasks.array_mut()?.push(task.clone());
+        } else {
+            tasks.array_mut()?[0] = task.clone();
+        }
+        let after = revision(&view.workspace_id, &view.epoch_id, sequence, &tasks)?;
+        let result = Value::object(vec![
+            ("outcome".into(), Value::String("committed".into())),
+            ("mutation_id".into(), Value::String("d".repeat(32))),
+            ("task".into(), task),
+            (
+                "before_revision".into(),
+                Value::String(view.revision.clone()),
+            ),
+            ("after_revision".into(), Value::String(after)),
+            ("sequence".into(), Value::integer(&sequence.to_string())?),
+        ])?;
+        let payload = Value::object(vec![
+            ("version".into(), Value::integer("1")?),
+            (
+                "workspace_id".into(),
+                Value::String(view.workspace_id.clone()),
+            ),
+            ("epoch_id".into(), Value::String(view.epoch_id.clone())),
+            ("sequence".into(), Value::integer(&sequence.to_string())?),
+            (
+                "previous_digest".into(),
+                Value::String(view.head_digest.clone()),
+            ),
+            ("request_id".into(), Value::String(key.into())),
+            ("binding".into(), binding),
+            ("result".into(), result),
+        ])?;
+        view.apply(payload, "e".repeat(64))
+    }
+    // Test-only pure routing seam, not a mutation or delivery API.
+    fn route<'a>(
+        view: &'a View,
+        key: &RequestKey,
+        binding: &RequestBinding,
+        fresh: impl FnOnce() -> Result<Option<&'a FrozenResult>>,
+    ) -> Result<Option<&'a FrozenResult>> {
+        match view.lookup(key, binding)? {
+            Some(result) => Ok(Some(result)),
+            None => fresh(),
+        }
+    }
+    #[test]
+    fn retained_budget_counts_each_component_and_checks_overflow() {
+        assert_eq!(
+            receipt_bytes(MAX_RECEIPT_BYTES - 6, 1, 2, 3).unwrap(),
+            MAX_RECEIPT_BYTES
+        );
+        for parts in [
+            (MAX_RECEIPT_BYTES, 1, 0, 0),
+            (MAX_RECEIPT_BYTES, 0, 1, 0),
+            (MAX_RECEIPT_BYTES, 0, 0, 1),
+            (usize::MAX, 1, 0, 0),
+            (0, usize::MAX, 1, 0),
+            (0, 0, usize::MAX, 1),
+        ] {
+            assert_eq!(
+                receipt_bytes(parts.0, parts.1, parts.2, parts.3)
+                    .unwrap_err()
+                    .code(),
+                "unsupported_ledger_receipt_bytes"
+            );
+        }
+    }
+    #[test]
+    fn historical_receipts_keep_raw_binding_and_isolated_extension_values() {
+        let mut view = empty_view();
+        let before = view.revision.clone();
+        let binding = json(&format!(
+            r#"{{"version":1,"operation":"add","args":{{"title":"Task","owner":" Worker ","notes":""}},"expected_revision":"{before}"}}"#
+        ));
+        let typed = RequestBinding::parse(binding.clone()).unwrap();
+        let key = RequestKey::parse("add:1").unwrap();
+        let mut task = json(
+            r#"{"id":"task","title":"Task","owner":"worker","status":"assigned","notes":"","created_at":"then","updated_at":"then","extension":[123456789012345678901234567890,-0.0,0.0]}"#,
+        );
+        apply_task(&mut view, "add:1", binding, task.clone()).unwrap();
+        let frozen = view.lookup(&key, &typed).unwrap().unwrap().to_value();
+        let expected_bytes = frozen.canonical().unwrap();
+        let expected_retained = key.0.len() + typed.0.len() + expected_bytes.len();
+        assert_eq!(view.receipt_bytes, expected_retained);
+        task.set_field("owner", Value::String("other".into()))
+            .unwrap();
+        task.set_field("updated_at", Value::String("later".into()))
+            .unwrap();
+        let assign = json(&format!(
+            r#"{{"version":1,"operation":"assign","args":{{"task_id":"task","agent":"OTHER"}},"expected_revision":"{}"}}"#,
+            view.revision
+        ));
+        apply_task(&mut view, "assign:1", assign, task).unwrap();
+        assert_eq!(view.receipts.len(), 2);
+        let all_retained: usize = view
+            .receipts
+            .iter()
+            .map(|(key, receipt)| {
+                key.len()
+                    + values::parse(&receipt.binding.0, Profile::Authority)
+                        .unwrap()
+                        .canonical()
+                        .unwrap()
+                        .len()
+                    + receipt.result.value().canonical().unwrap().len()
+            })
+            .sum();
+        assert_eq!(view.receipt_bytes, all_retained);
+        assert!(all_retained > expected_retained);
+        assert_ne!(before, view.revision);
+        let mut owned = frozen;
+        owned.set_field("task", Value::Null).unwrap();
+        assert_eq!(
+            view.lookup(&key, &typed)
+                .unwrap()
+                .unwrap()
+                .value()
+                .canonical()
+                .unwrap(),
+            expected_bytes
+        );
+        assert_eq!(
+            get(&view.tasks.as_array().unwrap()[0], "owner")
+                .unwrap()
+                .as_str(),
+            Some("other")
+        );
+        for changed in [
+            RequestBinding::add("Task", Some("worker"), "", Some(&before)).unwrap(),
+            RequestBinding::add("Task", Some(" Worker "), "", None).unwrap(),
+            RequestBinding::add("Task", Some(" Worker "), "", Some(&view.revision)).unwrap(),
+        ] {
+            assert_eq!(
+                route(&view, &key, &changed, || panic!(
+                    "fresh CAS/projection/owner/execution must not run"
+                ))
+                .unwrap_err()
+                .code(),
+                "request_key_binding_conflict"
+            );
+        }
+        assert!(
+            route(&view, &key, &typed, || panic!(
+                "fresh CAS/projection/owner/execution must not run"
+            ))
+            .unwrap()
+            .is_some()
+        );
+        let missing = RequestKey::parse("missing").unwrap();
+        let continued = std::cell::Cell::new(false);
+        assert!(
+            route(&view, &missing, &typed, || {
+                continued.set(true);
+                Ok(None)
+            })
+            .unwrap()
+            .is_none()
+        );
+        assert!(continued.get());
+        // A stale expected revision is valid identity, but still invalid at replay CAS.
+        let stale = json(&format!(
+            r#"{{"version":1,"operation":"assign","args":{{"task_id":"task","agent":"other"}},"expected_revision":"{before}"}}"#
+        ));
+        assert!(RequestBinding::parse(stale.clone()).is_ok());
+        let current = view.tasks.as_array().unwrap()[0].clone();
+        assert_eq!(
+            apply_task(&mut view, "stale", stale, current)
+                .unwrap_err()
+                .code(),
+            "ledger_expected_revision_mismatch"
+        );
+        assert!(!view.receipts.contains_key("stale"));
+    }
+    #[test]
+    fn constructors_validate_absent_requests_and_canonicalize_only_object_order() {
+        for key in ["", " space", "bad/key", "-first"] {
+            assert!(RequestKey::parse(key).is_err());
+        }
+        assert!(RequestKey::parse(&"x".repeat(129)).is_err());
+        assert!(RequestBinding::add(" ", None, "", None).is_err());
+        assert!(RequestBinding::assign("task", "", None).is_err());
+        assert!(RequestBinding::assign("task", "agent", Some("invalid")).is_err());
+        let oversized = "x".repeat(values::MAX_STRING + 1);
+        for result in [
+            RequestBinding::add(&oversized, None, "", None),
+            RequestBinding::add("Task", None, &oversized, None),
+            RequestBinding::add("Task", Some(&oversized), "", None),
+            RequestBinding::assign(&oversized, "agent", None),
+            RequestBinding::assign("task", &oversized, None),
+        ] {
+            assert_eq!(
+                result.unwrap_err().code(),
+                "unsupported_json_string_profile"
+            );
+        }
+        let ordered = json(
+            r#"{"args":{"notes":"","owner":null,"title":"Task"},"expected_revision":null,"operation":"add","version":1}"#,
+        );
+        assert_eq!(
+            RequestBinding::parse(ordered).unwrap(),
+            RequestBinding::add("Task", None, "", None).unwrap()
+        );
+        assert_ne!(
+            RequestBinding::assign("task", " AGENT ", None).unwrap(),
+            RequestBinding::assign("task", "agent", None).unwrap()
+        );
+    }
+    #[test]
+    fn binding_constructor_rejects_raw_json_float_versions() {
+        for version in ["1e0", "1.00"] {
+            let value = json(&format!(
+                r#"{{"version":{version},"operation":"add","args":{{"title":"Task","owner":null,"notes":""}},"expected_revision":null}}"#
+            ));
+            assert!(matches!(
+                get(&value, "version").unwrap(),
+                Value::Number(Number::Float(_))
+            ));
+            assert_eq!(
+                RequestBinding::parse(value).unwrap_err().code(),
+                "unsupported_ledger_version"
+            );
+        }
+    }
+    #[test]
+    fn replay_stale_cas_precedes_invalid_operation_and_args() {
+        let mut view = empty_view();
+        let stale_revision = view.revision.clone();
+        let binding = json(
+            r#"{"version":1,"operation":"add","args":{"title":"Task","owner":null,"notes":""},"expected_revision":null}"#,
+        );
+        let task = json(
+            r#"{"id":"task","title":"Task","status":"pending","owner":null,"notes":"","created_at":"then","updated_at":"then"}"#,
+        );
+        apply_task(&mut view, "initial", binding, task.clone()).unwrap();
+        // Rust's pre-existing replay CAS priority differs from Python's binding-first
+        // validation. Constructors validate identity only, without historical CAS.
+        for (operation, args, constructor_error) in [
+            (
+                "invalid",
+                r#"{"task_id":"task","agent":"agent"}"#,
+                "invalid_ledger_operation",
+            ),
+            ("assign", r#"{"task_id":"task"}"#, "invalid_ledger_fields"),
+        ] {
+            let binding = json(&format!(
+                r#"{{"version":1,"operation":"{operation}","args":{args},"expected_revision":"{stale_revision}"}}"#
+            ));
+            assert_eq!(
+                RequestBinding::parse(binding.clone()).unwrap_err().code(),
+                constructor_error
+            );
+            assert_eq!(
+                apply_task(&mut view, "mixed-invalid", binding, task.clone())
+                    .unwrap_err()
+                    .code(),
+                "ledger_expected_revision_mismatch"
+            );
+            assert_eq!(view.receipts.len(), 1);
+            assert!(!view.receipts.contains_key("mixed-invalid"));
+        }
+    }
+    #[test]
+    fn missing_authority_is_not_a_captured_view_miss_and_pending_is_not_active() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("state")).unwrap();
+        assert!(read(root.path()).unwrap().is_none());
+        assert!(!pending(root.path()).unwrap());
+        fs::create_dir(root.path().join(DIRECTORY)).unwrap();
+        assert!(pending(root.path()).unwrap());
+        assert!(read(root.path()).unwrap().is_none());
+        fs::write(root.path().join(MARKER), b"invalid authority").unwrap();
+        assert!(read(root.path()).is_err());
+        assert_eq!(
+            pending(root.path()).unwrap_err().code(),
+            "task_authority_changed_during_read"
+        );
+        let view = empty_view();
+        assert!(
+            view.lookup(
+                &RequestKey::parse("absent").unwrap(),
+                &RequestBinding::add("Task", None, "", None).unwrap()
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
+    #[test]
+    fn rejected_frames_never_retain_receipts() {
+        let binding = json(
+            r#"{"version":1,"operation":"add","args":{"title":"Task","owner":null,"notes":""},"expected_revision":null}"#,
+        );
+        let task = json(
+            r#"{"id":"task","title":"Task","status":"pending","owner":null,"notes":"","created_at":"then","updated_at":"then"}"#,
+        );
+        let mut view = empty_view();
+        view.receipt_bytes = MAX_RECEIPT_BYTES;
+        assert_eq!(
+            apply_task(&mut view, "over", binding.clone(), task.clone())
+                .unwrap_err()
+                .code(),
+            "unsupported_ledger_receipt_bytes"
+        );
+        assert!(view.receipts.is_empty());
+        let mut view = empty_view();
+        let mut invalid = task.clone();
+        invalid
+            .set_field("title", Value::String("Wrong".into()))
+            .unwrap();
+        assert_eq!(
+            apply_task(&mut view, "bad", binding.clone(), invalid)
+                .unwrap_err()
+                .code(),
+            "invalid_ledger_add_effect"
+        );
+        assert!(view.receipts.is_empty());
+        assert_eq!(view.receipt_bytes, 0);
+        apply_task(&mut view, "same", binding.clone(), task.clone()).unwrap();
+        assert_eq!(
+            apply_task(&mut view, "same", binding, task)
+                .unwrap_err()
+                .code(),
+            "invalid_or_duplicate_ledger_request"
+        );
+        assert_eq!(view.receipts.len(), 1);
+    }
+    #[test]
+    fn full_read_rejects_corrupt_tail_before_exposing_any_view() {
+        let root = tempfile::tempdir().unwrap();
+        let view = empty_view();
+        let base = root.path().join(DIRECTORY).join(&view.epoch_id);
+        fs::create_dir_all(base.join("frames")).unwrap();
+        let initial = Value::object(vec![
+            ("version".into(), Value::integer("1").unwrap()),
+            (
+                "workspace_id".into(),
+                Value::String(view.workspace_id.clone()),
+            ),
+            ("epoch_id".into(), Value::String(view.epoch_id.clone())),
+            ("sequence".into(), Value::integer("0").unwrap()),
+            ("previous_digest".into(), Value::Null),
+            (
+                "source_revision".into(),
+                Value::String(snapshot_revision(None)),
+            ),
+            ("tasks".into(), view.tasks.clone()),
+            ("revision".into(), Value::String(view.revision.clone())),
+        ])
+        .unwrap();
+        let encoded = initial.canonical().unwrap();
+        let envelope = Value::object(vec![
+            ("version".into(), Value::integer("1").unwrap()),
+            (
+                "length".into(),
+                Value::integer(&encoded.len().to_string()).unwrap(),
+            ),
+            ("sha256".into(), Value::String(canonical::digest(&encoded))),
+            ("payload".into(), initial),
+        ])
+        .unwrap();
+        let mut raw = envelope.canonical().unwrap();
+        raw.push(b'\n');
+        let baseline_digest = canonical::digest(&raw);
+        fs::write(base.join("frames/00000000000000000000.frame"), raw).unwrap();
+        let manifest = json(&format!(
+            r#"{{"version":1,"workspace_id":"{}","epoch_id":"{}","source_revision":"tasks-missing:v1","source_present":false,"source_mode":null,"source_length":0,"source_digest":"{}","baseline_digest":"{baseline_digest}"}}"#,
+            view.workspace_id,
+            view.epoch_id,
+            canonical::digest(b"")
+        ));
+        let raw = manifest.canonical().unwrap();
+        let manifest_digest = canonical::digest(&raw);
+        fs::write(base.join("manifest.json"), raw).unwrap();
+        let marker = json(&format!(
+            r#"{{"version":1,"workspace_id":"{}","epoch_id":"{}","manifest_digest":"{manifest_digest}","baseline_digest":"{baseline_digest}"}}"#,
+            view.workspace_id, view.epoch_id
+        ));
+        fs::write(root.path().join(MARKER), marker.canonical().unwrap()).unwrap();
+        let captured = read(root.path()).unwrap().unwrap();
+        let key = RequestKey::parse("absent").unwrap();
+        let binding = RequestBinding::add("Task", None, "", None).unwrap();
+        assert!(captured.lookup(&key, &binding).unwrap().is_none());
+        fs::write(
+            base.join("frames/00000000000000000001.frame"),
+            b"corrupt tail",
+        )
+        .unwrap();
+        assert!(read(root.path()).is_err());
+        // Already captured history is pure even after authority becomes unreadable.
+        assert!(captured.lookup(&key, &binding).unwrap().is_none());
+        fs::remove_file(root.path().join(MARKER)).unwrap();
+        assert_eq!(
+            captured.fence(root.path()).unwrap_err().code(),
+            "task_authority_changed_during_read"
+        );
+        assert!(read(root.path()).unwrap().is_none());
+        assert!(pending(root.path()).unwrap());
+    }
     #[test]
     fn captured_marker_changes_or_disappears_never_become_snapshot() {
         let root = tempfile::tempdir().unwrap();
@@ -685,7 +1248,8 @@ mod tests {
             head_digest: String::new(),
             baseline_projection: None,
             marker_raw: b"original marker".to_vec(),
-            request_ids: HashSet::new(),
+            receipts: HashMap::new(),
+            receipt_bytes: 0,
         };
         view.fence(root.path()).unwrap();
         fs::write(&marker, b"different marker").unwrap();

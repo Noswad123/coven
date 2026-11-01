@@ -75,11 +75,14 @@ is not fresh launch permission or durability confirmation. Standalone
 workspace/configuration/authority preflight before returning the checkpoint view;
 it deliberately has broader dependencies than action inspection. It also has typed
 finite task values and a mixed-language-tested library workspace lock primitive.
+Library foundations now retain frozen task-ledger receipts for exact historical
+lookup and provide guarded atomic mutable-file replacement. Neither is connected
+to task/control mutation commands or grants fresh execution permission.
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
 or separately named native CLI. Explicit native handoff collection writes
-only local unverified evidence; task/authority mutations and runtime effects are
+only local unverified evidence; task/authority mutation commands and runtime effects are
 not yet native.
 Unsupported native commands fail closed without delegation.
 This is not yet a complete
