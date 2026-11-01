@@ -31,6 +31,7 @@ cargo run --offline --locked --bin coven -- task list WORKSPACE --json
 cargo run --offline --locked --bin coven -- state inspect WORKSPACE --json
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
+cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID --json
 ```
 
 The compiled `target/debug/coven` can also be invoked directly, including with
@@ -68,6 +69,7 @@ src/
   actions/authority.rs Pure all-claim validation, reference lookup and work budget
   actions/plans.rs   Pure deterministic tmux/Herdr frozen-plan validation
   checkpoints.rs     Pure byte-oriented checkpoint views and framed scope hashes
+  checkpoint_workspace.rs Ordered standalone workspace selection and checkpoint preflight
   storage.rs         Shared workspace guard and immutable evidence publication
   output.rs          Bounded safely escaped CLI presentation
   platform/          Compile-gated OS open flags and unsupported-platform refusal
@@ -403,8 +405,8 @@ bytes are concatenated and length-framed once for the scope hash. Snapshot hashe
 cover every original byte; missing and empty differ. Contradiction takes precedence
 over stale scope; stale changes-requested remains rejected. Decided-at is scalar
 text, not an ISO timestamp requirement. Linked external content is never read.
-The standalone `checkpoint inspect` CLI is **not ported yet**: its broad Python
-workspace preflight is a separate compatibility gate, not silently bypassed here.
+The standalone command below adds Python's broader workspace preflight separately;
+action inspection continues using only the narrow pure checkpoint reader.
 
 Native profile: raw action authority at most 8 MiB, UTF-8 without BOM, existing
 finite value limits, compact canonical authority at most 16 MiB, sorted/spaced plan
@@ -423,6 +425,72 @@ content remains diagnostic. No lock acquisition/inspection, fsync, transport,
 publication, recovery, current input/task/projection validation or runtime/provider
 call is performed. Existing task/runtime fences remain unchanged.
 
+## Standalone workspace-aware checkpoint inspection
+
+`checkpoint inspect [WORKSPACE] [CHECKPOINT_ID] --json` reuses the pure byte reader
+only after ordered workspace validation. No operands means cwd and plan-approval.
+The first operand selects a workspace **only** when its expanded spelling has an
+existing or symlinked `coven.json`; otherwise all original operands are checkpoint
+selectors in cwd. This is marker-based, not a two-operand arity heuristic or ancestor
+search. Marker directory/symlink types can select a workspace and fail managed-path
+validation later. Root aliases resolve, while marker contents are not selection data.
+
+Preflight follows the existing Python order: known managed directories and task
+marker path; selected ledger replay; managed files; conventional checkpoint text
+and sorted actual-name scan; persisted team and TOML overrides/effective team;
+environment multiplexer and complete launch-control validation; repeated paths,
+ledger and checkpoint text checks plus roster paths; third independent ledger
+read or legacy tasks; agent/lead records. Only then are excess operands or an
+invalid selected ID rejected. Missing selected checkpoints succeed after preflight.
+Unrelated recognized checkpoint files require valid UTF-8 text, not valid decision
+grammar. Known log/prose/prompt paths are type-checked without parsing their content.
+
+Pending ledger evidence without a task marker is allowed with a valid snapshot,
+unlike the task-list preview's conservative pending fence. Active authority is fully
+validated without projection path/type/content or health reads. A corrupt selected
+ledger never falls back. All three ledger reads remain distinct observations;
+there is no added cross-pass/final equality or pending/runtime fence. Each reused
+`ledger::read` retains its own existing internal marker checks. This is not an
+atomic, latest or coherent workspace snapshot or a reusable mutation guard.
+
+The narrow launch-control-only seam validates every claim/plan/report and actual
+workspace location, including orphan-control rules, but never opens bundles or
+dedicated checkpoints or constructs action output. Valid unresolved claims do not
+block checkpoint inspection. Existing action inspection remains configuration-
+independent; existing task runtime/pending fences and pure checkpoint semantics
+are unchanged. Execution authority is not added as a dependency.
+
+TOML runtime overrides apply trimmed strings to an effective team and revalidate it;
+environment selection cannot rescue invalid persisted or effective configuration.
+Nested TOML dates/times are checked against Python calendar/year/clock/timezone
+constraints (including rejection of leap second 60 and year zero). The cached
+parser's signed-i64 integer bounds and rejected positive floating overflow are
+explicit `unsupported_checkpoint_toml_scalar_profile` restrictions, not a claim that
+Python rejects those ignored scalars. Ignored TOML NaN/inf literals and parser-
+accepted negative overflow are not subjected to the finite JSON policy. Numeric
+refusal classification depends on the pinned parser diagnostics; some malformed
+overflow-prefixed integer tokens can receive the same unsupported-profile code.
+Both implementations still refuse those tokens. No alternate parser/dependency or
+value rewriting is introduced, and full TOML grammar equivalence is not claimed.
+
+Preview syntax requires `--json`; Python's flag-free pretty mode is not yet ported.
+Unambiguous long-option prefixes (`--j`, `--js`, `--jso`) are supported for this
+command. The flag belongs before or after the operand group, not between operands
+or before a trailing terminator following operands, matching Python parser errors
+before workspace loading. Repeated `--json` is rejected natively although Python
+accepts it. Tilde expansion precedes the marker probe but never rewrites a retained
+checkpoint selector; named-user expansion and HOME-absent implicit lookup remain
+explicitly unsupported. Non-UTF-8 paths and directory names refuse without lossy
+conversion, including unrecognized names that Python could ignore.
+
+Limits are per read/pass: 8 MiB finite JSON, 1 MiB checkpoint/TOML text, 4096 total
+directory entries per checkpoint scan, existing ledger replay limits and action
+control encoding/work limits. Conventional checkpoint files are checked before
+the bounded sorted scan. Compact and escaped presentation each finish within
+32 MiB before stdout. Repeated passes do not imply an aggregate CPU/peak-memory
+ceiling. No locks, fsync, publication, repair, approval, task/control mutation,
+transport, runtime/provider call or Python fallback is added.
+
 ## Validation
 
 Use the existing installed Rust toolchain; this slice was exercised with Rust/
@@ -435,7 +503,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 105 tests, including a build/CLI-name regression test and an
+The native suite has 117 tests, including a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -540,6 +608,20 @@ contradiction and stale scope. Parser resource errors retain their classificatio
 through action inspection; ordinary malformed JSON remains a diagnostic retaining
 the known claim. Existing storage/numeric corpora also protect unchanged codec modes.
 
+Standalone checkpoint workspace inspection adds **280 CLI cases**: 101 accepted,
+150 semantic/preflight refusals, 13 parser-boundary refusals, 15 explicit profile
+refusals and one permission-sensitive marker-selection probe. The permission probe
+ran here and pinned cwd selection/first configuration error; it explicitly skips
+when privilege makes denial ineffective. Cases cover marker/empty/tilde ambiguity,
+failure order, full managed inventories, team/TOML/environment/state, sorted Unicode/
+dotfile/name edges, pending import, active authority with unsafe projections, valid
+runtime control and unusable bundle children, ignored execution control, held locks,
+no-Python PATH, unchanged bytes/modes/inodes/mtimes and old-command policy separation.
+Unit tests compare managed inventories to Python constants, test exact 4096/4097
+scan boundaries and controlled authority changes between independent ledger reads.
+An independent nested TOML scalar/runtime-field corpus protects calendar and numeric
+profile behavior; parser grouping tests preserve semantic arity checks after preflight.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Native fault
 injection and mixed Python/Rust contention will be required for writers.
@@ -557,13 +639,14 @@ injection and mixed Python/Rust contention will be required for writers.
 | Task-ledger mutations/import/recovery | Python only | Receipt lookup/order, publication/uncertainty and fault tests |
 | Execution v1/v2 historical replay, graph reviews, receipts/reservation observation | Native bounded read-only preview | Close profile limits; durable writer guard and receipt lookup ordering still required |
 | Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
-| Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits; standalone checkpoint preflight and writers remain |
-| Checkpoint CLI/mutations, action consumption/outcomes, repository authority | Python only | Existing scoped approval, receipt ordering, publication/recovery and uncertainty contracts |
+| Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits before default parity |
+| Standalone checkpoint inspection and ordered workspace preflight | Native bounded read-only preview | Close documented parser/TOML/path/resource restrictions before default parity |
+| Checkpoint mutations, action consumption/outcomes, repository authority | Python only | Existing scoped approval, receipt ordering, publication/recovery and uncertainty contracts |
 | Observers, groups, watch/publication | Python only | Private endpoint/artifact differential tests, expiry/no stale fallback |
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive stage is standalone checkpoint CLI/preflight parity and guarded
+The next substantive stage is frozen receipt lookup/order and guarded authority
 publication/recovery primitives. Historical receipt reports are not yet a mutation
 retry API. Writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,

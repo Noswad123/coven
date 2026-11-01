@@ -70,7 +70,10 @@ approval or running graph operations. `action inspect [WORKSPACE] ACTION_ID --js
 also validates captured launch control, frozen plans and the dedicated checkpoint
 without running transport or checking current runtime inputs. Recorded claims
 remain visible despite ordinary bundle/checkpoint diagnostic errors; inspection
-is not fresh launch permission or durability confirmation. It also has typed
+is not fresh launch permission or durability confirmation. Standalone
+`checkpoint inspect [WORKSPACE] [CHECKPOINT_ID] --json` now performs its own ordered
+workspace/configuration/authority preflight before returning the checkpoint view;
+it deliberately has broader dependencies than action inspection. It also has typed
 finite task values and a mixed-language-tested library workspace lock primitive.
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.

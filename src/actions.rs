@@ -80,6 +80,34 @@ fn optional_error(error: Error, checkpoint: bool) -> Result<Value> {
     }))
 }
 
+/// Read-only workspace preflight, not admission or a reusable mutation guard.
+/// The caller supplies its resolved root. No bundle, checkpoint, current input,
+/// selected-claim lookup or presentation is needed to validate control authority.
+pub(crate) fn validate_workspace_control(root: &Path) -> Result<()> {
+    platform::ensure_supported()?;
+    let actual = platform::workspace_location(root)?;
+    let mut budget = Budget::default();
+    match read(
+        root,
+        Path::new(CONTROL),
+        values::MAX_INPUT,
+        "unsupported_action_input_profile",
+    )? {
+        Some(raw) => {
+            ValidatedControl::validate(parse_authority(&raw)?, &actual, &mut budget)?;
+        }
+        None => {
+            let directory = read_fs::managed(root, Path::new("state/actions"), true)?;
+            match fs::symlink_metadata(directory) {
+                Ok(_) => return Err(Error("action_orphan_bundles")),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    Ok(())
+}
+
 fn inspect_with_budget(
     workspace: &Path,
     action_id: &str,
@@ -320,6 +348,29 @@ mod tests {
             inspect(temp.path(), ID).unwrap_err().code(),
             "action_orphan_bundles"
         );
+    }
+
+    #[test]
+    fn control_only_preflight_never_reads_optional_evidence_or_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        validate_workspace_control(&root).unwrap();
+        fs::create_dir_all(root.join("state/actions")).unwrap();
+        assert_eq!(
+            validate_workspace_control(&root).unwrap_err().code(),
+            "action_orphan_bundles"
+        );
+        fs::write(root.join(CONTROL), control(&root).canonical().unwrap()).unwrap();
+        fs::write(root.join("coven.json"), b"not config").unwrap();
+        fs::write(
+            root.join(format!("state/actions/{ID}.json")),
+            b"not a bundle",
+        )
+        .unwrap();
+        fs::write(root.join("checkpoints"), b"not even a checkpoint directory").unwrap();
+        validate_workspace_control(&root).unwrap();
+        fs::write(root.join(CONTROL), b"null").unwrap();
+        assert!(validate_workspace_control(&root).is_err());
     }
     #[test]
     fn python_non_native_authority_encodings_are_explicit_fatal_profile_refusals() {
