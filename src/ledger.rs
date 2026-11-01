@@ -1,5 +1,6 @@
-//! Complete bounded task-ledger read/replay. No mutation, import, repair, fsync or
-//! delivery activation. A selected invalid authority never becomes snapshot.
+//! Complete bounded task-ledger read/replay and explicit selected confirmation.
+//! No mutation, import, repair or delivery activation. Invalid authority never becomes snapshot.
+mod confirmation;
 use crate::{
     Error, Result, canonical,
     error::require,
@@ -7,6 +8,7 @@ use crate::{
     records::{self, TaskRecords},
     values::{self, Number, Object, Profile, Value},
 };
+pub use confirmation::{LedgerConfirmation, confirm_selected};
 use sha2::{Digest as _, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -358,6 +360,7 @@ pub struct View {
     epoch_id: String,
     sequence: usize,
     head_digest: String,
+    manifest_digest: String,
     baseline_projection: Option<Vec<u8>>,
     marker_raw: Vec<u8>,
     receipts: HashMap<String, Receipt>,
@@ -796,6 +799,7 @@ pub fn read(root: &Path) -> Result<Option<View>> {
         epoch_id: epoch.to_owned(),
         sequence: 0,
         head_digest: digest,
+        manifest_digest: canonical::digest(&raw),
         baseline_projection: source.or(Some(b"[]\n".to_vec())),
         marker_raw,
         receipts: HashMap::new(),
@@ -822,6 +826,7 @@ mod tests {
             epoch_id: "b".repeat(32),
             sequence: 0,
             head_digest: "c".repeat(64),
+            manifest_digest: String::new(),
             baseline_projection: None,
             marker_raw: Vec::new(),
             receipts: HashMap::new(),
@@ -1246,6 +1251,7 @@ mod tests {
             epoch_id: String::new(),
             sequence: 0,
             head_digest: String::new(),
+            manifest_digest: String::new(),
             baseline_projection: None,
             marker_raw: b"original marker".to_vec(),
             receipts: HashMap::new(),

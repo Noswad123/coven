@@ -1,5 +1,6 @@
-//! Read-only execution-control v1/v2 history. This is historical preparation
-//! authority, never execution admission, delivery, or a durability assessment.
+//! Execution-control v1/v2 history and SDK reservation checks. Historical reports
+//! never assess durability. Guards confirm retained authority under a borrowed
+//! lock, but neither API grants execution admission, approval, or delivery.
 //!
 //! Native restrictions: Authority JSON input is at most 8 MiB (Python permits
 //! 16 MiB), history has at most 1024 entries, and accepted canonical work is at
@@ -18,7 +19,9 @@ use sha2::{Digest as _, Sha256};
 use std::{collections::HashSet, fs, path::Path};
 
 mod graphs;
+mod guards;
 mod v2;
+pub use guards::{ReservationCheck, guard_authority_change, guard_task_mutation};
 
 const DISABLED: &str = "execution-disabled:v1";
 const MAX_HISTORY: usize = 1024;
@@ -745,16 +748,50 @@ fn envelope(status: &str, revision: String) -> Result<Value> {
         ("assessment", string("historical_authority_only")),
     ])
 }
+#[cfg(test)]
 fn replay(control: &Value) -> Result<Value> {
+    validated(control)?.report(control)
+}
+
+// Complete validated authority, before any historical presentation is built.
+struct Validated {
+    replayed: Replayed,
+    authority: String,
+    schema: usize,
+    graph: Option<Value>,
+}
+
+impl Validated {
+    fn report(self, control: &Value) -> Result<Value> {
+        let mut output = report(control, self.replayed, self.schema)?;
+        if let Some(graph) = self.graph {
+            for (key, value) in graph
+                .as_object()
+                .ok_or(Error("invalid_execution_fields"))?
+                .entries()
+            {
+                output.set_field(key, value.clone())?;
+            }
+        }
+        Ok(output)
+    }
+}
+
+fn validated(control: &Value) -> Result<Validated> {
     if control
         .as_object()
         .and_then(|o| o.get("schema_version"))
         .is_some_and(|v| exact_integer(v, 2))
     {
-        return v2::replay(control);
+        return v2::validated_with_work(control, &mut Work::default());
     }
     let replayed = replay_v1(control, &mut Work::default())?;
-    report(control, replayed, 1)
+    Ok(Validated {
+        replayed,
+        authority: text(get(control, "execution_authority_id")?)?.to_owned(),
+        schema: 1,
+        graph: None,
+    })
 }
 
 struct Replayed {
@@ -930,20 +967,29 @@ pub fn history(workspace: &Path) -> Result<Value> {
     crate::platform::ensure_supported()?;
     let root = workspace.canonicalize()?;
     require(root.is_dir(), "invalid_execution_workspace")?;
-    let directory = read_fs::managed(&root, Path::new("state/execution"), true)?;
-    let control = read_fs::managed(&root, Path::new("state/execution/control.json"), false)?;
+    match read_typed(&root)? {
+        Some((control, validated)) => validated.report(&control),
+        None => envelope("disabled", DISABLED.to_owned()),
+    }
+}
+
+// None means only that the managed execution directory is absent. Each call
+// owns its existing replay budget; two reads are not an aggregate CPU bound.
+fn read_typed(root: &Path) -> Result<Option<(Value, Validated)>> {
+    let directory = read_fs::managed(root, Path::new("state/execution"), true)?;
+    let control = read_fs::managed(root, Path::new("state/execution/control.json"), false)?;
     match fs::symlink_metadata(&control) {
         Ok(_) => {
             // Explicitly narrower than Python's 16 MiB persisted-control limit.
             let raw = read_fs::read_regular(&control, values::MAX_INPUT)?;
-            replay(&values::parse(&raw, Profile::Authority)?)
+            let control = values::parse(&raw, Profile::Authority)?;
+            let validated = validated(&control)?;
+            Ok(Some((control, validated)))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             match fs::symlink_metadata(directory) {
                 Ok(_) => Err(Error("pending_execution_authority")),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    envelope("disabled", DISABLED.to_owned())
-                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
                 Err(error) => Err(error.into()),
             }
         }
@@ -965,7 +1011,7 @@ mod tests {
     fn parse(s: &str) -> Value {
         values::parse(s.as_bytes(), Profile::Authority).unwrap()
     }
-    fn enabled() -> Value {
+    pub(super) fn enabled() -> Value {
         parse(
             r#"{
           "schema_version":1,"execution_authority_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1156,7 +1202,7 @@ mod tests {
             .clone()
     }
 
-    fn upgraded(legacy: Value) -> Value {
+    pub(super) fn upgraded(legacy: Value) -> Value {
         let revision = replay_v1(&legacy, &mut Work::default()).unwrap().revision;
         let metadata = object(vec![
             ("upgrade_id", string("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
@@ -1298,7 +1344,7 @@ mod tests {
         assert_eq!(exhausted.0, MAX_WORK + 1);
     }
 
-    fn cancel(control: &mut Value, attempt: &str, cancellation: &str) {
+    pub(super) fn cancel(control: &mut Value, attempt: &str, cancellation: &str) {
         append(
             control,
             "cancel",
@@ -1564,7 +1610,7 @@ mod tests {
             "execution_upgrade_has_prepared_attempts"
         );
     }
-    fn enroll(control: &mut Value) {
+    pub(super) fn enroll(control: &mut Value) {
         let s = source_fixture(control);
         let task = &get(&s, "tasks").unwrap().as_array().unwrap()[0];
         let record = object(vec![
@@ -1595,7 +1641,7 @@ mod tests {
             object(vec![("source", s), ("enrollment", record)]).unwrap(),
         );
     }
-    fn prepare(control: &mut Value, id: &str, predecessor: Value, number: usize) {
+    pub(super) fn prepare(control: &mut Value, id: &str, predecessor: Value, number: usize) {
         let s = source_fixture(control);
         let task = &get(&s, "tasks").unwrap().as_array().unwrap()[0];
         let intent = parse(

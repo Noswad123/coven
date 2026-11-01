@@ -384,11 +384,12 @@ impl Graphs {
     }
 }
 
-pub(super) fn replay(control: &Value) -> Result<Value> {
-    replay_with_work(control, &mut Work::default())
+#[cfg(test)]
+pub(super) fn replay_with_work(control: &Value, work: &mut Work) -> Result<Value> {
+    validated_with_work(control, work)?.report(control)
 }
 
-pub(super) fn replay_with_work(control: &Value, work: &mut Work) -> Result<Value> {
+pub(super) fn validated_with_work(control: &Value, work: &mut Work) -> Result<Validated> {
     fields(
         control,
         "schema_version execution_authority_id snapshot_source_id generation legacy_v1 upgrade history extensions",
@@ -530,18 +531,23 @@ pub(super) fn replay_with_work(control: &Value, work: &mut Work) -> Result<Value
             canonical::digest(&bytes)
         );
     }
-    let mut report = report(control, replayed, 2)?;
-    report.set_field("graph_id", graphs.id)?;
-    report.set_field("current_graph_revision", graphs.head)?;
-    report.set_field(
-        "graphs",
-        Value::object(graphs.revisions.into_iter().collect())?,
-    )?;
     let mut managed: Vec<_> = graphs.managed.into_iter().collect();
     managed.sort();
-    report.set_field(
-        "graph_managed_tasks",
-        Value::Array(managed.into_iter().map(string).collect()),
-    )?;
-    Ok(report)
+    Ok(Validated {
+        replayed,
+        authority: authority.to_owned(),
+        schema: 2,
+        graph: Some(object(vec![
+            ("graph_id", graphs.id),
+            ("current_graph_revision", graphs.head),
+            (
+                "graphs",
+                Value::object(graphs.revisions.into_iter().collect())?,
+            ),
+            (
+                "graph_managed_tasks",
+                Value::Array(managed.into_iter().map(string).collect()),
+            ),
+        ])?),
+    })
 }

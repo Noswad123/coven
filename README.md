@@ -78,6 +78,9 @@ finite task values and a mixed-language-tested library workspace lock primitive.
 Library foundations now retain frozen task-ledger receipts for exact historical
 lookup and provide guarded atomic mutable-file replacement. Neither is connected
 to task/control mutation commands or grants fresh execution permission.
+SDK-only selected-ledger confirmation and execution-reservation checks now borrow
+an existing workspace guard and synchronize validated authority before reporting
+their outcome. Historical inspection commands remain lock/fsync-free.
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
