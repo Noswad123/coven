@@ -13,6 +13,18 @@ pub(crate) fn ensure_supported() -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn random_uuid_hex() -> Result<String> {
+    uuid_hex_from_reader(File::open("/dev/urandom")?)
+}
+
+fn uuid_hex_from_reader(mut entropy: impl std::io::Read) -> Result<String> {
+    let mut bytes = [0_u8; 16];
+    entropy.read_exact(&mut bytes)?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
 pub(crate) fn workspace_location(root: &Path) -> Result<super::WorkspaceLocation> {
     let metadata = root.metadata()?;
     crate::error::require(metadata.is_dir(), "invalid_action_workspace")?;
@@ -135,4 +147,43 @@ pub(crate) fn sync_directory(path: &Path) -> std::io::Result<()> {
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
         .open(path)?
         .sync_all()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn os_identifiers_use_lowercase_uuid_v4_shape() {
+        let id = super::random_uuid_hex().unwrap();
+        assert_eq!(id.len(), 32);
+        assert!(
+            id.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
+        assert_eq!(id.as_bytes()[12], b'4');
+        assert!(matches!(id.as_bytes()[16], b'8' | b'9' | b'a' | b'b'));
+    }
+
+    #[test]
+    fn identifiers_require_complete_successful_entropy_reads() {
+        assert_eq!(
+            super::uuid_hex_from_reader(&[0_u8; 16][..]).unwrap(),
+            "00000000000040008000000000000000"
+        );
+        for bytes in [&[][..], &[0_u8; 15][..]] {
+            assert_eq!(
+                super::uuid_hex_from_reader(bytes).unwrap_err().code(),
+                "input_or_storage_unavailable"
+            );
+        }
+        struct Failing;
+        impl std::io::Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("entropy unavailable"))
+            }
+        }
+        assert_eq!(
+            super::uuid_hex_from_reader(Failing).unwrap_err().code(),
+            "input_or_storage_unavailable"
+        );
+    }
 }

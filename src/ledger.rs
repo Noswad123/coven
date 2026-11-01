@@ -1,12 +1,19 @@
-//! Complete bounded task-ledger read/replay and explicit selected confirmation.
-//! No mutation, import, repair or delivery activation. Invalid authority never becomes snapshot.
+//! Bounded ledger replay, frozen receipts, selected confirmation and explicit
+//! SDK baseline activation/recovery. No task mutation, projection repair or
+//! delivery pipeline is enabled. Invalid authority never becomes snapshot.
+mod activation;
 mod confirmation;
+mod publication;
 use crate::{
     Error, Result, canonical,
     error::require,
     handoff, read_fs,
     records::{self, TaskRecords},
     values::{self, Number, Object, Profile, Value},
+};
+pub use activation::{
+    ActivationDurability, ActivationReport, ArchiveDurability, ArchiveReport, ImportFailure,
+    ImportProgress, abort_import, import_tasks, resume_import,
 };
 pub use confirmation::{LedgerConfirmation, confirm_selected};
 use sha2::{Digest as _, Sha256};
@@ -659,6 +666,19 @@ pub fn read(root: &Path) -> Result<Option<View>> {
     let Some(marker_raw) = optional_bytes(root, MARKER)? else {
         return Ok(None);
     };
+    let candidate = validate_epoch(root, marker_raw)?;
+    candidate.view.fence(root)?;
+    Ok(Some(candidate.view))
+}
+
+// An epoch can be valid without being selected authority. Only read() or the
+// activation protocol may expose its view after establishing marker selection.
+struct CandidateEpoch {
+    view: View,
+    manifest: Value,
+}
+
+fn validate_epoch(root: &Path, marker_raw: Vec<u8>) -> Result<CandidateEpoch> {
     let marker = values::parse(&marker_raw, Profile::Authority)?;
     object(
         &marker,
@@ -810,8 +830,7 @@ pub fn read(root: &Path) -> Result<Option<View>> {
         total = history_bytes(total, raw.len())?;
         view.apply(payload(&raw)?, canonical::digest(&raw))?;
     }
-    view.fence(root)?;
-    Ok(Some(view))
+    Ok(CandidateEpoch { view, manifest })
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native evidence capture and read-only task/execution/action authority**, not a complete Rust replacement.
+Status: **native evidence capture, authority readers and SDK baseline activation/recovery**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -63,6 +63,8 @@ src/
   tasks.rs           Preflight, captured task/state reports and authority fences
   ledger.rs          Complete bounded selected task-ledger replay/projection health
   ledger/confirmation.rs Explicit locked selected-history synchronization
+  ledger/activation.rs SDK baseline planning, marker-last activation, resume/archive
+  ledger/publication.rs Private typed no-overwrite artifact publication
   execution.rs       Historical execution replay state, v1 rules and report boundary
   execution/v2.rs    Upgrade bridge, graph reviews and v2 preparation replay
   execution/graphs.rs Pure bounded graph validation, refreezing and source matching
@@ -261,8 +263,9 @@ a missing lock/directory. The token is root/PID/thread owned and not Send/Sync,
 uses the same kernel flock/inode as Python, never steals/unlinks/replaces it, and
 releases on normal exit or process death. The destructor avoids explicitly
 unlocking a parent's inherited open-file description after fork. Task and handoff
-reads do **not** acquire this token. No native task writer, authority publication,
-import, recovery or automatic dispatch is enabled by its availability.
+reads do **not** acquire this token. Acquiring it never activates authority or
+dispatches work. Only explicit SDK activation/recovery calls below may publish a
+baseline or archive pending state; no task mutation or recovery CLI is enabled.
 
 ### Guarded mutable replacement (library only)
 
@@ -291,9 +294,9 @@ The independent 32 MiB byte-transport cap does not raise domain limits or native
 reader profiles. Existing immutable evidence publication retains its 8 MiB cap and
 hard-link no-overwrite semantics. Ledger frames/manifests/baselines, the initial
 task-authority marker and action bundles must never use mutable replacement.
-No such call sites are introduced. Domain-safe immutable publication, activation-
-last ancestor syncing and recovery remain future work. Explicit selected-history
-confirmation below does not supply a publication or recovery protocol.
+No immutable artifacts use mutable replacement. The ledger-specific immutable
+baseline protocol below supplies marker-last activation and pending recovery;
+selected-history confirmation remains a separate already-active operation.
 Local ordinary rename-error semantics and static cooperating paths
 are assumed; this is not a hostile-path sandbox, distributed unknown-rename
 protocol or universal power-loss guarantee.
@@ -360,10 +363,102 @@ Neither API acquires, replaces or releases the borrowed lock. Obtaining a native
 WorkspaceGuard currently requires a regular coven.json marker, unlike Python's
 low-level stores; it does not parse configuration. This inherited acquisition
 restriction remains explicit, while marker-free historical readers stay unchanged.
-No CLI, domain writer, activation, recovery, provider/runtime request or receipt-
-delivery policy is enabled by either foundation. Static cooperating filesystem
+These confirmation APIs themselves publish nothing or select a new authority.
+The SDK baseline protocol below calls the reservation guard explicitly; no CLI,
+task writer, provider/runtime request or receipt-delivery pipeline is enabled.
+Static cooperating filesystem
 assumptions remain; no hostile namespace sandbox or universal crash durability is
 claimed.
+
+### Baseline activation and pending recovery (SDK only)
+
+`ledger::import_tasks(workspace, snapshot_pin, borrowed_guard)` now activates a
+strictly validated baseline. `resume_import` explicitly resumes only a complete,
+unambiguous pending baseline, and `abort_import` archives a pending directory
+without deleting it. These are effectful library operations, not new CLI commands;
+they do not implement task add/assign, projection repair, events, dashboards,
+execution/control mutations or runtime dispatch.
+
+Import validates the matching guard and confirmed execution authority-change gate,
+then refuses any marker entry before classifying pending state. It rejects an
+existing ledger directory, validates the original snapshot pin and strict task
+records, captures raw source bytes/mode, and constructs frame zero, manifest and
+marker with fresh UUIDv4-shaped IDs from platform OS entropy. IDs require a complete
+successful 16-byte entropy read; no timestamp/PID/fallback generator is used.
+All generated final JSON bytes, including the fully wrapped frame and LF, pass
+the existing Authority parser and 8 MiB limit **before the first ledger mkdir**.
+This catches envelope-added depth/nodes that source-only parsing or encoding alone
+would miss. Deterministic profile rejection is intentionally earlier than Python's
+interleaved first-import construction.
+
+Directories are created in order task-ledger, epoch, frames, syncing each parent.
+Native requests `0700`, subject to umask and inherited special bits, rather than
+Python's default mkdir permissions. Optional raw backup, frame zero and manifest
+are then published immutably. Private typed artifact roles derive fixed ledger
+paths from validated IDs; they do not expose arbitrary authority destinations.
+Temporary names are target-derived and reader-recognized. Mode application and
+descriptor verification follow writing, then file fsync, exclusive hard link,
+parent sync and best-effort cleanup of only the owned temp. Backup mode bits are
+preserved exactly; other artifacts receive 0600. Mode/owner/ACL limitations remain
+as documented above; silent SGID loss fails before linking, stronger than Python's
+unverified chmod. Two directory entries are reserved in reader-enumerated parents,
+counting inert temps, while `state` gets no new global enumeration limit.
+
+After publishing artifacts, complete on-disk epoch validation runs again and must
+produce sequence zero. Workspace-root sync precedes publication of the **sole
+activation marker last**. The marker hard link is the visibility/selection boundary;
+its parent sync determines activation durability. Before it, artifacts alone never
+become task authority. No source/projection bytes, mode or inode are rewritten.
+An absent source remains absent after activation; projection repair is separate.
+Public `read()` still selects a marker, fully validates its epoch and fences the
+original marker before returning; the preactivation candidate type stays private.
+
+`ActivationReport` exposes the known validated view and separate
+ActivationDurability, Confirmed or SynchronizationUncertain. Successful marker link
+always returns that known result, even after final directory-sync failure, without
+a fallible rediscovery read. `into_view()` discards this operation's durability
+classification, so callers should inspect it first. Confirmed describes the
+operation's synchronization, not continuing/global authority or execution permission.
+
+Before activation, `ImportFailure` exposes a fixed cause and operation-local
+ImportProgress. NoNewArtifacts is not proof that no earlier artifacts exist. Any
+already-present marker rejects as NoNewArtifacts, even if its active epoch directory
+exists or the marker is malformed/unsafe. Only after marker absence is established
+does an observed ledger path count as Pending; first successful mkdir also records
+Pending before parent sync. A known linked file updates this invocation's relative
+last_published, not a global latest-artifact claim. An uncertain pre-marker sync
+stops without activating. A false uncertainty flag does not certify pre-existing
+artifacts. Existing finals are never adopted, overwritten or rolled back.
+
+Resume uses the same guard/execution gate, validates the original pin, requires no
+marker and bounds **all raw root entries** to exactly one UUID-named epoch. It does
+not ignore temp-looking names at that root, choose newest, regenerate missing
+finals, or promote orphan temps. It hashes the existing raw manifest rather than
+rewriting its formatting, fully validates the epoch, requires sequence zero, and
+compares original pin plus exact current source presence/bytes to the validated
+backup. Backup mode must match recorded mode; changing only the current source's
+mode does not change its byte revision. Resume syncs manifest, frame zero, optional
+backup, then frames/epoch/ledger/state/root before linking the marker last.
+
+Abort intentionally does not parse source/epochs or consult execution reservations.
+Any marker entry blocks it. A safe pending directory is renamed whole to a fresh,
+definitely absent `state/task-ledger-aborted-<id>` destination. Rename failure is an
+error; rename success followed by state-sync failure returns the absolute known
+path with ArchiveDurability::SynchronizationUncertain, never rollback or a false
+“nothing happened” failure. Confirmed covers the archive rename synchronization,
+not independent durability of every pre-existing archived file. This SDK outcome
+is more structured than Python's combined rename/sync error; no CLI JSON policy
+has been changed or invented. Destination absence plus rename assumes cooperating
+writers/static paths, not hostile atomic no-replace semantics.
+
+Existing native JSON/source/frame/history/directory profiles remain mandatory: the
+writer cannot activate data its own reader refuses. Raw source and every artifact
+are bounded to 8 MiB; complete wrapped parser bounds are enforced, and root resume
+enumeration is bounded. Directory access modes and special-bit inheritance remain
+OS policy, not an exact cross-platform mode claim. Old binaries/direct-file editors
+must cooperate or be stopped operationally. No hostile namespace sandbox, reviewer
+authentication, anti-rollback, universal power-loss guarantee or automatic recovery
+is implied; all live tests here use disposable local data.
 
 ## Explicit unverified handoff collection
 
@@ -655,7 +750,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 150 tests, including a build/CLI-name regression test and an
+The native suite has 183 tests, including a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -815,6 +910,27 @@ corruption. Existing 54,929/81,919 work counters and 295 report-parity cases con
 passing. Synchronization may change storage durability; no namespace/content/mode/
 inode/mtime mutation is expected, and atime is not used as an invariant.
 
+Baseline activation/recovery adds **133 cross-language SDK cases** and six flock
+ordering checks: native artifacts are read by Python, pending baselines resume in
+both directions, and Python task follow-ups accept native imports. Cases preserve
+raw source bytes/mode/inode, exact canonical frame/manifest/marker bytes, digests,
+numeric/Unicode extensions, absent projection, strict source parsing, execution
+reservations, raw-manifest recovery, backup-mode/source-pin distinctions, ambiguous
+or incomplete pending artifacts and exact nondestructive archive transformations.
+All import/recovery CLI routes remain unsupported and effect-free.
+
+The private publisher's fault matrix covers **144 combinations** (four artifact
+roles × two target states × nine boundaries × two cleanup outcomes), plus capacity,
+collision, SGID verification and exact-8-MiB frame cases. Activation units inject
+every phase, distinguish pending versus known active/archive uncertainty, and prove
+the real candidate validator rejects five already-published corruptions—including
+a valid sequence-one tail that fails first import's sequence-zero gate. Fixed-ID
+Python vectors and source-valid/wrapped-invalid node/depth fixtures protect planning.
+Four isolated umask/SGID-parent probes pin twelve exact directory access-mode checks
+without changing the parent test process's umask. Complete/short/failed entropy
+reads and UUIDv4 shape are independently tested. Crash/power-loss behavior and a
+real nonmember-group SGID setup are not claimed.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Native fault
 injection and mixed Python/Rust contention will be required for writers.
@@ -826,10 +942,11 @@ injection and mixed Python/Rust contention will be required for writers.
 | Handoff schema, validate, historical inspect/list | Native Rust preview; Python still default | Close documented path gap before default parity |
 | Handoff collection/publication | Native bounded unverified capture; Python still default | Close profile limits/cross-platform validation before default parity |
 | Finite values, ordered extensions, records, snapshot task JSON listing | Native bounded preview; Python still default | Close stated acceptance limits before full legacy parity |
-| Persistent workspace flock, immutable evidence publication and mutable replacement | Native guarded library primitives, mixed-language/fault tests | Domain-safe authority publication, recovery and writer integration |
+| Persistent workspace flock, evidence/ledger immutable publication and mutable replacement | Native guarded library primitives, mixed-language/fault tests | End-to-end domain-writer integration and delivery policy |
 | Workspace init/refresh and task mutations | Python only | Storage/authority guards and mixed-writer fault tests |
 | Task-ledger read/replay, frozen receipt lookup, selected confirmation and projection diagnostics | Native bounded library/read-only preview | Close supported-profile limits; durable retry coordination/delivery still required |
-| Task-ledger mutations/import/recovery | Python only | Receipt/head/guard pipeline, immutable publication/uncertainty, recovery and fault tests |
+| Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK only | CLI preflight/delivery integration and remaining profile/cross-platform gates |
+| Task add/assign, projection repair and secondary delivery | Python only | Receipt/head/CAS/guard writer pipeline, uncertain result delivery and mixed-writer fault tests |
 | Execution v1/v2 historical replay, graph reviews and confirmed reservation checks | Native bounded SDK/read-only preview | Close profile limits; writer integration and receipt delivery/order still required |
 | Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
 | Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits before default parity |
@@ -839,9 +956,9 @@ injection and mixed Python/Rust contention will be required for writers.
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive stage is domain-safe immutable publication/activation and
-recovery, followed by the receipt/head/CAS/guard writer pipeline. Frozen lookup,
-confirmation and replacement are not yet a mutation retry API. Writers must preserve persistent flock inode/order,
+The next substantive stage is the receipt/head/CAS/guard task-writer pipeline and
+uncertain-result delivery, followed by projection/secondary effects and CLI gates.
+The SDK baseline protocol does not supply a task-mutation retry API. Writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old
 preparation, observation, collected claim or runtime-launch receipt may become a

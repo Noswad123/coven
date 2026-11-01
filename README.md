@@ -81,6 +81,10 @@ to task/control mutation commands or grants fresh execution permission.
 SDK-only selected-ledger confirmation and execution-reservation checks now borrow
 an existing workspace guard and synchronize validated authority before reporting
 their outcome. Historical inspection commands remain lock/fsync-free.
+The library also supports explicit baseline import, resume of a complete pending
+import, and nondestructive pending archival. These calls publish authority only at
+the final marker link and preserve known activation/archive outcomes on uncertain
+sync. Import/recovery CLI routes and task mutation commands are still disabled.
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
