@@ -172,10 +172,11 @@ def main(binary):
             refusal = native("handoff","inspect",non_utf8,archives[0][0],"--json",expected=1)
             assert b"non_unicode_path_unsupported" in refusal.stderr
             os.rename(non_utf8, workspace)
-        # Unported effectful operations reject before workspace creation or fallback.
+        # Unported operations and unsupported flags reject before effects/fallback.
+        # Native init is command-tested separately; --json is still unsupported.
         absent = root / "must-not-exist"
         before = snapshot(workspace)
-        for args in (("execution","enable",absent), ("init",absent),
+        for args in (("execution","enable",absent), ("init",absent,"--json"),
                      ("session","prompt",absent,"--execute"), ("task","remove",absent,"x")):
             native(*args,expected=2)
             assert not absent.exists()

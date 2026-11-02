@@ -3,7 +3,7 @@ use std::process::Command;
 
 // The oracle is test-only, with a deadline and file-backed output so neither
 // full pipes nor a failing Python import can hang the test harness.
-fn run(command: &mut Command) -> Vec<u8> {
+pub(super) fn run(command: &mut Command) -> Vec<u8> {
     use std::{
         process::Stdio,
         time::{Duration, Instant},

@@ -1,5 +1,6 @@
 //! Shared persistent workspace lock, immutable publication, and mutable replacement.
 //! Never replace/unlink a lock inode or steal it based on process metadata.
+pub(crate) mod bootstrap;
 mod replacement;
 pub use replacement::atomic_replace_bytes;
 

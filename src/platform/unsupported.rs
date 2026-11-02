@@ -52,3 +52,19 @@ pub(crate) fn mkdir_private(_: &Path) -> std::io::Result<()> {
 pub(crate) fn sync_directory(_: &Path) -> std::io::Result<()> {
     Err(std::io::ErrorKind::Unsupported.into())
 }
+
+pub(crate) fn resolve_init_target(_: &Path) -> Result<std::path::PathBuf> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn open_init_directory(_: &Path) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn open_init_lock(_: &Path) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn validate_init_identity(_: &Path, _: &File, _: bool) -> Result<()> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn validate_init_temp(_: &Path, _: &File) -> Result<()> {
+    Err(Error("unsupported_platform"))
+}

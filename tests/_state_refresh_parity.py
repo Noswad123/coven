@@ -819,13 +819,13 @@ class Suite:
             effects(before, files(w), {"state/.workspace.lock", "tmux/coven.toml", "dashboard.md"} |
                     set(draft[1]) | set(draft[2]))
         self.run("native-profile", "canonical default command", default_command)
-        def unsupported_init():
+        def init_unknown_flag():
             w = self.fixture()
             before = files(w)
-            result = self.candidate(["init", w], w)
+            result = self.candidate(["init", w, "--json"], w)
             assert result[0] == 2 and result[1] == "" and result[2], result
             assert files(w) == before
-        self.run("native-profile", "init remains unsupported", unsupported_init)
+        self.run("native-profile", "init rejects unknown JSON flag without effects", init_unknown_flag)
         for profile in ("raw-backup-32MiB", "text-1MiB"):
             def case(profile=profile):
                 w = self.fixture(active=profile == "raw-backup-32MiB")

@@ -24,3 +24,14 @@ pub(crate) struct WorkspaceLocation {
     pub device: u64,
     pub inode: u64,
 }
+
+#[cfg(unix)]
+pub(crate) use unix::init::{
+    open_init_directory, open_init_lock, resolve_init_target, validate_init_identity,
+    validate_init_temp,
+};
+#[cfg(not(unix))]
+pub(crate) use unsupported::{
+    open_init_directory, open_init_lock, resolve_init_target, validate_init_identity,
+    validate_init_temp,
+};

@@ -233,11 +233,13 @@ fn goal(root: &Path) -> Result<String> {
         "unsupported_dashboard_input_profile",
     )?
     .unwrap_or_default();
-    let text = std::str::from_utf8(&bytes)?
-        .replace("\r\n", "\n")
-        .replace('\r', "\n");
+    Ok(goal_text(std::str::from_utf8(&bytes)?))
+}
+
+fn goal_text(raw: &str) -> String {
+    let text = raw.replace("\r\n", "\n").replace('\r', "\n");
     let text = records::trimmed(&text);
-    Ok(records::trimmed(text.strip_prefix("# Goal").unwrap_or(text)).to_owned())
+    records::trimmed(text.strip_prefix("# Goal").unwrap_or(text)).to_owned()
 }
 
 fn capture(root: &Path) -> Result<CapturedDashboard> {
@@ -270,6 +272,17 @@ pub(crate) fn refresh_dashboard(root: &Path, guard: &WorkspaceGuard) -> Result<(
 /// repeats preparation under its borrowed workspace guard.
 pub(crate) fn prepare_dashboard_bytes(root: &Path) -> Result<Vec<u8>> {
     Ok(render(&capture(root)?)?.into_bytes())
+}
+
+/// Init has validated all state in memory before a workspace marker exists.
+/// Reuse the formatter without relaxing ordinary capture or guard admission.
+pub(crate) fn prepare_initial_dashboard(state: WorkspaceState, goal: &str) -> Result<Vec<u8>> {
+    Ok(render(&CapturedDashboard {
+        state,
+        goal: goal_text(goal),
+        statuses: ["pending".to_owned(), "pending".to_owned()],
+    })?
+    .into_bytes())
 }
 
 trait DashboardIo {

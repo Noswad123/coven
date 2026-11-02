@@ -1,7 +1,8 @@
 use clap::builder::TypedValueParser;
 use clap::{ArgGroup, CommandFactory, FromArgMatches, Parser, Subcommand};
 use coven::{
-    Result, actions, archive, checkpoint_workspace, collection, execution, refresh, state_commands,
+    Result, actions, archive, checkpoint_workspace, collection, execution, init, refresh,
+    state_commands,
     storage::Delivery,
     task_mutation::{self, TaskOutput},
     tasks,
@@ -22,6 +23,35 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Initialize a new snapshot workspace; never overwrite or start a runtime.
+    #[command(infer_long_args = true, args_override_self = true)]
+    Init {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, allow_negative_numbers = true)]
+        name: Option<String>,
+        #[arg(
+            long,
+            default_value = "Clippy,Srikanth,Jamal,Kris,Eric",
+            allow_negative_numbers = true
+        )]
+        agents: String,
+        #[arg(long, default_value = "oc", allow_negative_numbers = true)]
+        opencode_command: String,
+        #[arg(long, default_value = "herdr", value_parser = ["herdr", "tmux"])]
+        multiplexer: String,
+        #[arg(
+            long,
+            default_value = "interactive-demo",
+            allow_negative_numbers = true
+        )]
+        example: String,
+        #[arg(long)]
+        blank: bool,
+        /// Compatibility no-op; never authorizes a reset or overwrite.
+        #[arg(long)]
+        force: bool,
+    },
     /// Regenerate only generated files in an existing workspace; never starts a runtime.
     Refresh {
         #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
@@ -197,6 +227,29 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Init {
+            workspace,
+            name,
+            agents,
+            opencode_command,
+            multiplexer,
+            example,
+            blank,
+            force,
+        } => {
+            return init::arguments(
+                &workspace,
+                &init::Options {
+                    name,
+                    agents,
+                    opencode_command,
+                    multiplexer,
+                    example,
+                    blank,
+                    force,
+                },
+            );
+        }
         Command::Refresh { workspace } => return refresh::arguments(&workspace),
         Command::State {
             command:
@@ -354,7 +407,8 @@ fn main() -> std::process::ExitCode {
     let matches = Cli::command().get_matches_from(&arguments);
     validate_checkpoint_option_order(&matches, has_terminator).unwrap_or_else(|error| error.exit());
     validate_task_option_order(&matches, &arguments).unwrap_or_else(|error| error.exit());
-    if (matches.subcommand_matches("state").is_some()
+    if (matches.subcommand_matches("init").is_some()
+        || matches.subcommand_matches("state").is_some()
         || matches.subcommand_matches("refresh").is_some())
         && non_operand_number(&arguments)
     {
@@ -488,6 +542,86 @@ fn collection_exit(delivery: Delivery) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn init_parser_retains_defaults_and_every_compatibility_flag() {
+        let Cli {
+            command:
+                Command::Init {
+                    workspace,
+                    name,
+                    agents,
+                    opencode_command,
+                    multiplexer,
+                    example,
+                    blank,
+                    force,
+                },
+        } = Cli::try_parse_from(["coven", "init"]).unwrap()
+        else {
+            panic!("expected init");
+        };
+        let defaults = init::Options::default();
+        assert_eq!(workspace, PathBuf::from("."));
+        assert_eq!(name, defaults.name);
+        assert_eq!(agents, defaults.agents);
+        assert_eq!(opencode_command, defaults.opencode_command);
+        assert_eq!(multiplexer, defaults.multiplexer);
+        assert_eq!(example, defaults.example);
+        assert!(!blank && !force);
+
+        let Cli {
+            command:
+                Command::Init {
+                    workspace,
+                    name,
+                    agents,
+                    opencode_command,
+                    multiplexer,
+                    example,
+                    blank,
+                    force,
+                },
+        } = Cli::try_parse_from([
+            "coven",
+            "init",
+            "--name",
+            "old",
+            "",
+            "--name",
+            "new",
+            "--ag",
+            "Alice,Bob",
+            "--opencode-c",
+            "oc --model demo",
+            "--multi",
+            "tmux",
+            "--example",
+            "unsupported",
+            "--blank",
+            "--blank",
+            "--force",
+        ])
+        .unwrap()
+        else {
+            panic!("expected init");
+        };
+        assert_eq!(workspace, PathBuf::from(""));
+        assert_eq!(name.as_deref(), Some("new"));
+        assert_eq!(agents, "Alice,Bob");
+        assert_eq!(opencode_command, "oc --model demo");
+        assert_eq!(multiplexer, "tmux");
+        assert_eq!(example, "unsupported");
+        assert!(blank && force);
+        for args in [
+            vec!["coven", "init", "--json"],
+            vec!["coven", "init", "--multiplexer", "TMUX"],
+            vec!["coven", "init", "one", "two"],
+            vec!["coven", "init", "--name"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+    }
+
     use super::*;
     #[test]
     fn uncertain_capture_has_exit_two_not_success_or_rejection() {
@@ -632,7 +766,7 @@ mod tests {
             ],
             vec!["coven", "state", "import-tasks"],
             vec!["coven", "refresh", "--json"],
-            vec!["coven", "init"],
+            vec!["coven", "init", "--json"],
         ] {
             assert!(Cli::try_parse_from(args).is_err());
         }

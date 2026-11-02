@@ -60,7 +60,8 @@ with Herdr by default. Tmux remains available as an opt-in runtime.
 
 The Rust replacement builds a single binary named `coven`, currently exercised
 through `cargo run --offline --locked --bin coven -- ...` or `target/debug/coven`
-rather than installation or PATH changes. It implements handoff validation/capture/history,
+rather than installation or PATH changes. It implements complete native `init`
+for blank and embedded `interactive-demo` workspaces, handoff validation/capture/history,
 bounded snapshot/ledger `task list --json`, read-only `state inspect`, and
 `execution history --json` for retained v1/v2 preparation authority. The execution
 reader reports historical reservations and frozen receipts, not current-source
@@ -115,17 +116,18 @@ not a Python checkout wrapper. See the migration notes for recovery limits,
 refresh safety deviations and the static/cooperating filesystem model.
 
 The full pinned `just check` passed formatting, all-target offline locked Clippy
-with warnings denied, **306 native tests** (260 library, 5 binary, 41 integration)
-and **941 Python tests**. The lifecycle corpus has **208 green CLI cases**, including
-7 explicit native safety cases; the prior 262-case task-writer corpus is retained.
-Validation was on Linux only.
+with warnings denied, **353 native tests** (305 library, 6 binary, 42 integration)
+and **941 Python tests**. The init corpus has **200 green CLI cases**; the lifecycle
+corpus retains **208 green CLI cases**, including 7 explicit native safety cases,
+alongside the prior 262-case task-writer corpus. Validation was on Linux only.
 
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
 or separately named native CLI. Explicit native handoff collection writes
 only local unverified evidence. Other mutation families and runtime effects are
-not yet native; **init is the next unported workspace command**.
+not yet native; **remaining task/workspace mutations are next**, before execution,
+observer and runtime families.
 Unsupported native commands fail closed without delegation.
 This is not yet a complete
 Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,
@@ -181,6 +183,12 @@ This repository currently uses a flat standalone layout:
 coven/
 ├── bin/
 │   └── coven              # executable wrapper
+├── src/                   # Rust preview; explicit build path, not the default wrapper
+│   ├── main.rs            # native CLI routing
+│   ├── init.rs            # prepare-all, exclusive bootstrap, config-last publication
+│   ├── storage/bootstrap.rs # private marker-free init reservation
+│   ├── platform/          # OS path/descriptor operations
+│   └── workspace_assets/  # pure templates; embeds original interactive-demo assets
 ├── runner/
 │   ├── coven.py           # main CLI and workspace runner
 │   ├── records.py         # pure v1 workspace record validators
@@ -467,6 +475,24 @@ new-coven/
 
 ## Examples
 
+The native preview supports the same init flags (no SDK-only setup step):
+
+```bash
+target/debug/coven init /absolute/path/to/new-coven --example interactive-demo
+target/debug/coven init /absolute/path/to/blank-coven --blank \
+  --name "Review team" --agents "Architect,Reviewer" \
+  --opencode-command opencode --multiplexer tmux
+```
+
+The optional path defaults to cwd. Defaults are `Clippy,Srikanth,Jamal,Kris,Eric`,
+`oc`, `herdr`, and `interactive-demo`; `--multiplexer` accepts `herdr` or `tmux`.
+`--force` is accepted but never permits overwrite. Native example selection accepts
+only aliases that slug-normalize to `interactive-demo`; empty/custom selections
+return `unsupported_init_example_profile` before effects. `--blank` overrides even
+an invalid example. All seven original example assets are embedded at build time:
+there is no runtime directory search or Python fallback. See
+[native init](RUST_MIGRATION.md#native-workspace-init) for publication and retry limits.
+
 By default, `init` seeds the `interactive-demo` example:
 
 ```bash
@@ -493,6 +519,33 @@ generated files, or choose a fresh directory. No destructive reset command is
 provided. Seed validation happens before creation; an I/O failure during creation
 leaves partial files for inspection rather than deleting them or retrying a reset.
 Initialization is not a multi-file transaction or a filesystem sandbox.
+
+Native init deliberately publishes `coven.json` **last**, unlike Python's config-first
+creation. It prepares the complete tree, events, dashboard and safe output before
+effects, reserves `state/` exclusively and holds its private persistent flock.
+Ordinary `WorkspaceGuard` marker requirements are unchanged. Native/native init
+has only one reservation winner; Python initial creation is unlocked, so mixed
+initializers may both fail, though exclusive finals prevent overwrite. Initialize
+one destination with one implementation at a time; no rollback, adoption or stale
+reservation stealing is provided.
+
+Durability is operation-scoped: native init syncs files, managed directories, root,
+and the ancestor chain **observed missing by that invocation**, through its containing
+existing parent. Already-existing ancestor entries are assumed durable. If A creates
+the root chain and pauses before reservation, B can see an existing root, win and
+report committed after syncing root but not those outer entries; A then loses before
+chain sync. Neither necessarily fsyncs the outer entries. Native exclusion is **not
+cross-initializer ancestry durability**. For stronger assurance, durably establish
+destination ancestry first or initialize with one process. The deterministic unit
+pins this exact scope, not actual crash-loss behavior.
+
+Native success exits 0; pre-marker I/O failure exits 1 and preserves partial evidence
+with bounded root/phase/current-target/last-completed/partial-file diagnostics.
+Deterministic preflight refusals create no root. A known marker link followed by
+sync failure retains informational stdout and exits 2; inspect before retrying.
+Stdout I/O failure can still exit 1 after effects. Linux-only validation and the
+static/cooperating namespace assumptions apply; see the migration notes for bounds
+and modes.
 
 New agent IDs are normalized to lowercase slugs; duplicate normalized IDs are
 rejected. Example task owners and `task add --owner` / `task assign` names resolve

@@ -1,6 +1,12 @@
-//! Frozen refresh assets, ported from runner/coven.py (native asset profile v1).
+//! Frozen workspace assets, ported from runner/coven.py (native asset profile v1).
 //! Shell commands here are inert template data, never executed by refresh.
 use crate::{Error, Result, error::require, records};
+
+mod init;
+pub(crate) use init::{
+    InitExample, agent_state_text, checkpoint_files, default_goal, default_output, default_work,
+    init_example, team_toml,
+};
 
 pub(crate) struct PureAssetContext {
     pub cli_command: String,
@@ -11,7 +17,7 @@ pub(crate) fn example_text(example: Option<&str>) -> Result<String> {
     match example {
         None | Some("") => Ok(String::new()),
         Some(value) if slug(value).is_ok_and(|value| value == "interactive-demo") => {
-            Ok(include_str!("workspace_assets/interactive-demo-context.md").to_owned())
+            Ok(include_str!("../examples/interactive-demo/prompt-context.md").to_owned())
         }
         Some(_) => Err(Error("unsupported_refresh_example_profile")),
     }
