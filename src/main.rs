@@ -5,7 +5,7 @@ use coven::{
     state_commands,
     storage::Delivery,
     task_mutation::{self, TaskOutput},
-    tasks,
+    tasks, workspace_commands,
 };
 use std::io::Write;
 use std::path::PathBuf;
@@ -23,6 +23,41 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Show or replace the local goal; empty text shows rather than clears.
+    Goal {
+        #[arg(num_args = 0.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+    },
+    /// Append a local message and event; does not notify or invoke a runtime.
+    Message {
+        #[arg(required = true, num_args = 1.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+    },
+    /// Print observed message history; literal text is not terminal-sanitized.
+    #[command(infer_long_args = true, args_override_self = true)]
+    Messages {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Print observed event history; literal text is not terminal-sanitized.
+    #[command(infer_long_args = true, args_override_self = true)]
+    Events {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Regenerate and print the local dashboard; this command writes dashboard.md.
+    Status {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+    },
     /// Initialize a new snapshot workspace; never overwrite or start a runtime.
     #[command(infer_long_args = true, args_override_self = true)]
     Init {
@@ -227,6 +262,31 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Goal { items } => return workspace_commands::goal_arguments(&items),
+        Command::Message { items } => return workspace_commands::message_arguments(&items),
+        Command::Messages {
+            workspace,
+            raw,
+            pretty: _,
+        } => {
+            return workspace_commands::history_arguments(
+                &workspace,
+                workspace_commands::HistoryKind::Messages,
+                raw,
+            );
+        }
+        Command::Events {
+            workspace,
+            raw,
+            pretty: _,
+        } => {
+            return workspace_commands::history_arguments(
+                &workspace,
+                workspace_commands::HistoryKind::Events,
+                raw,
+            );
+        }
+        Command::Status { workspace } => return workspace_commands::status_arguments(&workspace),
         Command::Init {
             workspace,
             name,
@@ -409,7 +469,12 @@ fn main() -> std::process::ExitCode {
     validate_task_option_order(&matches, &arguments).unwrap_or_else(|error| error.exit());
     if (matches.subcommand_matches("init").is_some()
         || matches.subcommand_matches("state").is_some()
-        || matches.subcommand_matches("refresh").is_some())
+        || matches.subcommand_matches("refresh").is_some()
+        || matches.subcommand_matches("goal").is_some()
+        || matches.subcommand_matches("message").is_some()
+        || matches.subcommand_matches("messages").is_some()
+        || matches.subcommand_matches("events").is_some()
+        || matches.subcommand_matches("status").is_some())
         && non_operand_number(&arguments)
     {
         Cli::command()
@@ -420,11 +485,19 @@ fn main() -> std::process::ExitCode {
             .exit();
     }
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    // File/history commands supply complete literal output, including its LF
+    // policy. Existing report commands retain their single added terminal LF.
+    let literal = matches!(
+        &cli.command,
+        Command::Goal { .. }
+            | Command::Message { .. }
+            | Command::Messages { .. }
+            | Command::Events { .. }
+            | Command::Status { .. }
+    );
     match run(cli) {
         Ok(output) => {
-            if !output.stdout.is_empty()
-                && writeln!(std::io::stdout().lock(), "{}", output.stdout).is_err()
-            {
+            if write_stdout(&mut std::io::stdout().lock(), &output.stdout, literal).is_err() {
                 return std::process::ExitCode::FAILURE;
             }
             for warning in output.warnings {
@@ -439,6 +512,19 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::FAILURE
         }
     }
+}
+
+fn write_stdout(writer: &mut impl Write, text: &str, literal: bool) -> std::io::Result<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    writer.write_all(text.as_bytes())?;
+    if !literal {
+        writer.write_all(b"\n")?;
+    }
+    // Literal output may have no LF, so a buffered stdout error can otherwise
+    // appear only during process cleanup and incorrectly leave a zero exit code.
+    writer.flush()
 }
 
 // Python's nargs="*" wrapper accepts the flag before or after the operand group,
@@ -542,6 +628,89 @@ fn collection_exit(delivery: Delivery) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn workspace_parser_keeps_history_flags_and_defers_message_arity() {
+        let Cli {
+            command: Command::Goal { items },
+        } = Cli::try_parse_from(["coven", "goal"]).unwrap()
+        else {
+            panic!("expected goal");
+        };
+        assert!(items.is_empty());
+        assert!(Cli::try_parse_from(["coven", "message"]).is_err());
+        let Cli {
+            command: Command::Message { items },
+        } = Cli::try_parse_from(["coven", "message", "one"]).unwrap()
+        else {
+            panic!("expected message");
+        };
+        assert_eq!(items, [PathBuf::from("one")]);
+        let Cli {
+            command:
+                Command::Messages {
+                    workspace,
+                    pretty,
+                    raw,
+                },
+        } = Cli::try_parse_from(["coven", "messages", "--ra", "", "--pretty", "--raw"]).unwrap()
+        else {
+            panic!("expected messages");
+        };
+        assert_eq!(workspace, PathBuf::from(""));
+        assert!(pretty && raw);
+        for args in [
+            vec!["coven", "goal", "--json"],
+            vec!["coven", "message", "--json", "a", "b", "c"],
+            vec!["coven", "events", "one", "two"],
+            vec!["coven", "status", "--raw"],
+            vec!["coven", "lead"],
+            vec!["coven", "plan"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+    }
+
+    #[test]
+    fn stdout_writer_preserves_literal_empty_and_newline_contracts() {
+        for (text, literal, expected) in [
+            ("", true, ""),
+            ("", false, ""),
+            ("tail", true, "tail"),
+            ("tail\n", true, "tail\n"),
+            ("\n\n", true, "\n\n"),
+            ("caf\u{e9}\u{1b}[0m", true, "caf\u{e9}\u{1b}[0m"),
+            ("report", false, "report\n"),
+        ] {
+            let mut bytes = Vec::new();
+            write_stdout(&mut bytes, text, literal).unwrap();
+            assert_eq!(bytes, expected.as_bytes());
+        }
+        struct Broken;
+        impl Write for Broken {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        assert!(write_stdout(&mut Broken, "published", true).is_err());
+        assert!(write_stdout(&mut Broken, "", true).is_ok());
+        struct DeferredFailure(Vec<u8>);
+        impl Write for DeferredFailure {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+        }
+        let mut deferred = DeferredFailure(Vec::new());
+        assert!(write_stdout(&mut deferred, "short tail", true).is_err());
+        assert_eq!(deferred.0, b"short tail");
+    }
+
     #[test]
     fn init_parser_retains_defaults_and_every_compatibility_flag() {
         let Cli {

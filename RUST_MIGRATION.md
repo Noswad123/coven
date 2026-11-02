@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native workspace init, task add/assign, state import/recovery, existing-workspace refresh,
+Status: **native workspace init, goal/message/history/status, task add/assign, state import/recovery, existing-workspace refresh,
 evidence capture and authority readers**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
@@ -39,6 +39,11 @@ cargo run --offline --locked --bin coven -- state recover-tasks WORKSPACE --repa
 cargo run --offline --locked --bin coven -- state recover-tasks WORKSPACE --resume-import --expect-revision SNAPSHOT_TOKEN --json
 cargo run --offline --locked --bin coven -- state recover-tasks WORKSPACE --abort-import --json
 cargo run --offline --locked --bin coven -- refresh WORKSPACE
+cargo run --offline --locked --bin coven -- goal WORKSPACE "Shared goal"
+cargo run --offline --locked --bin coven -- message WORKSPACE SENDER RECIPIENT "Message body"
+cargo run --offline --locked --bin coven -- messages WORKSPACE --pretty
+cargo run --offline --locked --bin coven -- events WORKSPACE --raw
+cargo run --offline --locked --bin coven -- status WORKSPACE
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
 cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID --json
@@ -47,7 +52,7 @@ cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPO
 The compiled `target/debug/coven` can also be invoked directly, including with
 Python absent from PATH. Its production code has no Python, subprocess, runtime
 or network dependency. Python is needed only for migration-oracle tests and the
-existing default CLI. Unsupported commands, including remaining task mutations, reject
+existing default CLI. Unsupported commands, including lead/plan workflows, reject
 at argument parsing before effects; there is **no automatic Python fallback**.
 
 Handoff commands preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
@@ -61,7 +66,12 @@ dashboard, repair, migration marker or runtime state.
 
 ```text
 src/
-  main.rs            Thin explicit CLI; escaped report/error output
+  main.rs            Thin explicit CLI; escaped reports and exact literal workspace output
+  workspace_commands.rs Local goal/message writers and dashboard-publishing status
+  workspace_commands/history.rs Read-only pretty/raw event and message history
+  workspace_commands/python.rs Finite Python truthiness and str/repr presentation
+  logs.rs            Private shared strict JSONL admission and guarded append
+  unicode.rs         Frozen Unicode 16 printability shared by dashboard and Python repr
   handoff.rs         Typed identifiers, revisions, claims, enums, closed schemas
   strict_json.rs     UTF-8, duplicate-key, finite-number and depth safeguards
   canonical.rs       Closed-domain v1 evidence encoding and SHA256
@@ -81,7 +91,6 @@ src/
   task_mutation.rs   End-to-end snapshot/ledger add/assign, receipt and delivery policy
   task_admission.rs  Prepublication response/list capacity and bounded warning codes
   task_delivery.rs   Guarded JSONL append and dashboard capture/format/publication
-  task_delivery/unicode.rs Frozen Unicode 16 printability for dashboard labels
   task_time.rs       UTC ISO metadata and hyphenated command/event UUIDs
   workspace.rs       Neutral ordered workspace loading and optional-root selection
   ledger.rs          Complete bounded selected task-ledger replay/projection health
@@ -151,9 +160,10 @@ be resolved, or explicitly restricted by a separately approved compatibility
 decision, before default-entrypoint parity is claimed.
 
 CLI JSON presentation need not match whitespace/key order, but structured values,
-trust fields, raw hashes/counts and success/refusal behavior must match. Untrusted
+trust fields, raw hashes/counts and success/refusal behavior must match. Existing report untrusted
 text, bidi characters, DEL/C1 and non-BMP content are safely escaped for display;
-canonical archive bytes use the separate UTF-8 encoder.
+canonical archive bytes use the separate UTF-8 encoder. The new local workspace
+families instead preserve literal Python text; see the terminal warning below.
 
 ## Snapshot task preview and shared-lock foundation
 
@@ -1143,6 +1153,133 @@ dashboard without weakening ordinary capture. `tests/init.rs` and
 `tests/_init_parity.py` exercise CLI parity and explicit native differences. See
 [examples/README.md](examples/README.md) for the bounded example profile.
 
+## Native local workspace commands
+
+### Overview
+
+Native `goal`, `message`, `messages`, `events` and `status` are local file operations,
+not notifications, runtime admission or execution. Python production code,
+`bin/coven`, dependencies, runtime/fallback behavior, installation and
+default-entrypoint integration are unchanged.
+
+**Terminal warning:** all five families preserve Python's literal Unicode/control
+text, not terminal-sanitized text. ANSI, bidi and other controls can render in pretty
+history, goal and status output as well as `--raw`. Python `repr` escapes inside
+container values are compatibility formatting, not a terminal safety boundary.
+Existing task human/report escaping and terminal-LF behavior remain unchanged.
+
+### API / Interfaces
+
+```text
+coven goal [ITEM ...]
+coven message ITEM [ITEM ...]
+coven messages [WORKSPACE] [--pretty] [--raw]
+coven events [WORKSPACE] [--pretty] [--raw]
+coven status [WORKSPACE]
+```
+
+Use the explicit native build path. Goal accepts zero or more items; message accepts
+one or more at parser level. Both select the first item as a workspace only when its
+expanded path has a `coven.json` marker; otherwise they use cwd and retain all items.
+Message requires at least three remaining items (sender, recipient, body) **before**
+full workspace loading. Parties are free-form, not roster selectors. Body words join
+with single spaces without stripping. Goal words join with single spaces and Python
+stripping; empty/whitespace-only text means **show**, never clear.
+
+History/status workspace defaults to cwd. Pretty history is the default; `--pretty`
+is accepted, and `--raw` wins when both are supplied. History accepts unambiguous long
+flag prefixes and repeats. These families add no `--json` interface.
+
+### Data Flow
+
+- All routes use general ordered workspace preflight: managed paths, configuration,
+  checkpoint text, runtime-launch control, pending snapshot or selected active task
+  authority, and agent/lead records. They do not inherit task-list's runtime/actions
+  or pending-import fences, check execution reservations, or execute frozen plans.
+  Preflight is not an atomic workspace snapshot or transferable mutation permit.
+- Goal show reads the **whole** UTF-8 goal, converts CRLF/bare CR to LF and adds one
+  extra LF, even if the file already ends in LF. Goal set atomically replaces exact
+  `# Goal\n\n{text}\n` bytes under the guard. Known rename plus sync failure
+  (`Delivery::DurabilityUncertain`) exits **1**, skips both secondaries and does not
+  roll back—not task/state's exit-2 policy. Confirmed replacement independently
+  attempts `goal.updated` and dashboard publication under that guard; either warning
+  still exits **0**.
+- Message encodes ordered `ts`, `from`, `to`, `body` fields, then validates events
+  and messages before lock creation. It reloads workspace state and revalidates
+  events under the guard; guarded append revalidates the message log and capacity.
+  Message append and `message.sent` share that guard. It releases the guard **before**
+  a separate dashboard preflight/lock/publication epoch. Append, event or dashboard
+  failure exits **1** with no false success banner, even if message/event bytes are
+  already visible. Partial evidence stays; no receipt, deduplication, automatic retry,
+  truncation or rollback is offered.
+- Status publishes only `dashboard.md` under the lock (apart from possible first
+  creation of the persistent lock), then releases it and rereads text for output.
+  It does not parse log contents: corrupt JSONL content alone does not block status,
+  while unsafe managed log paths still do. Publication uncertainty or failed later
+  output reread exits **1**; another writer may change the dashboard before reread.
+- Pretty history validates the entire selected log and admits the complete output
+  before printing any records. Finite legacy fields use Python truthiness and
+  `str`/container `repr`, not an all-string schema or substituted JSON rendering.
+  Raw history bypasses JSON, depth and LF-record validation, reading UTF-8 text with
+  universal newlines instead. Missing/empty cases retain Python output differences.
+  Goal show and history reads create/acquire no lock, fsync nothing and mutate nothing.
+
+`main.rs` writes the new families' complete literal bytes exactly, without an added
+terminal LF, and explicitly flushes stdout. A buffered broken pipe can therefore
+produce nonzero exit **after** visible file effects. Exit 1 is not proof of no effect;
+inspect files before deciding whether to repeat a message.
+
+### Edge Cases
+
+| Profile | Native bounds |
+| --- | --- |
+| Strict pretty history / append | 8 MiB per log, 65,536 physical LF-terminated lines including blanks; finite legacy value caps |
+| Raw history | Separate 32 MiB UTF-8 input and 32 MiB complete-output bounds; no JSON/depth/LF-record profile |
+| Goal | 1 MiB stored/read text including generated header/LF; joined input admission up to 32 MiB before stripping; complete output 32 MiB |
+| Message parties | Each free-form string checked against 1 MiB before copying; body/record also obey finite string/encoding caps |
+
+Strict logs require object records and a terminal LF, reject malformed or truncated
+tails, and never silently repair. Existing shared JSON limits (depth, nodes,
+containers, strings, finite numbers) still apply; raw bypasses only log parsing,
+not general workspace preflight. Goal's stripped set text must fit the 1 MiB
+stored-file cap after its nine header/LF bytes. These are preview acceptance limits,
+not claims that larger Python inputs are corrupt.
+
+The private JSONL implementation was mechanically extracted to `src/logs.rs`;
+the frozen Unicode 16 table moved unchanged to `src/unicode.rs` for dashboard labels
+and Python repr. Old task/refresh policies and protocol IDs are unchanged. Linux-only
+validation and static/cooperating local namespaces remain the scope; no universal
+power-loss proof is claimed. Native init's accepted operation-scoped ancestry
+durability limitation remains unchanged.
+
+### Example usage
+
+From the repository root, select a fresh disposable destination:
+
+```sh
+cargo build --offline --locked --bin coven
+target/debug/coven init /absolute/path/to/new-local --blank --agents operator,reviewer
+target/debug/coven goal /absolute/path/to/new-local "Review parser edge cases"
+target/debug/coven goal /absolute/path/to/new-local
+target/debug/coven message /absolute/path/to/new-local operator reviewer "Please review the parser"
+target/debug/coven events /absolute/path/to/new-local --pretty
+target/debug/coven messages /absolute/path/to/new-local --pretty
+target/debug/coven messages /absolute/path/to/new-local --raw
+target/debug/coven status /absolute/path/to/new-local
+```
+
+This complete init → goal → message → history → status loop neither launches nor
+notifies agents. Inspect after a failure instead of blindly retrying an append.
+
+### Related files
+
+`src/main.rs` routes `src/workspace_commands.rs` and
+`src/workspace_commands/{history,python}.rs`. `src/workspace.rs` supplies ordered
+preflight; `src/logs.rs`, `src/task_delivery.rs`, `src/storage/replacement.rs` and
+`src/task_time.rs` supply guarded delivery and metadata. `src/unicode.rs` is the
+unchanged shared printability table. Existing task/state/refresh outcome policies
+remain separate from this family's delivery policy.
+
 ## Validation
 
 Use the existing installed Rust toolchain; this slice was exercised with Rust/
@@ -1155,9 +1292,22 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The full pinned `just check` passed: rustfmt, all-target offline locked Clippy
-with `-D warnings`, **353 native tests** (305 library + 6 binary + 42 integration),
-and **941 Python tests**.
+The full pinned `just check` passed rustfmt, all-target offline locked Clippy with
+`-D warnings`, **400 native tests** (349 library + 8 binary + 43 integration), and
+**941 Python tests**.
+
+Local workspace acceptance adds **348 green native CLI cases**: 346 Python-oracle
+cases plus two native buffered-stdout failure cases. They cover exact literal
+text/newlines, full-tree effects and preservation, history formatting/profile
+boundaries, snapshot/pending/active/runtime-control behavior, offline command loops
+and mixed Python/native flock writers. Private units cover complete message writes
+followed by sync failure, actual partial event writes, independent goal secondaries,
+fresh admission at the second dashboard lock epoch, maximum message-party strings,
+known goal/dashboard uncertainty, and full-output admission. Explicit flushing is
+tested with both a deferred-error writer and real pipes closed before child spawn.
+Independent architecture, persistence and history reviews found no remaining
+actionable issues after corrections; these are bounded local tests, not universal
+crash-durability or hostile-namespace guarantees.
 
 Native init adds **200 green real CLI cases**, including complete tree/byte/mode
 comparisons, every flag, 104 reserved-name/type/force combinations, path and
@@ -1374,8 +1524,8 @@ admitted receipt plus five warnings/health metadata renders below the output cap
 Low-level append tests exercise actual partial writes/fsync errors and descriptor
 flags, symlink/FIFO/device refusal. Dashboard golden bytes and all Unicode scalars
 are compared against the version-pinned oracle. The neutral workspace extraction
-retains the 280-case checkpoint and 43-case task-reader corpora; still-unported
-mutation inventories now test remove/complete rather than newly supported add/assign.
+retains the 280-case checkpoint and 43-case task-reader corpora. `task remove` and
+`task complete` are unsupported in both Python and Rust, not outstanding port work.
 
 State lifecycle/refresh adds **208 green CLI cases**, including **7 explicit native
 safety cases**, alongside the retained **262 task-writer cases**. Coverage includes
@@ -1401,6 +1551,7 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Persistent workspace flock, evidence/ledger immutable publication and mutable replacement | Native guarded primitives used by task/baseline pipelines | Integrate remaining writer families without changing their policies |
 | Existing-workspace refresh CLI | Native bounded generated-asset refresh; no runtime effects | Close custom-example/profile and cross-platform gaps |
 | Workspace init CLI | Complete native blank/embedded interactive-demo CLI; staged config-last exclusive bootstrap | Close custom-example/profile/cross-platform gaps; retain operation-scoped ancestry durability qualification |
+| Local goal/message/history/status | Native bounded goal/message writers, pretty/raw history and dashboard-publishing status | Close supported-profile/cross-platform gaps; preserve literal output, separate lock epochs and family-specific exit-1 failure policy |
 | Task-ledger read/replay, frozen receipt lookup, selected confirmation and projection diagnostics | Native bounded readers/primitives used by task/state commands | Close supported-profile and cross-platform limits |
 | Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK and state CLI with pinned activation/known outcomes | Close remaining profile/cross-platform gates |
 | Task add/assign, commit projection, events and dashboard | Native snapshot/active-ledger commands with CAS/replay/delivery | Close documented profiles and list/runtime gap before default parity |
@@ -1414,12 +1565,13 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive milestone is the remaining task/workspace mutations, before
-execution writers, observer/group and runtime families. Native init, refresh and
-explicit state import/recovery are now available; init does not authorize runtime
-execution or default-entrypoint cutover.
-The task milestone does not authorize default-entrypoint cutover. Remaining writers must preserve persistent flock inode/order,
+Next are runtime-bound lead/plan, checkpoint mutations, execution writers and
+observers/groups, followed by remaining runtime families. Native local workspace
+commands, init, refresh and state import/recovery do not authorize runtime execution
+or default-entrypoint cutover. Do not invent task remove/complete port work: Python
+has neither command. Remaining writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
-corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old
+corrupt-authority refusal, prepared-task guards and each family's uncertainty policy
+(including task/state exit 2 versus local workspace exit 1). No old
 preparation, observation, collected claim or runtime-launch receipt may become a
 new execution grant because its implementation language changed.

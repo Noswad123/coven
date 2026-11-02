@@ -2,21 +2,20 @@
 //! never rolls back an already committed task when either publication fails.
 //! JSONL: 8 MiB total/file, 65536 physical LF-terminated lines (including blanks),
 //! and the finite LegacySnapshot value profile per record. Python is unbounded.
-mod unicode;
+use crate::unicode;
 
 use crate::{
     Error, Result, checkpoints,
     error::require,
-    platform, read_fs, records,
+    logs::{self, AppendIo, LogKind, SystemAppendIo, read_log},
+    read_fs, records,
     storage::{self, Delivery, WorkspaceGuard},
     task_time,
-    values::{self, Object, Profile, Value},
+    values::{Object, Value},
     workspace::{self, WorkspaceState},
 };
-use std::{fs::File, io::Write, path::Path};
+use std::path::Path;
 
-const MAX_LOG: usize = 8 * 1_048_576;
-const MAX_LINES: usize = 65_536;
 const MAX_TEXT: usize = 1_048_576;
 const MAX_DASHBOARD: usize = 32 * 1_048_576;
 const CHECKPOINTS: [(&str, &str); 2] = [
@@ -46,52 +45,6 @@ fn optional_bytes(
     }
 }
 
-fn validate_log(bytes: &[u8]) -> Result<usize> {
-    require(bytes.len() <= MAX_LOG, "unsupported_event_log_size_profile")?;
-    require(
-        bytes.is_empty() || bytes.last() == Some(&b'\n'),
-        "event_log_unterminated_line",
-    )?;
-    let mut count = 0;
-    // Split LF only: CR remains JSON whitespace, never a record separator.
-    for raw in bytes.split_inclusive(|c| *c == b'\n') {
-        count += 1;
-        require(count <= MAX_LINES, "unsupported_event_log_line_profile")?;
-        let text =
-            std::str::from_utf8(&raw[..raw.len() - 1]).map_err(|_| Error("invalid_jsonl_utf8"))?;
-        if records::trimmed(text).is_empty() {
-            continue;
-        }
-        // Do not trim nonblank records: json.loads accepts JSON whitespace only.
-        let record = values::parse(text.as_bytes(), Profile::LegacySnapshot).map_err(|error| {
-            // Add history context only to record errors, never resource/profile
-            // refusals whose specific limits remain actionable to the caller.
-            match error.code() {
-                "invalid_compat_json"
-                | "invalid_compat_json_string"
-                | "invalid_json_trailing_data"
-                | "invalid_json_number"
-                | "unsupported_nonfinite_json"
-                | "unsupported_or_invalid_json_scalar" => Error("invalid_jsonl_record"),
-                _ => error,
-            }
-        })?;
-        require(record.as_object().is_some(), "invalid_jsonl_record")?;
-    }
-    Ok(count)
-}
-
-fn read_log(root: &Path, relative: &str) -> Result<(usize, usize)> {
-    let bytes = optional_bytes(
-        root,
-        relative,
-        MAX_LOG,
-        "unsupported_event_log_size_profile",
-    )?
-    .unwrap_or_default();
-    Ok((bytes.len(), validate_log(&bytes)?))
-}
-
 /// Snapshot callers run this before task commit. Ledger callers intentionally
 /// defer log *content* checks to secondary publication after the task commit.
 pub(crate) fn validate_snapshot_logs(root: &Path) -> Result<()> {
@@ -103,17 +56,8 @@ pub(crate) fn validate_snapshot_logs(root: &Path) -> Result<()> {
 /// Refresh discards history ordering but validates every explicit checkpoint
 /// reference, including non-request records. This never restores decisions.
 pub(crate) fn validate_checkpoint_history(root: &Path) -> Result<()> {
-    for log in ["logs/messages.jsonl", "logs/events.jsonl"] {
-        let bytes = optional_bytes(root, log, MAX_LOG, "unsupported_event_log_size_profile")?
-            .unwrap_or_default();
-        // Python parses the whole file before validating any reference in it.
-        validate_log(&bytes)?;
-        for raw in bytes.split_inclusive(|byte| *byte == b'\n') {
-            let text = std::str::from_utf8(&raw[..raw.len() - 1])?;
-            if records::trimmed(text).is_empty() {
-                continue;
-            }
-            let record = values::parse(text.as_bytes(), Profile::LegacySnapshot)?;
+    for kind in [LogKind::Messages, LogKind::Events] {
+        for record in logs::read(root, kind)? {
             if let Some(reference) = record
                 .as_object()
                 .and_then(|object| object.get("checkpoint"))
@@ -135,20 +79,6 @@ pub(crate) fn validate_checkpoint_history(root: &Path) -> Result<()> {
     }
     Ok(())
 }
-
-trait AppendIo {
-    fn open(&self, path: &Path) -> Result<File> {
-        platform::open_append(path)
-    }
-    fn write(&self, file: &mut File, bytes: &[u8]) -> std::io::Result<()> {
-        file.write_all(bytes)
-    }
-    fn sync(&self, file: &File) -> std::io::Result<()> {
-        file.sync_all()
-    }
-}
-struct SystemAppendIo;
-impl AppendIo for SystemAppendIo {}
 
 pub(crate) fn append_event(
     root: &Path,
@@ -192,31 +122,11 @@ fn append_with_metadata(
         event.set_field(key, value.clone())?;
     }
     read_log(root, "logs/events.jsonl")?;
-    let mut encoded = event.compact()?;
-    encoded.push(b'\n');
-    // Check the actual complete encoded record, not only the caller's value.
-    require(validate_log(&encoded)? == 1, "invalid_encoded_event")?;
+    let encoded = logs::encode_record(&event)?;
     workspace::load(root)?; // workspace_mutation's pre-context preflight
     guard.validate_for(root)?;
     workspace::load(root)?; // borrowed held-context preflight
-    let (bytes, lines) = read_log(root, "logs/events.jsonl")?;
-    require(
-        encoded.len() <= MAX_LOG - bytes,
-        "unsupported_event_log_size_profile",
-    )?;
-    require(lines < MAX_LINES, "unsupported_event_log_line_profile")?;
-    // Python's append_event wrapper creates only this managed parent, after
-    // admission and under the held guard, with mkdir's default umask policy.
-    let logs = read_fs::managed(root, Path::new("logs"), true)?;
-    std::fs::create_dir_all(&logs)?;
-    read_fs::managed(root, Path::new("logs"), true)?;
-    let path = read_fs::managed(root, Path::new("logs/events.jsonl"), false)?;
-    // No truncate, tail repair, deduplication, or rollback. A failed write
-    // or sync can leave evidence behind; future writes must validate it afresh.
-    let mut file = io.open(&path)?;
-    io.write(&mut file, &encoded)
-        .and_then(|()| io.sync(&file))
-        .map_err(|_| Error("event_append_may_be_partial"))
+    logs::append_encoded_with(root, LogKind::Events, &encoded, guard, io)
 }
 
 struct CapturedDashboard {
@@ -266,6 +176,12 @@ fn capture(root: &Path) -> Result<CapturedDashboard> {
 
 pub(crate) fn refresh_dashboard(root: &Path, guard: &WorkspaceGuard) -> Result<()> {
     refresh_with(root, guard, &SystemDashboardIo)
+}
+
+pub(crate) fn validate_dashboard_inputs(root: &Path) -> Result<()> {
+    workspace::load(root)?;
+    goal(root)?;
+    Ok(())
 }
 
 /// Prepare only; refresh stages all generated outputs before any file write and

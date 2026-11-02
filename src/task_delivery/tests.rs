@@ -1,4 +1,10 @@
 use super::*;
+use crate::{
+    logs::{MAX_LINES, MAX_LOG, validate_log},
+    values::{self, Profile},
+};
+#[cfg(unix)]
+use std::{fs::File, io::Write};
 
 fn parse(raw: &[u8]) -> Value {
     values::parse(raw, Profile::LegacySnapshot).unwrap()
@@ -155,6 +161,7 @@ fn output_is_incrementally_bounded_including_label_expansion() {
 #[cfg(unix)]
 mod io_tests {
     use super::*;
+    use crate::platform;
     use std::{cell::Cell, fs, process::Command, time::Duration};
 
     fn fixture() -> (tempfile::TempDir, WorkspaceGuard) {
@@ -168,6 +175,53 @@ mod io_tests {
     fn append(root: &Path, guard: &WorkspaceGuard, io: &impl AppendIo) -> Result<()> {
         append_with_metadata(root, "task.assigned", &parse(br#"{"task_id":"t","agent":"a","mutation_id":"m","before_revision":"before","after_revision":"after","extension":"literal \u0000"}"#), guard,
             "12345678-1234-4123-8123-123456789abc", "2026-11-01T00:00:00+00:00", io)
+    }
+
+    #[test]
+    fn dashboard_input_preflight_checks_workspace_then_goal_without_log_content() {
+        let (dir, _guard) = fixture();
+        let root = dir.path();
+        fs::write(root.join("logs/events.jsonl"), b"corrupt").unwrap();
+        fs::write(root.join("logs/messages.jsonl"), b"corrupt").unwrap();
+        validate_dashboard_inputs(root).unwrap();
+        assert!(!root.join("dashboard.md").exists());
+        fs::write(root.join("goal.md"), vec![b'x'; MAX_TEXT + 1]).unwrap();
+        assert_eq!(
+            validate_dashboard_inputs(root).unwrap_err().code(),
+            "unsupported_dashboard_input_profile"
+        );
+        fs::write(root.join("coven.json"), b"invalid").unwrap();
+        let expected = workspace::load(root).err().unwrap().code();
+        assert_eq!(
+            validate_dashboard_inputs(root).unwrap_err().code(),
+            expected
+        );
+    }
+
+    #[test]
+    fn checkpoint_history_parses_whole_selected_log_then_checks_messages_before_events() {
+        let (dir, _guard) = fixture();
+        let root = dir.path();
+        fs::write(
+            root.join("logs/messages.jsonl"),
+            b"{\"checkpoint\":null}\n{\n",
+        )
+        .unwrap();
+        fs::write(root.join("logs/events.jsonl"), b"\xff\n").unwrap();
+        assert_eq!(
+            validate_checkpoint_history(root).unwrap_err().code(),
+            "invalid_jsonl_record"
+        );
+        fs::write(root.join("logs/messages.jsonl"), b"{\"checkpoint\":null}\n").unwrap();
+        assert_eq!(
+            validate_checkpoint_history(root).unwrap_err().code(),
+            "invalid_checkpoint_history_reference"
+        );
+        fs::write(root.join("logs/messages.jsonl"), b"{}\n").unwrap();
+        assert_eq!(
+            validate_checkpoint_history(root).unwrap_err().code(),
+            "invalid_jsonl_utf8"
+        );
     }
 
     #[test]

@@ -1,4 +1,5 @@
 //! Frozen CPython str.isprintable scalar property, Unicode 16.0.0.
+//! Shared by dashboard labels and Python-compatible historical value formatting.
 //! Generated with Python 3.14 / unicodedata.unidata_version == '16.0.0':
 //! iterate range(0x110000), exclude surrogates, coalesce consecutive scalars
 //! for which `not chr(n).isprintable()`, emit `f'{start:x}-{end:x}'`.

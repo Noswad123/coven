@@ -62,6 +62,7 @@ The Rust replacement builds a single binary named `coven`, currently exercised
 through `cargo run --offline --locked --bin coven -- ...` or `target/debug/coven`
 rather than installation or PATH changes. It implements complete native `init`
 for blank and embedded `interactive-demo` workspaces, handoff validation/capture/history,
+local `goal`, `message`, `messages`, `events` and dashboard-publishing `status`,
 bounded snapshot/ledger `task list --json`, read-only `state inspect`, and
 `execution history --json` for retained v1/v2 preparation authority. The execution
 reader reports historical reservations and frozen receipts, not current-source
@@ -115,19 +116,45 @@ example context is supported. Generated commands default to canonical `coven`,
 not a Python checkout wrapper. See the migration notes for recovery limits,
 refresh safety deviations and the static/cooperating filesystem model.
 
+The native local workspace loop uses an explicit build path, not the installed CLI:
+
+```bash
+cargo build --offline --locked --bin coven
+target/debug/coven init /absolute/path/to/new-review --blank --agents operator,reviewer
+target/debug/coven goal /absolute/path/to/new-review "Review parser edge cases"
+target/debug/coven goal /absolute/path/to/new-review
+target/debug/coven message /absolute/path/to/new-review operator reviewer "Please review the parser"
+target/debug/coven events /absolute/path/to/new-review --pretty
+target/debug/coven messages /absolute/path/to/new-review --raw
+target/debug/coven status /absolute/path/to/new-review
+```
+
+`goal` joins and strips text; empty text shows the full goal, not a clear operation.
+`message` accepts free-form parties and preserves the joined body's whitespace;
+it appends locally, without notification or runtime calls. `status` **writes** only
+the dashboard (and may create the coordination lock), then rereads it outside the
+lock. Message/event visibility can precede an exit-1 failure; there is no receipt,
+deduplication, rollback or safe automatic retry. Goal primary sync uncertainty also
+exits 1, unlike task/state exit-2 authority uncertainty; confirmed goal secondary
+warnings still exit 0. See the [local workspace contract](RUST_MIGRATION.md#native-local-workspace-commands).
+
+**Terminal warning:** all five new command families preserve Python's literal
+Unicode/control-text output, including pretty history, goal and status—not only
+`--raw`. ANSI, bidi and other controls can render in your terminal. Existing task
+human/report escaping and terminal-LF policy are unchanged.
+
 The full pinned `just check` passed formatting, all-target offline locked Clippy
-with warnings denied, **353 native tests** (305 library, 6 binary, 42 integration)
-and **941 Python tests**. The init corpus has **200 green CLI cases**; the lifecycle
-corpus retains **208 green CLI cases**, including 7 explicit native safety cases,
-alongside the prior 262-case task-writer corpus. Validation was on Linux only.
+with warnings denied, **400 native tests** (349 library, 8 binary, 43 integration)
+and **941 Python tests**. Local workspace acceptance has **348 green native CLI
+cases** (346 Python-oracle cases plus two native stdout-failure cases), alongside
+the retained 200 init, 208 lifecycle and 262 task-writer cases. Validation is Linux-only.
 
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
 or separately named native CLI. Explicit native handoff collection writes
-only local unverified evidence. Other mutation families and runtime effects are
-not yet native; **remaining task/workspace mutations are next**, before execution,
-observer and runtime families.
+only local unverified evidence. Runtime-bound lead/plan, checkpoint mutations,
+execution writers, observers/groups and runtime effects remain to be ported.
 Unsupported native commands fail closed without delegation.
 This is not yet a complete
 Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,

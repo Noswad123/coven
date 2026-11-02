@@ -11,6 +11,7 @@ pub mod execution;
 pub mod handoff;
 pub mod init;
 pub mod ledger;
+mod logs;
 mod output;
 mod platform;
 mod read_fs;
@@ -24,8 +25,10 @@ mod task_delivery;
 pub mod task_mutation;
 mod task_time;
 pub mod tasks;
+mod unicode;
 pub mod values;
 mod workspace;
 mod workspace_assets;
+pub mod workspace_commands;
 
 pub use error::{Error, Result};
