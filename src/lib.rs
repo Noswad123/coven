@@ -3,6 +3,7 @@
 pub mod actions;
 pub mod archive;
 mod canonical;
+pub mod checkpoint_guidance;
 pub mod checkpoint_workspace;
 pub mod checkpoints;
 pub mod collection;

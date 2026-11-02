@@ -1,14 +1,15 @@
 use clap::builder::TypedValueParser;
 use clap::{ArgGroup, CommandFactory, FromArgMatches, Parser, Subcommand};
 use coven::{
-    Result, actions, archive, checkpoint_workspace, collection, execution, init, refresh,
-    state_commands,
+    Result, actions, archive, checkpoint_guidance, checkpoint_workspace, collection, execution,
+    init, refresh, state_commands,
     storage::Delivery,
     task_mutation::{self, TaskOutput},
     tasks, workspace_commands,
 };
 use std::io::Write;
 use std::path::PathBuf;
+mod cli_operands;
 
 #[derive(Parser)]
 #[command(
@@ -23,6 +24,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Suggest the next local checkpoint/status action; never approves or notifies.
+    Next {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+    },
     /// Show or replace the local goal; empty text shows rather than clears.
     Goal {
         #[arg(num_args = 0.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
@@ -123,10 +129,10 @@ enum Checkpoint {
     /// Inspect a checkpoint after ordered workspace validation; no approvals or writes.
     #[command(infer_long_args = true)]
     Inspect {
-        #[arg(value_name = "WORKSPACE_OR_CHECKPOINT", num_args = 0.., value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        #[arg(value_name = "WORKSPACE_OR_CHECKPOINT", num_args = 0.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         items: Vec<PathBuf>,
-        #[arg(long, required = true)]
-        json: bool,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
     },
 }
 
@@ -262,6 +268,7 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Next { workspace } => return checkpoint_guidance::next_arguments(&workspace),
         Command::Goal { items } => return workspace_commands::goal_arguments(&items),
         Command::Message { items } => return workspace_commands::message_arguments(&items),
         Command::Messages {
@@ -383,8 +390,8 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             return task_mutation::render_result(&result, !json.is_empty(), "assign");
         }
         Command::Checkpoint {
-            command: Checkpoint::Inspect { items, json: _ },
-        } => checkpoint_workspace::inspect_json_arguments(&items),
+            command: Checkpoint::Inspect { items, json },
+        } => checkpoint_workspace::inspect_text_arguments(&items, !json.is_empty()),
         Command::Action {
             command:
                 Action::Inspect {
@@ -464,7 +471,8 @@ fn action_arguments(first: PathBuf, action_id: Option<String>) -> Result<(PathBu
 fn main() -> std::process::ExitCode {
     let arguments: Vec<_> = std::env::args_os().collect();
     let has_terminator = arguments.iter().any(|argument| argument == "--");
-    let matches = Cli::command().get_matches_from(&arguments);
+    let (command, parse_arguments) = cli_operands::checkpoint_compat(&arguments);
+    let matches = command.get_matches_from(&parse_arguments);
     validate_checkpoint_option_order(&matches, has_terminator).unwrap_or_else(|error| error.exit());
     validate_task_option_order(&matches, &arguments).unwrap_or_else(|error| error.exit());
     if (matches.subcommand_matches("init").is_some()
@@ -474,7 +482,9 @@ fn main() -> std::process::ExitCode {
         || matches.subcommand_matches("message").is_some()
         || matches.subcommand_matches("messages").is_some()
         || matches.subcommand_matches("events").is_some()
-        || matches.subcommand_matches("status").is_some())
+        || matches.subcommand_matches("status").is_some()
+        || matches.subcommand_matches("next").is_some()
+        || matches.subcommand_matches("checkpoint").is_some())
         && non_operand_number(&arguments)
     {
         Cli::command()
@@ -494,6 +504,7 @@ fn main() -> std::process::ExitCode {
             | Command::Messages { .. }
             | Command::Events { .. }
             | Command::Status { .. }
+            | Command::Next { .. }
     );
     match run(cli) {
         Ok(output) => {
@@ -541,15 +552,17 @@ fn validate_checkpoint_option_order(
     else {
         return Ok(());
     };
-    if let (Some(flag), Some(items)) = (inspect.index_of("json"), inspect.indices_of("items")) {
-        let (before, after) = items.fold((false, false), |(before, after), index| {
-            (before || index < flag, after || index > flag)
-        });
-        if before && (after || has_terminator) {
-            return Err(Cli::command().error(
-                clap::error::ErrorKind::UnknownArgument,
-                "checkpoint inspection accepts --json before or after operands, not between them or before a trailing terminator",
-            ));
+    if let (Some(flags), Some(items)) = (inspect.indices_of("json"), inspect.indices_of("items")) {
+        let items = items.collect::<Vec<_>>();
+        for flag in flags {
+            let before = items.iter().any(|index| *index < flag);
+            let after = items.iter().any(|index| *index > flag);
+            if before && (after || has_terminator) {
+                return Err(Cli::command().error(
+                    clap::error::ErrorKind::UnknownArgument,
+                    "checkpoint inspection accepts --json before or after operands, not between them or before a trailing terminator",
+                ));
+            }
         }
     }
     Ok(())

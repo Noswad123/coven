@@ -73,9 +73,15 @@ also validates captured launch control, frozen plans and the dedicated checkpoin
 without running transport or checking current runtime inputs. Recorded claims
 remain visible despite ordinary bundle/checkpoint diagnostic errors; inspection
 is not fresh launch permission or durability confirmation. Standalone
-`checkpoint inspect [WORKSPACE] [CHECKPOINT_ID] --json` now performs its own ordered
+`checkpoint inspect [WORKSPACE] [CHECKPOINT_ID] [--json]` performs its own ordered
 workspace/configuration/authority preflight before returning the checkpoint view;
-it deliberately has broader dependencies than action inspection. It also has typed
+it deliberately has broader dependencies than action inspection. Default output is
+pretty ASCII-escaped JSON (two-space indentation and terminal LF); optional `--json`
+preserves the existing compact CLI/API bytes, with no added separator spaces.
+Native `next [WORKSPACE]` now composes read-only checkpoint guidance after full
+workspace and log validation. It neither approves nor notifies agents. See
+[checkpoint guidance](RUST_MIGRATION.md#native-next-checkpoint-guidance) for selection
+and literal-output limits. The preview also has typed
 finite task values and a mixed-language-tested library workspace lock primitive.
 Library foundations now retain frozen task-ledger receipts for exact historical
 lookup and provide guarded atomic mutable-file replacement. They now support the
@@ -144,8 +150,11 @@ Unicode/control-text output, including pretty history, goal and status—not onl
 human/report escaping and terminal-LF policy are unchanged.
 
 The full pinned `just check` passed formatting, all-target offline locked Clippy
-with warnings denied, **400 native tests** (349 library, 8 binary, 43 integration)
-and **941 Python tests**. Local workspace acceptance has **348 green native CLI
+with warnings denied, **432 native tests** (371 library, 17 binary, 44 integration)
+and **941 Python tests**. Checkpoint inspection and guidance have **580 green CLI
+cases**: 403 inspection/workspace cases and 177 guidance cases, including help,
+repeated flags, exact operand restoration and zero-effect checks.
+Local workspace acceptance has **348 green native CLI
 cases** (346 Python-oracle cases plus two native stdout-failure cases), alongside
 the retained 200 init, 208 lifecycle and 262 task-writer cases. Validation is Linux-only.
 
@@ -212,6 +221,10 @@ coven/
 │   └── coven              # executable wrapper
 ├── src/                   # Rust preview; explicit build path, not the default wrapper
 │   ├── main.rs            # native CLI routing
+│   ├── cli_operands.rs    # checkpoint inspect/next lexical compatibility only
+│   ├── checkpoint_workspace.rs # ordered checkpoint inspect, pretty/compact presentation
+│   ├── checkpoint_guidance.rs # read-only next selection and literal output
+│   ├── checkpoint_guidance/timestamp.rs # Python-compatible guidance chronology
 │   ├── init.rs            # prepare-all, exclusive bootstrap, config-last publication
 │   ├── storage/bootstrap.rs # private marker-free init reservation
 │   ├── platform/          # OS path/descriptor operations
@@ -903,6 +916,37 @@ changes, skip, or quit. `coven console` is a small interactive shell for status,
 standup, agents, send, approve, suggest, and review operations.
 
 ### Current checkpoint decisions
+
+The **native Rust preview** supports inspection and inert next-action guidance:
+
+```bash
+target/debug/coven checkpoint inspect /path/to/workspace plan-approval
+target/debug/coven checkpoint inspect /path/to/workspace plan-approval --json
+target/debug/coven next /path/to/workspace
+```
+
+Inspect defaults to cwd/`plan-approval`; its first operand selects a workspace only
+if the expanded path has a `coven.json` marker. Next instead accepts one explicit
+optional workspace, defaulting to cwd. Neither searches ancestors. Inspect's
+`--json` is optional and repeatable (including unambiguous prefixes); flags must
+not split the positional group. Both retain the bounded UTF-8/finite-value profile.
+Next validates the whole messages log and its checkpoint references before events,
+then selects the last chronologically sorted nonapproved request. Without one, it
+selects the last sorted lowercase `*.md` with exactly `approval_stale`,
+`approved_unbound` or `decision_invalid`—not general pending/review discovery.
+No selection means a status/dashboard suggestion, not dashboard publication.
+
+**Terminal warning:** next prints literal root/path text; ANSI, bidi and other
+controls may render under the existing literal-output policy. Suggested commands
+are inert text, not sanitized/quoted execution instructions. A suggested
+`coven approve` names the existing **Python** command, unsupported in the native
+preview. Native `approve`, `suggest` and interactive `review` remain deferred
+intact because their real transport notifications must not be silently omitted.
+These read-only compositions acquire no locks, fsync nothing and write no decisions,
+dashboard or events; they grant no approval/execution authority or coherent snapshot.
+
+The following decision-writing examples use the **current Python CLI**, not the
+native preview:
 
 ```bash
 coven checkpoint inspect plan-approval --json

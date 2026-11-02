@@ -1,14 +1,16 @@
 """Full checkpoint inspect wrapper oracle; no runtime, writes, or live app state.
 
-Run --oracle-only to classify fixtures before the native CLI is wired. Native
-preview requires --json and may reject repeated --json at the parser boundary;
-Python accepts both. Named-user/missing-HOME expansion, non-UTF8 paths, bounded
+Run --oracle-only to classify fixtures before the native CLI is wired.
+Named-user/missing-HOME expansion, non-UTF8 paths, bounded
 resources and finite scalar JSON are explicit unsupported profiles, not claims
 that Python rejects those inputs. Pure grammar fuzzing and concurrent authority
 transitions belong to the checkpoint/ledger unit owners, not this suite.
+Opaque negative argv before -- has an explicit native parser-refusal profile;
+after -- it is byte-exact but subject to native path/preflight policy, not parity.
 This filesystem harness targets Linux; it does not claim macOS validation.
 """
 import argparse
+import builtins
 from collections import Counter
 from contextlib import ExitStack, chdir, contextmanager, redirect_stdout, redirect_stderr
 from copy import deepcopy
@@ -70,17 +72,40 @@ def snapshot(root):
     return result
 
 
-def invoke(args, cwd, env, *, capture_permission_error=False):
+def invoke(args, cwd, env, *, capture_permission_error=False, help_only=False):
     out, err = io.StringIO(), io.StringIO()
+    real_open, real_io_open, real_os_open = builtins.open, io.open, os.open
+
+    def readonly_open(path, mode="r", *operands, **keywords):
+        assert not any(flag in mode for flag in "wax+"), ("write open", path, mode)
+        return real_open(path, mode, *operands, **keywords)
+
+    def readonly_io_open(path, mode="r", *operands, **keywords):
+        assert not any(flag in mode for flag in "wax+"), ("write io.open", path, mode)
+        return real_io_open(path, mode, *operands, **keywords)
+
+    def readonly_os_open(path, flags, *operands, **keywords):
+        assert not flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND), ("write os.open", path)
+        return real_os_open(path, flags, *operands, **keywords)
+
     with ExitStack() as stack:
         stack.enter_context(patch.dict(os.environ, env, clear=True))
         stack.enter_context(chdir(cwd))
         stack.enter_context(redirect_stdout(out))
         stack.enter_context(redirect_stderr(err))
+        stack.enter_context(patch.object(builtins, "open", readonly_open))
+        stack.enter_context(patch.object(io, "open", readonly_io_open))
+        stack.enter_context(patch.object(os, "open", readonly_os_open))
+        if help_only:
+            for name in ("workspace_path", "split_optional_workspace", "load_team", "preflight_workspace_paths"):
+                stack.enter_context(patch.object(coven, name, side_effect=AssertionError(name + " called for help")))
         # Fail even if an unexpected provider call would otherwise be caught.
         for module, name in ((launch, "execute"), (launch, "stop"), (launch, "_transport"),
                              (subprocess, "run"), (subprocess, "Popen"), (os, "fsync"),
-                             (storage, "atomic_replace_bytes"), (storage, "sync_directory")):
+                             (storage, "atomic_replace_bytes"), (storage, "sync_directory"),
+                             (storage, "workspace_lock"), (storage, "transport_gate"),
+                             (coven, "notify_agents"), (os, "rename"), (os, "replace"),
+                             (os, "unlink"), (os, "mkdir"), (os, "chmod")):
             stack.enter_context(patch.object(module, name, side_effect=AssertionError(name + " called")))
         try:
             status = coven.main(list(map(str, args)))
@@ -132,10 +157,11 @@ def main(binary=None, oracle_only=False):
                "PATH": str(root / "no-tools"), "PYTHONPATH": str(root / "no-python"),
                "PYTHONDONTWRITEBYTECODE": "1"}
 
-        def fixture(name):
+        def fixture(name, *, team_name=None):
             workspace = root / name
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                assert coven.main(["init", str(workspace), "--blank", "--agents", "operator"]) == 0
+                assert coven.main(["init", str(workspace), "--blank", "--agents", "operator",
+                                   *(["--name", team_name] if team_name else [])]) == 0
             return workspace
 
         w = fixture("workspace with spaces 雪")
@@ -147,7 +173,7 @@ def main(binary=None, oracle_only=False):
 
         def check(name, operands=None, *, cwd=None, ok=True, code=None, profile=None,
                   environment=None, command=None, python_ok=None, parser=False,
-                  python_error=None):
+                  python_error=None, help_output=False, no_internal=False):
             assert name not in names, name
             names.add(name)
             args = command if command is not None else ["checkpoint", "inspect",
@@ -155,7 +181,7 @@ def main(binary=None, oracle_only=False):
             current_env = {**env, **(environment or {})}
             current_env = {key: value for key, value in current_env.items() if value is not None}
             before = snapshot(root)
-            expected = invoke(args, cwd or w, current_env)
+            expected = invoke(args, cwd or w, current_env, help_only=help_output)
             expected_ok = ok if python_ok is None else python_ok
             if python_ok is not None:
                 assert (expected[0] == 0) == python_ok, (name, expected)
@@ -169,22 +195,38 @@ def main(binary=None, oracle_only=False):
                 assert (expected[0] == 0) == expected_ok, (name, expected)
             if expected[0] != 0:
                 assert expected[1] == "", (name, "Python fatal stdout", expected)
+            if help_output:
+                assert expected[0] == 0 and expected[2] == "" and "usage:" in expected[1], (name, expected)
+            if help_output or no_internal:
+                assert "__coven_checkpoint_operand_" not in expected[1] + expected[2], (name, expected)
             assert snapshot(root) == before, (name, "Python modified fixture namespace")
             if not oracle_only:
                 result = subprocess.run([binary, *args], cwd=cwd or w, env=current_env,
                                         capture_output=True, timeout=5)
                 if not ok or profile:
                     assert result.returncode != 0 and result.stdout == b"", (name, result)
-                    if code or profile:
-                        assert result.stderr == f"[ERROR] {code or profile}\n".encode(), (name, result)
-                    elif parser:
+                    if parser:
                         assert result.returncode == 2 and b"error:" in result.stderr, (name, result)
+                    elif code or profile:
+                        assert result.stderr == f"[ERROR] {code or profile}\n".encode(), (name, result)
+                elif help_output:
+                    assert result.returncode == 0 and result.stderr == b"" and b"Usage:" in result.stdout, (name, result)
+                    assert b"checkpoint inspect" in result.stdout and b"--json" in result.stdout, (name, result)
                 else:
                     assert result.returncode == 0 and result.stderr == b"", (name, result)
-                    assert canonical(json.loads(result.stdout)) == canonical(json.loads(expected[1])), (name, expected, result)
+                    value = json.loads(expected[1])
+                    assert canonical(json.loads(result.stdout)) == canonical(value), (name, expected, result)
+                    compact = "\n" not in expected[1].rstrip("\n")
+                    literal = (json.dumps(value, ensure_ascii=True, separators=(",", ":")) if compact
+                               else json.dumps(value, ensure_ascii=True, indent=2)) + "\n"
+                    assert result.stdout == literal.encode("ascii"), (name, expected, result)
+                if help_output or no_internal:
+                    assert b"__coven_checkpoint_operand_" not in result.stdout + result.stderr, (name, result)
                 assert snapshot(root) == before, (name, "native modified fixture namespace")
-            counts["profile_refusals" if profile else "parser_refusals" if parser else
+            counts["profile_refusals" if profile else "help_success" if help_output else "parser_refusals" if parser else
                    "parity_success" if ok else "parity_fatal"] += 1
+            if profile and parser:
+                counts["profile_parser_refusals"] += 1
 
         # Marker-based selection, never positional arity or ancestor search.
         for name, operands in (("default-current", []), ("default-explicit", [w]),
@@ -213,10 +255,10 @@ def main(binary=None, oracle_only=False):
                 check(name, [w, "../bad"], cwd=selection_cwd, ok=False, code="unsafe_archive_path")
         check("hyphen-id", command=["checkpoint", "inspect", "--json", "--", "-Legacy"])
         check("terminator-options-are-operands", command=["checkpoint", "inspect", "--", "--json"],
-              ok=False, parser=True, python_ok=True)
+              ok=True)
         check("operand-terminator-does-not-activate-json",
               command=["checkpoint", "inspect", str(w), "--", "--json"],
-              ok=False, parser=True, python_ok=True)
+              ok=True)
         check("leading-json-retains-terminator-in-operand-group",
               command=["checkpoint", "inspect", "--json", str(w), "--", "--json"])
         check("option-placement-leading", command=["checkpoint", "inspect", "--json", str(w), "plan-approval"])
@@ -251,8 +293,122 @@ def main(binary=None, oracle_only=False):
                 assert snapshot(root) == before
                 counts["parser_refusals"] += 1
             else:
-                check(name, command=args, ok=False, parser=True,
-                      python_ok=name in ("required-json", "repeat-json"))
+                success = name in ("required-json", "repeat-json")
+                check(name, command=args, ok=success, parser=not success)
+        for name, args, valid in (
+                ("pretty-default-cwd", [], True),
+                ("pretty-explicit-id", [str(w), "plan-approval"], True),
+                ("repeat-leading-trailing", ["--json", str(w), "plan-approval", "--json"], True),
+                ("repeat-interrupted-group", [str(w), "--json", "plan-approval", "--json"], False),
+                ("prefix-interrupted-group", [str(w), "--j", "plan-approval", "--json"], False),
+                ("pretty-negative-number", ["-1"], True),
+                ("pretty-negative-after-terminator", ["--", "-1"], True),
+                ("pretty-option-as-id", ["--", "--json"], True)):
+            check(name, command=["checkpoint", "inspect", *args], ok=valid,
+                  parser=False)
+        for first in ("--json", "--j", "--js", "--jso"):
+            check("repeat-interruption-retains-first-" + first,
+                  command=["checkpoint", "inspect", str(w), first, "plan-approval", "--json"],
+                  ok=False, parser=True)
+        for args in (["--j", "--jso", str(w)],
+                     ["--json", "--", "-1"],
+                     [str(w), "plan-approval", "--json", "--j"],
+                     ["--", str(w), "--json"]):
+            check("additional-flag-group-" + repr(args), command=["checkpoint", "inspect", *args])
+        for operand in ("-0", "-42", "-", "-1e2"):
+            check("pretty-negative-identifier-" + operand,
+                  command=["checkpoint", "inspect", operand])
+        for operand in ("-1.0", "-.5", "-1e+2"):
+            check("pretty-negative-invalid-id-" + operand,
+                  command=["checkpoint", "inspect", operand], ok=False,
+                  code="invalid_checkpoint_identifier")
+        for operand in ("--json=1", "--js=1", "--jsn"):
+            check("pretty-option-rejection-" + operand,
+                  command=["checkpoint", "inspect", operand], ok=False, parser=True)
+        # Use real marked directories, not just selector spellings: restoration
+        # must retain exact path bytes and every original option index.
+        for spelling in ("-.5", "-1e+2", "-1anything", "-\u0661", "-.\u0661", "-1_000"):
+            negative = fixture(spelling, team_name="operand-fixture")
+            (negative / "checkpoints/plan-approval.md").write_text(
+                f"Status: pending\nExact workspace: {spelling}\n", encoding="utf-8")
+            (negative / "checkpoints/-42.md").write_bytes(b"Status: pending\nNumeric selector\n")
+            for variant, operands in (
+                    ("pretty", [spelling]),
+                    ("leading-flag", ["--json", spelling]),
+                    ("trailing-flag", [spelling, "--json"]),
+                    ("repeated-flags", ["--j", spelling, "-42", "--json"]),
+                    ("terminator", ["--", spelling]),
+                    ("leading-flag-terminator", ["--json", "--", spelling, "-42"])):
+                check(f"negative-root-{spelling}-{variant}", cwd=root,
+                      command=["checkpoint", "inspect", *operands])
+            check("negative-root-invalid-selector-" + spelling, cwd=root,
+                  command=["checkpoint", "inspect", spelling, "-1e+2", "--json"],
+                  ok=False, code="invalid_checkpoint_identifier")
+            for first in ("--json", "--j"):
+                check(f"negative-root-interruption-{spelling}-{first}", cwd=root,
+                      command=["checkpoint", "inspect", spelling, first, "-42", "--json"],
+                      ok=False, parser=True, python_error="unrecognized arguments")
+            check("negative-root-trailing-flag-terminator-" + spelling, cwd=root,
+                  command=["checkpoint", "inspect", spelling, "--json", "--"],
+                  ok=False, parser=True, python_error="unrecognized arguments")
+        token = "__coven_checkpoint_operand_0"
+        collision = fixture(token)
+        (collision / "checkpoints/-42.md").write_bytes(b"Status: pending\nLiteral token root\n")
+        check("literal-token-root-numeric-selector", cwd=root,
+              command=["checkpoint", "inspect", token, "-42", "--json"])
+        check("literal-token-root-invalid-selector", cwd=root,
+              command=["checkpoint", "inspect", "--json", token, "-.5"],
+              ok=False, code="invalid_checkpoint_identifier")
+        check("literal-token-selector-with-negative-root", cwd=root,
+              command=["checkpoint", "inspect", "-.5", token, "--json"])
+        check("empty-literal-root-preserved", command=["checkpoint", "inspect", ""])
+        for spelling in ("-inf", "-nan", "-\u2165", "-.\u2165"):
+            nonnumeric = fixture(spelling, team_name="operand-fixture")
+            (nonnumeric / "checkpoints/plan-approval.md").write_bytes(TEMPLATE)
+            check("nonnumeric-root-option-" + spelling, cwd=root,
+                  command=["checkpoint", "inspect", spelling, "--json"],
+                  ok=False, parser=True)
+            check("nonnumeric-root-terminator-" + spelling, cwd=root,
+                  command=["checkpoint", "inspect", "--json", "--", spelling])
+        with changed(w / "coven.toml", b"invalid TOML!"):
+            for label, operands in (
+                    ("plain", ["--help"]),
+                    ("negative-before-help", ["-1anything", "--help"]),
+                    ("help-before-negative", ["--help", "-.2"]),
+                    ("json-negative-help", ["--json", "-.5", "--help"]),
+                    ("negative-json-help", ["-1anything", "--json", "--help"])):
+                check("help-early-" + label, command=["checkpoint", "inspect", *operands], help_output=True)
+        literal_help = fixture("--help", team_name="literal-help")
+        (literal_help / "checkpoints/plan-approval.md").write_bytes(b"Status: pending\nLiteral help root\n")
+        check("terminator-help-is-root", cwd=root,
+              command=["checkpoint", "inspect", "--", "--help"], no_internal=True)
+        check("terminator-help-is-selector", command=["checkpoint", "inspect", "--", "--help"], no_internal=True)
+        check("terminator-help-is-missing-root-selector", cwd=root,
+              command=["checkpoint", "inspect", "--", "absent", "--help"],
+              ok=False, no_internal=True)
+
+        # Native-only profiles: never decode raw argv with replacement. The
+        # replacement-spelled decoy must not be selected after the terminator.
+        opaque_bytes = b"-1\xff"
+        opaque_name = os.fsdecode(opaque_bytes)
+        assert os.fsencode(opaque_name) == opaque_bytes
+        opaque = root / opaque_name
+        shutil.copytree(w, opaque)
+        decoy = fixture(opaque_bytes.decode("utf-8", "replace"), team_name="lossy-decoy")
+        (decoy / "coven.toml").write_bytes(b"invalid TOML!")
+        for label, operands, parser_profile in (
+                ("before-terminator", [opaque_name], True),
+                ("after-terminator", ["--", opaque_name], False),
+                ("after-leading-json", ["--json", "--", opaque_name], False)):
+            check("opaque-negative-root-" + label, cwd=root,
+                  command=["checkpoint", "inspect", *operands], parser=parser_profile,
+                  profile="opaque_negative_operand_parser_profile" if parser_profile else "non_unicode_path_unsupported",
+                  no_internal=True)
+        check("opaque-negative-selector-after-terminator", command=["checkpoint", "inspect", "--", opaque_name],
+              profile="non_unicode_path_unsupported", no_internal=True)
+        with changed(w / "coven.toml", b"invalid TOML!"):
+            check("opaque-selector-config-precedence", command=["checkpoint", "inspect", "--", opaque_name],
+                  profile="invalid_workspace_toml", python_error="Invalid workspace configuration", no_internal=True)
         for identifier in ("", "../bad", "bad.id", "雪", "space id"):
             check("invalid-id-" + repr(identifier), [w, identifier], ok=False,
                   code="invalid_checkpoint_identifier")
@@ -340,6 +496,10 @@ def main(binary=None, oracle_only=False):
                 with changed(cp, raw.replace(b"\n", ending)):
                     check(f"view-{name}-{ending.hex()}",
                           ok=ending != b"\r" or name in ("empty", "unbound"))
+            with changed(cp, raw):
+                check("pretty-view-" + name, command=["checkpoint", "inspect", str(w)])
+                check("repeated-json-view-" + name,
+                      command=["checkpoint", "inspect", "--json", str(w), "--json"])
         with changed(cp, None, "missing"):
             check("default-missing-view")
         with changed(cp, b"<!-- coven-checkpoint-invalid:v99\n"):

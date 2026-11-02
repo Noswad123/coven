@@ -52,3 +52,86 @@ pub fn inspect_json_arguments(items: &[PathBuf]) -> Result<String> {
     let compact = inspect_arguments(items)?.compact()?;
     crate::output::ascii_json(std::str::from_utf8(&compact)?)
 }
+
+/// Complete safely escaped pretty or compact presentation before stdout.
+/// The existing compact library API and its byte representation stay unchanged.
+pub fn inspect_text_arguments(items: &[PathBuf], json: bool) -> Result<String> {
+    if json {
+        return inspect_json_arguments(items);
+    }
+    let pretty = inspect_arguments(items)?.storage()?;
+    let text = std::str::from_utf8(&pretty)?;
+    crate::output::ascii_json(text.strip_suffix('\n').unwrap_or(text))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::values::{self, Profile};
+    use std::fs;
+
+    #[test]
+    fn pretty_and_compact_preserve_values_ascii_and_compact_library_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("coven.json"),
+            br#"{"name":"test","agents":["a"]}"#,
+        )
+        .unwrap();
+        fs::create_dir(root.path().join("checkpoints")).unwrap();
+        let raw = "# Plan\nStatus: pending\nSnow: \u{2603}\u{1f98a}\n";
+        fs::write(root.path().join("checkpoints/plan-approval.md"), raw).unwrap();
+        let items = [root.path().to_owned()];
+        let compact = inspect_json_arguments(&items).unwrap();
+        assert_eq!(inspect_text_arguments(&items, true).unwrap(), compact);
+        let pretty = inspect_text_arguments(&items, false).unwrap();
+        assert!(pretty.starts_with("{\n  \"checkpoint\": \"plan-approval\",\n"));
+        assert!(!pretty.ends_with('\n'));
+        assert!(!compact.contains('\n'));
+        assert!(pretty.is_ascii() && compact.is_ascii());
+        assert!(pretty.contains("\\u2603\\ud83e\\udd8a"));
+        assert_eq!(
+            values::parse(pretty.as_bytes(), Profile::LegacySnapshot)
+                .unwrap()
+                .compact()
+                .unwrap(),
+            values::parse(compact.as_bytes(), Profile::LegacySnapshot)
+                .unwrap()
+                .compact()
+                .unwrap(),
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("checkpoints/plan-approval.md")).unwrap(),
+            raw
+        );
+        assert!(!root.path().join("state").exists());
+    }
+
+    #[test]
+    fn pretty_inspection_keeps_preflight_before_arity_and_identifier_errors() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("coven.json");
+        fs::write(&path, b"{}").unwrap();
+        let items = [
+            root.path().to_owned(),
+            PathBuf::from("../bad"),
+            PathBuf::from("extra"),
+        ];
+        assert_eq!(
+            inspect_text_arguments(&items, false).unwrap_err().code(),
+            "missing_workspace_record_field"
+        );
+        fs::write(path, br#"{"name":"test","agents":["a"]}"#).unwrap();
+        assert_eq!(
+            inspect_text_arguments(&items, false).unwrap_err().code(),
+            "invalid_checkpoint_operands"
+        );
+        assert_eq!(
+            inspect_text_arguments(&items[..2], false)
+                .unwrap_err()
+                .code(),
+            "invalid_checkpoint_identifier"
+        );
+        assert!(!root.path().join("state").exists());
+    }
+}

@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native workspace init, goal/message/history/status, task add/assign, state import/recovery, existing-workspace refresh,
+Status: **native workspace init, goal/message/history/status, checkpoint inspect/next guidance, task add/assign, state import/recovery, existing-workspace refresh,
 evidence capture and authority readers**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
@@ -46,7 +46,9 @@ cargo run --offline --locked --bin coven -- events WORKSPACE --raw
 cargo run --offline --locked --bin coven -- status WORKSPACE
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
+cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID
 cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID --json
+cargo run --offline --locked --bin coven -- next WORKSPACE
 ```
 
 The compiled `target/debug/coven` can also be invoked directly, including with
@@ -67,6 +69,7 @@ dashboard, repair, migration marker or runtime state.
 ```text
 src/
   main.rs            Thin explicit CLI; escaped reports and exact literal workspace output
+  cli_operands.rs     Checkpoint inspect/next-only Python-compatible operand lexing
   workspace_commands.rs Local goal/message writers and dashboard-publishing status
   workspace_commands/history.rs Read-only pretty/raw event and message history
   workspace_commands/python.rs Finite Python truthiness and str/repr presentation
@@ -90,7 +93,7 @@ src/
   workspace_assets/init.rs Initial templates and all seven original embedded example assets
   task_mutation.rs   End-to-end snapshot/ledger add/assign, receipt and delivery policy
   task_admission.rs  Prepublication response/list capacity and bounded warning codes
-  task_delivery.rs   Guarded JSONL append and dashboard capture/format/publication
+  task_delivery.rs   Guarded delivery/dashboard; shared read-only checkpoint-log references
   task_time.rs       UTC ISO metadata and hyphenated command/event UUIDs
   workspace.rs       Neutral ordered workspace loading and optional-root selection
   ledger.rs          Complete bounded selected task-ledger replay/projection health
@@ -107,7 +110,9 @@ src/
   actions/authority.rs Pure all-claim validation, reference lookup and work budget
   actions/plans.rs   Pure deterministic tmux/Herdr frozen-plan validation
   checkpoints.rs     Pure byte-oriented checkpoint views and framed scope hashes
-  checkpoint_workspace.rs Ordered standalone workspace selection and checkpoint preflight
+  checkpoint_workspace.rs Ordered standalone inspect preflight and pretty/compact text
+  checkpoint_guidance.rs Read-only next selection and complete literal output
+  checkpoint_guidance/timestamp.rs Python 3.14 ISO timestamp guidance sort keys
   storage.rs         Shared workspace guard and immutable evidence publication
   storage/replacement.rs Guarded atomic mutable-file replacement
   output.rs          Bounded safely escaped CLI presentation
@@ -711,13 +716,29 @@ call is performed. Existing task/runtime fences remain unchanged.
 
 ## Standalone workspace-aware checkpoint inspection
 
-`checkpoint inspect [WORKSPACE] [CHECKPOINT_ID] --json` reuses the pure byte reader
+### Overview
+
+Stage16 (uncommitted work after `52d376a`) completes native inspection presentation
+and adds read-only next guidance, not decision writers or execution authority.
+
+### API / Interfaces
+
+`checkpoint inspect [WORKSPACE] [CHECKPOINT_ID] [--json]` reuses the pure byte reader
 only after ordered workspace validation. No operands means cwd and plan-approval.
 The first operand selects a workspace **only** when its expanded spelling has an
 existing or symlinked `coven.json`; otherwise all original operands are checkpoint
 selectors in cwd. This is marker-based, not a two-operand arity heuristic or ancestor
 search. Marker directory/symlink types can select a workspace and fail managed-path
 validation later. Root aliases resolve, while marker contents are not selection data.
+
+Default output is safely ASCII-escaped JSON with two-space indentation and one
+terminal LF. `--json` retains existing compact CLI bytes (no separator spaces) and
+one terminal LF. `checkpoint_workspace::inspect_text_arguments(items, json)` adds
+presentation without changing `inspect_arguments` or `inspect_json_arguments` and
+their compact byte/profile contracts. The library text functions exclude the LF
+that main adds; canonical/hash/storage encodings are unchanged.
+
+### Data Flow
 
 Preflight follows the existing Python order: known managed directories and task
 marker path; selected ledger replay; managed files; conventional checkpoint text
@@ -757,23 +778,129 @@ overflow-prefixed integer tokens can receive the same unsupported-profile code.
 Both implementations still refuse those tokens. No alternate parser/dependency or
 value rewriting is introduced, and full TOML grammar equivalence is not claimed.
 
-Preview syntax requires `--json`; Python's flag-free pretty mode is not yet ported.
+### Edge Cases
+
+`--json` is optional and repeatable, matching Python's flag-free pretty mode.
 Unambiguous long-option prefixes (`--j`, `--js`, `--jso`) are supported for this
 command. The flag belongs before or after the operand group, not between operands
 or before a trailing terminator following operands, matching Python parser errors
-before workspace loading. Repeated `--json` is rejected natively although Python
-accepts it. Tilde expansion precedes the marker probe but never rewrites a retained
+before workspace loading. Every occurrence is retained with Clap `Append` for this
+positional-group check; a later repeat cannot erase an earlier misplaced flag.
+Tilde expansion precedes the marker probe but never rewrites a retained
 checkpoint selector; named-user expansion and HOME-absent implicit lookup remain
 explicitly unsupported. Non-UTF-8 paths and directory names refuse without lossy
 conversion, including unrecognized names that Python could ignore.
 
+Only `checkpoint inspect` and `next` use Python 3.14 argparse's lexical negative
+operand rule: the **prefix** regex `-\.?\d`, not float parsing. Thus `-1anything`
+and `-.٥` are operands too. `\d` is frozen Unicode 16 Nd (760 code points in 71
+ranges). Collision-free lexer tokens restore the original `OsString` and argument
+indices before service use: no numeric/path normalization, broad unknown-flag
+acceptance or change to other command parsers. `--` retains its ordinary meaning.
+
 Limits are per read/pass: 8 MiB finite JSON, 1 MiB checkpoint/TOML text, 4096 total
 directory entries per checkpoint scan, existing ledger replay limits and action
 control encoding/work limits. Conventional checkpoint files are checked before
-the bounded sorted scan. Compact and escaped presentation each finish within
+the bounded sorted scan. Compact and escaped pretty/compact presentation finish within
 32 MiB before stdout. Repeated passes do not imply an aggregate CPU/peak-memory
 ceiling. No locks, fsync, publication, repair, approval, task/control mutation,
 transport, runtime/provider call or Python fallback is added.
+
+### Example usage
+
+```sh
+target/debug/coven checkpoint inspect WORKSPACE plan-approval
+target/debug/coven checkpoint inspect WORKSPACE plan-approval --json --j
+target/debug/coven checkpoint inspect # cwd, plan-approval, pretty JSON
+```
+
+### Related files
+
+`src/main.rs` routes `src/checkpoint_workspace.rs`; `src/cli_operands.rs` preserves
+the narrow lexical contract. `src/workspace.rs`, `src/checkpoints.rs` and
+`src/values/` supply ordered preflight, pure byte inspection and finite encoding.
+See [CHECKPOINT_CONTRACT.md](CHECKPOINT_CONTRACT.md) for decision scope semantics.
+
+## Native next checkpoint guidance
+
+### Overview
+
+`next` is a thin read-only composition of workspace, log and checkpoint readers.
+It reports a recommendation, never grants approval, CAS or execution authority,
+restores a decision from history, or supplies a coherent/latest workspace snapshot.
+
+### API / Interfaces
+
+`next [WORKSPACE]` accepts one explicit optional workspace (cwd by default), not
+inspect's marker-based first-operand selection. It resolves the selected root
+without ancestor search. `checkpoint_guidance::next_arguments(&Path)` returns
+`TaskOutput` containing complete literal text including terminal LF. There is no
+`--json` interface. Main writes those bytes without adding another LF and flushes.
+
+### Data Flow
+
+1. Run full ordered `workspace::load` preflight, with the same distinct ledger
+   observations, configuration/runtime-control checks and limitations as inspect.
+   This is not the task-list pending/runtime fence or execution-history assessment.
+2. Read the **whole messages log**, then validate all its explicit checkpoint
+   references, before reading the **whole events log** and its references. Every
+   present `checkpoint` field must be a valid string ID with a safe managed path
+   and UTF-8 text if present—even on non-request records. Whole-batch parsing
+   precedes reference checks; corrupt tails never yield valid-prefix guidance.
+3. Requests have a truthy checkpoint and the case-sensitive substring `request`
+   in Python `str(type)`, including container values and object key strings. Retain
+   duplicates and stable chronological ordering; message ties precede event ties.
+   Timestamp keys match Python 3.14 `datetime.fromisoformat(str(ts))`: naive means
+   UTC, aware normalizes to UTC, invalid or UTC overflow sorts at datetime.min UTC.
+   Calendar/basic/week dates, Unicode separators and permissive fractional/offset
+   forms follow that compatibility profile, **not** execution authority's narrower
+   timestamp grammar. Finite non-string values use compatible stringification.
+4. Inspect every sorted request's effective checkpoint status and select the
+   **last nonapproved** request. Only if none remains, scan sorted lowercase
+   `*.md` names and select the **last** with exactly `approval_stale`,
+   `approved_unbound` or `decision_invalid`. This is not generic pending-file or
+   interactive-review discovery; missing/changes-requested checkpoints can matter
+   through requests but are not fallback statuses.
+5. Emit `Next action`, `Reason`, `Review file` and `Suggested` lines for a selected
+   checkpoint, otherwise the status/dashboard suggestion. Omit workspace from the
+   suggested command only when the resolved root equals canonical cwd.
+
+### Edge Cases
+
+- Root/path output is **literal**, including ANSI, bidi and other controls under
+  the current literal-output policy, not a terminal sanitizer or shell-quoting API.
+  Suggested `coven approve` is inert text naming the existing Python command;
+  it is unsupported in the native preview. `approve`, `suggest` and interactive
+  `review` stay deferred intact: they include real transport notifiers, which must
+  not be silently dropped or replaced by invented local-only success.
+- Existing UTF-8 path, finite-value and strict log caps remain: 8 MiB/log,
+  65,536 physical LF lines, object records and terminal LF; checkpoint text 1 MiB,
+  each checkpoint scan 4096 entries. Admit **all** output within 32 MiB before
+  stdout; profile/refusal errors emit no success prefix. This is not an aggregate
+  CPU/heap ceiling or proof against concurrent namespace replacement.
+- No locks, fsync, repair, decisions, dashboard/events writes, runtime/network
+  calls or fallback. Linux-only validation and static/cooperating namespace scope
+  remain; no power-loss/exhaustive proof or change to init's ancestry-sync limit.
+
+### Example usage
+
+```sh
+target/debug/coven next /absolute/path/to/workspace
+# From an existing workspace (not ancestor discovery):
+target/debug/coven next
+```
+
+Inspect the named file and current status before deciding what to do; copying the
+suggestion does not authorize a native mutation or notification.
+
+### Related files
+
+`src/checkpoint_guidance.rs` composes `src/workspace.rs`, `src/checkpoints.rs` and
+the shared read-only `task_delivery::checkpoint_log_records` helper in
+`src/task_delivery.rs` (also used by refresh validation). `src/logs.rs` owns strict
+whole-log admission; `src/checkpoint_guidance/timestamp.rs` owns sort keys.
+`src/main.rs` and `src/cli_operands.rs` own routing, literal output and narrow
+operand compatibility. These read compositions add no authority boundary bypass.
 
 ## Native task add/assign workflow
 
@@ -1293,8 +1420,21 @@ just check         # rustfmt check, strict clippy, both test suites
 ```
 
 The full pinned `just check` passed rustfmt, all-target offline locked Clippy with
-`-D warnings`, **400 native tests** (349 library + 8 binary + 43 integration), and
+`-D warnings`, **432 native tests** (371 library + 17 binary + 44 integration), and
 **941 Python tests**.
+
+Checkpoint inspection and guidance have **403 + 177 = 580 green native CLI cases**.
+Expanded cases cover exact negative-prefix root restoration, token collisions,
+repeated flags, terminators, early help without workspace reads, generic parser
+diagnostics without internal tokens, and explicit non-UTF-8 profile refusals.
+Timestamp coverage has five unit tests, including a **364,346 exact-key Python 3.14
+oracle** (213,597 nonminimum keys), 1 MiB long-input cases and a 60-second oracle
+deadline. The unignored Unicode Nd oracle compares all **1,112,064 Unicode scalars**,
+pinning 760 Nd code points/71 ranges. A 2,059-argument parser test verifies exact
+restored values, unchanged indices and every repeated flag. Independent architecture,
+parser/read-safety and timestamp reviews found no remaining actionable code issues.
+These tests characterize the bounded native profile, not exhaustive interpreter
+equivalence or hostile-namespace safety.
 
 Local workspace acceptance adds **348 green native CLI cases**: 346 Python-oracle
 cases plus two native buffered-stdout failure cases. They cover exact literal
@@ -1431,7 +1571,7 @@ contradiction and stale scope. Parser resource errors retain their classificatio
 through action inspection; ordinary malformed JSON remains a diagnostic retaining
 the known claim. Existing storage/numeric corpora also protect unchanged codec modes.
 
-Standalone checkpoint workspace inspection adds **280 CLI cases**: 101 accepted,
+The original standalone checkpoint workspace corpus had **280 CLI cases**: 101 accepted,
 150 semantic/preflight refusals, 13 parser-boundary refusals, 15 explicit profile
 refusals and one permission-sensitive marker-selection probe. The permission probe
 ran here and pinned cwd selection/first configuration error; it explicitly skips
@@ -1524,7 +1664,8 @@ admitted receipt plus five warnings/health metadata renders below the output cap
 Low-level append tests exercise actual partial writes/fsync errors and descriptor
 flags, symlink/FIFO/device refusal. Dashboard golden bytes and all Unicode scalars
 are compared against the version-pinned oracle. The neutral workspace extraction
-retains the 280-case checkpoint and 43-case task-reader corpora. `task remove` and
+retains the checkpoint/workspace corpus (now 403 cases) and 43-case task-reader
+corpus. `task remove` and
 `task complete` are unsupported in both Python and Rust, not outstanding port work.
 
 State lifecycle/refresh adds **208 green CLI cases**, including **7 explicit native
@@ -1558,15 +1699,22 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Manual projection repair | Native raw-preserving SDK and explicit state CLI | Close stated raw-size/profile and cross-platform limits |
 | Execution v1/v2 historical replay, graph reviews and confirmed reservation checks | Native bounded SDK/read-only preview | Close profile limits; writer integration and receipt delivery/order still required |
 | Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
-| Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits before default parity |
-| Standalone checkpoint inspection and ordered workspace preflight | Native bounded read-only preview | Close documented parser/TOML/path/resource restrictions before default parity |
-| Checkpoint mutations, action consumption/outcomes, repository authority | Python only | Existing scoped approval, receipt ordering, publication/recovery and uncertainty contracts |
+| Runtime-launch action inspection and pure checkpoint inspection | Native bounded read-only preview | Close profile/encoding limits before default parity |
+| Standalone checkpoint inspection and ordered workspace preflight | Native pretty-default/optional compact JSON; repeated flags and narrow Python lexical compatibility | Close TOML/path/resource and cross-platform restrictions before default parity |
+| Next checkpoint guidance | Native bounded read-only composition; stable request chronology and exact fallback statuses | Close supported-profile/cross-platform gaps; retain literal output and no authority grant |
+| Current-source execution/attempt/graph inspect and export CLI | Not yet complete; native historical replay already exists | Reuse history, but assess current source separately under an existing lock; do not relabel history as current validity |
+| Checkpoint approve/suggest/interactive review | Python only; deferred intact with real transport notifications | Later runtime scope: scoped approval, publication/uncertainty and actual notifier gates; no silent notification omission |
+| Action consumption/outcomes, repository authority | Python only | Existing receipt ordering, publication/recovery and uncertainty contracts |
 | Observers, groups, watch/publication | Python only | Private endpoint/artifact differential tests, expiry/no stale fallback |
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-Next are runtime-bound lead/plan, checkpoint mutations, execution writers and
-observers/groups, followed by remaining runtime families. Native local workspace
+Recommended next: complete execution/attempt/graph inspect/export CLI using existing
+native history. Current-source assessment must remain a distinct operation under
+an **existing lock**, not a property inferred from historical replay. Checkpoint
+writers belong to later runtime scope, with real notifiers intact, alongside
+runtime-bound lead/plan, execution writers, observers/groups and remaining runtime
+families. Native checkpoint inspection/next guidance, local workspace
 commands, init, refresh and state import/recovery do not authorize runtime execution
 or default-entrypoint cutover. Do not invent task remove/complete port work: Python
 has neither command. Remaining writers must preserve persistent flock inode/order,

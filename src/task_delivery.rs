@@ -57,27 +57,35 @@ pub(crate) fn validate_snapshot_logs(root: &Path) -> Result<()> {
 /// reference, including non-request records. This never restores decisions.
 pub(crate) fn validate_checkpoint_history(root: &Path) -> Result<()> {
     for kind in [LogKind::Messages, LogKind::Events] {
-        for record in logs::read(root, kind)? {
-            if let Some(reference) = record
-                .as_object()
-                .and_then(|object| object.get("checkpoint"))
-            {
-                let id = reference
-                    .as_str()
-                    .ok_or(Error("invalid_checkpoint_history_reference"))?;
-                checkpoints::inspect_bytes(id, None)?; // ID only, not referenced decision grammar.
-                if let Some(raw) = optional_bytes(
-                    root,
-                    &format!("checkpoints/{id}.md"),
-                    MAX_TEXT,
-                    "unsupported_checkpoint_history_profile",
-                )? {
-                    std::str::from_utf8(&raw)?;
-                }
+        checkpoint_log_records(root, kind)?;
+    }
+    Ok(())
+}
+
+/// Validate the complete selected log before checking every explicit reference.
+/// These records remain observations; referenced decisions are never restored.
+pub(crate) fn checkpoint_log_records(root: &Path, kind: LogKind) -> Result<Vec<Value>> {
+    let records = logs::read(root, kind)?;
+    for record in &records {
+        if let Some(reference) = record
+            .as_object()
+            .and_then(|object| object.get("checkpoint"))
+        {
+            let id = reference
+                .as_str()
+                .ok_or(Error("invalid_checkpoint_history_reference"))?;
+            checkpoints::inspect_bytes(id, None)?; // ID only, not referenced decision grammar.
+            if let Some(raw) = optional_bytes(
+                root,
+                &format!("checkpoints/{id}.md"),
+                MAX_TEXT,
+                "unsupported_checkpoint_history_profile",
+            )? {
+                std::str::from_utf8(&raw)?;
             }
         }
     }
-    Ok(())
+    Ok(records)
 }
 
 pub(crate) fn append_event(
