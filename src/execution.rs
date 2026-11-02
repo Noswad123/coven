@@ -18,9 +18,12 @@ use crate::{
 use sha2::{Digest as _, Sha256};
 use std::{collections::HashSet, fs, path::Path};
 
+mod confirmation;
 mod graphs;
 mod guards;
 mod inspection;
+mod mutation;
+mod recovery;
 mod source;
 mod v2;
 pub use guards::{ReservationCheck, guard_authority_change, guard_task_mutation};
@@ -28,6 +31,8 @@ pub use inspection::{
     attempt_inspect_arguments, attempt_list_arguments, graph_export_arguments,
     graph_inspect_arguments, inspect_arguments,
 };
+pub use mutation::cancel_arguments;
+pub use recovery::{RecoveryMode as ExecutionRecoveryMode, recover_arguments};
 
 const DISABLED: &str = "execution-disabled:v1";
 const MAX_HISTORY: usize = 1024;

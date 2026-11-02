@@ -36,6 +36,400 @@ fn inspection_leaf<'a>(matches: &'a clap::ArgMatches, route: &[&str]) -> &'a cla
     })
 }
 
+const CANCEL_ROUTE: &[&str] = &["task", "attempt", "cancel"];
+const RECOVER_ROUTE: &[&str] = &["execution", "recover"];
+const CANCEL_FLAGS: &[&str] = &[
+    "--reason",
+    "because",
+    "--expect-execution-revision",
+    "revision",
+    "--request-id",
+    "request",
+];
+
+#[test]
+fn cancel_restores_all_strings_paths_repetitions_and_raw_indices() {
+    let arguments = inspection_args(
+        CANCEL_ROUTE,
+        &[
+            "--rea",
+            "-1anything/../reason/",
+            "--expect",
+            "-.\u{0661}revision",
+            "--request",
+            "-\u{1e5f1}request",
+            "--reason=__coven_checkpoint_operand_0",
+            "--expect-execution-revision=__coven_checkpoint_operand_1",
+            "--request-id=__coven_checkpoint_operand_2",
+            "--reason=-2last",
+            "--expect=-3last",
+            "--request=-4last",
+            "--j",
+            "--js",
+            "-5workspace/../exact/",
+            "-.\u{0661}attempt",
+            "--jso",
+            "--json",
+        ],
+    );
+    let original = arguments.clone();
+    let (_, parsed) = checkpoint_compat(&arguments);
+    assert_eq!(parsed.len(), arguments.len());
+    assert_eq!(parsed[5], "__coven_checkpoint_operand_3");
+    assert_eq!(parsed[7], "__coven_checkpoint_operand_4");
+    assert_eq!(parsed[9], "__coven_checkpoint_operand_5");
+    let (cli, matches) = parse(&arguments).unwrap();
+    assert_eq!(arguments, original);
+    let Command::Task {
+        command:
+            Task::Attempt {
+                command:
+                    Attempt::Cancel {
+                        items,
+                        reason,
+                        expect_execution_revision,
+                        request_id,
+                        json,
+                    },
+            },
+    } = cli.command
+    else {
+        panic!("wrong command");
+    };
+    assert_eq!(
+        items,
+        ["-5workspace/../exact/", "-.\u{0661}attempt"].map(PathBuf::from)
+    );
+    assert_eq!(
+        reason,
+        [
+            "-1anything/../reason/",
+            "__coven_checkpoint_operand_0",
+            "-2last"
+        ]
+    );
+    assert_eq!(
+        expect_execution_revision,
+        [
+            "-.\u{0661}revision",
+            "__coven_checkpoint_operand_1",
+            "-3last"
+        ]
+    );
+    assert_eq!(
+        request_id,
+        [
+            "-\u{1e5f1}request",
+            "__coven_checkpoint_operand_2",
+            "-4last"
+        ]
+    );
+    assert_eq!(json, [true; 4]);
+    let leaf = inspection_leaf(&matches, CANCEL_ROUTE);
+    for (field, indices, raw) in [
+        (
+            "reason",
+            vec![2, 8, 14],
+            vec![
+                "__coven_checkpoint_operand_3",
+                "__coven_checkpoint_operand_0",
+                "-2last",
+            ],
+        ),
+        (
+            "expect_execution_revision",
+            vec![4, 10, 16],
+            vec![
+                "__coven_checkpoint_operand_4",
+                "__coven_checkpoint_operand_1",
+                "-3last",
+            ],
+        ),
+        (
+            "request_id",
+            vec![6, 12, 18],
+            vec![
+                "__coven_checkpoint_operand_5",
+                "__coven_checkpoint_operand_2",
+                "-4last",
+            ],
+        ),
+    ] {
+        assert_eq!(leaf.indices_of(field).unwrap().collect::<Vec<_>>(), indices);
+        assert_eq!(leaf.get_raw(field).unwrap().collect::<Vec<_>>(), raw);
+    }
+    assert_eq!(
+        leaf.indices_of("items").unwrap().collect::<Vec<_>>(),
+        [23, 24]
+    );
+    assert_eq!(
+        leaf.indices_of("json").unwrap().collect::<Vec<_>>(),
+        [20, 22, 26, 28]
+    );
+}
+
+#[test]
+fn cancel_requires_flags_and_one_or_two_selectors() {
+    for operands in [vec!["-1attempt"], vec!["-1workspace", "-.2attempt"]] {
+        let arguments = inspection_args(CANCEL_ROUTE, &[CANCEL_FLAGS, &operands].concat());
+        assert!(parse(&arguments).is_ok());
+    }
+    for omitted in 0..3 {
+        let mut flags = CANCEL_FLAGS.to_vec();
+        flags.drain(2 * omitted..2 * omitted + 2);
+        flags.push("-1attempt");
+        assert_eq!(
+            parse(&inspection_args(CANCEL_ROUTE, &flags))
+                .err()
+                .unwrap()
+                .kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+    }
+    assert_eq!(
+        parse(&inspection_args(CANCEL_ROUTE, CANCEL_FLAGS))
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::MissingRequiredArgument
+    );
+    assert_eq!(
+        parse(&inspection_args(
+            CANCEL_ROUTE,
+            &[CANCEL_FLAGS, &["-1root", "-2attempt", "-3extra"]].concat()
+        ))
+        .err()
+        .unwrap()
+        .kind(),
+        ErrorKind::TooManyValues
+    );
+}
+
+#[test]
+fn cancel_all_flag_groups_respect_operand_and_terminator_boundaries() {
+    for flag in [
+        vec!["--reason", "last"],
+        vec!["--expect", "last"],
+        vec!["--request", "last"],
+        vec!["--j"],
+    ] {
+        for suffix in [vec!["-2attempt"], vec!["--"], vec!["--", "-2attempt"]] {
+            let operands = [CANCEL_FLAGS, &["-1root"], &flag, &suffix].concat();
+            assert_eq!(
+                parse(&inspection_args(CANCEL_ROUTE, &operands))
+                    .err()
+                    .unwrap()
+                    .kind(),
+                ErrorKind::UnknownArgument,
+                "{operands:?}"
+            );
+        }
+        let operands = [CANCEL_FLAGS, &["-1root", "-2attempt"], &flag].concat();
+        assert!(parse(&inspection_args(CANCEL_ROUTE, &operands)).is_ok());
+    }
+    for operands in [vec!["--", "-1root", "--json"], vec!["-1root", "--", "--"]] {
+        let arguments = inspection_args(CANCEL_ROUTE, &[CANCEL_FLAGS, &operands].concat());
+        let (_, parsed) = checkpoint_compat(&arguments);
+        let terminator = arguments.iter().position(|value| value == "--").unwrap();
+        assert_eq!(&parsed[terminator..], &arguments[terminator..]);
+        let (_, matches) = parse(&arguments).unwrap();
+        let leaf = inspection_leaf(&matches, CANCEL_ROUTE);
+        assert_eq!(
+            leaf.get_many::<PathBuf>("items")
+                .unwrap()
+                .cloned()
+                .collect::<Vec<_>>(),
+            ["-1root", operands.last().unwrap()].map(PathBuf::from)
+        );
+    }
+}
+
+#[test]
+fn recover_restores_revision_strings_and_keeps_modes_repeats_and_delimiters() {
+    for mode in ["--confirm", "--archive"] {
+        let arguments = inspection_args(
+            RECOVER_ROUTE,
+            &[
+                mode,
+                mode,
+                "--expect",
+                "-.\u{0661}anything/../revision/",
+                "--expect=__coven_checkpoint_operand_0",
+                "--expect=-1last",
+                "--j",
+                "-\u{1e5f1}workspace/../exact/",
+                "--json",
+            ],
+        );
+        let (_, parsed) = checkpoint_compat(&arguments);
+        assert_eq!(parsed[6], "__coven_checkpoint_operand_1");
+        let (cli, matches) = parse(&arguments).unwrap();
+        let Command::Execution {
+            command:
+                Execution::Recover {
+                    workspace,
+                    confirm_authority,
+                    archive_pending,
+                    expect_execution_revision,
+                    json,
+                },
+        } = cli.command
+        else {
+            panic!("wrong command");
+        };
+        assert_eq!(workspace.as_os_str(), "-\u{1e5f1}workspace/../exact/");
+        assert_eq!(confirm_authority, mode == "--confirm");
+        assert_eq!(archive_pending, mode == "--archive");
+        assert_eq!(
+            expect_execution_revision,
+            [
+                "-.\u{0661}anything/../revision/",
+                "__coven_checkpoint_operand_0",
+                "-1last"
+            ]
+        );
+        assert_eq!(json, [true, true]);
+        let leaf = inspection_leaf(&matches, RECOVER_ROUTE);
+        // Clap collapses the repeated bool override in its logical indices;
+        // the adapter still preserves the original argv length.
+        assert_eq!(
+            leaf.indices_of("expect_execution_revision")
+                .unwrap()
+                .collect::<Vec<_>>(),
+            [4, 6, 8]
+        );
+        assert_eq!(
+            leaf.get_raw("expect_execution_revision")
+                .unwrap()
+                .collect::<Vec<_>>(),
+            [
+                "__coven_checkpoint_operand_1",
+                "__coven_checkpoint_operand_0",
+                "-1last"
+            ]
+        );
+    }
+    for operands in [
+        vec!["--confirm"],
+        vec!["--archive", "--", "--json"],
+        vec!["-1root", "--confirm", "--expect", "-2rev", "--json"],
+    ] {
+        assert!(parse(&inspection_args(RECOVER_ROUTE, &operands)).is_ok());
+    }
+    assert_eq!(
+        parse(&inspection_args(RECOVER_ROUTE, &[]))
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::MissingRequiredArgument
+    );
+    assert_eq!(
+        parse(&inspection_args(RECOVER_ROUTE, &["--confirm", "--archive"]))
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::ArgumentConflict
+    );
+    assert!(
+        parse(&inspection_args(
+            RECOVER_ROUTE,
+            &["--confirm", "-1root", "-2extra"]
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn maintenance_routes_do_not_capture_unknown_flags_or_string_values() {
+    for (route, flags) in [
+        (CANCEL_ROUTE, CANCEL_FLAGS),
+        (RECOVER_ROUTE, &["--confirm"][..]),
+    ] {
+        for unknown in [
+            "--jsonish",
+            "--reasoning",
+            "--request-id-extra",
+            "--expect-execution-revisions",
+            "-inf",
+            "-..1",
+            "-\u{2165}",
+            "--1",
+        ] {
+            let arguments = inspection_args(route, &[flags, &[unknown]].concat());
+            assert_eq!(checkpoint_compat(&arguments).1, arguments);
+            assert_eq!(
+                parse(&arguments).err().unwrap().kind(),
+                ErrorKind::UnknownArgument
+            );
+        }
+        let string_flags = if route == CANCEL_ROUTE {
+            &["--reason", "--expect", "--request"][..]
+        } else {
+            &["--expect"][..]
+        };
+        for flag in string_flags {
+            for value in ["--jsonish", "-inf", "-..1", "-\u{2165}"] {
+                assert!(
+                    parse(&inspection_args(
+                        route,
+                        &[flags, &[*flag, value, "selector"]].concat()
+                    ))
+                    .is_err()
+                );
+            }
+        }
+    }
+    for route in [
+        &["execution", "history"][..],
+        &["execution", "source"],
+        &["task", "attempt", "unknown"],
+    ] {
+        let arguments = inspection_args(route, &["-1anything", "--reason", "-.2value"]);
+        assert_eq!(checkpoint_compat(&arguments).1, arguments);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn maintenance_paths_preserve_raw_bytes_and_strings_reject_invalid_utf8() {
+    use std::os::unix::ffi::OsStringExt;
+
+    for (route, flags, field) in [
+        (CANCEL_ROUTE, CANCEL_FLAGS, "items"),
+        (RECOVER_ROUTE, &["--confirm"][..], "workspace"),
+    ] {
+        let literal = OsString::from_vec(b"-1raw\xff/../exact/".to_vec());
+        let mut arguments = inspection_args(route, &[flags, &["--"]].concat());
+        arguments.push(literal.clone());
+        assert_eq!(checkpoint_compat(&arguments).1, arguments);
+        let (_, matches) = parse(&arguments).unwrap();
+        assert_eq!(
+            inspection_leaf(&matches, route)
+                .get_one::<PathBuf>(field)
+                .unwrap()
+                .as_os_str(),
+            literal
+        );
+        arguments.remove(arguments.len() - 2);
+        assert_eq!(
+            parse(&arguments).err().unwrap().kind(),
+            ErrorKind::UnknownArgument
+        );
+        for flag in if route == CANCEL_ROUTE {
+            &["--reason", "--expect", "--request"][..]
+        } else {
+            &["--expect"][..]
+        } {
+            let mut arguments = inspection_args(route, &[flags, &["selector", flag]].concat());
+            arguments.push(OsString::from_vec(b"value\xff".to_vec()));
+            assert_eq!(
+                parse(&arguments).err().unwrap().kind(),
+                ErrorKind::InvalidUtf8
+            );
+        }
+    }
+}
+
 #[test]
 fn new_inspection_roots_restore_unicode_prefixes_markers_and_raw_indices() {
     for route in INSPECTION_ROUTES {

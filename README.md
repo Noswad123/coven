@@ -64,15 +64,23 @@ rather than installation or PATH changes. It implements complete native `init`
 for blank and embedded `interactive-demo` workspaces, handoff validation/capture/history,
 local `goal`, `message`, `messages`, `events` and dashboard-publishing `status`,
 bounded snapshot/ledger `task list --json`, read-only `state inspect`, and
-`execution history --json` for retained v1/v2 preparation authority. Stage17
-(uncommitted work after `d9ef74a`) also completes native `execution inspect`,
+`execution history --json` for retained v1/v2 preparation authority. It also supports
+native `execution inspect`,
 `task attempt list --task`, `task attempt inspect`, `task graph inspect` and
 `task graph export`; see the [inspection contract](RUST_MIGRATION.md#native-execution-inspection-and-graph-export).
-These default to pretty ASCII JSON (two-space indentation); `--json` selects
+Native **`task attempt cancel`** and **`execution recover --confirm-authority` /
+`--archive-pending`** now maintain existing v1/v2 authority, including exact legacy
+cancellation retries after upgrade. They require no current config, marker, tasks,
+roster or runtime inputs. Cancellation records local pre-submission cancellation;
+it never stops a process or dispatches work. Enable, enroll, full preparation
+(intent and graph), upgrade, graph mutations and repository verification remain
+unsupported native routes. See the [maintenance contract](RUST_MIGRATION.md#native-execution-cancellation-and-recovery).
+Inspection and maintenance default to pretty ASCII JSON (two-space indentation);
+`--json` selects
 compact JSON, each with exactly one terminal LF. There is no human renderer or
 dispatch. Inspection optionally assesses current source under an **existing**
 workspace lock (five-second wait, no creation); missing/busy/unsafe locks leave
-source uncoordinated. The guard still requires a regular `coven.json` marker;
+source uncoordinated. The inspection guard still requires a regular `coven.json` marker;
 marker-free history/export and uncoordinated inspection remain supported.
 Graph export fully replays retained authority but never loads current source,
 configuration, tasks, checkpoints, runtime control or locks. All trust fields remain
@@ -163,10 +171,12 @@ Unicode/control-text output, including pretty history, goal and status—not onl
 human/report escaping and terminal-LF policy are unchanged.
 
 The full pinned `just check` passed formatting, all-target offline locked Clippy
-with warnings denied, **488 native tests** (421 library, 22 binary, 45 integration)
-and **941 Python tests**. The execution inspection corpus passes **539 cases**:
-534 CLI cases and five oracle state-machine characterizations, with eight separate
-unsupported-writer guards. See [validation](RUST_MIGRATION.md#validation) for scope.
+with warnings denied, **533 native tests** (459 library, 28 binary, 46 integration)
+and **941 Python tests**. Maintenance acceptance passes **229 cases**, including
+210 CLI cases and 12 mixed-writer races, with process-death lock release also
+checked. The execution inspection corpus retains **539 cases** and all eight
+parser-refusal/no-effect guards; cancel/recover now use invalid flags in those
+guards because their valid command profiles are supported.
 Checkpoint inspection and guidance have **580 green CLI
 cases**: 403 inspection/workspace cases and 177 guidance cases, including help,
 repeated flags, exact operand restoration and zero-effect checks.
@@ -179,7 +189,7 @@ it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
 or separately named native CLI. Explicit native handoff collection writes
 only local unverified evidence. Runtime-bound lead/plan, checkpoint mutations,
-execution writers, observers/groups and runtime effects remain to be ported.
+remaining execution writers, observers/groups and runtime effects remain to be ported.
 Unsupported native commands fail closed without delegation.
 This is not yet a complete
 Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,
@@ -237,7 +247,12 @@ coven/
 │   └── coven              # executable wrapper
 ├── src/                   # Rust preview; explicit build path, not the default wrapper
 │   ├── main.rs            # native CLI routing
-│   ├── cli_operands.rs    # checkpoint/next + five execution-reader routes; narrow lexical compatibility
+│   ├── cli_operands.rs    # checkpoint/next + execution readers/maintenance; narrow lexical compatibility
+│   ├── execution/mutation.rs # source-free cancellation, retained binding lookup and successor admission
+│   ├── execution/mutation/delivery.rs # preadmitted known-result/uncertainty envelopes
+│   ├── execution/confirmation.rs # full typed reread and control/directory synchronization
+│   ├── execution/recovery.rs # explicit confirm-authority / whole pending-directory archive
+│   ├── storage/maintenance.rs # private marker-independent acquisition of the same persistent flock
 │   ├── execution/inspection.rs # replay/existing-lock/source assessment orchestration
 │   ├── execution/source.rs # fresh raw snapshot or selected-ledger source under guard
 │   ├── execution/inspection/commands.rs # five native inspection/export interfaces
@@ -809,7 +824,8 @@ secondary-event delivery protocol.
 ## Preparation-only task attempts
 
 The following unqualified `coven` examples use the current Python default, including
-writers. The Rust preview now supports all five read-only inspection/export routes:
+writers. The Rust preview supports all five read-only inspection/export routes,
+plus cancellation and both explicit execution-recovery modes:
 
 ```bash
 target/debug/coven execution inspect /path/to/workspace
@@ -831,6 +847,40 @@ files, but corruption anywhere in retained history is fatal. No reader writes or
 fsyncs, and no lock or source observation grants freshness or mutation permission.
 See [RUST_MIGRATION.md](RUST_MIGRATION.md#native-execution-inspection-and-graph-export)
 for filtering, precedence, budgets and graph eligibility semantics.
+
+For an **existing disposable workspace with Python-prepared authority**, inspect
+the actual attempt ID and execution revision, then substitute them below. No native
+enable/enroll/prepare or runtime setup is implied:
+
+```bash
+target/debug/coven execution inspect WORKSPACE --json
+target/debug/coven task attempt cancel WORKSPACE '<actual-attempt-id>' \
+  --reason "Revise assignment" --expect-execution-revision '<inspected-execution-token>' \
+  --request-id cancel-review-1 --json
+# Separately inspect the current revision before explicit durability confirmation:
+target/debug/coven execution history WORKSPACE --json
+target/debug/coven execution recover WORKSPACE --confirm-authority \
+  --expect-execution-revision '<current-inspected-execution-token>' --json
+```
+
+Cancellation exits 0 when confirmed, 2 when a known frozen result is retained but
+verification/durability is uncertain, or 1 for an ordinary error. Inspect before
+blindly choosing a new key; retry only the original key and exact arguments to
+retrieve its authoritative frozen result, not fresh permission. Recovery failures
+exit 1. Only for a separately inspected disposable pending directory with **no
+control entry**, use `target/debug/coven execution recover PENDING_WORKSPACE --archive-pending --json`.
+This archives the whole directory, not repair or reset. Post-rename sync failure
+exits 1 with empty stdout and a diagnostic retaining the known destination, without
+rollback; see the maintenance contract before using it.
+
+**Native cancellation liveness limit:** a valid predecessor may have no admissible
+native cancellation successor: exact stored bytes including LF must fit 8 MiB,
+combined history 1024 entries, prefix/replay work 256 MiB, and finite output 32 MiB.
+Python's 512 KiB cancellation reserve does not guarantee these native limits. No
+pruning, limit raising or fallback is provided; native escape headroom must be
+separately planned before future native preparation or history-growth writers.
+
+The following preparation workflow remains the **Python default**, not native support:
 
 ```bash
 coven execution inspect --json
@@ -869,7 +919,8 @@ Execution effects and request receipts share one bounded atomic control file.
 Retry the original key/content/revisions: replay precedes mutable source checks
 and returns the frozen result even after cancellation. Uncertain delivery exits
 2; current revision/state may be unknown while the known receipt is preserved.
-Cancellation capacity is reserved before accepting preparations/history growth.
+Python reserves cancellation capacity before accepting preparations/history growth;
+this does not guarantee native cancellation capacity under the limits above.
 Inspect never creates an absent lock; corrupt current source does not hide valid
 frozen attempts. Pending/corrupt execution control fails closed for fresh task
 changes—no silent reset or automatic activation repair.

@@ -1,6 +1,7 @@
 //! Shared persistent workspace lock, immutable publication, and mutable replacement.
 //! Never replace/unlink a lock inode or steal it based on process metadata.
 pub(crate) mod bootstrap;
+mod maintenance;
 mod replacement;
 pub use replacement::atomic_replace_bytes;
 
@@ -36,6 +37,9 @@ impl WorkspaceGuard {
     }
     fn open(workspace: &Path, timeout: Duration, create: bool) -> Result<Self> {
         let root = read_fs::workspace(workspace)?;
+        Self::open_canonical_root(root, timeout, create)
+    }
+    fn open_canonical_root(root: PathBuf, timeout: Duration, create: bool) -> Result<Self> {
         let state = read_fs::managed(&root, Path::new("state"), true)?;
         if create {
             std::fs::create_dir_all(state)?;

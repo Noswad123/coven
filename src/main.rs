@@ -151,6 +151,22 @@ enum Action {
 
 #[derive(Subcommand)]
 enum Execution {
+    /// Explicitly confirm authority or preserve a pending activation; no source/runtime access.
+    #[command(infer_long_args = true, args_override_self = true,
+        group(ArgGroup::new("execution_recovery_mode").required(true).multiple(false)
+            .args(["confirm_authority", "archive_pending"])))]
+    Recover {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long)]
+        confirm_authority: bool,
+        #[arg(long)]
+        archive_pending: bool,
+        #[arg(long, action = clap::ArgAction::Append, allow_negative_numbers = true)]
+        expect_execution_revision: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
     /// Inspect retained preparation and assess current source under an existing lock.
     #[command(infer_long_args = true)]
     Inspect {
@@ -251,6 +267,20 @@ enum Task {
 
 #[derive(Subcommand)]
 enum Attempt {
+    /// Record preparation cancellation; does not stop a process or grant execution permission.
+    #[command(infer_long_args = true)]
+    Cancel {
+        #[arg(value_name = "WORKSPACE_OR_ATTEMPT_ID", required = true, num_args = 1..=2, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+        #[arg(long, required = true, action = clap::ArgAction::Append, allow_negative_numbers = true)]
+        reason: Vec<String>,
+        #[arg(long, required = true, action = clap::ArgAction::Append, allow_negative_numbers = true)]
+        expect_execution_revision: Vec<String>,
+        #[arg(long, required = true, action = clap::ArgAction::Append, allow_negative_numbers = true)]
+        request_id: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
     /// List frozen preparations with source diagnostics, never execution permission.
     #[command(infer_long_args = true)]
     List {
@@ -327,6 +357,27 @@ enum Handoff {
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
         Command::Execution {
+            command:
+                Execution::Recover {
+                    workspace,
+                    confirm_authority,
+                    archive_pending: _,
+                    expect_execution_revision,
+                    json,
+                },
+        } => {
+            return execution::recover_arguments(
+                &workspace,
+                if confirm_authority {
+                    execution::ExecutionRecoveryMode::ConfirmAuthority
+                } else {
+                    execution::ExecutionRecoveryMode::ArchivePending
+                },
+                expect_execution_revision.last().map(String::as_str),
+                !json.is_empty(),
+            );
+        }
+        Command::Execution {
             command: Execution::Inspect { workspace, json },
         } => {
             return execution::inspect_arguments(&workspace, !json.is_empty());
@@ -335,6 +386,22 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             command: Task::Attempt { command },
         } => {
             return match command {
+                Attempt::Cancel {
+                    items,
+                    reason,
+                    expect_execution_revision,
+                    request_id,
+                    json,
+                } => execution::cancel_arguments(
+                    &items,
+                    reason.last().map(String::as_str).unwrap_or(""),
+                    expect_execution_revision
+                        .last()
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                    request_id.last().map(String::as_str).unwrap_or(""),
+                    !json.is_empty(),
+                ),
                 Attempt::List {
                     workspace,
                     task,
@@ -656,6 +723,16 @@ fn validate_execution_option_order(
     let Some(task) = matches.subcommand_matches("task") else {
         return Ok(());
     };
+    if let Some(cancel) = task
+        .subcommand_matches("attempt")
+        .and_then(|attempt| attempt.subcommand_matches("cancel"))
+    {
+        return validate_flag_operand_group(
+            cancel,
+            has_terminator,
+            &["reason", "expect_execution_revision", "request_id", "json"],
+        );
+    }
     let command = task
         .subcommand_matches("attempt")
         .and_then(|attempt| attempt.subcommand_matches("inspect"))
@@ -676,16 +753,29 @@ fn validate_json_operand_group(
     inspect: &clap::ArgMatches,
     has_terminator: bool,
 ) -> std::result::Result<(), clap::Error> {
-    if let (Some(flags), Some(items)) = (inspect.indices_of("json"), inspect.indices_of("items")) {
-        let items = items.collect::<Vec<_>>();
-        for flag in flags {
-            let before = items.iter().any(|index| *index < flag);
-            let after = items.iter().any(|index| *index > flag);
-            if before && (after || has_terminator) {
-                return Err(Cli::command().error(
+    validate_flag_operand_group(inspect, has_terminator, &["json"])
+}
+
+fn validate_flag_operand_group(
+    inspect: &clap::ArgMatches,
+    has_terminator: bool,
+    names: &[&str],
+) -> std::result::Result<(), clap::Error> {
+    let Some(items) = inspect.indices_of("items") else {
+        return Ok(());
+    };
+    let items = items.collect::<Vec<_>>();
+    for name in names {
+        if let Some(flags) = inspect.indices_of(name) {
+            for flag in flags {
+                let before = items.iter().any(|index| *index < flag);
+                let after = items.iter().any(|index| *index > flag);
+                if before && (after || has_terminator) {
+                    return Err(Cli::command().error(
                     clap::error::ErrorKind::UnknownArgument,
-                    "inspection accepts --json before or after operands, not between them or before a trailing terminator",
+                    "options must precede or follow the operand group, not interrupt it or precede a trailing terminator",
                 ));
+                }
             }
         }
     }

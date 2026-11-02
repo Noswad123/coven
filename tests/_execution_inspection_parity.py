@@ -608,6 +608,7 @@ def parser_cases(s, active, attempt, revision):
     s.check("graph/unknown", ["task", "graph", "inspect", active, "f" * 32], active, category="selectors", code=1, contains="Unknown graph revision")
     s.check("graph/invalid", ["task", "graph", "inspect", active, "bad"], active, category="selectors", code=1, contains="Invalid graph revision")
     # Never invoke Python runtime writers. Only native must refuse these routes.
+    # Cancel/recover are ported: retain their no-effects guards with invalid flags.
     if not s.oracle_only:
         view = v1.Store(active).read()
         flags = ["--expect-execution-revision", view.revision, "--request-id", "forbidden-native-write", "--json"]
@@ -615,9 +616,9 @@ def parser_cases(s, active, attempt, revision):
         for args in (["execution", "enable", active, *flags],
                      ["execution", "enroll", active, "zeta", *flags, *task_flags],
                      ["execution", "upgrade", active, *flags],
-                     ["execution", "recover", active, "--confirm-authority", "--expect-execution-revision", view.revision, "--json"],
+                     ["execution", "recover", active, "--confirm-authority", "--expect-execution-revision", view.revision, "--invalid-maintenance-flag", "--json"],
                      ["task", "attempt", "prepare", active, "zeta", "--graph-revision", revision, *flags, *task_flags],
-                     ["task", "attempt", "cancel", active, attempt, "--reason", "never dispatch", *flags],
+                     ["task", "attempt", "cancel", active, attempt, "--reason", "never dispatch", *flags, "--invalid-maintenance-flag"],
                      ["task", "graph", "propose", active, "--document", "never-open.json", *flags, *task_flags],
                      ["task", "graph", "decide", active, revision, "--decision", "changes-requested", "--reason", "never write",
                       "--expect-graph-digest", view.graphs[revision]["digest"], *flags]):

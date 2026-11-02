@@ -19,21 +19,31 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
             Some("execution") if arguments.get(2).is_some_and(|value| value == "inspect") => {
                 (3, "workspace", &["execution", "inspect"])
             }
+            Some("execution") if arguments.get(2).is_some_and(|value| value == "recover") => {
+                (3, "workspace", &["execution", "recover"])
+            }
             Some("task") => match (
                 arguments.get(2).and_then(|value| value.to_str()),
                 arguments.get(3).and_then(|value| value.to_str()),
             ) {
                 (Some("attempt"), Some("list")) => (4, "workspace", &["task", "attempt", "list"]),
                 (Some("attempt"), Some("inspect")) => (4, "items", &["task", "attempt", "inspect"]),
+                (Some("attempt"), Some("cancel")) => (4, "items", &["task", "attempt", "cancel"]),
                 (Some("graph"), Some("inspect")) => (4, "items", &["task", "graph", "inspect"]),
                 (Some("graph"), Some("export")) => (4, "items", &["task", "graph", "export"]),
                 _ => return (command, parsed),
             },
             _ => return (command, parsed),
         };
+    let string_fields: &[&str] = match route {
+        ["task", "attempt", "list"] => &["task"],
+        ["task", "attempt", "cancel"] => &["reason", "expect_execution_revision", "request_id"],
+        ["execution", "recover"] => &["expect_execution_revision"],
+        _ => &[],
+    };
     let mut occupied = arguments.iter().cloned().collect::<HashSet<_>>();
-    if route == ["task", "attempt", "list"] {
-        // Attached option values also reach the task parser as standalone strings.
+    if !string_fields.is_empty() {
+        // Attached option values also reach String parsers as standalone strings.
         occupied.extend(arguments.iter().filter_map(|argument| {
             argument
                 .to_str()?
@@ -70,9 +80,9 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         originals.insert(token.clone(), argument.clone());
         *argument = token;
     }
-    let task_originals = originals.clone();
-    let task_parser = clap::builder::StringValueParser::new().map(move |value| {
-        task_originals
+    let string_originals = originals.clone();
+    let string_parser = clap::builder::StringValueParser::new().map(move |value| {
+        string_originals
             .get(&OsString::from(&value))
             .and_then(|original| original.to_str())
             .map(str::to_owned)
@@ -81,12 +91,13 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
     let parser = clap::builder::OsStringValueParser::new()
         .map(move |value| PathBuf::from(originals.get(&value).cloned().unwrap_or(value)));
     let install = |command: clap::Command| {
-        let command = command.mut_arg(field, |argument| argument.value_parser(parser));
-        if route == ["task", "attempt", "list"] {
-            command.mut_arg("task", |argument| argument.value_parser(task_parser))
-        } else {
-            command
+        let mut command = command.mut_arg(field, |argument| argument.value_parser(parser));
+        for field in string_fields {
+            command = command.mut_arg(*field, |argument| {
+                argument.value_parser(string_parser.clone())
+            });
         }
+        command
     };
     let command = command.mut_subcommand(route[0], |command| match route.len() {
         1 => install(command),

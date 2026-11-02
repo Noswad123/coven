@@ -22,7 +22,7 @@ fn revision(value: &Value, schema: usize) -> Result<()> {
     )
 }
 
-fn binding<'a>(value: &'a Value, work: &mut Work) -> Result<&'a str> {
+pub(super) fn binding<'a>(value: &'a Value, work: &mut Work) -> Result<&'a str> {
     fields(
         value,
         "schema_version operation parameters expected_execution_revision expected_tasks_revision",

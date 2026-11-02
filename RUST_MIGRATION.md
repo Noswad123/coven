@@ -1,7 +1,8 @@
 # Coven Rust migration
 
 Status: **native workspace init, goal/message/history/status, checkpoint inspect/next guidance, task add/assign, state import/recovery, existing-workspace refresh,
-evidence capture and authority readers, including all five execution inspection/export routes**,
+evidence capture and authority readers, all five execution inspection/export routes,
+preparation cancellation and both explicit execution-recovery modes**,
 not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
@@ -49,6 +50,9 @@ cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 cargo run --offline --locked --bin coven -- execution inspect WORKSPACE
 cargo run --offline --locked --bin coven -- task attempt list WORKSPACE --task TASK_ID --json
 cargo run --offline --locked --bin coven -- task attempt inspect WORKSPACE ATTEMPT_ID --json
+cargo run --offline --locked --bin coven -- task attempt cancel WORKSPACE ATTEMPT_ID --reason TEXT --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- execution recover WORKSPACE --confirm-authority --expect-execution-revision TOKEN --json
+cargo run --offline --locked --bin coven -- execution recover WORKSPACE --archive-pending --json
 cargo run --offline --locked --bin coven -- task graph inspect WORKSPACE --json
 cargo run --offline --locked --bin coven -- task graph export WORKSPACE GRAPH_REVISION --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
@@ -75,7 +79,7 @@ dashboard, repair, migration marker or runtime state.
 ```text
 src/
   main.rs            Thin explicit CLI; escaped reports and exact literal workspace output
-  cli_operands.rs     Narrow checkpoint/next and five execution-reader operand lexing
+  cli_operands.rs     Narrow checkpoint/next and execution-reader/maintenance operand lexing
   workspace_commands.rs Local goal/message writers and dashboard-publishing status
   workspace_commands/history.rs Read-only pretty/raw event and message history
   workspace_commands/python.rs Finite Python truthiness and str/repr presentation
@@ -112,6 +116,11 @@ src/
   execution/v2.rs    Upgrade bridge, graph reviews and v2 preparation replay
   execution/graphs.rs Pure bounded graph validation, refreezing and source matching
   execution/guards.rs Confirmed reservation checks under a borrowed writer guard
+  execution/mutation.rs Source-free cancellation, receipt-before-CAS and exact-byte successor admission
+  execution/mutation/delivery.rs Preadmitted confirmed/uncertain frozen-result delivery
+  execution/confirmation.rs Full typed reread and control/execution/state/root synchronization
+  execution/recovery.rs Explicit authority confirmation and whole pending-directory archival
+  storage/maintenance.rs Crate-private marker-independent acquisition of the shared persistent lock
   execution/inspection.rs Ordered replay/existing-lock/source assessment and output admission
   execution/source.rs Fresh raw snapshot or independently selected ledger under borrowed guard
   execution/inspection/commands.rs Five native inspection/export wrappers and selector timing
@@ -411,9 +420,10 @@ not durable absence or anti-rollback proof. Two active-authority reads each reta
 the existing per-replay bounds; no combined CPU/peak-memory ceiling is implied.
 
 Neither API acquires, replaces or releases the borrowed lock. Obtaining a native
-WorkspaceGuard currently requires a regular coven.json marker, unlike Python's
-low-level stores; it does not parse configuration. This inherited acquisition
-restriction remains explicit, while marker-free historical readers stay unchanged.
+WorkspaceGuard through public `acquire`/`existing` requires a regular coven.json
+marker, unlike Python's low-level stores; it does not parse configuration. That
+restriction and inspection's existing-lock policy remain unchanged. Only the private
+execution-maintenance acquisition below omits the marker requirement.
 These confirmation APIs themselves publish nothing or select a new authority.
 The SDK baseline and native task protocols call them explicitly; no provider/runtime
 request is implied by a reservation check or confirmed historical receipt.
@@ -585,8 +595,9 @@ Reads do not create/acquire a lock, fsync, publish, repair, archive or load curr
 sources. The observed revision is not a latest/linearizable, authenticated or
 durability-confirmed view. Historical reservation observation is **not** a reusable
 mutation guard: writers still need receipt-before-mutable-state ordering, matching
-lock ownership and durable authority confirmation. No execution enable/enroll/prepare/cancel,
-upgrade, graph approval or runtime admission command is enabled. Native task writes
+lock ownership and durable authority confirmation. Native cancellation and explicit
+recovery use the separate maintenance protocol below; execution enable/enroll/prepare,
+upgrade, graph approval and runtime admission remain unsupported. Native task writes
 call the separate confirmed guards rather than treating history as permission.
 Task and handoff readers/collectors retain their existing independence from this
 execution history path. Unsupported or malformed schemas refuse rather than
@@ -792,6 +803,155 @@ and `storage.rs` supply private replay, validation and locking contracts.
 module-local source, projection and state-machine tests cover private seams.
 See [EXECUTION_INTENT_CONTRACT.md](EXECUTION_INTENT_CONTRACT.md) and
 [TASK_GRAPH_CONTRACT.md](TASK_GRAPH_CONTRACT.md) for retained preparation contracts.
+
+## Native execution cancellation and recovery
+
+### Overview
+
+Native maintenance supports cancellation across v1, v2 and retained legacy-v1
+receipts after upgrade, plus both explicit recovery modes. It maintains local
+preparation authority only: no native process stop, submission or dispatch follows.
+Authorization remains `none`, dispatchable `false`. Current workspace config,
+`coven.json` marker, tasks, roster, checkpoints and runtime controls are not loaded
+or used as guards. In particular, a preparation does not block its own cancellation.
+No events, dashboard, task projection or current-source files are written.
+
+Enable, enroll, preparation in **both intent and graph modes**, upgrade, graph
+mutations and repository inspect/verify remain outside native scope; unsupported
+old routes still refuse at argument parsing. No dependencies, production Python,
+`bin/coven`, runtime/providers, fallback, installation or default-entrypoint cutover
+are changed. All other command contracts remain unchanged.
+
+### API / Interfaces
+
+```text
+task attempt cancel [WORKSPACE] ATTEMPT_ID --reason TEXT --expect-execution-revision TOKEN --request-id KEY [--json]
+execution recover [WORKSPACE] --confirm-authority --expect-execution-revision TOKEN [--json]
+execution recover [WORKSPACE] --archive-pending [--json]
+```
+
+Cancellation uses positional arity: one operand is the required attempt ID in cwd;
+two mean workspace then ID. IDs are 32 lowercase hex digits. Reason is nonblank,
+at most 16 KiB UTF-8, and preserved without trimming or normalization. Keys are
+1..128 ASCII bytes, start alphanumeric and otherwise allow alphanumeric, `_`, `-`,
+`.` and `:`. The revision participates in the versioned request binding.
+
+Recovery requires exactly one mode. Confirm requires a syntactically active v1/v2
+revision **semantically before lock acquisition**; this is not parser-enforced
+conditional flag admission. Archive rejects any revision **under the lock**.
+Repeated value flags use their last values. All flag occurrences remain visible
+to operand-group validation: a later repeat cannot hide an earlier misplaced flag.
+The narrow Unicode-Nd negative-prefix adapter restores exact operands/option values;
+it is not global arbitrary-hyphen acceptance. Flags belong outside a multi-operand
+group, not between its operands or before a trailing terminator after operands.
+
+Output is ASCII-escaped, two-space pretty JSON by default, compact with `--json`,
+with exactly one terminal LF. Cancellation returns frozen `result` plus live
+`delivery`: confirmed new/replayed receipts exit **0**, known-result uncertainty
+exits **2**, ordinary errors exit **1**. Recovery success exits **0**; confirmation
+or archive failure exits **1**, not cancellation's known-receipt exit 2.
+
+### Data Flow
+
+1. Cancellation resolves an existing root and fully reads/replays authority **before
+   semantic binding admission**. Binding validation precedes request-key validation;
+   deterministic invalid inputs and disabled authority refuse before the first lock.
+2. Crate-private `WorkspaceGuard::execution_maintenance` waits up to five seconds
+   and may create `state/` and its persistent `.workspace.lock`, without requiring a
+   marker. It uses the same Python/native flock inode and root/PID/thread ownership,
+   path/type safety and process-death release as other writers. Never delete or
+   replace that inode. Public `acquire`, `existing` and inspection marker policies
+   are unchanged; this is not a new public marker-free general writer API.
+3. Under that guard, fully replay again, then look up the retained receipt **before
+   current CAS or live-attempt eligibility**. The retained binding's schema selects
+   the comparison namespace, including v1 cancellation retries after v2 upgrade.
+   A matching key returns the original frozen result; changed reason, revision,
+   operation or attempt ID conflicts. Corrupt history anywhere cannot shortcut to a
+   matching receipt. A fresh key requires exact current CAS and a prepared attempt;
+   a second fresh cancellation is rejected.
+4. Derive the effect/result with the existing checked reducer, append one entry and
+   generation, and serialize canonical control plus LF. **Exact stored bytes,
+   including LF**, must fit 8 MiB, parse under `Profile::Authority` and pass complete
+   typed reader replay before publication. Both pretty/compact, committed/uncertain
+   output variants are admitted before replacement, even for the unrequested form.
+5. Mode-verified same-directory atomic replacement publishes control. Existing
+   `07777` mode bits are restored and verified after writing; absent targets receive
+   verified `0600`. No ownership, ACL or xattr preservation is claimed. Known rename
+   uncertainty returns immediately with the retained result, **without a confirmation
+   reread**, rollback or blind retry.
+6. Confirmed replacement and exact receipt retry use the private borrowed-guard
+   confirmation helper: completely reread typed authority, match UUID and revision,
+   then fsync control, execution directory, state and root, in that order. Prepared
+   attempts are allowed; this is not the task-writer reservation guard. Any post-known
+   read/profile/unsafe-path/sync failure, including failed retry confirmation,
+   preserves the frozen result with exit 2, `current_revision: null`, retained
+   `known_control_revision`, and `attempt_state: null`.
+
+Explicit recover-confirm checks exact CAS under the lock and uses that same full
+reread/sync sequence, without changing generation or bytes. It returns no
+known-receipt uncertainty envelope on failure. Frozen cancellation results are not
+confirmed reservation release or transferable permission: later task/state writers
+must independently confirm execution authority under their own held guard.
+
+### Edge Cases
+
+- **Native cancellation liveness is bounded, not reserved.** A valid predecessor
+  can have a cancellation successor refused by the **8 MiB exact stored-byte limit,
+  1024 combined legacy/v2 history entries, 256 MiB prefix/replay-work profile, finite
+  value profile or 32 MiB output limit**, despite Python's 512 KiB per-preparation
+  reserve within its 16 MiB authority policy. There is no pruning, limit raising or
+  fallback. Native escape headroom must be separately planned before future native
+  preparation/history-growth writers. Work bounds apply per replay, not as one
+  command-wide CPU/heap/latency guarantee.
+- After uncertainty, inspect before blindly choosing a new key. The original key
+  with exact original arguments retrieves its authoritative historical result,
+  not fresh permission or proof of current authority/durability.
+- Archive requires a safe pending `state/execution` directory and **no control
+  entry whatsoever**: present null, malformed, symlink or other unsafe control
+  blocks it. Absent pending state is an error. It does not parse or promote orphan
+  files, restore authority, reset state or clean up evidence.
+- Archive checks a fresh absent `state/execution-pending-archive-<uuid>` target,
+  renames the **whole directory**, then syncs state. This assumes a static/cooperating
+  namespace; it is not atomic no-replace protection against a hostile target race.
+  A post-rename sync failure exits **1 with empty stdout** and a diagnostic retaining
+  the known archive path and stating no rollback occurred. It must not be confused
+  with task-ledger abort's successful exit-2 uncertainty delivery.
+
+### Example usage
+
+Use an **existing disposable workspace with Python-prepared authority**. Replace
+every placeholder with actual inspected IDs/revisions; do not auto-enable, enroll,
+prepare, upgrade or start a runtime as part of maintenance:
+
+```sh
+target/debug/coven execution inspect WORKSPACE --json
+target/debug/coven task attempt inspect WORKSPACE '<actual-attempt-id>' --json
+target/debug/coven task attempt cancel WORKSPACE '<actual-attempt-id>' \
+  --reason 'Revise assignment' --expect-execution-revision '<inspected-execution-token>' \
+  --request-id cancel-review-1 --json
+# To retry this request, retain that exact ID, reason, token and key.
+target/debug/coven execution history WORKSPACE --json
+target/debug/coven execution recover WORKSPACE --confirm-authority \
+  --expect-execution-revision '<current-inspected-execution-token>' --json
+```
+
+Only for a separately inspected disposable pending directory with **no control**:
+
+```sh
+target/debug/coven execution recover PENDING_WORKSPACE --archive-pending --json
+```
+
+### Related files
+
+`src/execution/mutation.rs` owns cancellation and `mutation/delivery.rs` preadmits
+known-result delivery. `execution/confirmation.rs` and `execution/recovery.rs`
+implement full confirmation and explicit recovery. `execution.rs` and
+`execution/{v2,graphs}.rs` supply typed replay/bindings/reducers; `storage.rs`,
+`storage/maintenance.rs` and `storage/replacement.rs` supply the same persistent
+guard and mode-verified publication. `src/main.rs` and `src/cli_operands.rs` route
+and restore arguments. Module-local fault tests and
+`tests/execution_maintenance.rs` / `tests/_execution_maintenance_parity.py` cover
+CLI parity and mixed-writer behavior. No current-source loader is in this pipeline.
 
 ## Runtime-launch action inspection and checkpoint decisions
 
@@ -1572,13 +1732,29 @@ just check         # rustfmt check, strict clippy, both test suites
 ```
 
 The full pinned `just check` passed rustfmt, all-target offline locked Clippy with
-`-D warnings`, **488 native tests** (421 library + 22 binary + 45 integration), and
+`-D warnings`, **533 native tests** (459 library + 28 binary + 46 integration), and
 **941 Python tests**.
 
-The focused execution suite passes **76 unit tests**, including **16 source / four
-projection tests**; these are subsets of the full native total. The inspection
-corpus passes **539 total = 534 CLI + five oracle
-state-machine cases**; **eight unsupported-writer guards** are counted separately.
+Focused coverage includes **104 execution tests**, **10 storage-maintenance tests**
+and **28 binary tests**, all subsets of the full native total. Maintenance acceptance
+passes **229 cases**, including **210 CLI cases**, **12 mixed-writer races**, and a
+process-death lock-release check. These describe different test layers, not additive
+native-test counts. Coverage includes v1/v2,
+legacy receipt retry after upgrade, source independence, both recovery modes,
+prepublication limits, late known-result failure, mode/inode preservation and
+native/Python lock ordering. The admitted warning-slot regression exercises both
+output modes, fresh and replayed receipts, exact-16-KiB adversarial control/multibyte
+reasons and overlong diagnostics. Architecture, publication, recovery/locking and
+parser reviews found no material findings. Local process-death/fault tests are not
+power-loss proof or hostile-namespace guarantees.
+
+The prior inspection-focused execution suite passed **76 unit tests**, including
+**16 source / four projection tests**. The retained inspection
+corpus still passes **539 total = 534 CLI + five oracle
+state-machine cases**. **Eight parser-refusal/no-effect guards**
+are counted separately; the two old cancel/recover guards now use invalid flags,
+because valid cancellation/recovery is supported. Other unsupported routes remain
+parser refusals.
 It covers all five routes, parser/selector timing, proposal order, current versus
 whole-revision binding, source-independent export, mixed-lock behavior, full-tree
 preservation and empty runtime PATH. Resource regressions include nested action
@@ -1844,7 +2020,7 @@ Private fault tests cover authority/backup/replacement uncertainty and late rend
 without erasing known primary outcomes. These are local validation results, not
 hostile-swap or cross-platform guarantees.
 
-The full gate retains **941 Python tests**. They are not all black-box CLI
+The historical full gate passed **941 Python tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Remaining writer
 families need equivalent differential/fault/coordination gates, not just these passes.
 
@@ -1863,8 +2039,9 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK and state CLI with pinned activation/known outcomes | Close remaining profile/cross-platform gates |
 | Task add/assign, commit projection, events and dashboard | Native snapshot/active-ledger commands with CAS/replay/delivery | Close documented profiles and list/runtime gap before default parity |
 | Manual projection repair | Native raw-preserving SDK and explicit state CLI | Close stated raw-size/profile and cross-platform limits |
-| Execution v1/v2 historical replay, graph reviews and confirmed reservation checks | Native bounded SDK/read-only preview | Close profile limits; writer integration and receipt delivery/order still required |
-| Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
+| Execution v1/v2 historical replay, graph reviews and confirmed reservation checks | Native bounded SDK/read-only preview; cancellation/recovery integrated separately | Close profile/cross-platform limits; preserve independent writer confirmation |
+| Preparation cancellation and execution recover (confirm/archive) | Native complete bounded commands across v1/v2/legacy retry; source-free shared flock and known-result delivery | Close native-profile/cross-platform gaps; separately plan escape headroom before history-growth writers |
+| Execution enable/enroll, full preparation (intent + graph), upgrade and graph mutations | Python only; unsupported native routes parser-refuse | Scope review, guarded publication, approval/reserve/receipt ordering and mixed-writer faults, not dispatch |
 | Runtime-launch action inspection and pure checkpoint inspection | Native bounded read-only preview | Close profile/encoding limits before default parity |
 | Standalone checkpoint inspection and ordered workspace preflight | Native pretty-default/optional compact JSON; repeated flags and narrow Python lexical compatibility | Close TOML/path/resource and cross-platform restrictions before default parity |
 | Next checkpoint guidance | Native bounded read-only composition; stable request chronology and exact fallback statuses | Close supported-profile/cross-platform gaps; retain literal output and no authority grant |
@@ -1875,11 +2052,13 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-Recommended next, subject to scope review: assess remaining execution/repository
-work before runtime-bound families; runtime-free guarded execution writers or
-repository inspection are candidates, not a newly approved milestone. Inspection
-is complete but cannot substitute for writer receipt/publication/confirmation
-protocols. Current-source assessment remains separate under an **existing lock**,
+Next review candidates, **planned, not approved scope**: execution enable/enroll,
+complete preparation (intent and graph), upgrade/graph mutations versus repository
+inspection with bounded local Git verification. Native cancellation/recovery is
+complete within its stated profile; it does not approve history growth without a
+separate escape-headroom plan. Inspection cannot substitute for writer
+receipt/publication/confirmation protocols. Current-source assessment remains
+separate under an **existing lock**,
 not a property inferred from historical replay. Checkpoint writers stay deferred
 as complete runtime-bound commands with real notifiers intact; do not ship partial
 notification-free ports. Runtime-bound lead/plan, observers/groups and remaining
