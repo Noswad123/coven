@@ -52,7 +52,7 @@ fn header(value: &Value, kind: &str, names: &str, work: &mut Work) -> Result<()>
 }
 
 // This order is only for validation; persisted node and dependency arrays stay intact.
-fn order(nodes: &[Value]) -> Result<Vec<&str>> {
+pub(super) fn order(nodes: &[Value]) -> Result<Vec<&str>> {
     let mut pending = BTreeMap::new();
     let mut children: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for node in nodes {

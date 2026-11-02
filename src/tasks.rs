@@ -228,7 +228,8 @@ pub fn read_snapshot(workspace: &Path) -> Result<Snapshot> {
     Ok(snapshot)
 }
 
-fn capture_snapshot(root: &Path) -> Result<Snapshot> {
+/// Raw snapshot capture only; callers own their distinct workspace/authority policy.
+pub(crate) fn capture_snapshot(root: &Path) -> Result<Snapshot> {
     let raw = optional_bytes(root, "state/tasks.json", values::MAX_INPUT)?;
     let revision = raw
         .as_deref()

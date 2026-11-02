@@ -1,4 +1,7 @@
-use super::super::{Checkpoint, Command, validate_checkpoint_option_order};
+use super::super::{
+    Attempt, Checkpoint, Command, Execution, Task, validate_checkpoint_option_order,
+    validate_execution_option_order,
+};
 use super::*;
 use clap::{FromArgMatches, error::ErrorKind};
 
@@ -7,11 +10,337 @@ fn parse(arguments: &[OsString]) -> Result<(Cli, clap::ArgMatches), clap::Error>
     assert_eq!(parsed.len(), arguments.len());
     let matches = command.try_get_matches_from(parsed)?;
     validate_checkpoint_option_order(&matches, arguments.iter().any(|value| value == "--"))?;
+    validate_execution_option_order(&matches, arguments.iter().any(|value| value == "--"))?;
     Ok((Cli::from_arg_matches(&matches)?, matches))
 }
 
 fn args(values: &[&str]) -> Vec<OsString> {
     values.iter().map(OsString::from).collect()
+}
+
+const INSPECTION_ROUTES: &[&[&str]] = &[
+    &["execution", "inspect"],
+    &["task", "attempt", "list"],
+    &["task", "attempt", "inspect"],
+    &["task", "graph", "inspect"],
+    &["task", "graph", "export"],
+];
+
+fn inspection_args(route: &[&str], operands: &[&str]) -> Vec<OsString> {
+    args(&[&["coven"][..], route, operands].concat())
+}
+
+fn inspection_leaf<'a>(matches: &'a clap::ArgMatches, route: &[&str]) -> &'a clap::ArgMatches {
+    route.iter().fold(matches, |matches, name| {
+        matches.subcommand_matches(name).unwrap()
+    })
+}
+
+#[test]
+fn new_inspection_roots_restore_unicode_prefixes_markers_and_raw_indices() {
+    for route in INSPECTION_ROUTES {
+        let field = if route.len() == 2 || route[2] == "list" {
+            "workspace"
+        } else {
+            "items"
+        };
+        for root in [
+            "-1anything/../root/",
+            "-.\u{0661}suffix",
+            "-\u{1e5f1}root",
+            "__coven_checkpoint_operand_0",
+        ] {
+            let arguments = inspection_args(route, &["--j", root, "--json"]);
+            let original = arguments.clone();
+            let (_, parsed) = checkpoint_compat(&arguments);
+            assert_eq!(parsed.len(), arguments.len());
+            assert_eq!(&parsed[..route.len() + 2], &arguments[..route.len() + 2]);
+            assert_eq!(parsed.last(), arguments.last());
+            let (_, matches) = parse(&arguments).unwrap();
+            assert_eq!(arguments, original);
+            let leaf = inspection_leaf(&matches, route);
+            assert_eq!(leaf.get_one::<PathBuf>(field).unwrap().as_os_str(), root);
+            assert_eq!(
+                leaf.get_raw(field).unwrap().collect::<Vec<_>>(),
+                [&parsed[route.len() + 2]]
+            );
+            assert_eq!(leaf.indices_of(field).unwrap().collect::<Vec<_>>(), [3]);
+            assert_eq!(leaf.indices_of("json").unwrap().collect::<Vec<_>>(), [2, 5]);
+            assert_eq!(
+                leaf.get_many::<bool>("json")
+                    .unwrap()
+                    .copied()
+                    .collect::<Vec<_>>(),
+                [true, true]
+            );
+        }
+    }
+    let (cli, _) = parse(&inspection_args(
+        &["execution", "inspect"],
+        &["-1root", "--json"],
+    ))
+    .unwrap();
+    let Command::Execution {
+        command: Execution::Inspect { workspace, json },
+    } = cli.command
+    else {
+        panic!("wrong command");
+    };
+    assert_eq!(workspace.as_os_str(), "-1root");
+    assert_eq!(json, [true]);
+}
+
+#[test]
+fn attempt_list_restores_each_task_string_without_changing_raw_binding() {
+    let route = ["task", "attempt", "list"];
+    let arguments = inspection_args(
+        &route,
+        &[
+            "--task",
+            "-1anything",
+            "--task",
+            "-.\u{0661}/../exact/",
+            "--task=__coven_checkpoint_operand_0",
+            "--task=-\u{1e5f1}last",
+            "--j",
+            "-2workspace",
+            "--json",
+        ],
+    );
+    let original = arguments.clone();
+    let (_, parsed) = checkpoint_compat(&arguments);
+    assert_eq!(parsed.len(), arguments.len());
+    assert_eq!(parsed[5], "__coven_checkpoint_operand_1");
+    assert_eq!(parsed[7], "__coven_checkpoint_operand_2");
+    let (cli, matches) = parse(&arguments).unwrap();
+    assert_eq!(arguments, original);
+    let Command::Task {
+        command:
+            Task::Attempt {
+                command:
+                    Attempt::List {
+                        workspace,
+                        task,
+                        json,
+                    },
+            },
+    } = cli.command
+    else {
+        panic!("wrong command");
+    };
+    assert_eq!(workspace.as_os_str(), "-2workspace");
+    assert_eq!(
+        task,
+        [
+            "-1anything",
+            "-.\u{0661}/../exact/",
+            "__coven_checkpoint_operand_0",
+            "-\u{1e5f1}last"
+        ]
+    );
+    assert_eq!(task.last().unwrap(), "-\u{1e5f1}last");
+    assert_eq!(json, [true, true]);
+    let leaf = inspection_leaf(&matches, &route);
+    assert_eq!(
+        leaf.get_raw("task").unwrap().collect::<Vec<_>>(),
+        [
+            "__coven_checkpoint_operand_1",
+            "__coven_checkpoint_operand_2",
+            "__coven_checkpoint_operand_0",
+            "-\u{1e5f1}last",
+        ]
+    );
+    assert_eq!(
+        leaf.indices_of("task").unwrap().collect::<Vec<_>>(),
+        [2, 4, 6, 8]
+    );
+    assert_eq!(
+        leaf.indices_of("workspace").unwrap().collect::<Vec<_>>(),
+        [11]
+    );
+    assert_eq!(
+        leaf.indices_of("json").unwrap().collect::<Vec<_>>(),
+        [10, 13]
+    );
+}
+
+#[test]
+fn new_variadic_inspections_keep_option_groups_and_terminator_boundaries() {
+    for route in &INSPECTION_ROUTES[2..] {
+        for operands in [
+            vec!["--j", "--js", "-1root", "-.2selector", "--jso", "--json"],
+            vec!["--json", "--", "-1root", "--json"],
+            vec!["-1root", "--", "__coven_checkpoint_operand_0"],
+        ] {
+            let arguments = inspection_args(route, &operands);
+            let (_, parsed) = checkpoint_compat(&arguments);
+            if let Some(index) = arguments.iter().position(|value| value == "--") {
+                assert_eq!(&parsed[index..], &arguments[index..]);
+            }
+            let (_, matches) = parse(&arguments).unwrap();
+            let leaf = inspection_leaf(&matches, route);
+            let mut after_terminator = false;
+            let expected = operands
+                .iter()
+                .filter_map(|value| {
+                    if after_terminator {
+                        return Some(PathBuf::from(value));
+                    }
+                    if *value == "--" {
+                        after_terminator = true;
+                        None
+                    } else if value.starts_with("--") {
+                        None
+                    } else {
+                        Some(PathBuf::from(value))
+                    }
+                })
+                .collect::<Vec<_>>();
+            let items = leaf
+                .get_many::<PathBuf>("items")
+                .unwrap()
+                .collect::<Vec<_>>();
+            assert_eq!(items, expected.iter().collect::<Vec<_>>());
+        }
+        let arguments = inspection_args(
+            route,
+            &["-1root", "--", "__coven_checkpoint_operand_0", "-3selector"],
+        );
+        if *route == ["task", "graph", "inspect"] {
+            let (_, matches) = parse(&arguments).unwrap();
+            assert_eq!(
+                inspection_leaf(&matches, route)
+                    .get_many::<PathBuf>("items")
+                    .unwrap()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                ["-1root", "__coven_checkpoint_operand_0", "-3selector"].map(PathBuf::from)
+            );
+        } else {
+            assert_eq!(
+                parse(&arguments).err().unwrap().kind(),
+                ErrorKind::TooManyValues
+            );
+        }
+        for operands in [
+            vec!["-1root", "--json", "-.2selector"],
+            vec!["--json", "-1root", "--j", "-.2selector", "--json"],
+            vec!["-1root", "--json", "--"],
+        ] {
+            assert_eq!(
+                parse(&inspection_args(route, &operands))
+                    .err()
+                    .unwrap()
+                    .kind(),
+                ErrorKind::UnknownArgument
+            );
+        }
+    }
+}
+
+#[test]
+fn new_inspection_scope_rejects_unknown_prefixes_and_leaves_old_routes_alone() {
+    for route in INSPECTION_ROUTES {
+        for operand in [
+            "-inf",
+            "-nan",
+            "-\u{2165}",
+            "-\u{00bd}",
+            "--1",
+            "-..1",
+            "--jsonish",
+        ] {
+            let arguments = inspection_args(route, &[operand]);
+            assert_eq!(checkpoint_compat(&arguments).1, arguments);
+            assert_eq!(
+                parse(&arguments).err().unwrap().kind(),
+                ErrorKind::UnknownArgument
+            );
+        }
+        assert_eq!(
+            parse(&inspection_args(route, &["-1root", "--help"]))
+                .err()
+                .unwrap()
+                .kind(),
+            ErrorKind::DisplayHelp
+        );
+    }
+    for route in [
+        &["execution", "history"][..],
+        &["task", "list"],
+        &["task", "add"],
+        &["task", "assign"],
+        &["state", "inspect"],
+        &["task", "graph", "unknown"],
+    ] {
+        let arguments = inspection_args(route, &["-1anything", "--json"]);
+        assert_eq!(checkpoint_compat(&arguments).1, arguments);
+    }
+    for value in ["--jsonish", "-inf", "-..1", "-\u{2165}"] {
+        assert!(
+            parse(&inspection_args(
+                &["task", "attempt", "list"],
+                &["--task", value]
+            ))
+            .is_err()
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn new_inspection_non_utf8_paths_are_never_normalized_or_lossily_restored() {
+    use std::os::unix::ffi::OsStringExt;
+
+    for route in INSPECTION_ROUTES {
+        let field = if route.len() == 2 || route[2] == "list" {
+            "workspace"
+        } else {
+            "items"
+        };
+        for bytes in [
+            b"root\xff".to_vec(),
+            b"-1\xff".to_vec(),
+            b"-.1\xff".to_vec(),
+        ] {
+            let literal = OsString::from_vec(bytes);
+            let mut arguments = inspection_args(route, &["--"]);
+            arguments.push(literal.clone());
+            assert_eq!(checkpoint_compat(&arguments).1, arguments);
+            let (_, matches) = parse(&arguments).unwrap();
+            let path = inspection_leaf(&matches, route)
+                .get_one::<PathBuf>(field)
+                .unwrap();
+            assert_eq!(
+                path.as_os_str().as_encoded_bytes(),
+                literal.as_encoded_bytes()
+            );
+            arguments.remove(route.len() + 1);
+            assert_eq!(checkpoint_compat(&arguments).1, arguments);
+            if literal.as_encoded_bytes().starts_with(b"-") {
+                assert_eq!(
+                    parse(&arguments).err().unwrap().kind(),
+                    ErrorKind::UnknownArgument
+                );
+            } else {
+                let (_, matches) = parse(&arguments).unwrap();
+                assert_eq!(
+                    inspection_leaf(&matches, route)
+                        .get_one::<PathBuf>(field)
+                        .unwrap()
+                        .as_os_str(),
+                    literal
+                );
+            }
+        }
+    }
+    let mut arguments = inspection_args(&["task", "attempt", "list"], &["--task"]);
+    arguments.push(OsString::from_vec(b"task\xff".to_vec()));
+    assert_eq!(checkpoint_compat(&arguments).1, arguments);
+    assert_eq!(
+        parse(&arguments).err().unwrap().kind(),
+        ErrorKind::InvalidUtf8
+    );
 }
 
 #[test]

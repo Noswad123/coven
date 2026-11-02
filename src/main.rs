@@ -151,6 +151,14 @@ enum Action {
 
 #[derive(Subcommand)]
 enum Execution {
+    /// Inspect retained preparation and assess current source under an existing lock.
+    #[command(infer_long_args = true)]
+    Inspect {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
     /// Replay retained v1/v2 preparation history, not current-source or durability assessment.
     History {
         #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
@@ -199,6 +207,14 @@ enum State {
 
 #[derive(Subcommand)]
 enum Task {
+    Attempt {
+        #[command(subcommand)]
+        command: Attempt,
+    },
+    Graph {
+        #[command(subcommand)]
+        command: Graph,
+    },
     #[command(infer_long_args = true)]
     Add {
         #[arg(value_name = "WORKSPACE_OR_TITLE", required = true, num_args = 1.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
@@ -230,6 +246,48 @@ enum Task {
         workspace: PathBuf,
         #[arg(long, required = true)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum Attempt {
+    /// List frozen preparations with source diagnostics, never execution permission.
+    #[command(infer_long_args = true)]
+    List {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, action = clap::ArgAction::Append, allow_negative_numbers = true)]
+        task: Vec<String>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
+    /// Inspect one preparation; optional workspace precedes the required attempt ID.
+    #[command(infer_long_args = true)]
+    Inspect {
+        #[arg(value_name = "WORKSPACE_OR_ATTEMPT_ID", required = true, num_args = 1..=2, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
+}
+
+#[derive(Subcommand)]
+enum Graph {
+    /// Inspect a retained graph and current-source assessment; never schedules work.
+    #[command(infer_long_args = true)]
+    Inspect {
+        #[arg(value_name = "WORKSPACE_OR_GRAPH_REVISION", num_args = 0.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
+    },
+    /// Export a fully validated frozen graph without loading current source or locks.
+    #[command(infer_long_args = true)]
+    Export {
+        #[arg(value_name = "WORKSPACE_OR_GRAPH_REVISION", required = true, num_args = 1..=2, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        items: Vec<PathBuf>,
+        #[arg(long, action = clap::ArgAction::Append, num_args = 0, default_missing_value = "true")]
+        json: Vec<bool>,
     },
 }
 
@@ -268,6 +326,41 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Execution {
+            command: Execution::Inspect { workspace, json },
+        } => {
+            return execution::inspect_arguments(&workspace, !json.is_empty());
+        }
+        Command::Task {
+            command: Task::Attempt { command },
+        } => {
+            return match command {
+                Attempt::List {
+                    workspace,
+                    task,
+                    json,
+                } => execution::attempt_list_arguments(
+                    &workspace,
+                    task.last().map(String::as_str),
+                    !json.is_empty(),
+                ),
+                Attempt::Inspect { items, json } => {
+                    execution::attempt_inspect_arguments(&items, !json.is_empty())
+                }
+            };
+        }
+        Command::Task {
+            command: Task::Graph { command },
+        } => {
+            return match command {
+                Graph::Inspect { items, json } => {
+                    execution::graph_inspect_arguments(&items, !json.is_empty())
+                }
+                Graph::Export { items, json } => {
+                    execution::graph_export_arguments(&items, !json.is_empty())
+                }
+            };
+        }
         Command::Next { workspace } => return checkpoint_guidance::next_arguments(&workspace),
         Command::Goal { items } => return workspace_commands::goal_arguments(&items),
         Command::Message { items } => return workspace_commands::message_arguments(&items),
@@ -474,6 +567,7 @@ fn main() -> std::process::ExitCode {
     let (command, parse_arguments) = cli_operands::checkpoint_compat(&arguments);
     let matches = command.get_matches_from(&parse_arguments);
     validate_checkpoint_option_order(&matches, has_terminator).unwrap_or_else(|error| error.exit());
+    validate_execution_option_order(&matches, has_terminator).unwrap_or_else(|error| error.exit());
     validate_task_option_order(&matches, &arguments).unwrap_or_else(|error| error.exit());
     if (matches.subcommand_matches("init").is_some()
         || matches.subcommand_matches("state").is_some()
@@ -552,6 +646,36 @@ fn validate_checkpoint_option_order(
     else {
         return Ok(());
     };
+    validate_json_operand_group(inspect, has_terminator)
+}
+
+fn validate_execution_option_order(
+    matches: &clap::ArgMatches,
+    has_terminator: bool,
+) -> std::result::Result<(), clap::Error> {
+    let Some(task) = matches.subcommand_matches("task") else {
+        return Ok(());
+    };
+    let command = task
+        .subcommand_matches("attempt")
+        .and_then(|attempt| attempt.subcommand_matches("inspect"))
+        .or_else(|| {
+            task.subcommand_matches("graph").and_then(|graph| {
+                graph
+                    .subcommand_matches("inspect")
+                    .or_else(|| graph.subcommand_matches("export"))
+            })
+        });
+    match command {
+        Some(command) => validate_json_operand_group(command, has_terminator),
+        None => Ok(()),
+    }
+}
+
+fn validate_json_operand_group(
+    inspect: &clap::ArgMatches,
+    has_terminator: bool,
+) -> std::result::Result<(), clap::Error> {
     if let (Some(flags), Some(items)) = (inspect.indices_of("json"), inspect.indices_of("items")) {
         let items = items.collect::<Vec<_>>();
         for flag in flags {
@@ -560,7 +684,7 @@ fn validate_checkpoint_option_order(
             if before && (after || has_terminator) {
                 return Err(Cli::command().error(
                     clap::error::ErrorKind::UnknownArgument,
-                    "checkpoint inspection accepts --json before or after operands, not between them or before a trailing terminator",
+                    "inspection accepts --json before or after operands, not between them or before a trailing terminator",
                 ));
             }
         }

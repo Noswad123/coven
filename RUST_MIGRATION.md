@@ -1,7 +1,8 @@
 # Coven Rust migration
 
 Status: **native workspace init, goal/message/history/status, checkpoint inspect/next guidance, task add/assign, state import/recovery, existing-workspace refresh,
-evidence capture and authority readers**, not a complete Rust replacement.
+evidence capture and authority readers, including all five execution inspection/export routes**,
+not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -45,6 +46,11 @@ cargo run --offline --locked --bin coven -- messages WORKSPACE --pretty
 cargo run --offline --locked --bin coven -- events WORKSPACE --raw
 cargo run --offline --locked --bin coven -- status WORKSPACE
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
+cargo run --offline --locked --bin coven -- execution inspect WORKSPACE
+cargo run --offline --locked --bin coven -- task attempt list WORKSPACE --task TASK_ID --json
+cargo run --offline --locked --bin coven -- task attempt inspect WORKSPACE ATTEMPT_ID --json
+cargo run --offline --locked --bin coven -- task graph inspect WORKSPACE --json
+cargo run --offline --locked --bin coven -- task graph export WORKSPACE GRAPH_REVISION --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
 cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID
 cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID --json
@@ -69,7 +75,7 @@ dashboard, repair, migration marker or runtime state.
 ```text
 src/
   main.rs            Thin explicit CLI; escaped reports and exact literal workspace output
-  cli_operands.rs     Checkpoint inspect/next-only Python-compatible operand lexing
+  cli_operands.rs     Narrow checkpoint/next and five execution-reader operand lexing
   workspace_commands.rs Local goal/message writers and dashboard-publishing status
   workspace_commands/history.rs Read-only pretty/raw event and message history
   workspace_commands/python.rs Finite Python truthiness and str/repr presentation
@@ -106,6 +112,10 @@ src/
   execution/v2.rs    Upgrade bridge, graph reviews and v2 preparation replay
   execution/graphs.rs Pure bounded graph validation, refreezing and source matching
   execution/guards.rs Confirmed reservation checks under a borrowed writer guard
+  execution/inspection.rs Ordered replay/existing-lock/source assessment and output admission
+  execution/source.rs Fresh raw snapshot or independently selected ledger under borrowed guard
+  execution/inspection/commands.rs Five native inspection/export wrappers and selector timing
+  execution/inspection/projection.rs Pure binding/graph projections in proposal order
   actions.rs         Captured launch-control/bundle/checkpoint inspection
   actions/authority.rs Pure all-claim validation, reference lookup and work budget
   actions/plans.rs   Pure deterministic tmux/Herdr frozen-plan validation
@@ -640,6 +650,148 @@ minutes 00..59. Spelling including `-00:00` is preserved; no chronology is inven
 Other Python-valid ISO forms return unsupported_execution_timestamp_profile.
 These limits are explicit preview restrictions, not a claim that refused Python
 authorities are corrupt, nor a reason for fallback or persisted-value rewriting.
+
+## Native execution inspection and graph export
+
+### Overview
+
+All five read-only native commands below are available. Three boundaries stay
+distinct: unchanged `execution history`
+reports frozen authority without current source; inspection fully validates history
+then optionally assesses current source under an existing lock; graph export uses
+one complete replay and no current-source dependencies. None dispatches, writes,
+fsyncs, repairs, confirms durability or grants continuing freshness/authorization.
+No dependency, production Python, `bin/coven`, runtime/provider, fallback, install,
+main integration, push, persisted state or schema change is included.
+
+### API / Interfaces
+
+```text
+execution inspect [WORKSPACE] [--json]
+task attempt list [WORKSPACE] [--task TASK_ID] [--json]
+task attempt inspect [WORKSPACE] ATTEMPT_ID [--json]
+task graph inspect [MARKER_WORKSPACE] [GRAPH_REVISION] [--json]
+task graph export [WORKSPACE] GRAPH_REVISION [--json]
+```
+
+The five `execution::*_arguments` interfaces return `TaskOutput`. Default output
+is ASCII-escaped JSON with two-space indentation; `--json` is compact with no
+separator spaces. Main adds exactly one terminal LF. Complete output admission
+precedes stdout; there is no human renderer. Authorization remains `none` and
+dispatchable remains `false`, including eligible graph/node projections.
+
+Attempt list validates `--task` **after full inspection**, filters only `attempts`,
+and removes `enrollments`; it does not narrow history/source/graph validation.
+Attempt inspect and export use positional arity: one operand is always the required
+selector in cwd, even if it names a marked path; two mean workspace then selector.
+Their selector must be 32 lowercase hex digits and validates **before root access**.
+Attempt inspect returns the minimal inactive envelope for a valid unknown ID; active
+inspection requires a known attempt, returning `attempt` without `attempts` or
+`enrollments`. Export requires active v2 and a known graph, returning frozen
+`manifest`, `graph_digest`, captured `execution_revision` and the two trust fields.
+
+Graph inspect instead selects an optional marker-bearing workspace first. Excess
+operands fail before inspection; inactive envelopes and the v1 upgrade refusal
+precede bad-revision validation. Omitted/empty revision means current head; no head
+returns `graph: null`. Active v2 output contains only `execution`, selected `graph`
+and the two trust fields. Execution inspect and attempt list default workspace to cwd.
+
+The existing Unicode-Nd negative-prefix lexical adapter extends only to these five
+added routes/arguments, not all commands. Typed parsers restore exact operands and
+`--task` values (including attached values); the last repeated task flag wins.
+Repeated flag indices and operand-group timing remain intact: selector-group
+`--json` belongs before or after the group, not between operands or before a trailing
+terminator after operands. No global arbitrary-hyphen acceptance is enabled.
+
+### Data Flow
+
+1. Resolve an existing root. The initial control observation fully replays retained
+   history. Disabled/pending/unavailable states return minimal envelopes with exit 0
+   and no source reads; present corrupt/null control never becomes disabled.
+2. Active inspection makes a **second complete replay outside the coordination-error
+   catch**. Its failure is hard, not downgraded to unavailable source.
+3. Try only `WorkspaceGuard::existing`, waiting up to five seconds. Never create a
+   lock or directory, steal a lock or replace its inode. The inherited guard still
+   requires a regular `coven.json` marker without parsing its contents. Marker-free
+   history/export and uncoordinated inspection remain valid; marker-free coordinated
+   source capture is not added.
+4. Under the guard, replay execution again before source capture; a disabled
+   transition returns minimal disabled. Load the full workspace (including config,
+   checkpoint and runtime-launch control validation), discard its earlier tasks,
+   then independently select/replay the current task ledger or freshly capture raw
+   snapshot bytes and validated tasks. Revision and tasks come from that same fresh
+   observation. Missing versus empty raw snapshots retain distinct revisions.
+   Active ledger capture uses authority, not projection health; pending import
+   refuses source assessment. Strict identity/revision/tasks/roster checks follow.
+5. Ordinary source/config errors retain the captured frozen facts with bounded
+   native-code diagnostics. Missing/busy/unsafe existing locks yield uncoordinated
+   source, never a freshness grant. Other coordination failure reclassifies authority
+   once more: return an established inactive envelope, or retain the prior captured
+   active view, never pairing a new execution revision with old source.
+
+Export bypasses that assessment entirely. It fully replays all retained history
+before selecting a graph; corrupt **anywhere** in history is fatal, even beyond the
+selected proposal. Current config/tasks/checkpoints/runtime control/locks and upgrade
+backups are not opened, so bad current files do not prevent a valid frozen export.
+
+### Edge Cases
+
+- Binding precedence is source unavailable, authority changed, task missing, task
+  digest changed, frozen owner missing, whole-source revision changed, then current.
+  Enrollment uses its latest binding; every attempt uses its frozen preparation,
+  including cancelled attempts. Unrelated task changes can therefore stale an
+  attempt's whole-revision binding without changing its selected task.
+- Graph matching uses selected inputs: unrelated whole-revision drift can leave
+  `source_binding.status: current` with `whole_revision_changed: true`.
+  Graph arrays follow proposal order, not the historical BTree map's lexical order;
+  frozen node/dependency arrays and decisions retain their order. Only current-head,
+  approved, source-current graphs are preparation-eligible. A node with an active
+  prepared task is ineligible. Dependencies remain `unestablished` or `not_required`
+  regardless of eligibility; they are not accepted execution results.
+- Revoking review never cancels a preparation; cancellation never revokes review.
+  `affected_preparations` includes cancelled graph-bound attempts. These projections
+  are preparation-only observations, not writer permits or dispatch admission.
+- Ordinary unsupported config versions/multiplexers, nonfinite/surrogate source
+  values and other source errors are diagnostics, not lost frozen facts. Explicit
+  resource/work/output/encoding-profile refusals are hard exit 1 with no stdout,
+  including nested ACTION runtime-control input, encoding and work limits. The
+  reviewed downgrade bug is fixed: real oversized/BOM/UTF-16 runtime-control cases
+  exercise fatal input/encoding behavior, with a private fault seam for action work.
+- Inspection makes at most **four execution reads**, each with its own existing
+  **256 MiB replay-work budget**. A separate **shared 256 MiB assessment budget**
+  spans source, all bindings, all graphs and final ASCII output; it is not reset per
+  graph. Existing **8 MiB control / 1024 combined history-entry** limits remain.
+  Graph bounds remain **64 nodes / 256 edges / 1 MiB manifest**; encoded and final
+  ASCII output each remain bounded to **32 MiB**. These are accepted-work/profile
+  bounds, not absolute CPU, heap, peak-memory or filesystem-time guarantees.
+
+### Example usage
+
+Use an existing disposable workspace and actual IDs from inspection; do not create
+or delete coordination files just to obtain a source assessment:
+
+```sh
+target/debug/coven execution inspect WORKSPACE
+target/debug/coven task attempt list WORKSPACE --task TASK_ID --json
+target/debug/coven task attempt inspect WORKSPACE '<attempt-id>' --json
+target/debug/coven task graph inspect WORKSPACE --json
+target/debug/coven task graph inspect WORKSPACE '<graph-revision>'
+target/debug/coven task graph export WORKSPACE '<graph-revision>' --json
+```
+
+### Related files
+
+`src/main.rs` and `src/cli_operands.rs` route/restore arguments;
+`src/execution/inspection.rs` orchestrates reads, existing-lock assessment and output;
+`src/execution/source.rs` captures fresh source; `inspection/commands.rs` selects
+wrappers; `inspection/projection.rs` derives pure observations. The latter two are
+under `src/execution/` (there is no `src/execution/projection.rs`). Existing
+`execution.rs`, `execution/{v2,graphs}.rs`, `workspace.rs`, `tasks.rs`, `ledger.rs`
+and `storage.rs` supply private replay, validation and locking contracts.
+`tests/execution_inspection.rs` runs `tests/_execution_inspection_parity.py`;
+module-local source, projection and state-machine tests cover private seams.
+See [EXECUTION_INTENT_CONTRACT.md](EXECUTION_INTENT_CONTRACT.md) and
+[TASK_GRAPH_CONTRACT.md](TASK_GRAPH_CONTRACT.md) for retained preparation contracts.
 
 ## Runtime-launch action inspection and checkpoint decisions
 
@@ -1420,8 +1572,22 @@ just check         # rustfmt check, strict clippy, both test suites
 ```
 
 The full pinned `just check` passed rustfmt, all-target offline locked Clippy with
-`-D warnings`, **432 native tests** (371 library + 17 binary + 44 integration), and
+`-D warnings`, **488 native tests** (421 library + 22 binary + 45 integration), and
 **941 Python tests**.
+
+The focused execution suite passes **76 unit tests**, including **16 source / four
+projection tests**; these are subsets of the full native total. The inspection
+corpus passes **539 total = 534 CLI + five oracle
+state-machine cases**; **eight unsupported-writer guards** are counted separately.
+It covers all five routes, parser/selector timing, proposal order, current versus
+whole-revision binding, source-independent export, mixed-lock behavior, full-tree
+preservation and empty runtime PATH. Resource regressions include nested action
+input/encoding refusals across all four source-assessing commands, export against
+the same unsupported current files, and the private action-work fault seam. Real
+cross-module tests protect these limits from being downgraded into ordinary source
+diagnostics. Architecture, coordination, projection and parser reviews found no
+remaining material findings after corrections. These are bounded local tests,
+not universal crash-durability, freshness or hostile-namespace guarantees.
 
 Checkpoint inspection and guidance have **403 + 177 = 580 green native CLI cases**.
 Expanded cases cover exact negative-prefix root restoration, token collisions,
@@ -1678,7 +1844,7 @@ Private fault tests cover authority/backup/replacement uncertainty and late rend
 without erasing known primary outcomes. These are local validation results, not
 hostile-swap or cross-platform guarantees.
 
-Existing Python regressions remain **941 tests**. They are not all black-box CLI
+The full gate retains **941 Python tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Remaining writer
 families need equivalent differential/fault/coordination gates, not just these passes.
 
@@ -1702,19 +1868,23 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Runtime-launch action inspection and pure checkpoint inspection | Native bounded read-only preview | Close profile/encoding limits before default parity |
 | Standalone checkpoint inspection and ordered workspace preflight | Native pretty-default/optional compact JSON; repeated flags and narrow Python lexical compatibility | Close TOML/path/resource and cross-platform restrictions before default parity |
 | Next checkpoint guidance | Native bounded read-only composition; stable request chronology and exact fallback statuses | Close supported-profile/cross-platform gaps; retain literal output and no authority grant |
-| Current-source execution/attempt/graph inspect and export CLI | Not yet complete; native historical replay already exists | Reuse history, but assess current source separately under an existing lock; do not relabel history as current validity |
+| Current-source execution/attempt/graph inspect and export CLI | All five native routes complete; pretty/compact JSON, existing-only coordinated assessment; export is source-independent full replay | Close documented profile/cross-platform gaps; preserve history/source/export boundaries and no grants |
 | Checkpoint approve/suggest/interactive review | Python only; deferred intact with real transport notifications | Later runtime scope: scoped approval, publication/uncertainty and actual notifier gates; no silent notification omission |
 | Action consumption/outcomes, repository authority | Python only | Existing receipt ordering, publication/recovery and uncertainty contracts |
 | Observers, groups, watch/publication | Python only | Private endpoint/artifact differential tests, expiry/no stale fallback |
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-Recommended next: complete execution/attempt/graph inspect/export CLI using existing
-native history. Current-source assessment must remain a distinct operation under
-an **existing lock**, not a property inferred from historical replay. Checkpoint
-writers belong to later runtime scope, with real notifiers intact, alongside
-runtime-bound lead/plan, execution writers, observers/groups and remaining runtime
-families. Native checkpoint inspection/next guidance, local workspace
+Recommended next, subject to scope review: assess remaining execution/repository
+work before runtime-bound families; runtime-free guarded execution writers or
+repository inspection are candidates, not a newly approved milestone. Inspection
+is complete but cannot substitute for writer receipt/publication/confirmation
+protocols. Current-source assessment remains separate under an **existing lock**,
+not a property inferred from historical replay. Checkpoint writers stay deferred
+as complete runtime-bound commands with real notifiers intact; do not ship partial
+notification-free ports. Runtime-bound lead/plan, observers/groups and remaining
+runtime families still need their own reviewed gates. Native execution readers,
+checkpoint inspection/next guidance, local workspace
 commands, init, refresh and state import/recovery do not authorize runtime execution
 or default-entrypoint cutover. Do not invent task remove/complete port work: Python
 has neither command. Remaining writers must preserve persistent flock inode/order,

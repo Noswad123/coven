@@ -64,7 +64,20 @@ rather than installation or PATH changes. It implements complete native `init`
 for blank and embedded `interactive-demo` workspaces, handoff validation/capture/history,
 local `goal`, `message`, `messages`, `events` and dashboard-publishing `status`,
 bounded snapshot/ledger `task list --json`, read-only `state inspect`, and
-`execution history --json` for retained v1/v2 preparation authority. The execution
+`execution history --json` for retained v1/v2 preparation authority. Stage17
+(uncommitted work after `d9ef74a`) also completes native `execution inspect`,
+`task attempt list --task`, `task attempt inspect`, `task graph inspect` and
+`task graph export`; see the [inspection contract](RUST_MIGRATION.md#native-execution-inspection-and-graph-export).
+These default to pretty ASCII JSON (two-space indentation); `--json` selects
+compact JSON, each with exactly one terminal LF. There is no human renderer or
+dispatch. Inspection optionally assesses current source under an **existing**
+workspace lock (five-second wait, no creation); missing/busy/unsafe locks leave
+source uncoordinated. The guard still requires a regular `coven.json` marker;
+marker-free history/export and uncoordinated inspection remain supported.
+Graph export fully replays retained authority but never loads current source,
+configuration, tasks, checkpoints, runtime control or locks. All trust fields remain
+authorization `none` and dispatchable `false`; preparation eligibility grants no
+execution permission. The separate, unchanged execution-history
 reader reports historical reservations and frozen receipts, not current-source
 validity, durable mutation permission or execution authorization. V2 also replays
 graph proposals/reviews and graph-bound preparations without granting fresh
@@ -150,8 +163,11 @@ Unicode/control-text output, including pretty history, goal and status—not onl
 human/report escaping and terminal-LF policy are unchanged.
 
 The full pinned `just check` passed formatting, all-target offline locked Clippy
-with warnings denied, **432 native tests** (371 library, 17 binary, 44 integration)
-and **941 Python tests**. Checkpoint inspection and guidance have **580 green CLI
+with warnings denied, **488 native tests** (421 library, 22 binary, 45 integration)
+and **941 Python tests**. The execution inspection corpus passes **539 cases**:
+534 CLI cases and five oracle state-machine characterizations, with eight separate
+unsupported-writer guards. See [validation](RUST_MIGRATION.md#validation) for scope.
+Checkpoint inspection and guidance have **580 green CLI
 cases**: 403 inspection/workspace cases and 177 guidance cases, including help,
 repeated flags, exact operand restoration and zero-effect checks.
 Local workspace acceptance has **348 green native CLI
@@ -221,7 +237,11 @@ coven/
 │   └── coven              # executable wrapper
 ├── src/                   # Rust preview; explicit build path, not the default wrapper
 │   ├── main.rs            # native CLI routing
-│   ├── cli_operands.rs    # checkpoint inspect/next lexical compatibility only
+│   ├── cli_operands.rs    # checkpoint/next + five execution-reader routes; narrow lexical compatibility
+│   ├── execution/inspection.rs # replay/existing-lock/source assessment orchestration
+│   ├── execution/source.rs # fresh raw snapshot or selected-ledger source under guard
+│   ├── execution/inspection/commands.rs # five native inspection/export interfaces
+│   ├── execution/inspection/projection.rs # pure binding/graph observations, proposal order
 │   ├── checkpoint_workspace.rs # ordered checkpoint inspect, pretty/compact presentation
 │   ├── checkpoint_guidance.rs # read-only next selection and literal output
 │   ├── checkpoint_guidance/timestamp.rs # Python-compatible guidance chronology
@@ -787,6 +807,30 @@ transaction, general task lifecycle, distributed coordinator, or exactly-once
 secondary-event delivery protocol.
 
 ## Preparation-only task attempts
+
+The following unqualified `coven` examples use the current Python default, including
+writers. The Rust preview now supports all five read-only inspection/export routes:
+
+```bash
+target/debug/coven execution inspect /path/to/workspace
+target/debug/coven task attempt list /path/to/workspace --task core-chatbot --json
+target/debug/coven task attempt inspect /path/to/workspace '<attempt-id>' --json
+target/debug/coven task graph inspect /path/to/workspace --json
+target/debug/coven task graph export /path/to/workspace '<graph-revision>' --json
+```
+
+Use actual 32-lowercase-hex attempt IDs/graph revisions. Attempt inspect and export
+take one required selector, optionally preceded by a workspace by **arity**, even
+if the single selector names a marked path. Graph inspect instead recognizes a
+marker-bearing workspace first, then an optional revision (default: graph head).
+Inspection fully validates retained history before optional current-source reads;
+ordinary source failures preserve frozen facts with native-code diagnostics.
+Actual resource/work/output/encoding-profile failures exit 1 without stdout.
+Export needs one full replay and remains source-independent even with bad current
+files, but corruption anywhere in retained history is fatal. No reader writes or
+fsyncs, and no lock or source observation grants freshness or mutation permission.
+See [RUST_MIGRATION.md](RUST_MIGRATION.md#native-execution-inspection-and-graph-export)
+for filtering, precedence, budgets and graph eligibility semantics.
 
 ```bash
 coven execution inspect --json

@@ -10,14 +10,37 @@ use std::path::PathBuf;
 pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<OsString>) {
     let command = Cli::command();
     let mut parsed = arguments.to_vec();
-    let (start, field) = match arguments.get(1).and_then(|value| value.to_str()) {
-        Some("checkpoint") if arguments.get(2).is_some_and(|value| value == "inspect") => {
-            (3, "items")
-        }
-        Some("next") => (2, "workspace"),
-        _ => return (command, parsed),
-    };
-    let occupied = arguments.iter().collect::<HashSet<_>>();
+    let (start, field, route): (_, _, &[&str]) =
+        match arguments.get(1).and_then(|value| value.to_str()) {
+            Some("checkpoint") if arguments.get(2).is_some_and(|value| value == "inspect") => {
+                (3, "items", &["checkpoint", "inspect"])
+            }
+            Some("next") => (2, "workspace", &["next"]),
+            Some("execution") if arguments.get(2).is_some_and(|value| value == "inspect") => {
+                (3, "workspace", &["execution", "inspect"])
+            }
+            Some("task") => match (
+                arguments.get(2).and_then(|value| value.to_str()),
+                arguments.get(3).and_then(|value| value.to_str()),
+            ) {
+                (Some("attempt"), Some("list")) => (4, "workspace", &["task", "attempt", "list"]),
+                (Some("attempt"), Some("inspect")) => (4, "items", &["task", "attempt", "inspect"]),
+                (Some("graph"), Some("inspect")) => (4, "items", &["task", "graph", "inspect"]),
+                (Some("graph"), Some("export")) => (4, "items", &["task", "graph", "export"]),
+                _ => return (command, parsed),
+            },
+            _ => return (command, parsed),
+        };
+    let mut occupied = arguments.iter().cloned().collect::<HashSet<_>>();
+    if route == ["task", "attempt", "list"] {
+        // Attached option values also reach the task parser as standalone strings.
+        occupied.extend(arguments.iter().filter_map(|argument| {
+            argument
+                .to_str()?
+                .split_once('=')
+                .map(|(_, value)| OsString::from(value))
+        }));
+    }
     let mut originals = HashMap::new();
     let mut serial = 0usize;
     for argument in parsed.iter_mut().skip(start) {
@@ -47,19 +70,31 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         originals.insert(token.clone(), argument.clone());
         *argument = token;
     }
+    let task_originals = originals.clone();
+    let task_parser = clap::builder::StringValueParser::new().map(move |value| {
+        task_originals
+            .get(&OsString::from(&value))
+            .and_then(|original| original.to_str())
+            .map(str::to_owned)
+            .unwrap_or(value)
+    });
     let parser = clap::builder::OsStringValueParser::new()
         .map(move |value| PathBuf::from(originals.get(&value).cloned().unwrap_or(value)));
-    let command = if start == 3 {
-        command.mut_subcommand("checkpoint", |command| {
-            command.mut_subcommand("inspect", |command| {
-                command.mut_arg(field, |argument| argument.value_parser(parser))
-            })
-        })
-    } else {
-        command.mut_subcommand("next", |command| {
-            command.mut_arg(field, |argument| argument.value_parser(parser))
-        })
+    let install = |command: clap::Command| {
+        let command = command.mut_arg(field, |argument| argument.value_parser(parser));
+        if route == ["task", "attempt", "list"] {
+            command.mut_arg("task", |argument| argument.value_parser(task_parser))
+        } else {
+            command
+        }
     };
+    let command = command.mut_subcommand(route[0], |command| match route.len() {
+        1 => install(command),
+        2 => command.mut_subcommand(route[1], install),
+        _ => command.mut_subcommand(route[1], |command| {
+            command.mut_subcommand(route[2], install)
+        }),
+    });
     (command, parsed)
 }
 

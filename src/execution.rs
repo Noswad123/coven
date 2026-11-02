@@ -20,8 +20,14 @@ use std::{collections::HashSet, fs, path::Path};
 
 mod graphs;
 mod guards;
+mod inspection;
+mod source;
 mod v2;
 pub use guards::{ReservationCheck, guard_authority_change, guard_task_mutation};
+pub use inspection::{
+    attempt_inspect_arguments, attempt_list_arguments, graph_export_arguments,
+    graph_inspect_arguments, inspect_arguments,
+};
 
 const DISABLED: &str = "execution-disabled:v1";
 const MAX_HISTORY: usize = 1024;
