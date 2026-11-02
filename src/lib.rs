@@ -14,6 +14,8 @@ mod output;
 mod platform;
 mod read_fs;
 pub mod records;
+pub mod refresh;
+pub mod state_commands;
 pub mod storage;
 mod strict_json;
 mod task_admission;
@@ -23,5 +25,6 @@ mod task_time;
 pub mod tasks;
 pub mod values;
 mod workspace;
+mod workspace_assets;
 
 pub use error::{Error, Result};

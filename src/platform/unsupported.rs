@@ -16,6 +16,12 @@ pub(crate) fn open_readonly(_: &Path) -> Result<File> {
 pub(crate) fn open_append(_: &Path) -> Result<File> {
     Err(Error("unsupported_platform"))
 }
+pub(crate) fn open_generated(_: &Path, _: bool) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn validate_generated_target(_: &Path) -> Result<()> {
+    Err(Error("unsupported_platform"))
+}
 pub(crate) fn replacement_mode(_: &Path) -> std::io::Result<Option<u32>> {
     Err(std::io::ErrorKind::Unsupported.into())
 }

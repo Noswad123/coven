@@ -100,6 +100,42 @@ pub(crate) fn validate_snapshot_logs(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Refresh discards history ordering but validates every explicit checkpoint
+/// reference, including non-request records. This never restores decisions.
+pub(crate) fn validate_checkpoint_history(root: &Path) -> Result<()> {
+    for log in ["logs/messages.jsonl", "logs/events.jsonl"] {
+        let bytes = optional_bytes(root, log, MAX_LOG, "unsupported_event_log_size_profile")?
+            .unwrap_or_default();
+        // Python parses the whole file before validating any reference in it.
+        validate_log(&bytes)?;
+        for raw in bytes.split_inclusive(|byte| *byte == b'\n') {
+            let text = std::str::from_utf8(&raw[..raw.len() - 1])?;
+            if records::trimmed(text).is_empty() {
+                continue;
+            }
+            let record = values::parse(text.as_bytes(), Profile::LegacySnapshot)?;
+            if let Some(reference) = record
+                .as_object()
+                .and_then(|object| object.get("checkpoint"))
+            {
+                let id = reference
+                    .as_str()
+                    .ok_or(Error("invalid_checkpoint_history_reference"))?;
+                checkpoints::inspect_bytes(id, None)?; // ID only, not referenced decision grammar.
+                if let Some(raw) = optional_bytes(
+                    root,
+                    &format!("checkpoints/{id}.md"),
+                    MAX_TEXT,
+                    "unsupported_checkpoint_history_profile",
+                )? {
+                    std::str::from_utf8(&raw)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 trait AppendIo {
     fn open(&self, path: &Path) -> Result<File> {
         platform::open_append(path)
@@ -228,6 +264,12 @@ fn capture(root: &Path) -> Result<CapturedDashboard> {
 
 pub(crate) fn refresh_dashboard(root: &Path, guard: &WorkspaceGuard) -> Result<()> {
     refresh_with(root, guard, &SystemDashboardIo)
+}
+
+/// Prepare only; refresh stages all generated outputs before any file write and
+/// repeats preparation under its borrowed workspace guard.
+pub(crate) fn prepare_dashboard_bytes(root: &Path) -> Result<Vec<u8>> {
+    Ok(render(&capture(root)?)?.into_bytes())
 }
 
 trait DashboardIo {

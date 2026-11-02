@@ -1,6 +1,7 @@
 # Coven Rust migration
 
-Status: **native task add/assign, evidence capture, authority readers and SDK baseline activation/recovery**, not a complete Rust replacement.
+Status: **native task add/assign, state import/recovery, existing-workspace refresh,
+evidence capture and authority readers**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -31,6 +32,11 @@ cargo run --offline --locked --bin coven -- task list WORKSPACE --json
 cargo run --offline --locked --bin coven -- task add WORKSPACE "Task title" --owner AGENT --json
 cargo run --offline --locked --bin coven -- task assign WORKSPACE TASK_ID AGENT --json
 cargo run --offline --locked --bin coven -- state inspect WORKSPACE --json
+cargo run --offline --locked --bin coven -- state import-tasks WORKSPACE --expect-revision SNAPSHOT_TOKEN --json
+cargo run --offline --locked --bin coven -- state recover-tasks WORKSPACE --repair-projection --json
+cargo run --offline --locked --bin coven -- state recover-tasks WORKSPACE --resume-import --expect-revision SNAPSHOT_TOKEN --json
+cargo run --offline --locked --bin coven -- state recover-tasks WORKSPACE --abort-import --json
+cargo run --offline --locked --bin coven -- refresh WORKSPACE
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
 cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID --json
@@ -39,7 +45,7 @@ cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPO
 The compiled `target/debug/coven` can also be invoked directly, including with
 Python absent from PATH. Its production code has no Python, subprocess, runtime
 or network dependency. Python is needed only for migration-oracle tests and the
-existing default CLI. Unsupported commands, including other task mutations and import/recovery CLI routes, reject
+existing default CLI. Unsupported commands, including init and other task mutations, reject
 at argument parsing before effects; there is **no automatic Python fallback**.
 
 Handoff commands preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
@@ -63,6 +69,9 @@ src/
   values/            Finite compatibility values, duplicate profiles and encoders
   records.rs         Extension-preserving validated workspace/task views
   tasks.rs           Preflight, captured task/state reports and authority fences
+  state_commands.rs  State inspection/import/recovery CLI admission and known-outcome delivery
+  refresh.rs         Prepare-all, guarded existing-workspace asset regeneration
+  workspace_assets.rs Frozen pure templates and embedded interactive-demo context
   task_mutation.rs   End-to-end snapshot/ledger add/assign, receipt and delivery policy
   task_admission.rs  Prepublication response/list capacity and bounded warning codes
   task_delivery.rs   Guarded JSONL append and dashboard capture/format/publication
@@ -71,7 +80,8 @@ src/
   workspace.rs       Neutral ordered workspace loading and optional-root selection
   ledger.rs          Complete bounded selected task-ledger replay/projection health
   ledger/confirmation.rs Explicit locked selected-history synchronization
-  ledger/activation.rs SDK baseline planning, marker-last activation, resume/archive
+  ledger/activation.rs Baseline planning, marker-last activation, resume/archive
+  ledger/repair.rs    Confirmed authority, raw projection backup and explicit replacement
   ledger/publication.rs Private typed no-overwrite artifact publication
   ledger/writer.rs   Guarded task-frame commit and fresh selected projection publication
   execution.rs       Historical execution replay state, v1 rules and report boundary
@@ -154,10 +164,11 @@ CLI empty workspace means current directory and quoted `~/...` uses HOME; librar
 Path APIs remain literal. Named-user expansion and HOME-absent expansion explicitly
 refuse instead of selecting a literal tilde directory or doing implicit user lookup.
 
-Runtime-launch control/action artifacts remain unsupported before reading and at
-final return. A task-authority marker instead selects the complete native reader
+Native task listing still refuses runtime-launch control/action artifacts before
+reading and at final return; the state-inspection route described below validates
+launch control instead. A task-authority marker selects the complete native reader
 below. An absent marker plus ledger directory is unresolved import: native task
-listing conservatively refuses it, while `state inspect --json` reports snapshot
+listing conservatively refuses it, while `state inspect` reports snapshot
 `import_pending: true`, including `source_error` without invented tasks/revision
 when source is malformed. These checks are not an atomic authority snapshot and
 cannot be reused as mutation authorization.
@@ -216,7 +227,7 @@ bindings can be parsed from compatibility values or built with explicit add/assi
 arguments. `View::lookup` returns an immutable `FrozenResult`, a missing captured
 key, or `request_key_binding_conflict`. Only complete successful replay constructs
 frozen results. There is no new lookup CLI, mutation, acknowledgement or recovery
-command and no public unchecked result constructor.
+surface from lookup itself and no public unchecked result constructor.
 
 Binding equality compares canonical bytes, ignoring only object insertion order.
 Raw selector case/whitespace, notes/title spelling, operation and null versus
@@ -273,9 +284,8 @@ uses the same kernel flock/inode as Python, never steals/unlinks/replaces it, an
 releases on normal exit or process death. The destructor avoids explicitly
 unlocking a parent's inherited open-file description after fork. Task and handoff
 reads do **not** acquire this token. Acquiring it never activates authority or
-dispatches work. Explicit baseline SDK calls may publish/archive import state;
-task add/assign use it only inside the separate pipelines below. No recovery CLI
-or automatic dispatch is enabled.
+dispatches work. Explicit baseline/recovery and task commands use it inside their
+separate pipelines below. No automatic recovery or dispatch is enabled.
 
 ### Guarded mutable replacement (library only)
 
@@ -380,14 +390,14 @@ Static cooperating filesystem
 assumptions remain; no hostile namespace sandbox or universal crash durability is
 claimed.
 
-### Baseline activation and pending recovery (SDK only)
+### Baseline activation and pending recovery
 
 `ledger::import_tasks(workspace, snapshot_pin, borrowed_guard)` now activates a
 strictly validated baseline. `resume_import` explicitly resumes only a complete,
 unambiguous pending baseline, and `abort_import` archives a pending directory
-without deleting it. These are effectful library operations, not new CLI commands;
-they do not implement task add/assign, projection repair, events, dashboards,
-execution/control mutations or runtime dispatch.
+without deleting it. These effectful library operations now underpin the explicit
+state CLI below; the primitives themselves do not deliver events or dashboards,
+mutate execution/control authority or dispatch runtime work.
 
 Import validates the matching guard and confirmed execution authority-change gate,
 then refuses any marker entry before classifying pending state. It rejects an
@@ -456,10 +466,10 @@ definitely absent `state/task-ledger-aborted-<id>` destination. Rename failure i
 error; rename success followed by state-sync failure returns the absolute known
 path with ArchiveDurability::SynchronizationUncertain, never rollback or a false
 “nothing happened” failure. Confirmed covers the archive rename synchronization,
-not independent durability of every pre-existing archived file. This SDK outcome
-is more structured than Python's combined rename/sync error; no CLI JSON policy
-has been changed or invented. Destination absence plus rename assumes cooperating
-writers/static paths, not hostile atomic no-replace semantics.
+not independent durability of every pre-existing archived file. The state CLI
+retains this known archive path and durability classification. Destination absence
+plus rename assumes cooperating writers/static paths, not hostile atomic
+no-replace semantics.
 
 Existing native JSON/source/frame/history/directory profiles remain mandatory: the
 writer cannot activate data its own reader refuses. Raw source and every artifact
@@ -794,8 +804,9 @@ the checkpoint wrapper. It retains ordered path/config/runtime-control validatio
 all three ledger observations, native TOML limits and existing checkpoint behavior.
 Loaded state is data, not a cached mutation permit. New task writes accept valid
 runtime-launch control, refuse invalid control/orphan authority and never inspect
-bundle children or execute frozen plans. **Existing native list/state readers keep
-their conservative runtime/actions and pending-import fences.** Consequently write
+bundle children or execute frozen plans. **Native task listing keeps its conservative
+runtime/actions and pending-import fences; state inspection now validates launch
+control without executing it and can diagnose pending imports.** Consequently write
 support in a valid runtime-controlled workspace does not imply native list/runtime
 parity there; normal snapshot and active-ledger loops above are supported.
 
@@ -875,11 +886,134 @@ Goal/checkpoint reads are capped at 1 MiB; dashboard output at 32 MiB. Projectio
 dashboard sync uncertainty after a confirmed task is a secondary warning, not new
 task-authority uncertainty.
 
-No automatic import/repair, native init/import/recovery CLI, broader lifecycle
-commands, runtime/provider call, installed entrypoint change or Python fallback is
-included. Manual recovery still uses the retained Python command until that CLI
-family is ported. Input/path/TOML/log/output and Linux-only execution qualifications
-remain explicit preview limits, not claims of complete application parity.
+No automatic import/repair, native init, broader lifecycle commands, runtime/provider
+call, installed entrypoint change or Python fallback is included. Explicit native
+state import/recovery and refresh are described below. Input/path/TOML/log/output
+and Linux-only execution qualifications remain explicit preview limits, not claims
+of complete application parity.
+
+## Native state lifecycle and existing-workspace refresh
+
+### API / Interfaces
+
+`state inspect [WORKSPACE]` is read-only; `--json` selects compact JSON instead of
+the default pretty JSON. Both modes safely escape presentation text. It validates
+workspace paths/configuration and launch control, replays selected task authority,
+and reports projection health without repairing it. Pending imports retain
+`import_pending: true`; malformed source yields `source_error`, not invented tasks.
+It does not parse current agent/lead contents as task authority or acquire a lock.
+
+`state import-tasks [WORKSPACE] --expect-revision SNAPSHOT_TOKEN` requires an exact
+snapshot token. `state recover-tasks [WORKSPACE]` requires exactly one mode:
+
+- `--repair-projection`: explicit repair from active ledger authority.
+- `--resume-import --expect-revision SNAPSHOT_TOKEN`: activate only a complete,
+  unambiguous pending baseline against the original snapshot pin.
+- `--abort-import`: preserve a pending import by renaming its directory whole.
+
+The revision option is rejected for repair/abort. These state commands also accept
+`--json`; default output is pretty JSON, not a human summary. Omitted workspace
+means cwd. `refresh [WORKSPACE]` likewise defaults to cwd, but has no `--json` flag.
+It regenerates only `tmux/coven.toml`, starter prompts, missing role prompts and
+`dashboard.md` in an existing workspace. Init remains unported.
+
+### Data Flow
+
+State writers preflight before lock creation, then repeat admission under the
+shared workspace guard. Import/resume call the confirmed execution authority-change
+gate and publish the activation marker last. Abort preserves the pending directory
+without parsing its source or consulting execution reservations. Confirmed activation
+or repair independently attempts projection/dashboard delivery, without an event;
+primary uncertainty skips secondary effects.
+
+Projection repair synchronizes fully validated selected authority **before reading
+the projection**. A byte-current projection needs no backup. Otherwise it captures
+raw bytes and absence distinctly, creates an exclusive new child under
+`state/task-recovery/`, and durably publishes `tasks.bytes` when present plus
+`metadata.json`. Corrupt JSON, non-UTF-8 and empty files are preserved verbatim;
+missing input is recorded as missing, not converted into an empty backup. Before
+atomic replacement it replays authority again, compares revision **and** head digest,
+and rechecks exact raw projection bytes/presence. Unsafe source paths are refused,
+not followed. Partial/final backups are retained and reported at workspace-specific
+paths; they are never silently adopted or deleted.
+
+Refresh prepares every output and validates inputs before creating the first lock,
+discards that preparation, then freshly prepares under the guard. Both logs are
+fully parsed and every explicit `checkpoint` field is validated, even on records
+that are not checkpoint requests; history never restores a decision. Publication
+order is manifest → exclusively created missing role prompts → starters → atomic
+dashboard last. Existing role prompts, authored metadata/config/prose, task/agent/
+lead state, logs, checkpoint bytes, roster notes and work/output artifacts remain
+unchanged (apart from possible first creation of the persistent coordination lock).
+Refresh never activates/repairs authority or executes the generated commands.
+
+### Edge Cases
+
+- Recovery's **raw backup cap is 32 MiB**, independent of JSON/baseline limits;
+  larger source projections refuse with `unsupported_recovery_size` before creating
+  recovery artifacts. This is not a JSON validity requirement.
+- New private SDK ledger/recovery directories request `0700`, filtered by inherited
+  umask and retaining inherited SGID. Existing directories are not chmodded. New
+  authority and projection-recovery backup files receive verified `0600`; import
+  raw-source backups instead preserve source mode bits where applicable. Atomic
+  replacement preserves existing target mode bits, or uses `0600` for a missing
+  target. Ownership, ACLs and xattrs are not promised preserved.
+- Known primary results, preserved paths and durability classification survive late
+  health/report/render failures through compact known-metadata output. Primary
+  synchronization uncertainty exits **2**; ordinary errors exit **1**, including
+  failures leaving pending/backup artifacts. Confirmed operations with secondary
+  projection/dashboard warnings still exit **0**: warnings do not mean rollback.
+  Parser errors also exit 2; failed stdout/stderr delivery can exit 1 after effects.
+- Refresh is **not a multi-file transaction**. Manifest/starters are in-place writes;
+  I/O failures can leave partial outputs and report `refresh_outputs_may_be_partial`
+  with exit 1. Even dashboard directory-sync uncertainty is a refresh error, not a
+  task-authority uncertainty envelope.
+- Hardlinks on generated files selected for overwrite are refused in preflight and
+  on the opened descriptor **before truncation** (`unsafe_generated_hardlink`). This intentionally
+  tightens Python behavior. Existing role prompts are preserved; atomic dashboard
+  replacement does not truncate a linked inode.
+- Ordinary-path template bytes match Python. For roots containing apostrophes,
+  percent signs or backslashes, generated root labels use literal `printf` data
+  arguments, never untrusted format/escape interpretation. The default generated
+  `COVEN_COMMAND` is canonical `coven`; an explicit nonempty environment override
+  is shell-quoted. There is no Python fallback or executable lookup during refresh.
+- Refresh supports blank context or the embedded `interactive-demo` context only;
+  custom example directories refuse with `unsupported_refresh_example_profile`.
+  Each generated prompt/manifest is capped at **1 MiB**; non-dashboard outputs have
+  a separate aggregate **32 MiB / 4096-output** budget. Dashboard output has its own
+  **32 MiB** cap. Existing workspace/JSON/log/checkpoint limits still apply.
+
+These protocols assume a static/cooperating namespace and local filesystem, not
+hostile-swap immunity, a sandbox or universal power-loss durability. Validation is
+Linux-only; macOS execution has not been established. No dependency, installation,
+default-entrypoint or production Python change is part of this preview.
+
+### Example usage
+
+Use a previously created disposable workspace and actual inspected tokens:
+
+```sh
+target/debug/coven state inspect WORKSPACE
+target/debug/coven task list WORKSPACE --json
+target/debug/coven state import-tasks WORKSPACE --expect-revision '<snapshot token>' --json
+target/debug/coven state inspect WORKSPACE --json
+target/debug/coven refresh WORKSPACE
+# Only when explicitly needed after inspecting projection health:
+target/debug/coven state recover-tasks WORKSPACE --repair-projection --json
+```
+
+For interrupted unactivated imports, choose resume with the original snapshot pin
+or abort, not both. Neither repairs incomplete pending artifacts automatically.
+
+### Related files
+
+CLI routing is in `src/main.rs`; coordination in `src/state_commands.rs` and
+`src/refresh.rs`; pure assets in `src/workspace_assets.rs` and its embedded files.
+`src/workspace.rs`, `src/task_delivery.rs`, `src/ledger/{activation,repair}.rs` and
+`src/platform/unix.rs` supply validation, delivery, backup and descriptor policies.
+`tests/state_refresh.rs` and `tests/_state_refresh_parity.py` cover the CLI loop.
+See also [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md) and
+[STORAGE_CONTRACT.md](STORAGE_CONTRACT.md) for retained authority/storage contracts.
 
 ## Validation
 
@@ -893,7 +1027,11 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 247 tests, including a build/CLI-name regression test and an
+The full pinned `just check` has passed: rustfmt, all-target offline locked Clippy
+with `-D warnings`, **306 native tests** (260 library + 5 binary + 41 integration),
+and **941 Python tests**.
+
+The native suite includes a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -1060,7 +1198,7 @@ raw source bytes/mode/inode, exact canonical frame/manifest/marker bytes, digest
 numeric/Unicode extensions, absent projection, strict source parsing, execution
 reservations, raw-manifest recovery, backup-mode/source-pin distinctions, ambiguous
 or incomplete pending artifacts and exact nondestructive archive transformations.
-All import/recovery CLI routes remain unsupported and effect-free.
+The explicit import/recovery CLI is covered separately by the lifecycle corpus below.
 
 The private publisher's fault matrix covers **144 combinations** (four artifact
 roles × two target states × nine boundaries × two cleanup outcomes), plus capacity,
@@ -1094,6 +1232,16 @@ are compared against the version-pinned oracle. The neutral workspace extraction
 retains the 280-case checkpoint and 43-case task-reader corpora; still-unported
 mutation inventories now test remove/complete rather than newly supported add/assign.
 
+State lifecycle/refresh adds **208 green CLI cases**, including **7 explicit native
+safety cases**, alongside the retained **262 task-writer cases**. Coverage includes
+state presentation, import/resume/abort/repair, raw evidence preservation, refresh
+preservation and partial effects, hardlink-before-truncate refusal, literal root
+labels and workspace-specific preserved paths. Independent state/refresh reviewers
+approved the corrected hardlink, conditional printf and preserved-path behavior.
+Private fault tests cover authority/backup/replacement uncertainty and late rendering
+without erasing known primary outcomes. These are local validation results, not
+hostile-swap or cross-platform guarantees.
+
 Existing Python regressions remain **941 tests**. They are not all black-box CLI
 tests; a passing Python suite alone is not proof of Rust coverage. Remaining writer
 families need equivalent differential/fault/coordination gates, not just these passes.
@@ -1106,11 +1254,12 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Handoff collection/publication | Native bounded unverified capture; Python still default | Close profile limits/cross-platform validation before default parity |
 | Finite values, ordered extensions, records, snapshot task JSON listing | Native bounded preview; Python still default | Close stated acceptance limits before full legacy parity |
 | Persistent workspace flock, evidence/ledger immutable publication and mutable replacement | Native guarded primitives used by task/baseline pipelines | Integrate remaining writer families without changing their policies |
-| Workspace init/refresh CLI | Python only; internal dashboard refresh is native | Asset/preflight/init reservation and command-level parity |
-| Task-ledger read/replay, frozen receipt lookup, selected confirmation and projection diagnostics | Native bounded library/read-only preview | Close supported-profile limits; durable retry coordination/delivery still required |
-| Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK only | CLI preflight/delivery integration and remaining profile/cross-platform gates |
+| Existing-workspace refresh CLI | Native bounded generated-asset refresh; no runtime effects | Close custom-example/profile and cross-platform gaps |
+| Workspace init CLI | Python only; next workspace port | Asset/preflight/init reservation and command-level parity |
+| Task-ledger read/replay, frozen receipt lookup, selected confirmation and projection diagnostics | Native bounded readers/primitives used by task/state commands | Close supported-profile and cross-platform limits |
+| Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK and state CLI with pinned activation/known outcomes | Close remaining profile/cross-platform gates |
 | Task add/assign, commit projection, events and dashboard | Native snapshot/active-ledger commands with CAS/replay/delivery | Close documented profiles and list/runtime gap before default parity |
-| Manual projection repair and import/recovery CLI | Python only; baseline recovery SDK native | Recovery preflight, durable diagnostics and command integration |
+| Manual projection repair | Native raw-preserving SDK and explicit state CLI | Close stated raw-size/profile and cross-platform limits |
 | Execution v1/v2 historical replay, graph reviews and confirmed reservation checks | Native bounded SDK/read-only preview | Close profile limits; writer integration and receipt delivery/order still required |
 | Execution enable/upgrade, graph mutations, preparation/cancellation guards | Python only | Guarded publication, approval/reserve/receipt ordering and mixed-writer fault tests, not dispatch |
 | Runtime-launch action inspection and pure checkpoint decisions | Native bounded read-only preview | Close profile/encoding limits before default parity |
@@ -1120,8 +1269,9 @@ families need equivalent differential/fault/coordination gates, not just these p
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive milestones are native workspace init/refresh and state import/
-recovery command routes, then the remaining mutation/observation/runtime families.
+The next substantive milestone is native workspace init, followed by the remaining
+mutation/observation/runtime families. Refresh and explicit state import/recovery
+are now available for existing workspaces.
 The task milestone does not authorize default-entrypoint cutover. Remaining writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old

@@ -61,7 +61,7 @@ with Herdr by default. Tmux remains available as an opt-in runtime.
 The Rust replacement builds a single binary named `coven`, currently exercised
 through `cargo run --offline --locked --bin coven -- ...` or `target/debug/coven`
 rather than installation or PATH changes. It implements handoff validation/capture/history,
-bounded snapshot/ledger `task list --json`, read-only `state inspect --json`, and
+bounded snapshot/ledger `task list --json`, read-only `state inspect`, and
 `execution history --json` for retained v1/v2 preparation authority. The execution
 reader reports historical reservations and frozen receipts, not current-source
 validity, durable mutation permission or execution authorization. V2 also replays
@@ -78,13 +78,16 @@ finite task values and a mixed-language-tested library workspace lock primitive.
 Library foundations now retain frozen task-ledger receipts for exact historical
 lookup and provide guarded atomic mutable-file replacement. They now support the
 task writer workflow below, without granting runtime execution permission.
-SDK-only selected-ledger confirmation and execution-reservation checks now borrow
+Library selected-ledger confirmation and execution-reservation checks borrow
 an existing workspace guard and synchronize validated authority before reporting
-their outcome. Historical inspection commands remain lock/fsync-free.
-The library also supports explicit baseline import, resume of a complete pending
-import, and nondestructive pending archival. These calls publish authority only at
-the final marker link and preserve known activation/archive outcomes on uncertain
-sync. Import/recovery CLI routes remain disabled.
+their outcome for native task/state writers. Historical inspection commands remain
+lock/fsync-free.
+Native `state import-tasks WORKSPACE --expect-revision SNAPSHOT_TOKEN` activates
+baseline authority marker-last. `state recover-tasks WORKSPACE` requires exactly
+one of `--repair-projection`, `--resume-import`, or `--abort-import`; resume also
+requires the original snapshot pin. State commands print pretty JSON by default,
+or compact JSON with `--json`. Recovery preserves raw projection evidence before
+replacement and archives aborted pending imports without deleting them.
 
 Native **`task add` and `task assign` are now available end to end** for existing
 snapshot and imported-ledger workspaces, with optional CAS, ledger request replay,
@@ -103,12 +106,26 @@ event/dashboard/projection warnings do not undo a committed task. See
 [RUST_MIGRATION.md](RUST_MIGRATION.md#native-task-addassign-workflow) for retry rules,
 bounded profiles and the remaining list/runtime preview gap.
 
+Native `refresh WORKSPACE` now regenerates existing-workspace assets without
+executing commands. It preserves authored files, state, logs, checkpoint decisions
+and existing role prompts; manifest/starter writes can have partial effects, with
+the atomic dashboard published last. Only blank or embedded `interactive-demo`
+example context is supported. Generated commands default to canonical `coven`,
+not a Python checkout wrapper. See the migration notes for recovery limits,
+refresh safety deviations and the static/cooperating filesystem model.
+
+The full pinned `just check` passed formatting, all-target offline locked Clippy
+with warnings denied, **306 native tests** (260 library, 5 binary, 41 integration)
+and **941 Python tests**. The lifecycle corpus has **208 green CLI cases**, including
+7 explicit native safety cases; the prior 262-case task-writer corpus is retained.
+Validation was on Linux only.
+
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
 or separately named native CLI. Explicit native handoff collection writes
-only local unverified evidence. Other task/authority mutation commands and runtime
-effects are not yet native; no native init/import/recovery CLI is enabled.
+only local unverified evidence. Other mutation families and runtime effects are
+not yet native; **init is the next unported workspace command**.
 Unsupported native commands fail closed without delegation.
 This is not yet a complete
 Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,

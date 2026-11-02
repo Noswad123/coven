@@ -1,7 +1,7 @@
 use clap::builder::TypedValueParser;
-use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{ArgGroup, CommandFactory, FromArgMatches, Parser, Subcommand};
 use coven::{
-    Result, actions, archive, checkpoint_workspace, collection, execution,
+    Result, actions, archive, checkpoint_workspace, collection, execution, refresh, state_commands,
     storage::Delivery,
     task_mutation::{self, TaskOutput},
     tasks,
@@ -22,6 +22,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Regenerate only generated files in an existing workspace; never starts a runtime.
+    Refresh {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+    },
     Checkpoint {
         #[command(subcommand)]
         command: Checkpoint,
@@ -86,10 +91,37 @@ enum Execution {
 
 #[derive(Subcommand)]
 enum State {
+    #[command(infer_long_args = true, args_override_self = true)]
     Inspect {
-        #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         workspace: PathBuf,
-        #[arg(long, required = true)]
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(infer_long_args = true, args_override_self = true)]
+    ImportTasks {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, allow_negative_numbers = true)]
+        expect_revision: String,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(infer_long_args = true, args_override_self = true,
+        group(ArgGroup::new("recovery_mode").required(true).multiple(false)
+            .args(["repair_projection", "resume_import", "abort_import"])))]
+    RecoverTasks {
+        #[arg(default_value = ".", allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long)]
+        repair_projection: bool,
+        #[arg(long)]
+        resume_import: bool,
+        #[arg(long)]
+        abort_import: bool,
+        #[arg(long, allow_negative_numbers = true)]
+        expect_revision: Option<String>,
+        #[arg(long)]
         json: bool,
     },
 }
@@ -165,6 +197,42 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Refresh { workspace } => return refresh::arguments(&workspace),
+        Command::State {
+            command:
+                State::ImportTasks {
+                    workspace,
+                    expect_revision,
+                    json,
+                },
+        } => {
+            return state_commands::import_arguments(&workspace, &expect_revision, json);
+        }
+        Command::State {
+            command:
+                State::RecoverTasks {
+                    workspace,
+                    repair_projection,
+                    resume_import,
+                    abort_import: _,
+                    expect_revision,
+                    json,
+                },
+        } => {
+            let mode = if repair_projection {
+                state_commands::RecoveryMode::RepairProjection
+            } else if resume_import {
+                state_commands::RecoveryMode::ResumeImport
+            } else {
+                state_commands::RecoveryMode::AbortImport
+            };
+            return state_commands::recover_arguments(
+                &workspace,
+                mode,
+                expect_revision.as_deref(),
+                json,
+            );
+        }
         Command::Task {
             command:
                 Task::Add {
@@ -238,8 +306,8 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             });
         }
         Command::State {
-            command: State::Inspect { workspace, json: _ },
-        } => tasks::inspect_json_argument(&workspace),
+            command: State::Inspect { workspace, json },
+        } => return state_commands::inspect_arguments(&workspace, json),
         Command::Task {
             command: Task::List { workspace, json: _ },
         } => tasks::list_json_argument(&workspace),
@@ -286,10 +354,23 @@ fn main() -> std::process::ExitCode {
     let matches = Cli::command().get_matches_from(&arguments);
     validate_checkpoint_option_order(&matches, has_terminator).unwrap_or_else(|error| error.exit());
     validate_task_option_order(&matches, &arguments).unwrap_or_else(|error| error.exit());
+    if (matches.subcommand_matches("state").is_some()
+        || matches.subcommand_matches("refresh").is_some())
+        && non_operand_number(&arguments)
+    {
+        Cli::command()
+            .error(
+                clap::error::ErrorKind::UnknownArgument,
+                "option-like literal values require -- or option=value syntax",
+            )
+            .exit();
+    }
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     match run(cli) {
         Ok(output) => {
-            if writeln!(std::io::stdout().lock(), "{}", output.stdout).is_err() {
+            if !output.stdout.is_empty()
+                && writeln!(std::io::stdout().lock(), "{}", output.stdout).is_err()
+            {
                 return std::process::ExitCode::FAILURE;
             }
             for warning in output.warnings {
@@ -334,6 +415,26 @@ fn validate_checkpoint_option_order(
     Ok(())
 }
 
+fn non_operand_number(arguments: &[std::ffi::OsString]) -> bool {
+    arguments
+        .iter()
+        .skip(1)
+        .take_while(|arg| *arg != "--")
+        .any(|arg| {
+            arg.to_str().is_some_and(|value| {
+                if !value.starts_with('-')
+                    || value.starts_with("--")
+                    || value.parse::<f64>().is_err()
+                {
+                    return false;
+                }
+                let tail = &value[1..];
+                let tail = tail.strip_prefix('.').unwrap_or(tail);
+                !tail.as_bytes().first().is_some_and(u8::is_ascii_digit)
+            })
+        })
+}
+
 fn validate_task_option_order(
     matches: &clap::ArgMatches,
     arguments: &[std::ffi::OsString],
@@ -369,24 +470,7 @@ fn validate_task_option_order(
     });
     // The supported Python oracle accepts negative digit prefixes, including
     // exponent and trailing-dot forms, but does not treat -inf/-nan as operands.
-    let non_operand_number = arguments
-        .iter()
-        .skip(3)
-        .take_while(|arg| *arg != "--")
-        .any(|arg| {
-            arg.to_str().is_some_and(|value| {
-                if !value.starts_with('-')
-                    || value.starts_with("--")
-                    || value.parse::<f64>().is_err()
-                {
-                    return false;
-                }
-                let tail = &value[1..];
-                let tail = tail.strip_prefix('.').unwrap_or(tail);
-                !tail.as_bytes().first().is_some_and(u8::is_ascii_digit)
-            })
-        });
-    if interrupted || non_operand_number {
+    if interrupted || non_operand_number(arguments) {
         Err(Cli::command().error(clap::error::ErrorKind::UnknownArgument,
             "task options must precede or follow the operand group; use -- for option-like literals"))
     } else {
@@ -526,5 +610,60 @@ mod tests {
         }
         assert!(Cli::try_parse_from(["coven", "task", "add"]).is_err());
         assert!(Cli::try_parse_from(["coven", "task", "assign"]).is_err());
+    }
+
+    #[test]
+    fn recovery_parser_requires_one_mode_but_defers_pin_policy_to_service() {
+        for args in [
+            vec!["coven", "state", "recover-tasks"],
+            vec![
+                "coven",
+                "state",
+                "recover-tasks",
+                "--repair-projection",
+                "--abort-import",
+            ],
+            vec![
+                "coven",
+                "state",
+                "recover-tasks",
+                "--resume-import",
+                "--repair-projection",
+            ],
+            vec!["coven", "state", "import-tasks"],
+            vec!["coven", "refresh", "--json"],
+            vec!["coven", "init"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+        for args in [
+            vec!["coven", "state", "recover-tasks", "--resume-import"],
+            vec![
+                "coven",
+                "state",
+                "recover-tasks",
+                "--abort-import",
+                "--expect-revision",
+                "bad",
+            ],
+            vec![
+                "coven",
+                "state",
+                "recover-tasks",
+                "--repair-projection",
+                "--repair-projection",
+            ],
+            vec!["coven", "state", "inspect"],
+            vec!["coven", "state", "inspect", "", "--json", "--json"],
+            vec![
+                "coven",
+                "state",
+                "import-tasks",
+                "--expect-revision",
+                "tasks-missing:v1",
+            ],
+        ] {
+            Cli::try_parse_from(args).unwrap();
+        }
     }
 }

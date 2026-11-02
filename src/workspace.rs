@@ -249,6 +249,14 @@ fn validate_toml_datetimes(value: &toml::Value) -> Result<()> {
     Ok(())
 }
 
+/// Configuration/path diagnostics, without parsing source tasks, agents or lead.
+/// Used for state inspection and explicit pending archival, not writer admission.
+pub(crate) fn diagnostic(root: &Path) -> Result<()> {
+    check_paths(root)?;
+    read_team(root)?;
+    Ok(())
+}
+
 fn read_team(root: &Path) -> Result<(TeamRecord, String)> {
     let raw = optional_bytes(
         root,

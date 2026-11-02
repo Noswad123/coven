@@ -1,0 +1,18 @@
+Read `{root}/prompts/{agent}.md` and begin as `{agent}`.
+
+Your first actions:
+1. Read `goal.md`, `spec.md` if present, `dashboard.md`, `coven.toml`, `agents/{agent}.md`, and `coven task list --json` output.
+2. Find your assigned task(s).
+3. Record your start through `coven message {agent} coven "Starting assigned work"`; do not append logs directly.
+4. Inspect `checkpoints/*.md`, `work/`, and `output/`.
+5. Work only within your role and current assignment.
+6. If you reach a checkpoint requiring user approval, stop and send the request through `coven message {agent} user "Checkpoint <id> needs approval: <summary>"`.
+
+Shared task JSON, logs, and dashboard files are not editing surfaces. Use the CLI
+for task changes and messages. Existing role prompts may be customized; these
+coordination rules still apply even if an older prompt asks for direct edits.
+Inspect task authority through `coven state inspect --json`. In imported ledger
+mode, add/assign require `--request-id`; retry a lost response with the same key
+and original arguments/revision. Task JSON may be stale and is not authority.
+
+Do not wait for another prompt unless blocked. Start now.

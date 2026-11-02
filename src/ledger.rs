@@ -4,6 +4,7 @@
 mod activation;
 mod confirmation;
 mod publication;
+mod repair;
 mod writer;
 use crate::{
     Error, Result, canonical,
@@ -17,6 +18,10 @@ pub use activation::{
     ImportProgress, abort_import, import_tasks, resume_import,
 };
 pub use confirmation::{LedgerConfirmation, confirm_selected};
+pub use repair::{
+    RepairDurability, RepairFailure, RepairFailurePhase, RepairReport, RepairStatus,
+    repair_projection,
+};
 use sha2::{Digest as _, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -559,6 +564,18 @@ impl View {
     pub fn revision(&self) -> &str {
         &self.revision
     }
+    pub(crate) fn workspace_id(&self) -> &str {
+        &self.workspace_id
+    }
+    pub(crate) fn epoch_id(&self) -> &str {
+        &self.epoch_id
+    }
+    pub(crate) fn sequence(&self) -> usize {
+        self.sequence
+    }
+    pub(crate) fn head_digest(&self) -> &str {
+        &self.head_digest
+    }
     pub fn projection_bytes(&self) -> Result<Vec<u8>> {
         self.baseline_projection
             .clone()
@@ -572,6 +589,10 @@ impl View {
         )
     }
     pub fn report(&self, root: &Path) -> Result<Value> {
+        let projection = projection_health(root, &self.projection_bytes()?)?;
+        self.report_with_projection(projection)
+    }
+    pub(crate) fn report_with_projection(&self, projection: Value) -> Result<Value> {
         Value::object(vec![
             (
                 "authority".to_owned(),
@@ -592,10 +613,7 @@ impl View {
                 "frame_digest".to_owned(),
                 Value::String(self.head_digest.clone()),
             ),
-            (
-                "projection".to_owned(),
-                projection_health(root, &self.projection_bytes()?)?,
-            ),
+            ("projection".to_owned(), projection),
         ])
     }
 }
