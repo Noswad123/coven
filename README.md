@@ -54,8 +54,20 @@ cd ~/Projects/new-coven
 /Users/jdawson/Projects/coven/bin/coven up
 ```
 
-For a shorter command, add this project's `bin/` directory to `PATH` or symlink
-`bin/coven` into `~/.local/bin`.
+For an Arcana-managed install, keep the full resource tree isolated, for example
+under `~/.local/libexec/arcana-dev/coven/`, with sibling `bin/`, `runner/`, and
+`examples/` directories. Do not put a checkout on global `PATH` or create a
+competing `~/.local/bin/coven` symlink; the manager owns the public dispatcher.
+The wrapper follows relative and absolute executable symlink chains (cycles and
+chains over 40 links fail) to locate this tree. A nonempty `COVEN_HOME` explicitly
+selects another full tree and bypasses that discovery.
+
+For generated callbacks, a nonempty `COVEN_COMMAND` wins, then a nonempty
+`ARCANA_PUBLIC_COVEN` supplied by the Arcana dispatcher, then the tree's
+`bin/coven`. Empty values are treated as unset. The dispatcher should export
+`ARCANA_PUBLIC_COVEN` only for Coven dispatch, with the stable absolute public
+path, not a versioned implementation path. Generic `ARCANA_PUBLIC_COMMAND` and
+other apps' identity variables are ignored. Public paths are not canonicalized.
 
 ## Project layout
 
