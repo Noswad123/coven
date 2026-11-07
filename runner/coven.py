@@ -71,7 +71,6 @@ MANAGED_FILES = (
     "work/README.md", "output/README.md", "state/runtime-launch-control.json", "state/.runtime-transport.lock",
 )
 COVEN_DIR = Path(__file__).resolve().parents[1]
-PROJECT_DIR = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = COVEN_DIR / "examples"
 
 
@@ -268,7 +267,7 @@ def cli_command() -> str:
     explicit = os.environ.get("COVEN_COMMAND")
     if explicit:
         return shlex.quote(explicit)
-    wrapper = PROJECT_DIR / "bin" / "coven"
+    wrapper = COVEN_DIR / "bin" / "coven"
     if wrapper.exists():
         return shlex.quote(str(wrapper))
     return shlex.quote(sys.argv[0] or "coven")

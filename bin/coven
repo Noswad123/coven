@@ -4,7 +4,31 @@ set -euo pipefail
 if [[ -n "${COVEN_HOME:-}" ]]; then
   coven_home="$COVEN_HOME"
 else
-  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+  script="${BASH_SOURCE[0]}"
+  seen=()
+  hops=0
+  while :; do
+    script_dir="$(cd -- "$(dirname -- "$script")" && pwd -P)"
+    script="$script_dir/$(basename -- "$script")"
+    [[ -L "$script" ]] || break
+    for ((index=0; index<hops; index++)); do
+      if [[ "${seen[index]}" == "$script" ]]; then
+        printf '[ERROR] Coven executable symlink cycle: %s\n' "$script" >&2
+        exit 1
+      fi
+    done
+    if (( hops >= 40 )); then
+      printf '[ERROR] Coven executable symlink chain exceeds 40 links\n' >&2
+      exit 1
+    fi
+    seen+=("$script")
+    hops=$((hops + 1))
+    target="$(readlink "$script")"
+    case "$target" in
+      /*) script="$target" ;;
+      *) script="$script_dir/$target" ;;
+    esac
+  done
   coven_home="$(cd -- "$script_dir/.." && pwd)"
 fi
 
@@ -15,6 +39,7 @@ if [[ ! -x "$runner" ]]; then
 fi
 
 export COVEN_HOME="$coven_home"
-export COVEN_COMMAND="$coven_home/bin/coven"
+# Empty overrides are treated as unset, matching the runner's policy.
+export COVEN_COMMAND="${COVEN_COMMAND:-${ARCANA_PUBLIC_COVEN:-$coven_home/bin/coven}}"
 
 exec "$runner" "$@"
