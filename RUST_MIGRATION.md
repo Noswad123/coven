@@ -1,6 +1,6 @@
 # Coven Rust migration
 
-Status: **native workspace refresh, task add/assign, evidence capture, authority readers and SDK baseline activation/recovery**, not a complete Rust replacement.
+Status: **native workspace init/refresh, task add/assign, evidence capture, authority readers and SDK baseline activation/recovery**, not a complete Rust replacement.
 The retained Python implementation and its safety contracts remain the public
 default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
 migration, executable replacement, install or authority activation happens when
@@ -23,6 +23,8 @@ to Python. Renaming the build target does not authorize an early install/cutover
 ## Native commands available
 
 ```sh
+cargo run --offline --locked --bin coven -- init WORKSPACE
+cargo run --offline --locked --bin coven -- init WORKSPACE --blank --agents "Architect,Implementer,Reviewer"
 cargo run --offline --locked --bin coven -- refresh WORKSPACE
 cargo run --offline --locked --bin coven -- handoff validate FILE --json
 cargo run --offline --locked --bin coven -- handoff collect WORKSPACE --file FILE --expect-sha256 HEX --expect-tasks-revision TOKEN --json
@@ -39,7 +41,7 @@ cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPO
 
 The compiled `target/debug/coven` can also be invoked directly, including with
 Python absent from PATH. Native commands do not invoke Python, subprocesses,
-runtimes or the network. Refresh currently reads source-tree assets and generates
+runtimes or the network. Init/refresh currently read source-tree assets and generate
 monitor commands referring to the retained default wrapper; using those generated
 commands still requires the default CLI. Python is otherwise needed only for
 migration-oracle tests and the existing default CLI. Unsupported commands,
@@ -73,6 +75,8 @@ src/
   task_delivery/unicode.rs Frozen Unicode 16 printability for dashboard labels
   task_time.rs       UTC ISO metadata and hyphenated command/event UUIDs
   workspace.rs       Neutral ordered workspace loading and optional-root selection
+  init.rs            Precreation staging, exclusive snapshot seeds and guarded delivery
+  init/templates_init.rs Initial team TOML, agent notes and structural scaffolding
   refresh.rs         Fully staged workspace refresh with locked re-preparation
   refresh/templates.rs Python-compatible manifest, role and starter generation
   ledger.rs          Complete bounded selected task-ledger replay/projection health
@@ -767,8 +771,8 @@ target/debug/coven task list WORKSPACE --json
 ```
 
 Use the returned task ID (slug collisions append `-2`, `-3`, etc.) and declared
-roster IDs, not display labels. No native init is required for an already-created
-workspace, but native init itself is still unported. Human add/assign output is
+roster IDs, not display labels. No reinitialization is required for an already-created
+workspace; native init deliberately refuses existing workspace entries. Human add/assign output is
 the default; `--json` selects the established structured envelope. Marker-based
 optional workspace selection, title-word joining, assignment's ignored extra
 operands, last-wins repeated flags and long-option prefixes follow the characterized
@@ -881,11 +885,77 @@ Goal/checkpoint reads are capped at 1 MiB; dashboard output at 32 MiB. Projectio
 dashboard sync uncertainty after a confirmed task is a secondary warning, not new
 task-authority uncertainty.
 
-No automatic import/repair, native init/import/recovery CLI, broader lifecycle
+No automatic import/repair, native import/recovery CLI, broader lifecycle
 commands, runtime/provider call, installed entrypoint change or Python fallback is
 included. Manual recovery still uses the retained Python command until that CLI
 family is ported. Input/path/TOML/log/output and Linux-only execution qualifications
 remain explicit preview limits, not claims of complete application parity.
+
+## Native workspace initialization
+
+`init [WORKSPACE]` defaults to the current directory (also for an explicit empty
+operand). It supports the existing `--name`, `--agents`, `--opencode-command`,
+`--multiplexer`, `--example`, `--blank` and deprecated `--force` options, but not
+`--json`. Default example `interactive-demo` seeds the original five-agent roster
+and six tasks. Blank initialization still creates the goal, structural READMEs,
+pending checkpoint documents, roles, starters, manifest and dashboard; it omits
+the spec and example tasks. Comma-separated agent labels are normalized into IDs,
+with the stripped original display labels retained. Parser behavior is characterized
+against Python 3.14.8, including long-option prefixes, last-wins repeated values,
+`option=value`, negative-digit-prefix literals and explicit `--` termination.
+
+The target is resolved without creating it, following symlinks before `..` and
+supporting absent suffixes. Existing unrelated project files are left alone. Any
+reserved top-level entry blocks initialization before semantic seed validation:
+`coven.json`, `coven.toml`, `goal.md`, `spec.md`, `dashboard.md`, `agents`, `prompts`,
+`state`, `logs`, `checkpoints`, `work`, `output`, `tmux`. This includes files,
+empty directories, FIFOs and dangling links. **`--force` never authorizes reset,
+overwrite, adoption or authority recovery.** Existing `state` blocks init without
+needing to interpret task, execution, runtime or pending-import authority.
+
+All seed inputs are loaded, records validated, ordered JSON encoded, both TOML
+documents parsed, and output/readability budgets admitted before mkdir. Initial
+JSON uses Python's ASCII-escaped indent-2 representation; this is separate from
+the existing literal-UTF-8 storage and event encoders. Native pre-admission also
+renders a disposable initial dashboard; actual dashboard publication recaptures
+current state under the workspace guard. Environment `COVEN_MULTIPLEXER` is
+validated before creation and affects effective later reads/dashboard, but does
+not change the supplied multiplexer persisted in the team or final launch message.
+
+Initial files are created in Python's order using exclusive, no-follow/nonblocking
+opens and descriptor type checks, with `0666` subject to umask. They are never
+replaced or truncated. There is no whole-workspace transaction, rollback or
+automatic retry. Creation-phase errors report
+`initialization_stopped_partial_files_preserved_for_inspection`; previously written
+files, the failing partial file, and racing collisions remain for inspection.
+A lost response must not be treated as proof that nothing was created.
+
+Only after initial files exist does init append `workspace.created`, then
+`goal.seeded` and ordered `task.seeded` records for nonblank seeds. Each append
+uses the shared persistent five-second workspace flock. Final dashboard capture,
+render and atomic replacement are also guarded. There is no lock over the entire
+initial file batch. Event/dashboard failure remains an init error, not a task
+commit envelope or warning-success; completed seed/history writes are not undone.
+Initialization creates ordinary snapshot-v1 state, never an imported ledger,
+execution preparation, runtime control, approval or runtime effect.
+
+### Initialization preview limits
+
+- Source-tree example assets, generated monitor-command wrapper selection and
+  the known shared shell-generation follow-ups described for refresh also apply
+  to init. Moving the binary alone is not supported packaging.
+- Shared finite-value/UTF-8/path limits apply; named-user/HOME-absent tilde expansion
+  remains unsupported. Root resolution permits at most 40 symlink expansions.
+- Seed JSON and the admitted complete event log are capped at 8 MiB, individual
+  input/generated text and TOML files at 1 MiB, and staged files plus the disposable
+  dashboard at 32 MiB. These restrictions are checked before creation; later
+  cooperating state changes or I/O failures can still prevent delivery.
+- Example `id` and `seed_message` accept strings, with missing/null/false/empty
+  string fallback. Other non-string values explicitly refuse as
+  `unsupported_init_example_string_profile` rather than approximating Python
+  `str()` semantics. Missing optional assets use the existing defaults; consumed
+  text uses universal-newline handling. Task seeds preserve the existing default/
+  owner-normalization policy, not arbitrary raw seed extensions or statuses.
 
 ## Native workspace refresh
 
@@ -955,7 +1025,7 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The native suite has 265 tests, including a build/CLI-name regression test and an
+The native suite has 280 tests, including a build/CLI-name regression test and an
 integration harness with **109 handoff parity
 cases** and one explicit deferred non-UTF-8 reporting case. Characterizations cover
 otherwise-valid duplicate keys and escaped-equivalent keys, required null versus
@@ -1173,6 +1243,22 @@ sync uncertainty, preflight observation boundaries, context reads despite existi
 roles, and exact/over aggregate output and checkpoint-reference work limits. Linux
 was exercised; macOS, crash/power-loss behavior and hostile path races are not claimed.
 
+Initialization adds **385 grouped CLI compatibility cases**: exact complete
+file inventories, stdout, initial JSON/TOML/prompt/dashboard bytes and seed event
+order, validated native timestamps/UUIDs replayed through the Python oracle,
+default/blank/custom rosters, environment multiplexer behavior, missing/nested/
+alias/tilde paths, negative-prefix parser literals, and native-init/refresh plus
+Python task-writer interoperability. Reserved-entry tests cover all thirteen names,
+five path types and every force/blank combination, with byte/inode/mode/mtime
+preservation on refusal. Existing valid, malformed, pending and active authority
+states remain untouched. Native children run with no Python/runtime on PATH.
+A real `RLIMIT_FSIZE` failure with `SIGXFSZ` ignored preserves a 128-byte partial
+seed in both implementations, emits no success, creates no lock, and refuses
+reinitialization. Private tests cover every seed collision boundary, partial writes,
+root mkdir failure, event/dashboard failure preservation, precreation budget
+refusal, custom-example fallbacks and CRLF text. The previously unsupported-init
+parser inventory now uses still-unsupported task completion instead.
+
 ## Migration coverage and next gates
 
 | Surface | Current implementation | Next gate |
@@ -1182,7 +1268,7 @@ was exercised; macOS, crash/power-loss behavior and hostile path races are not c
 | Finite values, ordered extensions, records, snapshot task JSON listing | Native bounded preview; Python still default | Close stated acceptance limits before full legacy parity |
 | Persistent workspace flock, evidence/ledger immutable publication and mutable replacement | Native guarded primitives used by task/baseline pipelines | Integrate remaining writer families without changing their policies |
 | Workspace refresh CLI | Native bounded source-tree preview; Python still default | Installed assets, documented profiles and shared shell-generation follow-ups |
-| Workspace init CLI | Python only | Asset/preflight/init reservation and command-level parity |
+| Workspace init CLI | Native bounded source-tree preview; Python still default | Installed assets, documented profiles and shared shell-generation follow-ups |
 | Task-ledger read/replay, frozen receipt lookup, selected confirmation and projection diagnostics | Native bounded library/read-only preview | Close supported-profile limits; durable retry coordination/delivery still required |
 | Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK only | CLI preflight/delivery integration and remaining profile/cross-platform gates |
 | Task add/assign, commit projection, events and dashboard | Native snapshot/active-ledger commands with CAS/replay/delivery | Close documented profiles and list/runtime gap before default parity |
@@ -1196,8 +1282,8 @@ was exercised; macOS, crash/power-loss behavior and hostile path races are not c
 | Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
 | Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
 
-The next substantive milestones are native workspace init and state import/recovery
-command routes, then the remaining mutation/observation/runtime families.
+The next substantive milestone is native state import/recovery command routes,
+then the remaining mutation/observation/runtime families.
 The task milestone does not authorize default-entrypoint cutover. Remaining writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and exit-2 uncertainty. No old

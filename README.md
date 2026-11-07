@@ -103,6 +103,21 @@ event/dashboard/projection warnings do not undo a committed task. See
 [RUST_MIGRATION.md](RUST_MIGRATION.md#native-task-addassign-workflow) for retry rules,
 bounded profiles and the remaining list/runtime preview gap.
 
+Native workspace initialization is now available for a new directory or an
+existing project with no reserved workspace entries:
+
+```bash
+target/debug/coven init /path/to/new-workspace
+target/debug/coven init /path/to/blank-workspace --blank --agents "Architect,Implementer,Reviewer"
+```
+
+The default seeds the interactive demo; `--blank` creates structure without example
+tasks. All seed inputs are staged before creation, files are created exclusively,
+and **`--force` never authorizes a reset**. Failures may preserve partial files for
+inspection; do not blindly repeat initialization. No ledger, execution authority,
+or runtime is activated. See [native initialization](RUST_MIGRATION.md#native-workspace-initialization)
+for source-tree asset requirements, bounded profiles and failure handling.
+
 Native workspace refresh is also available:
 
 ```bash
@@ -122,7 +137,7 @@ it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback
 or separately named native CLI. Explicit native handoff collection writes
 only local unverified evidence. Other task/authority mutation commands and runtime
-effects are not yet native; no native init/import/recovery CLI is enabled.
+effects are not yet native; no native import/recovery CLI is enabled.
 Unsupported native commands fail closed without delegation.
 This is not yet a complete
 Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,

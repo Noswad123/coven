@@ -175,7 +175,7 @@ def main(binary):
         # Unported effectful operations reject before workspace creation or fallback.
         absent = root / "must-not-exist"
         before = snapshot(workspace)
-        for args in (("execution","enable",absent), ("init",absent),
+        for args in (("execution","enable",absent), ("task","complete",absent,"x"),
                      ("session","prompt",absent,"--execute"), ("task","remove",absent,"x")):
             native(*args,expected=2)
             assert not absent.exists()

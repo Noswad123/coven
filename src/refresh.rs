@@ -18,7 +18,7 @@ use crate::{
 };
 use std::{fs, io::Write, path::Path, time::Duration};
 
-mod templates;
+pub(crate) mod templates;
 
 const MAX_TEXT: usize = 1_048_576;
 const MAX_OUTPUT: usize = 32 * MAX_TEXT;
@@ -156,7 +156,7 @@ fn example_directory(source: &Path, example: Option<&str>) -> Result<Option<Stri
     Ok(Some(directory.to_str().unwrap().to_owned()))
 }
 
-fn launch_cli() -> Result<String> {
+pub(crate) fn launch_cli() -> Result<String> {
     let command = match std::env::var("COVEN_COMMAND") {
         Ok(command) if !command.is_empty() => command,
         Ok(_) | Err(std::env::VarError::NotPresent) => {

@@ -243,6 +243,16 @@ pub(crate) fn prepare_dashboard(root: &Path) -> Result<String> {
     render(&capture(root)?)
 }
 
+/// Admission-only initial render. Publication must recapture under the guard.
+pub(crate) fn prepare_initial_dashboard(state: WorkspaceState, goal: &str) -> Result<String> {
+    let goal = records::trimmed(goal);
+    render(&CapturedDashboard {
+        state,
+        goal: records::trimmed(goal.strip_prefix("# Goal").unwrap_or(goal)).to_owned(),
+        statuses: ["pending".into(), "pending".into()],
+    })
+}
+
 trait DashboardIo {
     fn capture(&self, root: &Path, _guard: &WorkspaceGuard) -> Result<CapturedDashboard> {
         capture(root)

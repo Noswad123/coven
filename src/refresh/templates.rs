@@ -1,7 +1,7 @@
 use super::{MAX_OUTPUT, Result, admit, records};
 use crate::error::require;
 
-pub(super) fn slug(text: &str) -> Result<String> {
+pub(crate) fn slug(text: &str) -> Result<String> {
     let mut out = String::new();
     let mut separator = false;
     for c in records::trimmed(text).to_lowercase().chars() {
@@ -57,7 +57,7 @@ fn q(text: &str) -> String {
     out
 }
 
-fn toml_string(text: &str) -> String {
+pub(crate) fn toml_string(text: &str) -> String {
     serde_json::to_string(text)
         .unwrap()
         .replace('\u{7f}', "\\u007f")
@@ -83,7 +83,7 @@ fn normalize(command: &str) -> String {
     }
 }
 
-pub(super) fn manifest(
+pub(crate) fn manifest(
     name: &str,
     root: &str,
     agents: &[&str],
@@ -165,7 +165,7 @@ fn push(out: &mut String, text: &str) -> Result<()> {
     Ok(())
 }
 
-fn role(agent: &str) -> String {
+pub(crate) fn role(agent: &str) -> String {
     match agent.to_lowercase().as_str() {
         "orchestrator" => "Coordinate tasks, checkpoints, messages, and dashboard state.",
         "architect" => "Break goals into plans, identify tradeoffs, and define checkpoints.",
@@ -180,7 +180,7 @@ fn role(agent: &str) -> String {
     }.into()
 }
 
-pub(super) fn prompt(agent: &str, root: &str, context: &str) -> String {
+pub(crate) fn prompt(agent: &str, root: &str, context: &str) -> String {
     let context = records::trimmed(context);
     let context = if context.is_empty() {
         String::new()
@@ -217,7 +217,7 @@ Rules:
 ", role(agent))
 }
 
-pub(super) fn starter(agent: &str, root: &str) -> String {
+pub(crate) fn starter(agent: &str, root: &str) -> String {
     format!("Read `{root}/prompts/{agent}.md` and begin as `{agent}`.
 
 Your first actions:
