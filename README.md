@@ -103,6 +103,20 @@ event/dashboard/projection warnings do not undo a committed task. See
 [RUST_MIGRATION.md](RUST_MIGRATION.md#native-task-addassign-workflow) for retry rules,
 bounded profiles and the remaining list/runtime preview gap.
 
+Native workspace refresh is also available:
+
+```bash
+target/debug/coven refresh /path/to/workspace
+```
+
+It regenerates the tmux manifest, starter prompts, missing role prompts, and
+dashboard under the shared workspace lock, preserving authored state and existing
+role prompts. It does not initialize a workspace, import/repair task authority,
+or launch a runtime. This source-tree preview uses the repository's example assets
+and generates monitor commands targeting the retained default wrapper (or an
+explicit `COVEN_COMMAND`), not the incomplete native runtime surface. See
+[native refresh limits and follow-ups](RUST_MIGRATION.md#native-workspace-refresh).
+
 The current `bin/coven` remains Python until replacement coverage is complete;
 it is also the temporary compatibility oracle, not a second long-term product.
 The final distribution will contain only the Rust `coven`, with no Python fallback

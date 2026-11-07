@@ -13,7 +13,7 @@ use std::path::PathBuf;
 #[command(
     name = "coven",
     version,
-    about = "Native migration preview: local task commands, evidence capture and authority readers; Python coven remains the default"
+    about = "Native migration preview: workspace refresh, local task commands, evidence capture and authority readers; Python coven remains the default"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -22,6 +22,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Regenerate runtime guidance and dashboard without launching a runtime.
+    Refresh {
+        #[arg(default_value = ".", value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+    },
     Checkpoint {
         #[command(subcommand)]
         command: Checkpoint,
@@ -165,6 +170,13 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Refresh { workspace } => {
+            return Ok(TaskOutput {
+                stdout: coven::refresh::refresh_argument(&workspace)?,
+                warnings: Vec::new(),
+                exit_code: 0,
+            });
+        }
         Command::Task {
             command:
                 Task::Add {
@@ -526,5 +538,31 @@ mod tests {
         }
         assert!(Cli::try_parse_from(["coven", "task", "add"]).is_err());
         assert!(Cli::try_parse_from(["coven", "task", "assign"]).is_err());
+    }
+
+    #[test]
+    fn refresh_syntax_is_optional_workspace_without_json() {
+        for (args, expected) in [
+            (vec!["coven", "refresh"], "."),
+            (vec!["coven", "refresh", ""], ""),
+            (
+                vec!["coven", "refresh", "/workspace with spaces"],
+                "/workspace with spaces",
+            ),
+            (vec!["coven", "refresh", "--", "-workspace"], "-workspace"),
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            let Command::Refresh { workspace } = cli.command else {
+                panic!("wrong command");
+            };
+            assert_eq!(workspace, PathBuf::from(expected));
+        }
+        for args in [
+            vec!["coven", "refresh", "--json"],
+            vec!["coven", "refresh", "workspace", "--json"],
+            vec!["coven", "refresh", "workspace", "extra"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
     }
 }

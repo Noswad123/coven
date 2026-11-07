@@ -46,7 +46,14 @@ fn optional_bytes(
     }
 }
 
-fn validate_log(bytes: &[u8]) -> Result<usize> {
+pub(crate) fn validate_log(bytes: &[u8]) -> Result<usize> {
+    visit_log_records(bytes, &mut |_| Ok(()))
+}
+
+pub(crate) fn visit_log_records(
+    bytes: &[u8],
+    visit: &mut dyn FnMut(&Value) -> Result<()>,
+) -> Result<usize> {
     require(bytes.len() <= MAX_LOG, "unsupported_event_log_size_profile")?;
     require(
         bytes.is_empty() || bytes.last() == Some(&b'\n'),
@@ -77,6 +84,7 @@ fn validate_log(bytes: &[u8]) -> Result<usize> {
             }
         })?;
         require(record.as_object().is_some(), "invalid_jsonl_record")?;
+        visit(&record)?;
     }
     Ok(count)
 }
@@ -228,6 +236,11 @@ fn capture(root: &Path) -> Result<CapturedDashboard> {
 
 pub(crate) fn refresh_dashboard(root: &Path, guard: &WorkspaceGuard) -> Result<()> {
     refresh_with(root, guard, &SystemDashboardIo)
+}
+
+/// Read-only preparation seam: callers must retain their guard through publication.
+pub(crate) fn prepare_dashboard(root: &Path) -> Result<String> {
+    render(&capture(root)?)
 }
 
 trait DashboardIo {
