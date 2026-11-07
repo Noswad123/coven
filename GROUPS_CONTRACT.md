@@ -2,15 +2,19 @@
 
 ## Overview
 
-Coven can group **already-running agents**, assign display roles, and explicitly
-publish `GROUP NAME · ROLE` through Kitsune's generic annotations. Group and
-participant UUIDs are Coven declarations, with human selectors for CLI use; they
+Coven can group **already-running participants**, assign display roles, and explicitly
+publish `GROUP NAME · ROLE` through Kitsune's generic annotations. Explicit
+`publish --live` can append fresh pinned ` · legacy runner busy` evidence using
+Kitsune's generic absolute-expiry capability; default publication stays static.
+Group and participant UUIDs are Coven declarations, with human selectors for CLI use; they
 are independent of task authority, the workspace agent roster, and native runtime
 identity. Roles do not change Djinn policy, personas, prompts, or configuration.
 
-Only the Kitsune presentation adapter is implemented in v1. The model is not
-Djinn-specific, but this is not universal runtime support, native group status,
-scheduling, agent-feature extraction, or automatic following of replacement agents.
+Only the Kitsune presentation adapter is implemented in v1. Explicit Djinn live
+attachments and read-only busy/unknown status are a separate opt-in path; see
+[GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md). The model is not
+Djinn-specific, but this is not universal runtime support, native group lifecycle,
+scheduling, complete agent-feature extraction, or automatic following of replacement agents.
 No agent is launched, resumed, sent terminal input, or cancelled by these commands.
 
 ### Quick start: existing agents, separate orchestration workspace
@@ -38,10 +42,23 @@ coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
 coven group list WORKSPACE --json
 ```
 
-Choose the **actual current pane ID from `observe`'s `agents` inventory** (the
-example ID is not a lookup by name). Agents without a native reference can join;
-an arbitrary pane absent from the agent inventory cannot. `add` reads a fresh
-snapshot and writes local membership only; it sends no annotation or other UI write.
+By default, choose the **actual current pane ID from `observe`'s `agents` inventory**
+(the example ID is not a lookup by name). Agents without a native reference can
+join; a pane absent from that inventory cannot join through default binding.
+Alternatively, explicitly opt into fresh Coven process evidence, independently of
+the agent inventory:
+
+```sh
+coven observe kitsune --socket ABS --process-pane w18:p85 --json
+coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
+  --socket ABS --pane w18:p85 --process-evidence
+```
+
+The observation is for inspection, not an import: `add --process-evidence` reads
+fresh bracketed evidence itself and recognizes only reported `djinn`/`djinn-ui`
+executable families. It explicitly opts the group authority into at least schema 2
+(preserving schema 3), which older readers reject. Both add modes write local membership only; neither sends
+an annotation or other UI write.
 The older one-shot `observe` command still has no annotation-write capability.
 
 For labels, the user must first manually enable a dedicated source in Kitsune's
@@ -77,10 +94,13 @@ are optional; replace `TOKEN` with a freshly inspected group revision.
 
 ```text
 coven group create WORKSPACE auth-review --name 'Authentication review' [--expect-revision TOKEN] [--json]
-coven group add WORKSPACE auth-review --member backend --role 'Investigator' --socket ABS --pane w18:p85 [--rebind] [--expect-revision TOKEN] [--json]
+coven group add WORKSPACE auth-review --member backend --role 'Investigator' --socket ABS --pane w18:p85 [--process-evidence] [--rebind] [--expect-revision TOKEN] [--json]
 coven group remove WORKSPACE auth-review --member backend [--expect-revision TOKEN] [--json]
 coven group list WORKSPACE [--json]
-coven group publish WORKSPACE auth-review --socket ABS --source coven [--duration SECONDS] [--json]
+coven group attach-live WORKSPACE GROUP --member KEY --file ABS_RUNTIME_UUID_JSON --runtime UUID --instance UUID --session ID [--reattach] [--expect-revision TOKEN] [--timeout SECONDS] [--json]
+coven group detach-live WORKSPACE GROUP --member KEY [--expect-revision TOKEN] [--json]
+coven group status WORKSPACE GROUP [--member KEY] [--timeout SECONDS] [--json]
+coven group publish WORKSPACE auth-review --socket ABS --source coven [--live] [--duration SECONDS] [--json]
 ```
 
 `create --name` defaults to the selector when omitted. `--duration` defaults to 60
@@ -94,49 +114,92 @@ must already be enabled. Output is JSON in both modes; `--json` makes it compact
   accepts the newly observed binding while preserving that participant UUID.
   Stable comparison excludes only `observed_at` and `pane_id_at_binding`: a fresh
   observation timestamp or same-terminal pane move alone is an unchanged retry,
-  not a binding refresh. Endpoint, terminal, agent-kind and native-reference changes
-  are not ignored.
+  not a binding refresh. All other binding fields are stable, including endpoint,
+  terminal, provenance, process interpreter/matches, agent hint and native reference.
+  Process matches are canonicalized before comparison; response ordering alone
+  is not a change. Switching evidence variants also requires `--rebind`.
+- `add --process-evidence`: fresh `session.snapshot` -> `pane.process_info` ->
+  `session.snapshot` reads must agree on the selected pane mapping. No saved
+  observation import, inventory fallback, native identity or execution grant exists.
+  Omit the flag to retain the default agent-inventory snapshot binding.
 - `remove`: removes membership only, including an unchanged result when absent.
   It neither clears remote labels nor cancels agents; publication counters remain.
-  Removing then re-adding creates a new participant UUID.
+  Removing then re-adding creates a new participant UUID and no live attachment.
+- `attach-live` / `detach-live` / `status`: existing members only; see the
+  [live contract](GROUP_LIVE_STATUS_CONTRACT.md#api--interfaces) for exact fields,
+  schema-3 opt-in, mandatory preflight-token/participant CAS, expiry and exit codes.
+  Changed stable bindings via `add --rebind` atomically clear a nonnull attachment
+  and return `live_attachment_cleared: true`; role/timestamp/pane-only changes or
+  no-op rebind preserve it. Attachment never verifies terminal/session equivalence.
 - `list`: reads without peer contact, locks, file creation, or durability
   confirmation. Returns `initialized`, `revision`, `groups`, `authorization: none`,
   `dispatchable: false`, and unestablished native lifecycle/job completion. It
   intentionally omits internal counters. Uninitialized reads do not create a lock.
 
 Mutations return `outcome: committed|unchanged`, `revision`, `group`, `delivery`,
-`authorization: none`, and `dispatchable: false`; add/remove also return `member`
+`authorization: none`, and `dispatchable: false`; add/remove/attach/detach also return `member`
 (null for an absent removal). `delivery.outcome` is `durably_committed` or
 `durability_uncertain`. Success exits 0; uncertain mutation durability exits 2;
 ordinary errors exit 1 and argument-parser errors exit 2. There are no durable
 exact-request receipts or exactly-once retry promises. Inspect before retrying;
-optional CAS checks the fresh current token even for an otherwise unchanged retry.
+optional user CAS checks the fresh current token even for an otherwise unchanged
+retry. Attach/detach additionally always fence the captured preflight token and
+participant UUID, whether or not the user supplies a token.
 
 ### Exact authority schema and limits
 
-`state/groups.json` is a separate, bounded schema-1 authority, not a task-ledger
-projection. All objects below have exactly the listed fields; unknown/duplicate
+`state/groups.json` is a separate, bounded authority, not a task-ledger projection.
+Schema 1 permits snapshot bindings only; schemas 2/3 permit mixed snapshot/process
+bindings. Schema 3 additionally requires `live_attachment` on every member.
+All objects below have exactly the listed fields; unknown/duplicate
 JSON keys are rejected. The existing workspace needs a regular `coven.json` and
 nonsymlink `state/` directory, not a healthy task/agent/execution authority.
 
 ```text
-root = {schema_version: 1, workspace_id: UUID, content_revision: u64,
+root = {schema_version: 1|2|3, workspace_id: UUID, content_revision: u64,
         groups: [group], publication_counters: [counter]}
 group = {group_id: UUID, key: selector, name: display, members: [member]}
-member = {participant_id: UUID, key: selector, role: display, binding: binding}
+member = member_1_or_2 (schema 1/2) | member_3 (schema 3)
+member_1_or_2 = {participant_id: UUID, key: selector, role: display, binding: binding}
+member_3 = {participant_id: UUID, key: selector, role: display, binding: binding,
+            live_attachment: null|attachment}
 binding = {presentation: presentation, evidence: evidence}
 presentation = {adapter: "kitsune", endpoint: endpoint,
                 terminal_id: string, pane_id_at_binding: string}
 endpoint = {path: resolved_absolute_path, device: nonnegative_integer,
             inode: nonnegative_integer}
-evidence = {provenance: "kitsune.session.snapshot", observed_at: UTC_ISO_timestamp,
-            agent_kind_hint: string|null, native_reference: native|null,
-            native_binding: "unestablished"|"observed_reference"}
+evidence = snapshot_evidence | process_evidence_variant
+snapshot_evidence = {provenance: "kitsune.session.snapshot", observed_at: UTC_ISO_timestamp,
+             agent_kind_hint: string|null, native_reference: native|null,
+             native_binding: "unestablished"|"observed_reference"}
+process_evidence_variant = {provenance: "kitsune.pane.process_info",
+            observed_at: UTC_ISO_timestamp, agent_kind_hint: "djinn",
+            native_reference: null, native_binding: "unestablished",
+            process_evidence: {interpreter: "coven.kitsune.djinn-process.v1",
+                               matches: [match]}}
+match = {pid: positive_u32, executable_family: "djinn"|"djinn-ui",
+         rule: "exact_posix_argv0_basename"}
 native = {source: string, agent: string, kind: "id"|"path", value: string}
 counter = {endpoint: endpoint, source: source_ID, epoch: nonempty_string,
            watermarks: {terminal_id: positive_u64}}
 ```
 
+- New authorities start at schema 1. A successful explicit process add/rebind
+  promotes 1 -> 2, atomically inside that group mutation, never reducing schema 3.
+  UUIDs, publication counters and the CAS algorithm are preserved; ordinary changed-content revision
+  rules still apply. Schema 2 is a minimum-reader-version opt-in: older schema-1
+  readers fail closed. Removal of process members or rebind to snapshots never
+  downgrades it. Reads and snapshot-only operations do not initiate promotion.
+- First successful `attach-live` atomically promotes 1/2 -> 3, normalizes all
+  members to null, then sets the target attachment while preserving IDs, bindings
+  and counters and incrementing content revision once. Older readers fail closed;
+  reads never migrate and detach/removal never downgrade. Exact seven-field
+  [attachment metadata](GROUP_LIVE_STATUS_CONTRACT.md#stored-authority-schema-3)
+  contains no activity, sample, sequence or TTL. Detach on schema 1/2 is a no-op,
+  not promotion; schema-3 additions start with a null attachment.
+- Process matches are nonempty, at most 1024 entries, with unique PIDs (integers
+  1..2^32-1, never booleans), sorted by `(pid, executable_family, rule)`. Stored
+  noncanonical order and variant-inappropriate fields are rejected.
 - UUIDs are canonical; group/participant UUIDs are unique across the authority.
   The workspace UUID is allocated by first group creation, not borrowed from the
   task ledger. Selectors match `[a-z0-9][a-z0-9_-]{0,63}`; group keys are globally
@@ -166,6 +229,12 @@ This is a whole-group-content token, **not an exact-file-byte hash**:
 `publication_counters`, schema metadata, and JSON formatting are excluded.
 Content revisions increment on changed declarations, not no-ops or reservations;
 overflow is rejected. Counter updates alone do not invalidate CAS/publisher content.
+The `groups-v1` prefix denotes the **token format**, not authority schema 1;
+schema-2/3 authorities retain that prefix and hashing algorithm. Attachments are
+covered group content, so declaration changes can stop a running publisher at its
+normal content fence. Default publication never reads attachment artifacts or
+appends live activity; its static group/role labels retain their 6000 ms TTL. The separate
+[live opt-in](#opt-in-live-publication) requires generic end-to-end expiry support.
 
 All declaration mutations and cycle reservations reload under the persistent
 `state/.workspace.lock`; changes atomically replace the one authority with file and
@@ -193,12 +262,20 @@ revisions can cause rejection, not automatic revision bump/replay.
 
 ## Data Flow
 
-1. `add` validates local selectors/group/CAS, then reads only `session.snapshot`
-   outside the mutation lock (3-second transport deadline, 1 MiB response budget).
-   It binds one exact current agent inventory entry, then commits under the lock.
+1. `add` validates local selectors/group/CAS, then observes outside the mutation
+   lock. Default binding reads one `session.snapshot` and selects an exact agent
+   entry. `--process-evidence` instead performs three bracketed reads of the exact
+   pane, with a shared 3-second deadline and aggregate 1 MiB read budget. Successful
+   evidence is committed under the lock with a fresh check of any supplied CAS token.
 2. `publish` freezes the whole-content revision and endpoint, takes the lease,
    and reads a fresh snapshot each cycle. It requires annotation support, the
-   selected enabled source, the same endpoint, and unchanged terminal/native hints.
+   selected enabled source and the same endpoint. Snapshot members require unchanged
+   agent/native hints. Process members use the current **panes** lookup, then each
+   gets three fresh bracketed reads pinned to its bound terminal; stable evidence
+   must match before any counter reservation or annotation write. Thus a cycle
+   with process members uses one initial snapshot + three reads per process member,
+   sharing one 3-second cycle deadline and aggregate 1 MiB read budget. Snapshot-only
+    behavior is unchanged; generic annotation writes retain their existing budget.
 3. It finds each bound terminal's **current pane**, builds fresh labels and pins
    writes to terminal ID + pane ID + annotation epoch + source. Same-terminal pane
    moves need no membership mutation. The membership does not bind an annotation
@@ -209,24 +286,139 @@ revisions can cause rejection, not automatic revision bump/replay.
 5. Serial `pane.annotate` writes require correlated `ok` acknowledgements. Cycle
    starts use a fixed 2-second interval and a shared 3-second cycle I/O budget,
    capped by the remaining run duration; at most 16 targets, no overlap or catch-up
-   bursts. TTL is always 6000 ms. Filesystem fsync is not universally wall-clock
+   bursts. Default TTL is always 6000 ms. Filesystem fsync is not universally wall-clock
    bounded, so these deadlines are not a hard bound on total process lifetime.
 
+### Opt-in live publication
+
+```text
+coven group publish WORKSPACE GROUP --socket ABS --source SOURCE --live [--duration SECONDS] [--json]
+```
+
+`--live` requires **literal** `annotations.valid_until_unix_ms: true` on every
+cycle's `session.snapshot`. Missing/false/null/nonboolean/lost support stops the
+invocation, even if every participant is unknown. Protocol 18, application version,
+ping or speculative writes cannot substitute for discovery. Existing epoch,
+enabled-source, endpoint and strict/generic snapshot selection fences still apply.
+An unsupported server remains usable through a separately selected static invocation.
+
+After **all** terminal/binding/process preflight, the publisher calls in-process
+`group_live.status`, outside the workspace lock, using at most one second of the
+remaining shared three-second cycle/run budget. It validates the exact frozen
+whole-content token, group identity, participant UUID set, keys/roles and attachment
+pins. Whole-projection/identity failure aborts before reservation. Individual source
+loss, incompatible/invalid/expired samples, changed generation or unattached rows
+are unknown and produce role-only text; there is no automatic reattach/follow.
+
+Only fresh scoped busy yields `GROUP NAME · ROLE · legacy runner busy`, with
+`ttl_ms: 3000` as a ceiling and integer `valid_until_unix_ms`. This is legacy runner
+ownership, not provider progress, idle, stopped, blocked, health, readiness, native
+lifecycle, success or job completion. Attachments are explicit declarations, not
+verified terminal/UI-session equivalence; shared pins do not prove distinct workers.
+Role-only requests keep `ttl_ms: 6000` and omit the absolute field. Without `--live`,
+the payload, summary and 6000 ms text remain unchanged, with zero attachment reads.
+
+Before status, anchor wall milliseconds `W0` and monotonic seconds `M0`. With the
+row's already-conservative remaining lifetime `R`, original sample `S` and `V=3000`:
+
+```text
+Dwall = min(S + V, floor(W0 + R))
+Dmono = M0 + R / 1000
+later remaining = min(Dwall - W, (Dmono - M) * 1000)
+outbound D = min(Dwall, floor(W + (Dmono - M) * 1000), prior derived D)
+```
+
+The absolute integer is bounded by `0..9007199254740991`; rounding never grants an
+extra millisecond. Call-start anchoring deliberately double-deducts some latency.
+Ceilings only decrease after later-member reads, group recheck, reservation/fsync,
+prior sends and at the transport send boundary after connection/serialization work.
+No receipt, timestamp on a report, attachment time, mtime, file copy or refresh
+grants a new three-second lease. Kitsune enforces the absolute ceiling at actual
+mutation after queueing and maps the residual validity to nonextending monotonic
+expiry; a queued expired request rejects with `annotation_expired`, not `ok`.
+
+Whole-target durable reservation/CAS/counter semantics are unchanged. If a busy
+target is still provably never sent but its evidence expires after reservation,
+it may be recomposed as role-only using that same burned revision. Exhausted cycle
+budget sends nothing more. Any rejection or ambiguous delivery stops without repair,
+retry, revision bump or replay; uncertainty never refunds a counter. A valid `ok`
+acknowledges bounded acceptance, not visibility or freshness when the reply arrives.
+
+The composed frame expires **as a whole**, including group/role text. A later normal
+refresh may restore role-only text at a higher revision; there is no hidden static
+layer, lower-source fallback or exit-time cleanup clear. Group state stores no
+activity/sample/sequence history/lease. Both modes share the existing lease and
+endpoint/source/epoch counter stream, with no new authority or native action.
+
+This pilot assumes compatible source/server Unix clocks, no disruptive wall change
+between evidence and acceptance, normal monotonic progression and suitable local
+filesystems. Observed backward wall progression or monotonic regression stops live
+publication without further writes, retaining burned counters; forward jumps can
+expire early. Discovery does **not** attest clock quality. Unknown skew or rollback
+before acceptance can overestimate validity; arbitrary rollback/skew/suspend safety
+and hard-real-time pixel expiry are not promised. Stronger deployments require a
+separately approved clock design, not another implicit handshake.
+
 ## Edge Cases
+
+### Snapshot contract selection
+
+All process brackets (observation, add/rebind, and publication, including mixed
+groups) use the [generic pane projection](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md#generic-pane-snapshot-projection),
+not the unchanged strict legacy `_snapshot` validator. For the **initial snapshot
+of each publication cycle**, the contract is selected before parsing from validated
+group-member provenance:
+
+| Group members | Initial snapshot | Process brackets |
+| --- | --- | --- |
+| Process only | Generic pane projection | Generic pane projection |
+| Mixed process/snapshot | Strict legacy validation | Generic pane projection |
+| Snapshot only | Strict legacy validation | None |
+
+There is no strict-to-generic fallback. Mixed and snapshot-only groups retain
+legacy inventory consistency and snapshot-member agent/native-hint checks exactly
+as before. Generic snapshots require version, protocol 18 and at most 1024 panes
+with all four bounded, nonempty printable whitespace-free opaque locators; pane
+and terminal IDs must each be globally unique. Workspace/tab IDs may repeat.
+Only version/protocol/pane locators and optional annotation-descriptor presence
+survive projection. Legacy metadata may be absent or semantically malformed, but
+all unused JSON must still satisfy the shared decoder's global bounds and syntax;
+no fields are filtered before decoding.
+
+Process observation/add ignore annotation-descriptor semantics and need no
+annotation opt-in. Publication always validates the descriptor strictly: absent
+means unsupported, present null or malformed is an error. Enabled-source/epoch
+checks remain unchanged. Publication checks the expected bound terminal in the
+first bracket snapshot before querying process info; endpoint/mapping fences,
+aggregate byte budgets, deadlines and post-decode deadline checks are unchanged.
 
 - Any rejection, missing/invalid acknowledgement, uncertain delivery, changed
   identity/endpoint/epoch, disabled source, or group-content drift stops the run.
   No automatic retry, revision bump, payload replay, rebind, or counter reset.
   Partial remote effects are possible; earlier acknowledgements are not rolled back.
-- A changed agent-kind hint or native reference (including null -> reported),
+- For snapshot members, a changed agent-kind hint or native reference (including null -> reported),
   missing bound terminal, or replacement socket inode after handoff needs explicit
   inspection and, for changed bindings, `add --rebind`. No automatic adoption.
+- For process members, missing/unrecognized/changed evidence stops the cycle before
+  any reservation or write, with no snapshot fallback or automatic rebind. Valid
+  native-reference/classification changes in Kitsune are ignored for this variant,
+  as are absent or semantically malformed legacy fields on generic reads. A mixed
+  group's initial snapshot still requires strict legacy validation. Same-terminal pane moves are
+  allowed once bracketed evidence is stable. PID reuse/ABA and intervening mapping
+  changes remain possible: matching samples are not atomic process identity.
+- Djinn-family recognition includes help/maintenance modes, not active-agent truth.
+  Missing argv, launcher/renamed binaries, background or headless work may remain
+  unrecognized; unknown does not prove absence. There is no automatic enrollment,
+  migration fallback, replacement following, or new native action.
 - Group edits after a cycle is admitted can still allow that cycle's old label to
   be sent. They stop publication on the next content check, not retroactively;
   stopping/removing membership does not cancel admitted writes. Text expires by TTL.
 - Socket checks require a same-user private Unix socket (no group/other mode bits),
   resolve parent aliases, and fence device/inode. Filesystem checks are not peer
   authentication, a sandbox, race elimination, or rollback/tamper-proof authority.
+  The shorter byte-encoded selected/resolved pathname is used for a single
+  connection attempt so parent-symlink expansion need not overflow the Unix-socket
+  address limit. Identity stays canonical; alias retargeting fails the fences.
 - Read requests can trigger Kitsune's existing housekeeping (expiry, event drainage,
   title sync, possible default-workspace creation/spawn). Snapshot receipt and
   persisted native references do not attest freshness or zero server-side effects.
@@ -243,6 +435,14 @@ states are `outcome_unknown`, `durability_uncertain`, or `durably_committed`;
 target phases are `unsent`, `in_flight`, `acknowledged`, `rejected`, or `uncertain`.
 These records derive the returned aggregate counts; they are not emitted as a
 per-target durable receipt log.
+
+Only live summaries additionally carry `publication_mode: live`, `ttl_ms: null`,
+`static_ttl_ms: 6000`, `live_max_age_ms: 3000`, and clock/scope limitations. Safe
+deduplicated diagnostics include `live_source_unknown` / `live_source_expired`;
+these can accompany a successful role-only refresh. Whole failures include
+`annotation_deadline_unsupported`, `live_status_invalid`, `live_status_unavailable`,
+`live_clock_regressed` or `live_clock_unavailable`. No native artifact bodies or
+distinct-worker counts are exposed. Static summaries remain unchanged.
 
 | Summary field | Meaning |
 | --- | --- |
@@ -268,26 +468,64 @@ coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
 coven group remove WORKSPACE auth-review --member backend --json
 ```
 
-For changed binding evidence, inspect the selected agent first and explicitly add
-`--rebind`; never treat a stale revision or native-reference change as an automatic retry.
+For changed binding evidence, inspect the selected participant first and explicitly
+add `--rebind`; never treat a stale revision or evidence change as an automatic retry.
+For a process binding, retain `--process-evidence` on role updates/rebinds:
+
+```sh
+coven group add WORKSPACE auth-review --member backend --role 'Reviewer' \
+  --socket ABS --pane w18:p85 --process-evidence --rebind \
+  --expect-revision '<current group token>' --json
+```
 
 ## Validation
 
-The focused group suite passes **83 tests**: 29 authority, 42 publisher, and 12
-CLI/workflow tests. Coverage includes unresolved native references, durable
-reservations, concurrent mutations, process death, publisher lease release,
-trace-injected interrupt boundaries, private fake socket acknowledgements, and the
-real wrapper. The complete Coven offline suite passes **547 tests** (317 seconds).
-Shell syntax and diff whitespace checks pass; review found no outstanding material
-issues. These results are not live-server or native-lifecycle validation. No user
-configuration, handoff, agent process, or live annotation was changed during this slice.
+The full offline suite passes **763 tests**, including 33 opt-in live-publisher
+tests, 24 live-attachment authority tests and 34 workflow/status tests. Existing
+snapshot/process bindings, publisher durability/interrupt handling, counters, and generic snapshot contracts
+remain covered. Schema 3 still stores declarations only; live publication is
+ephemeral and explicitly opted in, with no new native authorization. Run with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
+```
+
+Focused live-publisher checks use private source files, controlled clocks and fake
+AF_UNIX endpoints. They cover literal-true discovery, scoped text, source/generation
+loss, whole-content/participant/pin fences, later-read/reservation/connect/send
+delays, simulated queued rejection, residual acceptance/whole-frame expiry models,
+role-only restoration, observed clock regressions, malformed/lost acknowledgements,
+partial sends and reservation uncertainty. Actual Kitsune queue/render/quiet-expiry
+enforcement and cross-lane integration are not validated by these producer fixtures.
+
+Coverage for this slice includes strict schema variants/PID bounds/order,
+atomic promotion preserving IDs/counters, failed promotion and concurrent CAS,
+mixed groups, canonical comparison, explicit variant/process rebind, no downgrade,
+empty agent inventory, classification independence, stable moves/mapping races,
+shared deadline/read-budget exhaustion, uncertain promotion/confirmation, and zero
+reservations/writes on failed evidence. Existing interruption, durable reservation,
+lost-ack, and phase-accounting tests remain green. Architecture and safety reviews
+found no blocking issues; diff whitespace checks pass. Ten additional socket-alias
+transport regressions cover short/long pathname selection and unchanged safety
+checks. [Live group validation](GROUPS_LIVE_VALIDATION.md) now confirms add/publish,
+visible labels, process exit, quiet-terminal TTL expiry and explicit replacement
+rebind against installed Linux binaries. It does not establish native lifecycle.
+Those historical runs used valid real-server snapshots, not this slice's artificial
+malformed-legacy payloads; that coverage is offline only.
 
 ## Related files
 
+- [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md), [runner/group_live.py](runner/group_live.py) — explicit source declarations, schema 3 and ephemeral read-only status.
 - [runner/groups.py](runner/groups.py) — exact schema, CAS, declarations and reservations.
-- [runner/group_publisher.py](runner/group_publisher.py) — snapshot binding, transport, phases and foreground loop.
+- [runner/group_publisher.py](runner/group_publisher.py) — snapshot/process binding, transport, phases and foreground loop.
 - [runner/coven.py](runner/coven.py) — group/observe commands and parser.
 - [runner/storage.py](runner/storage.py), [STORAGE_CONTRACT.md](STORAGE_CONTRACT.md) — local locks and single-file durability.
 - [runner/kitsune_observation.py](runner/kitsune_observation.py), [KITSUNE_OBSERVATION_CONTRACT.md](KITSUNE_OBSERVATION_CONTRACT.md) — shared snapshot validation and read-only observation.
+- [runner/kitsune_process_observation.py](runner/kitsune_process_observation.py), [KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md) — bracketed process evidence and interpreter limits.
 - [tests/test_groups.py](tests/test_groups.py), [tests/test_group_publisher.py](tests/test_group_publisher.py), [tests/test_group_commands.py](tests/test_group_commands.py) — offline coverage, not live-server validation.
+- [tests/test_group_live_publisher.py](tests/test_group_live_publisher.py) — opt-in discovery, scoped text, source/delivery expiry, identity and clock fences, role-only restoration and uncertainty fixtures; not actual Kitsune enforcement.
+- [tests/test_process_groups.py](tests/test_process_groups.py) — private fake-endpoint process add/rebind and publisher boundaries.
+- [tests/test_process_snapshot_contract.py](tests/test_process_snapshot_contract.py) — generic projection, conditional mixed-group validation and unchanged strict paths.
+- [tests/test_socket_alias_transport.py](tests/test_socket_alias_transport.py) — long canonical/selected Unix-socket paths and alias/transport safety regressions.
+- [GROUPS_LIVE_VALIDATION.md](GROUPS_LIVE_VALIDATION.md) — installed Linux end-to-end evidence, transport fix, cleanup and limits.
 - [APP_BOUNDARIES.md](APP_BOUNDARIES.md); optional sibling [Kitsune annotations](../kitsune/ANNOTATIONS.md) — presentation policy, not installation dependencies.

@@ -5,8 +5,11 @@
 Decision date: **2026-10-22**. Status: **accepted target; initial read-only
 observation implemented in Coven; production opt-in terminal-border annotations
 implemented in Kitsune; explicit participant groups/roles and a foreground publisher
-implemented in Coven; native group status/scheduling, automatic following, extraction,
-and workspace annotations remain open**.
+implemented in Coven, including explicit process-evidence group binding independent
+of Kitsune's agent inventory; explicit Djinn live attachments and read-only
+busy/unknown group status and explicit expiry-bounded live publishing implemented;
+native lifecycle/scheduling, automatic following, extraction, and workspace
+annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
 This decision rebaselines near-term priorities; it does not remove current features.
 
@@ -24,6 +27,23 @@ decision neither removes them immediately nor claims extraction is complete.
 
 ## API / Interfaces
 
+The separate [Djinn live observer](DJINN_LIVE_OBSERVATION_CONTRACT.md) reads one
+explicitly pinned private heartbeat from a new, startup-enabled legacy full-TUI
+worker build. Fresh evidence is busy-only runner ownership, never idle, health,
+progress or completion. No app launch/restart, HTTP, folder fallback, automatic
+group enrollment, readiness upgrade or dispatch follows; persisted folder observation
+remains independent. The separate [group live contract](GROUP_LIVE_STATUS_CONTRACT.md)
+adds explicit existing-member source declarations and ephemeral revision-scoped status,
+not verified terminal/session association or native identity.
+
+The first native persisted-evidence slice is implemented separately from Kitsune:
+[`coven observe djinn --executable ABS_BINARY --folder ABS_FOLDER --json`](DJINN_OBSERVATION_CONTRACT.md).
+One trusted selected binary supplies bounded root manifest/event evidence through
+Djinn's native `session observe` contract. No live/native-store/UI status, group
+enrollment, help-only readiness upgrade, per-attempt admission or dispatch follows.
+No status/list/watch fallback is allowed; their recovery/probing semantics remain
+unchanged. Djinn's core stays Coven-neutral.
+
 Target dependency direction: Coven adapters consume supported runtime and
 multiplexer capabilities. Kitsune and Djinn have no core dependency on Coven or
 each other. Optional Djinn reporting and optional Kitsune external decoration
@@ -34,10 +54,49 @@ additive `pane.annotate` and optional snapshot `annotations` capability/epoch
 discovery (binary protocol 18 unchanged). Broader future interfaces remain
 undecided. The initial observation bridge uses the existing Kitsune API; see
 [KITSUNE_OBSERVATION_CONTRACT.md](KITSUNE_OBSERVATION_CONTRACT.md).
+An opt-in [Djinn process-family shadow slice](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md)
+interprets generic foreground-process evidence in Coven, without using Kitsune's
+agent classification. It establishes neither active-agent nor native lifecycle
+identity and does not replace built-in detection. Explicit
+`group add --process-evidence` now consumes fresh bracketed process evidence for a participant
+binding, without requiring inventory membership or importing a saved observation.
+Default snapshot group binding is unchanged; neither mode grants native actions.
 Start with discovery/status observations, not a universal
 execution API. Djinn is the first runtime adapter, not the required native model
 for all agents. Future runtimes expose supported capabilities; missing guarantees
 remain unsupported/unknown rather than being falsely normalized.
+
+The separate [interactive start/resume contract](INTERACTIVE_SESSION_CONTRACT.md)
+now composes Djinn UI requests in Coven. Preview is the default; explicit execution
+uses a pinned generic `pane.submit_command` API and the existing workspace transport
+gate. This is unrestricted interactive command input, not native worker admission,
+verified session identity, startup/readiness or task completion. Legacy commands
+remain available and approved-launch mode cannot be bypassed.
+
+The separate [session-target inspection contract](SESSION_INSPECTION_CONTRACT.md)
+adds bounded read-only list/inspect commands over generic Kitsune pane/process
+evidence, joined to existing Coven declarations by endpoint/terminal. No legacy
+agent inventory or live native artifact is interpreted, no new registry is created,
+and native lifecycle/readiness/activity/identity remain unestablished or unknown.
+Stale/changeable declarations never become native facts or control permissions.
+
+Pure group/member/recognition views and a bounded foreground observation watch
+compose on top of those inspections. Selection cannot bypass the scanner's
+cohort/budget or turn failed observations into empty successes. Watch emits each
+fresh unavailable/unknown outcome rather than retaining old positive data; it
+adds no daemon, stored roster, role grant, native control or activity authority.
+
+The separate [native interactive prompt contract](SESSION_PROMPT_CONTRACT.md)
+adds explicit preview/execute against an opted-in Djinn-native socket. Native
+runtime/session pins replace pane identity; message acceptance is separate from
+worker-policy admission or completion. No Kitsune agent command, raw keystroke,
+V2 drain, permission inheritance, retry or default agent/model selection follows.
+
+The [structured handoff capture](HANDOFF_CONTRACT.md) is Coven-owned local
+evidence: explicit worker claims bound to collection-time task context, not native
+execution facts, verified check/source receipts or task completion. It archives
+selected data without following references, probing Git/native apps, dispatching,
+releasing attempts, changing approvals or creating another task authority.
 
 Keep these concepts distinct:
 
@@ -67,8 +126,16 @@ existing top-border cells, preserving manual titles and terminal space. Single-p
 layouts have no border; disabling borders hides labels. No panels, widgets,
 workspace annotations, Kitsune-owned group membership/agent identity,
 seen/notifications, native success facts, or terminal-control authority are added.
-Coven owns its explicit group declarations; broader annotation ambitions, native
-group status/scheduling, automatic following, and extraction remain open.
+Coven owns its explicit group/source declarations and read-only busy/unknown
+projection; broader annotation ambitions, native lifecycle/scheduling, automatic
+following, and extraction remain open. The default static publisher never opens
+attachments and keeps its group/role-only 6000 ms TTL. Explicit `publish --live`
+requires generic `annotations.valid_until_unix_ms: true` discovery and deadline
+enforcement after server queueing. Only fresh pinned legacy-runner busy gains a
+scoped suffix, with decreasing source-age/wall/elapsed ceilings and no receipt TTL
+renewal; unknown is role-only. The composed frame expires together, without a hidden
+static layer or lower-source fallback. Compatible Unix clocks and normal monotonic
+progression are assumed, not arbitrary rollback/skew/suspend or pixel-expiry safety.
 This is not Coven taking over the UI.
 
 ## Data Flow
@@ -78,7 +145,53 @@ These are independent paths, not a required round trip:
 ```text
 observation: Kitsune -> Coven adapter -> sourced observations
 annotation: user-enabled producer -> pane.annotate -> Kitsune terminal border
+group status: explicit participant/source declaration -> pinned local artifact -> Coven ephemeral busy/unknown rows
 ```
+
+Process binding is an explicit local declaration, not automatic enrollment:
+`group add --process-evidence` brackets `pane.process_info` with snapshots and stores
+canonical PID/family/rule matches. Successful process add/rebind atomically promotes
+the group authority from schema 1 (snapshot only) to schema 2 (mixed bindings),
+without reducing schema 3.
+This is an explicit minimum-reader-version opt-in: older readers reject schema 2
+and fail closed. UUIDs/counters and `groups-v1` token format/CAS remain intact; that prefix
+is not an authority version. Removal or snapshot rebind never downgrades schema 2.
+
+Explicit `group attach-live` freshly reads a pinned source outside the workspace
+lock, then always fences the mutation with the preflight content token and
+participant UUID under lock. First success atomically promotes the same authority
+to schema 3, normalizing every member's `live_attachment` to null before setting
+the target; IDs/bindings/counters remain intact. Older readers fail closed, reads
+never migrate, detach never downgrades, and no sample/activity/TTL is stored.
+Detach performs no artifact I/O or native deletion/control. Changed stable terminal
+bindings through `group add --rebind` clear attachments atomically; role, timestamp
+and pane-only changes preserve them. Source and terminal bindings remain separate.
+
+`group status` takes no locks and writes nothing: only groups and declared sources
+are read, at most 16 members serially within a shared acceptance deadline of at
+most one second. A second groups read fences the whole content token; counter-only
+updates are allowed. Drift/recheck/deadline failure discards all rows. All row
+lifetimes are conservatively reduced after all I/O and the recheck, and callers
+must deduct delivery/display time. This is revision-scoped, not a linearizable
+native snapshot. Shared pins do not prove distinct workers. Nothing touches other
+workspace-state health, readiness, persisted observation, startup or execution.
+
+Before any reservation/write, publication resolves current panes and reobserves
+every process member: one initial snapshot + three reads per process member under
+one 3-second cycle deadline and aggregate 1 MiB read budget. Missing, unrecognized
+or changed evidence stops publication without fallback/rebind. Snapshot-only and
+generic annotation-write behavior, including 6000 ms TTL, remain unchanged.
+
+Process reads use a generic pane-locator projection, separate from unchanged strict
+legacy snapshot validation. All process brackets are generic, including mixed-group
+brackets. A publication cycle's initial snapshot is generic only for pure-process
+groups; mixed and snapshot-only groups retain strict legacy validation and
+snapshot-member agent/native-hint checks. Validated member provenance selects the
+contract before parsing, with no strict-to-generic fallback. Projection ignores
+legacy metadata semantics, not JSON safety: the whole response must pass shared
+decoding/bounds before filtering. Process observation/add need no annotation opt-in;
+publication retains strict descriptor-presence, enabled-source and epoch checks
+(absent descriptor is unsupported; present null is invalid).
 
 Coven-owned participant grouping/display roles and explicit label publication are
 implemented; native group lifecycle/progress interpretation and scheduling remain open.
@@ -96,10 +209,18 @@ acceptance interpretation without overwriting native execution facts.
   Timer-driven expiry hides labels even on quiet terminals; disconnect is not
   immediately detected, so accepted text can last until TTL. Source conflicts
   cannot grant terminal control or agent/group authority.
-- The observation adapter requests only `session.snapshot`, but existing Kitsune
+- Default observation requests only `session.snapshot`; the explicit process-pane
+  shadow mode and explicit process group binding also request `pane.process_info`. Existing Kitsune
   dispatch housekeeping can expire metadata, drain events, sync titles, or create
   a default workspace (potentially spawning a shell). Zero server-side effects
   are not promised. Snapshot receipt does not establish server freshness.
+- Process bindings ignore Kitsune native-reference/classification metadata, even
+  absent or semantically malformed legacy fields on generic reads. Mixed groups'
+  initial snapshots still require the legacy agent shape. Only observation
+  time and pane-at-binding are excluded from stable binding comparison; canonical
+  match ordering is not meaningful. Other evidence changes require explicit
+  `--rebind`. Stable same-terminal moves are allowed, but PID reuse/ABA remains a
+  caveat. Djinn-family evidence includes help/maintenance, not active-agent truth.
 - Coven must be usable headless or with other multiplexers; a missing pane does
   not erase an agent/session or prove completion. This is a target, not a claim
   that every current workflow already supports headless operation.
@@ -112,11 +233,21 @@ acceptance interpretation without overwriting native execution facts.
 
 ## Example usage
 
-Current workflow: a user groups already-running agents from Kitsune's inventory in
+Current workflow: a user groups already-running participants from Kitsune's inventory in
 Coven and assigns display roles, with optional native references (not fresh identity
 or lifecycle verification). The explicit foreground publisher sends generic group/role
 labels; only the Kitsune presentation adapter is supported in v1. See the
 [quick start](GROUPS_CONTRACT.md#quick-start-existing-agents-separate-orchestration-workspace).
+For inventory-independent binding to one current pane, explicitly opt in:
+
+```sh
+coven group add WORKSPACE auth-review --member backend --role Investigator \
+  --socket ABS --pane w18:p85 --process-evidence
+```
+
+Use an existing Coven workspace, an explicit absolute API socket, and an inspected
+current pane; add `--rebind` for changed stable evidence and optionally
+`--expect-revision '<current group token>'`. No execution/identity grant follows.
 Disconnecting Coven leaves terminals
 usable; accepted annotations expire by TTL, not immediate disconnect detection.
 No session is started or cancelled by grouping. The working manual build-label
@@ -131,8 +262,36 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
 4. First optional generic terminal-border annotation slice implemented in Kitsune;
    explicit Coven foreground publishing implemented; broader workspace/presentation work remains open.
 5. Explicit groups/roles for existing agents implemented in Coven before further
-   worker/worktree implementation. Native group status/scheduling, automatic following,
-   and extraction are not shipped.
+   worker/worktree implementation. Native lifecycle/scheduling,
+   automatic following, and extraction are not shipped.
+6. One-pane generic process evidence and Coven-owned Djinn executable-family
+   interpretation are implemented as an opt-in shadow mode. Recognition is not
+   active-agent detection. Explicit process-evidence group add/rebind is now
+   implemented; built-in removal, automatic adoption and native actions are not.
+7. Explicit live-source attach/detach and read-only group busy/unknown status are
+   implemented in Coven; source declarations do not verify native/UI-session or
+   terminal equivalence, authorize work, or change the static annotation publisher.
+8. Explicit `publish --live` composes fresh scoped busy using generic Kitsune absolute
+   expiry discovery, whole-target durable reservations and decreasing source budgets.
+   Static defaults stay unchanged; unsupported servers fail closed. Offline fixtures
+   are not actual Kitsune enforcement or live-runtime validation.
+
+The full offline suite now passes **763 tests**, including 33 opt-in live-publisher
+tests, 24 live-attachment authority tests and 34 workflow/status tests alongside
+the existing observer, publisher and transport coverage. The separate live producer passed
+54 focused opencode tests, 3 schema tests and both Bun typechecks, not the full UI
+suite. The [live observer contract](DJINN_LIVE_OBSERVATION_CONTRACT.md#example-usage)
+records cross-TS→Python fixture interop; no real UI/model calls have validated that
+slice. New group attachment/status validation used private fixtures and the real
+CLI wrapper, without modifying existing declarations or native applications.
+The separate persisted native observer passed eight compiled
+producer/consumer fixture cases; it does not verify running agents or change native
+authorization. [Live group validation](GROUPS_LIVE_VALIDATION.md) confirms installed Linux
+binding/publication, exit/TTL and explicit rebind behavior, not native lifecycle.
+Those historical runs used valid real-server snapshots, not the artificial
+malformed-legacy payloads covered offline in this slice.
+Validation cases and limits are tracked in
+[the group contract](GROUPS_CONTRACT.md#validation).
 
 The older worker/composer backlog is deferred, not invalidated. Native execution
 contracts remain necessary for future execution, not for observing existing agents.
@@ -140,6 +299,7 @@ contracts remain necessary for future execution, not for observing existing agen
 ## Related files
 
 - [README.md](README.md) — current behavior and existing safety contracts.
+- [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md) — schema-3 declarations, status expiry and no-authority boundaries.
 - [ROADMAP.md](ROADMAP.md) — longer-term orchestration backlog.
 - [CODING_ORCHESTRATION_ROADMAP.md](CODING_ORCHESTRATION_ROADMAP.md) — coding backlog.
 - Optional developer navigation: [Kitsune decision](../kitsune/APP_BOUNDARIES.md),

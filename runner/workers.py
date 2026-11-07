@@ -1,7 +1,8 @@
-"""Fail-closed Djinn help-surface observations, not worker authorization.
+"""Help-only readiness and bounded transport for explicit native observations.
 
-Only advertised help routes are followed. No versioned native worker contract
-is currently supported, so even a complete help surface cannot be compatible.
+Readiness follows only advertised help routes and never declares compatibility.
+The separate fixed session-observation wrapper shares transport, not readiness
+semantics: persisted evidence is not a native worker admission contract.
 """
 
 from dataclasses import dataclass
@@ -102,7 +103,7 @@ def _validate_limits(timeout, max_output_bytes):
 
 
 def run_help_probe(executable: Path, arguments: tuple[str, ...], *, timeout,
-                   max_output_bytes, cwd, env) -> ProbeResult:
+                    max_output_bytes, cwd, env) -> ProbeResult:
     """Run only an allowlisted observation with bounded combined pipe output.
 
     This low-level runner permits --version; the adapter additionally requires
@@ -113,6 +114,33 @@ def run_help_probe(executable: Path, arguments: tuple[str, ...], *, timeout,
     if (not isinstance(arguments, tuple) or not all(isinstance(a, str) for a in arguments)
             or arguments not in HELP_PROBE_ALLOWLIST):
         raise ValueError("arguments are not an allowlisted help probe")
+    return _run_bounded_probe(executable, arguments, timeout=timeout,
+                              max_output_bytes=max_output_bytes, cwd=cwd, env=env)
+
+
+def _observation_folder(folder):
+    if (not isinstance(folder, str) or not folder.startswith("/")
+            or folder.endswith("/") or ".." in folder.split("/")
+            or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in folder)):
+        raise ValueError("an explicit absolute folder without parent components or controls is required")
+    try:
+        if len(folder.encode("utf-8")) > 4096:
+            raise ValueError("folder exceeds 4096 UTF-8 bytes")
+    except UnicodeError:
+        raise ValueError("folder must be valid UTF-8") from None
+
+
+def run_session_observation_probe(executable: Path, folder: str, *, timeout,
+                                  max_output_bytes, cwd, env) -> ProbeResult:
+    """Only the documented persisted-evidence route, never status/help fallback."""
+    _validate_limits(timeout, max_output_bytes)
+    _observation_folder(folder)
+    return _run_bounded_probe(executable, ("session", "observe", folder, "--json"),
+                              timeout=timeout, max_output_bytes=max_output_bytes, cwd=cwd, env=env)
+
+
+def _run_bounded_probe(executable, arguments, *, timeout, max_output_bytes, cwd, env):
+    """Private transport shared by independently allowlisted observation wrappers."""
     if not isinstance(executable, Path) or not executable.is_absolute():
         raise ValueError("executable must be an absolute Path")
     if not isinstance(env, dict) or not set(env) <= ENV_KEYS:

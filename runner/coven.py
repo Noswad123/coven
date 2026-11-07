@@ -24,6 +24,12 @@ from typing import Any, Callable
 
 if __package__:
     from . import records, storage, task_ledger, checkpoints, actions, launch, workers, task_attempts, task_graphs, execution_v2, repositories, kitsune_observation, groups, group_publisher
+    from . import kitsune_process_observation
+    from . import djinn_observation
+    from . import djinn_live_observation
+    from . import group_live
+    from . import interactive_sessions
+    from . import session_inspection
 else:
     import records
     import storage
@@ -37,8 +43,14 @@ else:
     import execution_v2
     import repositories
     import kitsune_observation
+    import kitsune_process_observation
+    import djinn_observation
+    import djinn_live_observation
+    import group_live
     import groups
     import group_publisher
+    import interactive_sessions
+    import session_inspection
 
 DEFAULT_AGENTS = "Clippy,Srikanth,Jamal,Kris,Eric"
 DEFAULT_OPENCODE_COMMAND = "oc"
@@ -1677,10 +1689,35 @@ def command_observe_kitsune(args: argparse.Namespace) -> int:
     # No workspace authority, executable, or implicit endpoint selection. This
     # one-shot observation has no annotation/UI return path or native actions.
     try:
-        value = kitsune_observation.inspect(args.socket, timeout=args.timeout,
-                                            max_response_bytes=args.max_response_bytes)
+        if args.process_pane is not None:
+            value = kitsune_process_observation.inspect(
+                args.socket, args.process_pane, timeout=args.timeout,
+                max_response_bytes=args.max_response_bytes)
+        else:
+            value = kitsune_observation.inspect(args.socket, timeout=args.timeout,
+                                                max_response_bytes=args.max_response_bytes)
     except ValueError as exc:
         raise storage.StorageError(f"Invalid Kitsune observation request: {exc}") from exc
+    print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
+    return {"observed": 0, "unavailable": 1, "incompatible": 2}[value["assessment"]]
+
+
+def command_observe_djinn(args: argparse.Namespace) -> int:
+    try:
+        value = djinn_observation.inspect(args.executable, args.folder, timeout=args.timeout,
+                                          max_output_bytes=args.max_output_bytes)
+    except ValueError as exc:
+        raise storage.StorageError(f"Invalid Djinn observation request: {exc}") from exc
+    print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
+    return {"observed": 0, "unavailable": 1, "incompatible": 2}[value["assessment"]]
+
+
+def command_observe_djinn_live(args: argparse.Namespace) -> int:
+    try:
+        value = djinn_live_observation.inspect(args.file, args.runtime, args.instance,
+                                               args.session, timeout=args.timeout)
+    except ValueError as exc:
+        raise storage.StorageError(f"Invalid live Djinn observation request: {exc}") from exc
     print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
     return {"observed": 0, "unavailable": 1, "incompatible": 2}[value["assessment"]]
 
@@ -1709,7 +1746,7 @@ def command_group_list(args: argparse.Namespace) -> int:
 def command_group_add(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     # Deterministic invalid input and absent groups must not contact a server or
-    # create a lock. The fresh snapshot is read outside the mutation lock.
+    # create a lock. Fresh evidence is read outside the mutation lock.
     groups._selector(args.group)
     groups._selector(args.member)
     groups._display(args.role)
@@ -1721,8 +1758,12 @@ def command_group_add(args: argparse.Namespace) -> int:
     groups._group(view["state"], args.group)
     try:
         import time
-        fresh = group_publisher.read_publication_snapshot(args.socket, deadline=time.monotonic() + 3.0)
-        binding = group_publisher.binding_from_snapshot(fresh, args.pane)
+        if args.process_evidence:
+            binding = group_publisher.binding_from_process(
+                args.socket, args.pane, deadline=time.monotonic() + 3.0)
+        else:
+            fresh = group_publisher.read_publication_snapshot(args.socket, deadline=time.monotonic() + 3.0)
+            binding = group_publisher.binding_from_snapshot(fresh, args.pane)
     except (ValueError, group_publisher.PublisherError) as exc:
         code = exc.code if isinstance(exc, group_publisher.PublisherError) else str(exc)
         raise groups.GroupError(f"Cannot observe selected group participant: {code}") from exc
@@ -1735,10 +1776,35 @@ def command_group_remove(args: argparse.Namespace) -> int:
         args.member, expected_revision=args.expect_revision), args.json)
 
 
+def command_group_attach_live(args: argparse.Namespace) -> int:
+    try:
+        result = group_live.attach(workspace_path(args.workspace), args.group, args.member,
+            args.file, args.runtime, args.instance, args.session, reattach=args.reattach,
+            expected_revision=args.expect_revision, timeout=args.timeout)
+    except ValueError as exc:
+        raise groups.GroupError(f"Invalid group live attachment request: {exc}") from exc
+    return print_group_result(result, args.json)
+
+
+def command_group_detach_live(args: argparse.Namespace) -> int:
+    return print_group_result(group_live.detach(workspace_path(args.workspace), args.group,
+        args.member, expected_revision=args.expect_revision), args.json)
+
+
+def command_group_status(args: argparse.Namespace) -> int:
+    try:
+        result = group_live.status(workspace_path(args.workspace), args.group,
+                                   member_key=args.member, timeout=args.timeout)
+    except ValueError as exc:
+        raise groups.GroupError(f"Invalid group status request: {exc}") from exc
+    print(json.dumps(result, ensure_ascii=True, indent=None if args.json else 2))
+    return 0 if result["assessment"] == "observed" else 1
+
+
 def command_group_publish(args: argparse.Namespace) -> int:
     try:
         value = group_publisher.publish_group(workspace_path(args.workspace), args.group,
-            args.socket, args.source, duration=args.duration)
+            args.socket, args.source, duration=args.duration, **({"live": True} if args.live else {}))
     except ValueError as exc:
         raise groups.GroupError(f"Invalid group publication request: {exc}") from exc
     print(json.dumps(value, ensure_ascii=True, indent=None if args.json else 2))
@@ -2810,6 +2876,201 @@ def command_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_handoff(args: argparse.Namespace) -> int:
+    if __package__:
+        from . import handoffs
+    else:
+        import handoffs
+    operation = args.handoff_operation
+    try:
+        if operation == "validate":
+            report = handoffs.validate_file(args.file)
+        elif operation == "collect":
+            report = handoffs.collect(args.workspace, args.file, expected_sha256=args.expect_sha256,
+                                      expected_tasks_revision=args.expect_tasks_revision)
+        elif operation == "inspect":
+            report = handoffs.inspect(args.workspace, args.collection_id)
+        else:
+            report = handoffs.list_collections(args.workspace, task_id=args.task)
+    except (ValueError, OSError):
+        raise handoffs.HandoffError("handoff_input_or_local_storage_unavailable") from None
+    print(json.dumps(report, ensure_ascii=True, allow_nan=False, indent=None if args.json else 2))
+    return 2 if report.get("delivery") == "durability_uncertain" else 0
+
+
+def command_session(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).absolute()
+    try:
+        kitsune_observation._arguments(args.socket, args.timeout, 1048576)
+        plan = interactive_sessions.plan(str(workspace), args.session_operation, args.runtime,
+            args.executable, args.socket, args.pane, args.expected_terminal, getattr(args, "session", None))
+        if args.execute:
+            load_team(workspace)
+            with legacy_runtime_transport(workspace):
+                gate = _transport_gates.entries[str(workspace.resolve())]
+                report = interactive_sessions.execute(plan, gate=gate, timeout=args.timeout)
+        else:
+            report = interactive_sessions.preview(plan)
+    except ValueError as exc:
+        fail(str(exc))
+    if args.json:
+        print(json.dumps(report, ensure_ascii=True, allow_nan=False))
+    else:
+        print(f"{report['outcome']}: {report['operation']} Djinn UI in {report['pane_id']}")
+        print(f"Command: {shlex.join(report['argv'])}")
+        if report['outcome'] == 'preview':
+            print("Preview only; --execute explicitly submits to a quiescent empty shell prompt.")
+        else:
+            print("Input acknowledgement is not proof of native startup, resume or readiness.")
+        for diagnostic in report["diagnostics"]:
+            print(f"Diagnostic: {diagnostic}")
+    return interactive_sessions.exit_code(report)
+
+
+def session_prompts_module():
+    if __package__:
+        from . import session_prompts
+    else:
+        import session_prompts
+    return session_prompts
+
+
+def command_session_prompt(args: argparse.Namespace) -> int:
+    module = session_prompts_module()
+    try:
+        kitsune_observation._arguments(args.native_socket, args.timeout, 65536)
+        if args.session_operation == "prompt-capabilities":
+            report = module.capabilities(args.native_socket, timeout=args.timeout)
+            result = 130 if report.get("interrupted") else 0 if report["assessment"] == "observed" else 1
+        else:
+            workspace = Path(args.workspace).absolute()
+            plan = module.plan(str(workspace), args.native_socket, args.expected_runtime,
+                               args.session, args.request_id, args.prompt_file)
+            if args.execute:
+                load_team(workspace)
+                with legacy_runtime_transport(workspace):
+                    gate = _transport_gates.entries[str(workspace.resolve())]
+                    report = module.execute(plan, gate=gate, timeout=args.timeout)
+            else:
+                report = module.preview(plan)
+            result = module.exit_code(report)
+    except ValueError as exc:
+        fail(str(exc))
+    print(json.dumps(report, ensure_ascii=True, allow_nan=False, indent=None if args.json else 2))
+    return result
+
+
+def session_views_module():
+    # These optional view/watch helpers are separate from native control paths.
+    if __package__:
+        from . import session_views
+    else:
+        import session_views
+    return session_views
+
+
+def session_watch_module():
+    if __package__:
+        from . import session_watch
+    else:
+        import session_watch
+    return session_watch
+
+
+def session_selection(args: argparse.Namespace) -> dict[str, Any]:
+    return {"group_key": getattr(args, "group", None), "member_key": getattr(args, "member", None),
+            "recognized_only": getattr(args, "recognized_only", False)}
+
+
+def validate_session_reader(args: argparse.Namespace) -> None:
+    kitsune_observation._arguments(args.socket, args.timeout, args.max_response_bytes)
+    pane, terminal = getattr(args, "pane", None), getattr(args, "expected_terminal", None)
+    if pane is not None:
+        kitsune_process_observation._pane_id(pane)
+    if terminal is not None:
+        kitsune_process_observation._pane_id(terminal)
+        if pane is None:
+            raise ValueError("expected terminal requires one explicit pane")
+    selection = session_selection(args)
+    if selection["group_key"] is not None or selection["member_key"] is not None or selection["recognized_only"]:
+        session_views_module().validate_selection(**selection)
+
+
+def observe_session_report(args: argparse.Namespace, *, timeout: float | None = None) -> dict[str, Any]:
+    report = session_inspection.inspect(Path(args.workspace), args.socket,
+        pane_id=getattr(args, "pane", None), expected_terminal_id=getattr(args, "expected_terminal", None),
+        runtime=args.runtime, timeout=args.timeout if timeout is None else timeout,
+        max_response_bytes=args.max_response_bytes)
+    selection = session_selection(args)
+    if selection["group_key"] is not None or selection["member_key"] is not None or selection["recognized_only"]:
+        report = session_views_module().select_report(report, **selection)
+    return report
+
+
+def print_session_report(report: dict[str, Any], *, json_output: bool, pretty: bool = False) -> None:
+    if json_output or pretty:
+        print(json.dumps(report, indent=2 if pretty and not json_output else None,
+                         ensure_ascii=True, allow_nan=False), flush=True)
+    else:
+        print(f"Session target inspection: {report['assessment']}")
+        print("Scope: existing panes on the selected endpoint; native activity/readiness remains unknown.")
+        if "view" in report:
+            view = report["view"]
+            print(visible_text(f"View: group={view['group_key']} member={view['member_key']} recognized_only={view['recognized_only']}; selected {report['target_count']} of {view['observed_target_count']} observed pane targets."))
+            print("Declaration aggregate counts remain scoped to the full observation.")
+        for target in report["targets"]:
+            declarations = "; ".join(f"{a['group_key']}/{a['member_key']}: {a['role']} [{a['binding_check']}]"
+                                     for a in target["associations"]) or "no matching declaration"
+            print(visible_text(f"{target['pane_id']}  {target['terminal_id']}  {target['recognition']}  {declarations}"))
+        if report["assessment"] == "observed":
+            print(f"Unmatched declarations: {len(report['declarations']['unmatched'])}")
+        for diagnostic in report["diagnostics"]:
+            print(f"Diagnostic: {diagnostic}")
+
+
+def command_session_inspect(args: argparse.Namespace) -> int:
+    try:
+        validate_session_reader(args)
+        report = observe_session_report(args)
+    except ValueError as exc:
+        fail(str(exc))
+    print_session_report(report, json_output=args.json, pretty=args.session_operation == "inspect")
+    return session_inspection.exit_code(report)
+
+
+def command_session_watch(args: argparse.Namespace) -> int:
+    try:
+        validate_session_reader(args)
+        watcher = session_watch_module()
+
+        def collect(remaining_seconds):
+            return observe_session_report(args, timeout=min(args.timeout, remaining_seconds))
+
+        def emit(event):
+            if args.json:
+                print(json.dumps(event, ensure_ascii=True, allow_nan=False), flush=True)
+                return
+            print(f"Watch sample {event['sequence']}: {event['assessment']}", flush=True)
+            if event["observation"] is None:
+                print("Observation unavailable; no previous targets are current.", flush=True)
+            else:
+                print_session_report(event["observation"], json_output=False)
+
+        summary = watcher.watch(collect, emit, duration=args.duration, interval=args.interval)
+    except ValueError as exc:
+        fail(str(exc))
+    # A broken output stream must not be retried just to print the summary.
+    if summary["outcome"] != "output_failed":
+        try:
+            if args.json:
+                print(json.dumps(summary, ensure_ascii=True, allow_nan=False), flush=True)
+            else:
+                print(f"Watch {summary['outcome']}; {summary['emitted']} observation(s) emitted. Native lifecycle remains unestablished.", flush=True)
+        except OSError:
+            return 1
+    return watcher.exit_code(summary)
+
+
 def command_agent_status(args: argparse.Namespace) -> int:
     workspace, rest = split_optional_workspace(list(args.items))
     team = load_team(workspace)
@@ -3453,6 +3714,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     init.add_argument("--force", action="store_true", help="Deprecated compatibility flag; never overwrites existing workspace files")
     init.set_defaults(func=command_init)
 
+    handoff = subparsers.add_parser("handoff", help="Validate/capture unverified worker claims; never mark tasks complete")
+    handoff_sub = handoff.add_subparsers(dest="handoff_operation", required=True)
+    for operation in ("validate", "collect", "inspect", "list"):
+        item = handoff_sub.add_parser(operation)
+        if operation != "validate":
+            item.add_argument("workspace", help="Explicit existing Coven workspace")
+        if operation == "validate":
+            item.add_argument("file", help="Selected bounded JSON handoff; no references are followed")
+        elif operation == "collect":
+            item.add_argument("--file", required=True)
+            item.add_argument("--expect-sha256", required=True, help="Exact raw handoff SHA256 from validation")
+            item.add_argument("--expect-tasks-revision", required=True, help="Current task-authority token, also declared in the handoff")
+        elif operation == "inspect":
+            item.add_argument("collection_id", help="Exact content ID printed by collect")
+        else:
+            item.add_argument("--task", help="Filter after validating all bounded collection artifacts")
+        item.add_argument("--json", action="store_true")
+        item.set_defaults(func=command_handoff)
+
     goal = subparsers.add_parser("goal", help="Set or show the unified goal")
     goal.add_argument("items", nargs="*", help="Optional workspace followed by goal text; defaults to current directory")
     goal.set_defaults(func=command_goal)
@@ -3534,6 +3814,54 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     message = subparsers.add_parser("message", help="Append a message between agents")
     message.add_argument("items", nargs="+", help="Optional workspace, then sender recipient body")
     message.set_defaults(func=command_message)
+
+    session = subparsers.add_parser("session", help="Read-only target inspection and explicit interactive UI submission; not worker dispatch")
+    session_sub = session.add_subparsers(dest="session_operation", required=True)
+    for operation in ("prompt", "prompt-capabilities"):
+        prompt = session_sub.add_parser(operation, help="Explicit native Djinn prompt admission; no terminal-input fallback")
+        prompt.add_argument("--native-socket", required=True, help="Explicit startup-enabled private Djinn prompt socket")
+        prompt.add_argument("--timeout", type=float, default=3.0)
+        prompt.add_argument("--json", action="store_true")
+        if operation == "prompt":
+            prompt.add_argument("workspace", help="Existing Coven control workspace, not a native cwd or sandbox")
+            prompt.add_argument("--expected-runtime", required=True, help="Exact native runtime UUID from explicit capability inspection")
+            prompt.add_argument("--session", required=True, help="Exact native ses_ identifier; never inferred from a pane")
+            prompt.add_argument("--request-id", required=True, help="Fresh caller UUID; not a durable retry/reconciliation key")
+            prompt.add_argument("--prompt-file", required=True, help="Explicit absolute UTF-8 text file, at most 65536 bytes")
+            prompt.add_argument("--execute", action="store_true", help="Explicitly admit native prompt; otherwise pure preview")
+        prompt.set_defaults(func=command_session_prompt)
+    for operation in ("list", "inspect", "watch"):
+        inspection = session_sub.add_parser(operation, help="Read-only generic pane/process evidence and declared group/role associations")
+        inspection.add_argument("workspace", help="Existing Coven workspace for read-only group declarations")
+        inspection.add_argument("--socket", required=True, help="Explicit existing local Kitsune API socket")
+        inspection.add_argument("--runtime", choices=["djinn"], default="djinn", help="Process-family interpreter, not a native execution request")
+        if operation in {"inspect", "watch"}:
+            inspection.add_argument("--pane", required=operation == "inspect", help="Exact current pane ID; watch otherwise observes all targets")
+            inspection.add_argument("--expected-terminal", help="Optional terminal pin; never follows a replacement")
+        inspection.add_argument("--group", help="Select only matching declared group associations after observation")
+        inspection.add_argument("--member", help="Select one declared member; requires --group")
+        inspection.add_argument("--recognized-only", action="store_true", help="Select executable-family hints, not readiness or native activity")
+        if operation == "watch":
+            inspection.add_argument("--duration", type=float, default=60.0, help="Bounded foreground watch seconds [0.1, 3600]")
+            inspection.add_argument("--interval", type=float, default=2.0, help="Serial refresh seconds [0.1, 60]; no catch-up bursts")
+        inspection.add_argument("--timeout", type=float, default=3.0, help="Shared API/filesystem acceptance budget in seconds (0, 30]")
+        inspection.add_argument("--max-response-bytes", type=int, default=1048576, help="Shared API wire-byte allowance (1024 through 8388608)")
+        inspection.add_argument("--json", action="store_true", help="JSON report, or JSONL watch samples followed by a watch summary")
+        inspection.set_defaults(func=command_session_watch if operation == "watch" else command_session_inspect)
+    for operation in ("start", "resume"):
+        interactive = session_sub.add_parser(operation, help=f"Preview an interactive {operation}; --execute submits once")
+        interactive.add_argument("workspace", help="Existing Coven control workspace, not a cwd or sandbox")
+        interactive.add_argument("--runtime", choices=["djinn"], required=True)
+        interactive.add_argument("--executable", required=True, help="Absolute trusted native CLI; never executed during preview")
+        interactive.add_argument("--socket", required=True, help="Explicit existing local Kitsune API socket")
+        interactive.add_argument("--pane", required=True, help="Exact current public pane ID")
+        interactive.add_argument("--expected-terminal", required=True, help="Terminal ID copied from snapshot")
+        if operation == "resume":
+            interactive.add_argument("--session", required=True, help="Literal native UI/folder/name selector, not verified identity")
+        interactive.add_argument("--execute", action="store_true", help="Explicit unrestricted UI submission; requires a quiescent empty shell prompt")
+        interactive.add_argument("--timeout", type=float, default=3.0, help="API acceptance budget in seconds (0, 30]; gate acquisition is separately bounded")
+        interactive.add_argument("--json", action="store_true")
+        interactive.set_defaults(func=command_session)
 
     agent = subparsers.add_parser("agent", help="Target specific coven agents")
     agent_sub = agent.add_subparsers(dest="agent_command", required=True)
@@ -3734,8 +4062,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     group_add.add_argument("--member", required=True, help="Stable human participant selector within this group")
     group_add.add_argument("--role", required=True, help="Display role only, not a native agent configuration or execution policy")
     group_add.add_argument("--socket", required=True, help="Explicit existing Kitsune API socket")
-    group_add.add_argument("--pane", required=True, help="Exact current pane ID from the agent inventory")
-    group_add.add_argument("--rebind", action="store_true", help="Explicitly accept changed terminal/native-reference evidence")
+    group_add.add_argument("--pane", required=True, help="Exact current pane ID; default requires an agent inventory entry")
+    group_add.add_argument("--process-evidence", action="store_true", help="Opt into Coven-observed Djinn executable-family evidence and schema-2 storage (older Coven readers reject it); no native identity or execution grant")
+    group_add.add_argument("--rebind", action="store_true", help="Explicitly accept changed provenance/terminal/native-reference/process evidence")
     group_add.add_argument("--expect-revision")
     group_add.add_argument("--json", action="store_true")
     group_add.set_defaults(func=command_group_add)
@@ -3750,12 +4079,40 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     group_list.add_argument("workspace")
     group_list.add_argument("--json", action="store_true")
     group_list.set_defaults(func=command_group_list)
+    attach_live = group_sub.add_parser("attach-live", help="Explicitly associate one existing participant with a fresh pinned live source; opts into schema 3 (older readers reject it)")
+    attach_live.add_argument("workspace")
+    attach_live.add_argument("group")
+    attach_live.add_argument("--member", required=True)
+    attach_live.add_argument("--file", required=True)
+    attach_live.add_argument("--runtime", required=True)
+    attach_live.add_argument("--instance", required=True)
+    attach_live.add_argument("--session", required=True)
+    attach_live.add_argument("--reattach", action="store_true", help="Explicitly replace live-source pins only, never the terminal binding")
+    attach_live.add_argument("--expect-revision")
+    attach_live.add_argument("--timeout", type=float, default=1.0, help="Live-reader acceptance deadline in (0, 1] seconds")
+    attach_live.add_argument("--json", action="store_true")
+    attach_live.set_defaults(func=command_group_attach_live)
+    detach_live = group_sub.add_parser("detach-live", help="Remove a live-source declaration without reading/deleting its artifact or controlling agents")
+    detach_live.add_argument("workspace")
+    detach_live.add_argument("group")
+    detach_live.add_argument("--member", required=True)
+    detach_live.add_argument("--expect-revision")
+    detach_live.add_argument("--json", action="store_true")
+    detach_live.set_defaults(func=command_group_detach_live)
+    group_status = group_sub.add_parser("status", help="Read revision-scoped participant busy/unknown evidence; no writes, labels, idle or job-status inference")
+    group_status.add_argument("workspace")
+    group_status.add_argument("group")
+    group_status.add_argument("--member", help="Optional exact member selector; default inspects all declared members")
+    group_status.add_argument("--timeout", type=float, default=1.0, help="Whole-projection acceptance deadline in (0, 1] seconds, not a syscall interrupt")
+    group_status.add_argument("--json", action="store_true")
+    group_status.set_defaults(func=command_group_status)
     group_publish = group_sub.add_parser("publish", help="Foreground, annotation-only labels for an explicitly enabled source; never launches/stops agents")
     group_publish.add_argument("workspace")
     group_publish.add_argument("group")
     group_publish.add_argument("--socket", required=True)
     group_publish.add_argument("--source", required=True, help="Dedicated source already enabled in Kitsune, e.g. coven")
     group_publish.add_argument("--duration", type=int, default=60, help="Foreground run seconds, 1..3600 (default: 60); Ctrl-C stops refreshing")
+    group_publish.add_argument("--live", action="store_true", help="Opt-in pinned legacy runner busy suffix; requires Kitsune deadline support and compatible clocks; unknown remains role-only, never idle or job completion")
     group_publish.add_argument("--json", action="store_true")
     group_publish.set_defaults(func=command_group_publish)
 
@@ -3763,10 +4120,26 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     observe_sub = observe.add_subparsers(dest="observation_adapter", required=True)
     observe_kitsune = observe_sub.add_parser("kitsune", help="Read an existing selected JSON API socket; no discovery, autostart, or annotations")
     observe_kitsune.add_argument("--socket", required=True, help="Explicit absolute path to an existing private Kitsune JSON API socket")
+    observe_kitsune.add_argument("--process-pane", help="Opt-in shadow Djinn executable-family observation for one exact pane ID; no lifecycle or control")
     observe_kitsune.add_argument("--timeout", type=float, default=3.0, help="Overall observation seconds, finite and in (0, 30]")
-    observe_kitsune.add_argument("--max-response-bytes", type=int, default=1048576, help="Response budget including LF, 1024 through 8388608")
+    observe_kitsune.add_argument("--max-response-bytes", type=int, default=1048576, help="Total response budget including LF, 1024 through 8388608")
     observe_kitsune.add_argument("--json", action="store_true", help="Compact ASCII-escaped JSON observation report")
     observe_kitsune.set_defaults(func=command_observe_kitsune)
+    observe_djinn = observe_sub.add_parser("djinn", help="Read persisted folder evidence using one explicit trusted Djinn executable; never launches agent work")
+    observe_djinn.add_argument("--executable", required=True, help="Explicit absolute trusted Djinn binary supporting session observe")
+    observe_djinn.add_argument("--folder", required=True, help="Explicit absolute existing folder capsule, not a UI/native session ID")
+    observe_djinn.add_argument("--timeout", type=float, default=3.0, help="Subprocess deadline in seconds, finite and in (0, 30]; executable hashing is separate")
+    observe_djinn.add_argument("--max-output-bytes", type=int, default=131072, help="Combined stdout/stderr budget, 1024 through 1048576")
+    observe_djinn.add_argument("--json", action="store_true", help="Compact ASCII-escaped observation report")
+    observe_djinn.set_defaults(func=command_observe_djinn)
+    observe_live = observe_sub.add_parser("djinn-live", help="Read one pinned existing private heartbeat; never starts a runtime or claims idle")
+    observe_live.add_argument("--file", required=True, help="Explicit private artifact named RUNTIME_UUID.json")
+    observe_live.add_argument("--runtime", required=True, help="Expected source runtime UUID; no automatic following after restart")
+    observe_live.add_argument("--instance", required=True, help="Expected source instance UUID; no directory/session inference")
+    observe_live.add_argument("--session", required=True, help="Exact opaque UI session ID, not a folder/native agent ID lookup")
+    observe_live.add_argument("--timeout", type=float, default=1.0, help="Positive acceptance deadline in (0, 1] seconds; does not interrupt filesystem syscalls")
+    observe_live.add_argument("--json", action="store_true", help="Compact ASCII-escaped live observation report")
+    observe_live.set_defaults(func=command_observe_djinn_live)
 
     repository = subparsers.add_parser("repository", help="Explicit immutable checkout/base facts; never authorizes Git writes or execution")
     repository_sub = repository.add_subparsers(dest="repository_command", required=True)

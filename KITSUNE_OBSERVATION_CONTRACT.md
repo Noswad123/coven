@@ -5,9 +5,13 @@
 `runner/kitsune_observation.py` implements initial, opt-in observation of one
 caller-selected **existing** Kitsune API socket. It is a compatibility bridge,
 not extraction of Kitsune's built-in agent behavior or a native lifecycle or
-reliability attestation. Annotation presentation and Coven grouping are not shipped.
+reliability attestation. Grouping and foreground annotation publishing are separate
+implemented paths; see [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md).
 
-The adapter sends only the existing `session.snapshot` read method. **This does
+The default adapter sends only the existing `session.snapshot` read method. The
+opt-in `--process-pane` mode uses a separate
+[process observation contract](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md) and report;
+the default behavior documented here is unchanged. **This does
 not promise zero server-side effects:** although Kitsune's snapshot builder takes
 `&self`, its existing dispatch pipeline expires metadata, drains internal events,
 synchronizes titles, and may ensure a default workspace in an empty session,
@@ -81,6 +85,10 @@ and requires one newline-terminated response followed by EOF, with no trailing
 data and a matching id. The overall deadline covers connection, send, receive,
 and a final post-validation deadline check, rather than restarting per chunk.
 It does not retry or fall back to another endpoint.
+One connection uses the shorter filesystem-byte encoding of the selected and
+resolved pathname. This avoids parent-symlink expansion overflowing the Unix-socket
+address limit without changing the canonical endpoint identity. Each fence also
+re-resolves the selected parent, rejecting alias retargeting.
 
 Only snapshot protocol **18** is accepted. This is an adapter compatibility limit,
 not a universal cross-app lifecycle requirement. Required inventories and known
@@ -88,7 +96,33 @@ fields are validated; additive fields are allowed within bounds. Agents must
 match corresponding pane locators/status/reference fields; duplicate pane or
 terminal ids within either inventory are rejected.
 
-Independent future path (not implemented or required by observation):
+### Separate generic process snapshot contract
+
+The strict `_snapshot` path above is unchanged. Process brackets instead use
+`_pane_snapshot`, sharing `_result`/`_decode`, envelope checks and protocol 18, but
+projecting only version/protocol, the four locators on each pane, and `annotations`
+when present. Required locators are exact opaque UTF-8 strings, nonempty,
+printable, whitespace-free and at most 4096 characters; there is no ASCII, UUID,
+prefix or ID-spelling relationship requirement. At most 1024 panes are allowed;
+pane IDs and terminal IDs must each be globally unique, while workspace/tab IDs
+may repeat. Legacy inventories, focus/revision and pane agent/native metadata
+are semantically ignored, even if absent or malformed against the legacy schema.
+The entire response still passes the same global JSON limits before projection:
+unused fields cannot bypass bounds, duplicate-key/nonfinite/UTF-8 checks, or JSON
+syntax validation. Bounded malformed JSON is rejected, not silently discarded.
+
+All process brackets use this generic contract, even within mixed groups. Only a
+pure-process group's initial publication snapshot is generic; mixed and legacy-only
+groups retain strict initial legacy validation and snapshot-member native-hint
+checks. Validated member provenance selects the contract before parsing, never a
+fallback after strict failure. Standalone process observation/add ignore annotation
+descriptor semantics and need no opt-in. Publication always validates descriptor
+presence strictly (absent is unsupported, present null is invalid), with unchanged
+enabled-source/epoch checks. See the
+[process contract](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md#generic-pane-snapshot-projection)
+and [group contract](GROUPS_CONTRACT.md#snapshot-contract-selection).
+
+Independent optional path (implemented separately, not required by observation):
 
 ```text
 user-enabled annotation producer -> generic bounded annotations -> Kitsune
@@ -134,9 +168,17 @@ this documentation update. Offline fixture validation is owned by the implementa
 The focused observation/CLI suite passes 31 tests using private fake endpoints,
 including fragmented responses, deadline/framing failures, native-reference and
 status semantics, workspace preservation, and the standalone wrapper. The full
-Coven offline suite passes **464 tests**; no live Kitsune endpoint was queried.
-Shell syntax and diff whitespace checks pass. These results do not establish
-installed-runtime compatibility or native lifecycle guarantees.
+Coven offline suite now passes **617 tests**, including process observation/group
+workflows, 10 socket-alias transport regressions and 18 generic snapshot contract
+test methods. Focused and baseline strict suites also pass.
+No stored schema, protocol, public API output,
+CLI flag or native authorization changes in this slice. Offline fixtures query no live
+endpoint. Separate
+[live group validation](GROUPS_LIVE_VALIDATION.md) exercised the transport fix and
+installed Linux workflow; neither establishes universal runtime compatibility or
+native lifecycle guarantees.
+The historical live runs used valid real-server snapshots, not artificial
+malformed-legacy payloads from this slice's offline coverage.
 
 ## Related files
 
@@ -147,6 +189,7 @@ installed-runtime compatibility or native lifecycle guarantees.
    fake-endpoint usage and adversarial fixtures.
 - [tests/test_observe_commands.py](tests/test_observe_commands.py) — CLI, wrapper,
   explicit selection, authority independence, and workspace preservation.
+- [tests/test_process_snapshot_contract.py](tests/test_process_snapshot_contract.py) — generic projection and strict-path isolation.
 - [README.md](README.md), [APP_BOUNDARIES.md](APP_BOUNDARIES.md).
 - Optional sibling navigation, not a dependency:
   [Kitsune inspection](../kitsune/AGENT_TRACKING_INSPECTION.md),

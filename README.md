@@ -7,15 +7,128 @@ See [APP_BOUNDARIES.md](APP_BOUNDARIES.md) for the 2026-10-22 target decision:
 independent apps, Coven-owned cross-runtime observation/grouping first, optional
 Kitsune annotations as a separate generic presentation path, and Djinn-owned native
 execution. Initial Kitsune observation, explicit participant groups/roles, and a
-foreground generic-annotation publisher are implemented in Coven. Native group
-status, scheduling, extraction, and automatic following are not shipped; see
-[GROUPS_CONTRACT.md](GROUPS_CONTRACT.md).
+foreground generic-annotation publisher are implemented in Coven, including explicit
+opt-in process-evidence binding independent of Kitsune's agent inventory. Explicit
+Djinn live attachments, revision-scoped busy/unknown group status and explicit
+expiry-bounded `publish --live` are implemented;
+native lifecycle, scheduling, extraction and automatic following
+are not shipped. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) and
+[GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md).
+
+Explicit interactive Djinn UI launch/resume is also available through `coven session
+start` and `coven session resume` into a selected existing Kitsune pane. Commands
+preview by default; `--execute` uses discovered, terminal-pinned generic command
+submission and the existing workspace transport gate. No worker readiness, prompt,
+scheduling, automatic following or native lifecycle acceptance is inferred. See
+[INTERACTIVE_SESSION_CONTRACT.md](INTERACTIVE_SESSION_CONTRACT.md) before using it.
+
+Read-only `coven session list WORKSPACE --socket ABS_SOCKET` and `coven session
+inspect WORKSPACE --socket ABS_SOCKET --pane PANE` show generic pane/process-family
+evidence plus matching declared groups/roles. They do not depend on Kitsune's agent
+inventory, launch/probe native runtimes, read live artifacts or infer native activity,
+identity, readiness or completion. No authoritative session registry or state writes
+are added. See [SESSION_INSPECTION_CONTRACT.md](SESSION_INSPECTION_CONTRACT.md).
+
+List/inspect can select declared targets with `--group GROUP [--member MEMBER]`
+and/or `--recognized-only`. Selection happens only after the complete bounded
+observation; original observed counts and declaration qualifiers remain explicit.
+See [SESSION_VIEWS_CONTRACT.md](SESSION_VIEWS_CONTRACT.md).
+
+`coven session watch WORKSPACE --socket ABS_SOCKET` performs bounded foreground
+refreshes (default 60 seconds, two-second interval), optionally targeting one pane
+and applying the same view flags. `--json` emits JSONL samples then a scoped watch
+summary. No daemon, stored roster, stale positive fallback or native control follows.
+See [SESSION_WATCH_CONTRACT.md](SESSION_WATCH_CONTRACT.md).
+
+The optional `coven session prompt` command previews by default and, with explicit
+`--execute`, submits to an opted-in Djinn native prompt socket using runtime/session
+pins and a correlated message receipt. No Kitsune prompt/keystroke fallback or
+permission inheritance is used. See [SESSION_PROMPT_CONTRACT.md](SESSION_PROMPT_CONTRACT.md).
+
+`coven handoff validate/collect/inspect/list` adds explicit structured worker-claim
+capture for review. Collection pins the raw input and current task revision/owner,
+then archives it without changing task status or trusting reported checks/source.
+Every collected result remains unverified. See [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md).
 
 The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.
 
 ## Install
+
+### Rust migration preview
+
+The Rust replacement builds a single binary named `coven`, currently exercised
+through `cargo run --offline --locked --bin coven -- ...` or `target/debug/coven`
+rather than installation or PATH changes. It implements handoff validation/capture/history,
+bounded snapshot/ledger `task list --json`, read-only `state inspect --json`, and
+`execution history --json` for retained v1/v2 preparation authority. The execution
+reader reports historical reservations and frozen receipts, not current-source
+validity, durable mutation permission or execution authorization. V2 also replays
+graph proposals/reviews and graph-bound preparations without granting fresh
+approval or running graph operations. `action inspect [WORKSPACE] ACTION_ID --json`
+also validates captured launch control, frozen plans and the dedicated checkpoint
+without running transport or checking current runtime inputs. Recorded claims
+remain visible despite ordinary bundle/checkpoint diagnostic errors; inspection
+is not fresh launch permission or durability confirmation. Standalone
+`checkpoint inspect [WORKSPACE] [CHECKPOINT_ID] --json` now performs its own ordered
+workspace/configuration/authority preflight before returning the checkpoint view;
+it deliberately has broader dependencies than action inspection. It also has typed
+finite task values and a mixed-language-tested library workspace lock primitive.
+Library foundations now retain frozen task-ledger receipts for exact historical
+lookup and provide guarded atomic mutable-file replacement. They now support the
+task writer workflow below, without granting runtime execution permission.
+SDK-only selected-ledger confirmation and execution-reservation checks now borrow
+an existing workspace guard and synchronize validated authority before reporting
+their outcome. Historical inspection commands remain lock/fsync-free.
+The library also supports explicit baseline import, resume of a complete pending
+import, and nondestructive pending archival. These calls publish authority only at
+the final marker link and preserve known activation/archive outcomes on uncertain
+sync. Import/recovery CLI routes remain disabled.
+
+Native **`task add` and `task assign` are now available end to end** for existing
+snapshot and imported-ledger workspaces, with optional CAS, ledger request replay,
+task events, dashboard refresh, and JSON/human delivery outcomes. For example:
+
+```bash
+target/debug/coven task add /path/to/workspace "Review parser" --owner operator --json
+target/debug/coven task list /path/to/workspace --json
+target/debug/coven task assign /path/to/workspace TASK_ID operator --json
+```
+
+Use the returned task ID and a declared roster ID. Imported ledgers require a
+`--request-id` on every add/assign; snapshots deliberately do not support durable
+request deduplication. Known authority-sync uncertainty exits `2`; secondary
+event/dashboard/projection warnings do not undo a committed task. See
+[RUST_MIGRATION.md](RUST_MIGRATION.md#native-task-addassign-workflow) for retry rules,
+bounded profiles and the remaining list/runtime preview gap.
+
+Native workspace refresh is also available:
+
+```bash
+target/debug/coven refresh /path/to/workspace
+```
+
+It regenerates the tmux manifest, starter prompts, missing role prompts, and
+dashboard under the shared workspace lock, preserving authored state and existing
+role prompts. It does not initialize a workspace, import/repair task authority,
+or launch a runtime. This source-tree preview uses the repository's example assets
+and generates monitor commands targeting the retained default wrapper (or an
+explicit `COVEN_COMMAND`), not the incomplete native runtime surface. See
+[native refresh limits and follow-ups](RUST_MIGRATION.md#native-workspace-refresh).
+
+The current `bin/coven` remains Python until replacement coverage is complete;
+it is also the temporary compatibility oracle, not a second long-term product.
+The final distribution will contain only the Rust `coven`, with no Python fallback
+or separately named native CLI. Explicit native handoff collection writes
+only local unverified evidence. Other task/authority mutation commands and runtime
+effects are not yet native; no native init/import/recovery CLI is enabled.
+Unsupported native commands fail closed without delegation.
+This is not yet a complete
+Rust replacement. See [RUST_MIGRATION.md](RUST_MIGRATION.md) for build/check recipes,
+compatibility limits and the remaining migration matrix.
+
+### Current default CLI
 
 Homebrew tap install:
 
@@ -88,6 +201,7 @@ coven/
 │   ├── workers.py         # help-only native adapter compatibility observations
 │   ├── kitsune_observation.py # bounded, explicit existing API socket observation
 │   ├── groups.py           # explicit participant/role authority and durable counters
+│   ├── group_live.py       # declared live-source pins and ephemeral group status
 │   ├── group_publisher.py  # foreground, pinned generic Kitsune annotation heartbeats
 │   ├── task_attempts.py   # preparation-only execution intent/receipts and facade
 │   ├── task_graphs.py     # pure bounded DAG/criteria/source manifests
@@ -115,6 +229,42 @@ priority is existing-session observation/grouping and generic presentation befor
 further worker/worktree implementation; initial declarations/publishing are now
 implemented, while extraction and native lifecycle/scheduling remain open.
 
+## Current Djinn persisted-evidence observation
+
+```sh
+coven observe djinn --executable /absolute/path/to/trusted/djinn \
+  --folder /absolute/path/to/session-folder --json
+```
+
+One explicit trusted binary, one fixed native `session observe` call, bounded
+output and supervised cleanup; no workspace, PATH selection, help/status fallback,
+group enrollment or readiness upgrade. Recorded folder metadata/events are not
+live status, job success or authorization. The binary is not sandboxed and can
+ignore arguments. Exits: 0 observed, 1 unavailable, 2 incompatible (unlike native
+Djinn's exit 0 for any generated report). See
+[DJINN_OBSERVATION_CONTRACT.md](DJINN_OBSERVATION_CONTRACT.md) for fields, bounds,
+identity checks and trust limits. Help-only worker readiness remains unchanged.
+Requires a Djinn build containing the new command; checkout validation used
+`../djinn/target/debug/djinn` without replacing the installed binary.
+
+## Current Djinn live observation
+
+```sh
+coven observe djinn-live --file /absolute/private/RUNTIME_UUID.json \
+  --runtime RUNTIME_UUID --instance INSTANCE_UUID --session SESSION_ID --timeout 1 --json
+```
+
+Use actual explicitly inspected IDs from one selected private artifact; no scanning
+or automatic following. Requires producer opt-in at normal startup of a **new
+feature-bearing legacy full-TUI build**, not an old installed UI selected by
+`DJINN_UI_BIN`. No automatic installer, app restart, launch, HTTP, folder fallback,
+group enrollment or readiness upgrade. Fresh source samples establish only legacy
+runner busy ownership, never idle, health, progress or job completion. Cached reports
+cannot renew freshness. See [DJINN_LIVE_OBSERVATION_CONTRACT.md](DJINN_LIVE_OBSERVATION_CONTRACT.md)
+for manual setup, exact selectors/output, expiry, path checks and limitations.
+The one-shot observer never enrolls members. To explicitly attach a source to an
+existing participant, use the separate [group live workflow](GROUP_LIVE_STATUS_CONTRACT.md).
+
 ## Current Kitsune observation
 
 ```bash
@@ -128,6 +278,28 @@ no Coven state and creates no group membership. `done` is idle/unacknowledged, n
 native completion or job success; native references may be persisted and freshness
 is unknown. Nonobserved reports safely return empty agents, not runtime failure
 inferences. Exits: 0 observed, 1 unavailable, 2 incompatible.
+
+An optional shadow mode interprets generic foreground-process evidence in Coven,
+independently of Kitsune's agent inventory:
+
+```bash
+coven observe kitsune --socket /absolute/path/to/existing-api.sock \
+  --process-pane w18:p85 --json
+```
+
+This selects **one exact pane**, brackets `pane.process_info` with snapshots, and
+recognizes only literal `djinn`/`djinn-ui` executable basenames from structured argv.
+Its separate report contains `observations`, not `agents` or group participants;
+observing alone never enrolls a member. The separate `group add --process-evidence`
+path below reads fresh evidence rather than importing that report.
+Process brackets use a generic version/protocol/pane-locator projection, ignoring
+absent or semantically malformed legacy agent/UI metadata. The entire JSON response
+still passes shared syntax and resource limits before projection; malformed JSON
+is never accepted. Default observation retains strict legacy validation.
+Recognition is executable-family evidence (including help/maintenance modes), not
+an authenticated binary, active agent, verified session, or lifecycle fact. No
+launch/resume/detection behavior is removed. See
+[KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md).
 
 **Read method does not mean zero server-side effects:** existing Kitsune dispatch
 housekeeping may expire metadata, drain events, sync titles, or create a default
@@ -149,21 +321,128 @@ coven group list WORKSPACE --json
 coven group publish WORKSPACE auth-review --socket ABS --source coven --duration 60 --json
 ```
 
-Select current pane IDs from the observed **agent** inventory, including agents
-without native references. Roles are display-only. Adding membership reads a
-snapshot but sends no UI writes; publishing is a separate explicit foreground run.
+By default, select current pane IDs from the observed **agent** inventory,
+including agents without native references. Alternatively, explicitly bind one
+current pane using Coven's Djinn-family process evidence, even if absent from that
+inventory:
+
+```sh
+coven observe kitsune --socket ABS --process-pane w18:p85 --json
+coven group add WORKSPACE auth-review --member backend --role 'Investigator' \
+  --socket ABS --pane w18:p85 --process-evidence
+```
+
+Use `--rebind` if that member already has different stable evidence, and optionally
+`--expect-revision '<current group token>'`. Roles are display-only. Both add modes
+read fresh evidence and send no UI writes; publishing is a separate foreground run.
+Process add/rebind atomically promotes schema 1 of `state/groups.json` to schema 2
+(mixed bindings allowed), never reducing schema 3; older readers reject it.
+UUIDs/counters and `groups-v1` token format/CAS
+are preserved; removing process members or snapshot rebind never downgrades it.
+Default snapshot binding remains unchanged. There is no saved-report import,
+automatic enrollment/fallback/rebind, native identity or execution grant.
+
+Before any reservation/write, each publication cycle reobserves all process members
+via current panes and bracketed process reads: one initial snapshot + three reads
+per process member share a 3-second deadline and aggregate 1 MiB read budget.
+Missing/unrecognized/changed evidence stops the cycle; stable same-terminal moves
+are allowed. PID reuse remains possible, and help/maintenance modes also match;
+this is not active-agent truth. Default annotation writes/6000 ms TTL are unchanged.
+All process brackets are generic, even in mixed groups. The initial cycle snapshot
+is generic only for pure-process groups; mixed and snapshot-only groups retain
+strict legacy validation and snapshot-member native-hint checks. Selection uses
+validated member provenance before parsing, with no strict-to-generic fallback.
+Process observation/add need no annotation opt-in and ignore descriptor semantics;
+publication still strictly requires a valid descriptor (present null is an error),
+an enabled source and the expected epoch.
 First manually enable a dedicated source in Kitsune using array syntax:
 `[annotations]` with `sources = ["coven", "build"]`. Coven must come first if
 `build` previously claimed the target. Sources are not authentication; coordinate
 one dedicated source per workspace and do not manually reuse the publisher's source.
 
-Ctrl-C stops refresh, not agents; labels expire after 6000 ms, with **no lower-source
+Ctrl-C stops refresh, not agents; static labels expire after 6000 ms, with **no lower-source
 fallback even after expiry** until source-policy reset. Visibility needs spare
 top-border cells (no border in single-pane layouts). Coven never edits config or
 reloads/restarts Kitsune. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) for exact
 schema, rebind/CAS, lifetime, limits, uncertainty, and source-priority caveats.
 Kitsune/user retain layout/rendering/clipping/quotas; labels prove no native or job
 status and grant no terminal control. The one-shot observer remains read-only.
+The full offline suite now passes **763 tests**, including 33 opt-in live-publisher
+tests, 24 live-attachment authority tests and 34 workflow/status tests, alongside
+the existing live/native observers, group publishers, socket aliases and generic
+snapshot contracts.
+Live-source validation is limited to 54 focused opencode tests, 3 schema tests
+and both package Bun typechecks, not the full UI suite. The
+[live observer contract](DJINN_LIVE_OBSERVATION_CONTRACT.md#example-usage) records
+cross-TS→Python fixture interop; no real UI/model calls have validated the live slice.
+[Live group validation](GROUPS_LIVE_VALIDATION.md)
+confirms add/publish, visible labels, process exit, timer-driven TTL expiry and
+explicit replacement rebind against installed Linux binaries. Existing native/task
+safety contracts are unchanged; native lifecycle/execution was not validated.
+Those historical live runs used valid real-server snapshots, not artificial
+malformed-legacy payloads. The generic snapshot slice changed no existing stored
+schema, protocol, API output or authorization; native observation is a separate
+additive command/contract and grants no execution authority.
+
+### Explicit live attachment and read-only group status
+
+For an **existing member**, use actual manually inspected source pins:
+
+```sh
+coven group attach-live WORKSPACE auth-review --member backend \
+  --file /absolute/private/RUNTIME_UUID.json --runtime RUNTIME_UUID \
+  --instance INSTANCE_UUID --session SESSION_ID --timeout 1 --json
+coven group status WORKSPACE auth-review --timeout 1 --json
+coven group detach-live WORKSPACE auth-review --member backend --json
+```
+
+First attach atomically opts the same group authority into schema 3; all members
+gain `live_attachment: null|metadata`. Older readers fail closed; reads never
+migrate and detach never downgrades. Only declarations are persisted, not activity
+or TTL. Every attach freshly reads the pinned source, then CAS-checks the preflight
+token and participant UUID under lock, even without `--expect-revision`.
+Changed pins need `--reattach`; unchanged pins preserve `attached_at`. A changed
+stable `group add --rebind` clears an attachment; role/pane/timestamp-only changes
+preserve it. Detach needs no artifact I/O and never deletes or controls the source.
+
+Status reads only groups and declared artifacts, writes nothing, and projects
+short-lived busy/unknown legacy-runner evidence, not terminal/session equivalence
+or execution permission. Individual unavailable rows still permit exit 0; whole
+content drift, failed recheck or overall deadline expiry discards all rows and
+exits 1. Callers must continue reducing returned lifetimes during delivery/display.
+The static publisher never opens attachments or appends activity; its group/role
+labels retain 6000 ms TTL. For explicitly opted-in live labels after attaching
+sources, use:
+
+```sh
+coven group publish WORKSPACE auth-review --socket ABS --source coven --live --duration 60 --json
+```
+
+Live mode requires literal `annotations.valid_until_unix_ms: true` on every cycle
+snapshot, even for unknown rows; unsupported servers fail without a write or silent
+downgrade. Fresh pinned busy text is `GROUP NAME · ROLE · legacy runner busy`.
+It carries a 3000 ms TTL ceiling plus an absolute `valid_until_unix_ms` bounded by
+the original sample and continuously decreasing client wall/elapsed budgets through
+reads, reservation and sends; Kitsune must enforce it after server queueing.
+Unknown/unattached/lost/expired/invalid sources yield role-only text and 6000 ms TTL.
+The composed busy frame expires as a whole; later refresh can restore role-only
+text, never a hidden static layer, lower-source fallback or exit-time cleanup.
+All binding, revision, participant/pin, source/epoch and whole-target durable-counter
+fences remain; uncertain delivery or any rejection stops without retry/repair.
+No reattachment, restart following, native control, idle, health, provider progress,
+readiness or completion is inferred. Attachments do not verify terminal/UI sessions.
+
+Live expiry assumes compatible source/server Unix clocks, no disruptive wall changes
+and normal monotonic progression. Observed wall/monotonic regressions stop the run;
+unknown skew, arbitrary rollback, suspend and hard-real-time pixel expiry are not
+guaranteed. Capability discovery is not a clock-quality attestation. See
+[opt-in publication](GROUPS_CONTRACT.md#opt-in-live-publication) for arithmetic,
+whole-frame expiry and exact live summary fields; the default summary is unchanged.
+See [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md) for exact fields,
+expiry math, CAS, shared-pin and clock limitations. Offline tests exercise the real
+CLI wrapper with private fixtures; no existing groups or native runtimes were
+modified to validate the attachment/status slice. Live-publisher coverage uses
+private artifacts/fake endpoints, not installed Kitsune or native agents.
 
 ## Generated workspace layout
 

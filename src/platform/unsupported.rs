@@ -1,0 +1,48 @@
+use crate::{Error, Result};
+use std::{fs::File, path::Path};
+
+pub(crate) fn ensure_supported() -> Result<()> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn random_uuid_hex() -> Result<String> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn workspace_location(_: &Path) -> Result<super::WorkspaceLocation> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn open_readonly(_: &Path) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn open_append(_: &Path) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn replacement_mode(_: &Path) -> std::io::Result<Option<u32>> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn apply_replacement_mode(_: &File, _: u32) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn verify_replacement_mode(_: &File, _: u32) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn rename_replace(_: &Path, _: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+
+pub(crate) fn open_workspace_lock(_: &Path, _: bool) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn try_workspace_lock(_: &File) -> std::io::Result<bool> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+}
+pub(crate) fn unlock_workspace(_: &File) {}
+pub(crate) fn workspace_argument(_: &Path) -> Result<std::path::PathBuf> {
+    Err(Error("unsupported_platform"))
+}
+
+pub(crate) fn mkdir_private(_: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn sync_directory(_: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
