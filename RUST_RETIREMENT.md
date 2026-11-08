@@ -40,8 +40,8 @@ not authorize a push, release publication or external Homebrew promotion.
 - **Policy and cleanup:** non-UTF-8 paths and finite caps still need explicit
   disposition. The 941-ID source audit remains 67 mapped / 874 unresolved; that
   blocks development-oracle removal, not native execution of 874 alleged features.
-  No changes have been committed, pushed or merged. No merge, source push, source
-  deletion or external promotion is authorized.
+  The migration is being committed for the user-authorized local main merge.
+  No push, source deletion or external promotion is authorized by that request.
 
 The command-path audit baseline is 78 Python paths: 27 represented, 51 absent,
 plus native-only `execution history`. The six execution writers brought that
@@ -166,7 +166,9 @@ must still close before deleting the retained source oracles.
 The launcher `exec`s absolute `COVEN_NATIVE_BIN`, or only the normal checkout's
 `target/release/coven` when unset. Missing native selection fails with explicit
 build guidance; no Cargo invocation, Python, debug-binary or PATH fallback exists.
-Relocated/symlinked checkout launchers require explicit native selection. Neither
+Default checkout launchers follow relative/absolute symlink chains, bounded to
+40 links, before selecting the single release path. Relocated wrapper copies
+require explicit native selection. Neither
 `COVEN_COMMAND` nor `COVEN_HOME` is overwritten: they retain generated-command and
 `COVEN_HOME/examples` asset meanings, respectively. Installed binaries have no wrapper.
 

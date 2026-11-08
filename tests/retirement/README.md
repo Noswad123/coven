@@ -24,7 +24,8 @@ method obligations, file counts, direct and transitive imports, and the static
 native integration inventory. All commands validate; `--check` is an explicit
 spelling for automation, not a weaker inspection mode. The audit is read-only,
 stdlib-only and AST-based for Python. It never imports or executes runner code.
-Audit unit tests live outside `tests/`, preserving the original 941-method suite.
+Audit unit tests live outside `tests/`. The full Python suite now has 946 methods:
+941 frozen originals plus five explicitly pinned supplemental wrapper methods.
 
 ## Frozen Baseline
 
@@ -57,7 +58,8 @@ behavior is missing. All original Python tests remain active.
   concurrency, purity, package isolation and Python-specific API tests remain
   explicit obligations; they are not silently discarded.
 
-The validator checks current AST-discovered IDs against the frozen list and
+The validator checks current AST-discovered IDs against the disjoint union of
+the frozen original list and the explicit supplemental cohort, and
 hashes the complete original files. Thus removing assertions without changing a
 method name also fails. It validates selector references/overlaps, counts,
 candidate native test names, review IDs and all fixture references/digests.
@@ -285,7 +287,7 @@ statuses remain frozen. This approves neither source deletion nor full retiremen
 
 The read-only audit checks approval, the accepted record digest, both per-file
 hashes and method references, then still checks each complete current source hash.
-The 22 audit tests include all eleven transitions, missing/mismatched provenance,
+The audit tests include all eleven transitions, missing/mismatched provenance,
 and unexpected assertion AST modifications that must fail without rewriting files.
 
 The transition's reported 941 Python passes and five `tests/native_entrypoint.rs`
@@ -294,3 +296,40 @@ unchanged seven-target / 54-ID candidate inventory. The conservative lexical
 scanner can flag Python-named trap strings even when they are not executed Python;
 this limitation is not suppressed or treated as independent scanner clearance.
 No Python fallback script or quoted-command workaround is added to the inventory.
+
+## Main Merge Compatibility
+
+`supplemental_python` explicitly admits the five `WrapperTests` methods from main
+commit `649324cda16915a4a5cf8e9746f02c32f6b77f59`, separately from every original
+mapping unit, category and review. `original_main_sha256` was verified with
+read-only `git show 649324c:tests/test_wrapper.py | sha256sum`; `sha256` pins the
+current native-compatible source. Class/method IDs are frozen, not discovered
+and accepted automatically. The audit rejects unapproved files or methods,
+same-count renames, assertion/source hash drift, duplicates and original-cohort
+overlap. Supplemental IDs cannot be placed in original reviews or mappings.
+`--summary` and `--json` report the five separately and the full 946-method count.
+
+The main Bash/Python fake-runner tests were adapted to real prebuilt Rust
+fixtures while retaining all five IDs and their compatibility intent. This is
+not an exact-method-AST equivalence claim. Native binary selection now uses
+`COVEN_NATIVE_BIN`; `COVEN_HOME` means asset root, not Python binary selection.
+Callback precedence is nonempty `COVEN_COMMAND`, then `ARCANA_PUBLIC_COVEN`, then
+portable `coven`, preserving literal spelling and quoting. Both native entry paths
+exercise init/refresh callbacks; unrelated ARCANA variables do not select them.
+Relative/absolute symlinks, cycle/40-hop bounds and prebuilt-only operation remain
+explicit compatibility requirements. These tests do not certify full macOS support.
+
+`provenance.active_oracle` pins the current `runner/coven.py` and records main's
+flat-root callback fix: remove `PROJECT_DIR`, use `COVEN_DIR/bin/coven`. The
+historical `oracle_coven_sha256` remains unchanged. Session views and all other
+fixture captures still describe their original source, not this active oracle;
+no fixture golden or capture provenance was regenerated. Records, checkpoints
+and task graph capture source files were not changed by this fix.
+
+All 941 original IDs/source pins, 67 mapped / 874 unresolved statuses and
+53 A / 15 B / 0 C / 873 D categories remain unchanged by this integration. The
+seven-target / 54-ID candidate native inventory still excludes
+`tests/native_entrypoint.rs`; no new native tests are inferred into it.
+`--require-complete` still fails for the 874 unresolved obligations independently
+of native execution success. This metadata does not authorize a merge or commit;
+the parent independently reviews the supplemental cohort before committing.

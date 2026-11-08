@@ -44,10 +44,10 @@ jobs:
       - name: Full Rust Tests Including Native Installation
         timeout-minutes: 45
         run: cargo test --offline --locked --no-fail-fast
-      - name: Retained Python Regression Suite (941 Methods)
+      - name: Python Regressions (941 Legacy and 5 Native Wrapper Tests)
         timeout-minutes: 15
         run: python3 -m unittest discover -s tests -q
-      - name: Retirement Audit Tool Tests (22 Tests)
+      - name: Retirement Audit Tool Tests (29 Tests)
         timeout-minutes: 15
         run: python3 -m unittest discover -s tools/tests -q
       - name: Validate Retirement Ledger and Summary

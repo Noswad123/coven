@@ -33,6 +33,37 @@ adapted; the main checkout's changes remain preserved separately.
 
 ## One command, one replacement
 
+### Main-branch integration
+
+The local-main merge retains the migration's canonical native init/refresh and
+shared assets rather than layering the older parallel template implementations.
+Main's flat-root Python-oracle fix is retained. Its public callback identity
+feature is shared by native init, refresh and runtime monitor generation:
+nonempty `COVEN_COMMAND`, then nonempty `ARCANA_PUBLIC_COVEN`, then portable
+`coven`. Empty values are unset; unrelated Arcana variables do not select callbacks.
+Selected spelling is shell-quoted without canonicalization or executable probing.
+
+The native launcher still executes only an explicit absolute prebuilt binary or
+the one checkout release path. Default checkout symlink chains are followed with
+a 40-link bound; ordinary nonsymlink invocation remains tool-free with empty PATH.
+`COVEN_HOME` remains an asset root, not a Python-runner or binary selector.
+The five main-only wrapper tests are retained as explicit supplemental tests
+against prebuilt Rust fixtures. The original retirement baseline remains 941
+methods (67 mapped / 874 unresolved); total Python discovery is now 946 methods.
+No remaining release/platform or source-oracle-cleanup gate is silently closed
+by the user-authorized local merge. No push or external formula promotion is made.
+
+Integrated validation passed formatting, strict all-target Clippy, Rust 1.85.0
+all-target checking, all native regression targets (1,228 unique passes, five
+subprocess-only helpers ignored), 946 Python tests in 192.483s and 29 audit-tool
+tests in 257.093s. Native results combine the completed full regression run with
+the eight-test entrypoint rerun after replacing a transient write-open script
+fixture with an existing prebuilt inert executable; no production assertion or
+timeout was relaxed. The complete regression output is saved at
+`/home/jdawson/.local/share/opencode/tool-output/tool_1bb52e65d001K26PqvTY7WzwgR`.
+The retirement audit separately preserves 941 original plus five explicitly
+reviewed main-branch supplemental methods; it does not redefine mapping totals.
+
 The Rust crate defines exactly one binary target, **`coven`**. Development and
 parity tests invoke its explicit Cargo/build path, never the installed command
 or an automatically selected implementation. There is no second native command

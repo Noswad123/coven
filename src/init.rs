@@ -305,15 +305,15 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
                 .map_or(Value::Null, |example| s(&example.id)),
         ),
     ])?)?;
-    let cli_command = match std::env::var("COVEN_COMMAND") {
-        Ok(value) if !value.is_empty() => {
+    let cli_command = match assets::command_environment() {
+        Ok(Some(value)) => {
             require(
                 value.len() <= MAX_TEMPLATE,
                 "unsupported_init_input_profile",
             )?;
             assets::shell_quote(&value)
         }
-        Ok(_) | Err(std::env::VarError::NotPresent) => "coven".into(),
+        Ok(None) => "coven".into(),
         Err(_) => return Err(Error("unsupported_init_command_environment_profile")),
     };
     let context = PureAssetContext {

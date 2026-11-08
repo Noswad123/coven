@@ -17,6 +17,17 @@ pub(crate) struct PureAssetContext {
     pub example_text: String,
 }
 
+pub(crate) fn command_environment() -> std::result::Result<Option<String>, std::env::VarError> {
+    for key in ["COVEN_COMMAND", "ARCANA_PUBLIC_COVEN"] {
+        match std::env::var(key) {
+            Ok(value) if !value.is_empty() => return Ok(Some(value)),
+            Ok(_) | Err(std::env::VarError::NotPresent) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(None)
+}
+
 pub(crate) fn example_text(example: Option<&str>) -> Result<String> {
     if example.is_none() {
         return Ok(String::new());

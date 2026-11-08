@@ -139,6 +139,9 @@ class RetirementCoverageTests(unittest.TestCase):
             self.assertEqual(coverage.main(["--require-complete"]), 1)
         self.assertIn("A=53 B=15 C=0 D=873", out.getvalue())
         self.assertIn("mapped=67 unresolved=874", out.getvalue())
+        self.assertIn("Original methods: 941", out.getvalue())
+        self.assertIn("Supplemental Python methods: 5 in 1 files", out.getvalue())
+        self.assertIn("Full Python suite methods: 946", out.getvalue())
         self.assertIn("retirement incomplete", err.getvalue())
 
     def test_report_is_deterministic_and_never_imports_runner(self):
@@ -272,6 +275,92 @@ class RetirementCoverageTests(unittest.TestCase):
         manifest = copy.deepcopy(self.manifest)
         manifest["files"][0]["sha256"] = "0" * 64
         self.assertTrue(any("assertion source drift" in error for error in coverage.audit(coverage.ROOT, manifest)["errors"]))
+
+    def test_supplemental_cohort_has_exact_five_actual_ids_without_original_mappings(self):
+        supplemental = self.report["supplemental_python"]
+        entry, = self.manifest["supplemental_python"]
+        actual = coverage.methods(coverage.ROOT / entry["path"])
+        self.assertEqual(supplemental["method_count"], 5)
+        self.assertEqual(supplemental["file_counts"], {"tests/test_wrapper.py": 5})
+        self.assertEqual(supplemental["ids"], sorted(
+            f"python::{entry['path']}::{key.replace('.', '::', 1)}" for key in actual))
+        self.assertEqual(self.report["full_python_method_count"], 946)
+        self.assertEqual(coverage.digest(coverage.ROOT / entry["path"]), entry["sha256"])
+        self.assertEqual(entry["source_main_commit"], "649324cda16915a4a5cf8e9746f02c32f6b77f59")
+        self.assertEqual(entry["original_main_sha256"],
+                         "30c204782c1f87be53b35b9fe805f8935724bb6cdef9b5269e32d6fe26c712fc")
+        self.assertFalse(set(supplemental["ids"]) & {unit["id"] for unit in self.report["units"]})
+        for name in ("reviews", "candidate_mappings"):
+            manifest = copy.deepcopy(self.manifest)
+            manifest[name][supplemental["ids"][0]] = {} if name == "reviews" else []
+            self.assertIn(f"unknown original IDs in {name}", coverage.audit(coverage.ROOT, manifest)["errors"])
+
+    def test_unapproved_supplemental_file_is_not_silently_dropped(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest.pop("supplemental_python")
+        errors = coverage.audit(coverage.ROOT, manifest)["errors"]
+        self.assertTrue(any("inventory drift" in error and "tests/test_wrapper.py" in error for error in errors))
+
+    def test_supplemental_new_and_renamed_methods_fail_even_with_same_count(self):
+        original_methods = coverage.methods
+        for rename in (False, True):
+            def changed_methods(path):
+                actual = original_methods(path)
+                if path.name == "test_wrapper.py":
+                    if rename:
+                        actual.pop(next(iter(actual)))
+                    actual["WrapperTests.test_unapproved"] = None
+                return actual
+
+            with self.subTest(rename=rename), mock.patch.object(coverage, "methods", side_effect=changed_methods):
+                errors = coverage.audit(coverage.ROOT, self.manifest)["errors"]
+            self.assertIn("tests/test_wrapper.py: supplemental method drift", errors)
+            self.assertTrue(any("inventory drift" in error for error in errors))
+
+    def test_supplemental_source_assertion_drift_fails_without_id_changes(self):
+        entry, = self.manifest["supplemental_python"]
+        original_local_file = coverage.local_file
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test_wrapper.py"
+            tree = ast.parse((coverage.ROOT / entry["path"]).read_text())
+            method = next(node for cls in tree.body if isinstance(cls, ast.ClassDef)
+                          for node in cls.body if isinstance(node, ast.FunctionDef)
+                          and node.name.startswith("test_"))
+            method.body.append(ast.Assert(test=ast.Constant(value=False)))
+            path.write_text(ast.unparse(ast.fix_missing_locations(tree)))
+            with mock.patch.object(coverage, "local_file", side_effect=lambda root, name:
+                                   path if name == entry["path"] else original_local_file(root, name)):
+                errors = coverage.audit(coverage.ROOT, self.manifest)["errors"]
+        self.assertEqual(errors, ["tests/test_wrapper.py: supplemental assertion source drift"])
+
+    def test_supplemental_duplicates_and_original_file_overlap_fail(self):
+        for kind in ("file", "method", "original"):
+            manifest = copy.deepcopy(self.manifest)
+            entry = manifest["supplemental_python"][0]
+            if kind == "file":
+                manifest["supplemental_python"].append(copy.deepcopy(entry))
+            elif kind == "method":
+                entry["classes"]["WrapperTests"].append(entry["classes"]["WrapperTests"][0])
+            else:
+                entry["path"] = manifest["files"][0]["path"]
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "duplicate|overlapping"):
+                coverage.audit(coverage.ROOT, manifest)
+
+    def test_supplemental_provenance_is_required(self):
+        for key in ("source_main_commit", "original_main_sha256", "sha256", "policy_transition_notes"):
+            manifest = copy.deepcopy(self.manifest)
+            manifest["supplemental_python"][0][key] = ""
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "supplemental provenance"):
+                coverage.audit(coverage.ROOT, manifest)
+
+    def test_active_oracle_hash_does_not_replace_historical_capture_hash(self):
+        provenance = self.manifest["provenance"]
+        self.assertEqual(provenance["oracle_coven_sha256"],
+                         "f1303a96c043820913855a7f5b5361e0cbcb0d66ecd9e5b207d417f69c21fb36")
+        self.assertNotEqual(provenance["oracle_coven_sha256"], provenance["active_oracle"]["sha256"])
+        manifest = copy.deepcopy(self.manifest)
+        manifest["provenance"]["active_oracle"]["sha256"] = "0" * 64
+        self.assertIn("active oracle source drift", coverage.audit(coverage.ROOT, manifest)["errors"])
 
     def test_eleven_approved_transitions_preserve_original_hashes_and_ids(self):
         self.enterContext(mock.patch.object(coverage, "rust_tests",

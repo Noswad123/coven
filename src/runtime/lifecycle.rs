@@ -244,9 +244,9 @@ fn launch_commands(root: &Path, state: &WorkspaceState) -> Result<Vec<(String, S
 }
 
 fn monitors() -> Result<Vec<(&'static str, String)>> {
-    let cli = match std::env::var("COVEN_COMMAND") {
-        Ok(value) if !value.is_empty() => workspace_assets::shell_quote(&value),
-        Ok(_) | Err(std::env::VarError::NotPresent) => "coven".into(),
+    let cli = match workspace_assets::command_environment() {
+        Ok(Some(value)) => workspace_assets::shell_quote(&value),
+        Ok(None) => "coven".into(),
         Err(_) => return Err(Error("unsupported_refresh_command_environment_profile")),
     };
     Ok(vec![

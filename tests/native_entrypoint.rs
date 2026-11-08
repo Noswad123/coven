@@ -313,3 +313,85 @@ fn exec_preserves_pid_and_signal_status_with_a_compiled_inert_helper() {
         }
     }
 }
+
+#[test]
+fn default_symlink_chain_discovers_release_with_empty_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let wrapper = wrapper(root);
+    binary(&root.join("target/release/coven"));
+    let relative = root.join("relative");
+    symlink("bin/coven", &relative).unwrap();
+    let absolute = root.join("absolute");
+    symlink(&relative, &absolute).unwrap();
+    for launcher in [&wrapper, &relative, &absolute] {
+        success(cli(launcher, root).arg("--help").output().unwrap());
+    }
+}
+
+#[test]
+fn arcana_non_utf8_callback_keeps_domain_errors_and_explicit_precedence() {
+    use std::os::unix::ffi::OsStringExt;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let native = Path::new(env!("CARGO_BIN_EXE_coven"));
+    let workspace = root.join("workspace");
+    let invalid = std::ffi::OsString::from_vec(vec![0xff]);
+    let output = cli(native, root)
+        .env("ARCANA_PUBLIC_COVEN", &invalid)
+        .arg("init")
+        .arg(&workspace)
+        .arg("--blank")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("unsupported_init_command_environment_profile")
+    );
+    success(
+        cli(native, root)
+            .env("ARCANA_PUBLIC_COVEN", &invalid)
+            .env("COVEN_COMMAND", "coven")
+            .arg("init")
+            .arg(&workspace)
+            .arg("--blank")
+            .output()
+            .unwrap(),
+    );
+    let output = cli(native, root)
+        .env("COVEN_COMMAND", "")
+        .env("ARCANA_PUBLIC_COVEN", invalid)
+        .arg("refresh")
+        .arg(&workspace)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("unsupported_refresh_command_environment_profile")
+    );
+}
+
+#[test]
+fn explicit_inert_target_receives_unchanged_callback_and_asset_environment() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let wrapper = wrapper(root);
+    // Use an existing prebuilt program: a newly written script can remain
+    // temporarily write-open in another parallel test's fork (ETXTBSY).
+    let helper = Path::new("/bin/sh");
+    success(
+        cli(&wrapper, root)
+            .env("COVEN_NATIVE_BIN", helper)
+            .env("COVEN_COMMAND", "")
+            .env("ARCANA_PUBLIC_COVEN", "/public/../chosen coven")
+            .env("COVEN_HOME", "/asset root")
+            .args([
+                "-c",
+                "[ \"$COVEN_COMMAND\" = '' ] && [ \"$ARCANA_PUBLIC_COVEN\" = '/public/../chosen coven' ] && [ \"$COVEN_HOME\" = '/asset root' ]",
+            ])
+            .output()
+            .unwrap(),
+    );
+}

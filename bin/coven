@@ -14,8 +14,28 @@ if [ "${COVEN_NATIVE_BIN+x}" = x ]; then
   esac
 else
   # Normal checkout resolution uses shell builtins only, even with an empty PATH.
-  case "$0" in
-    */*) script_dir=${0%/*} ;;
+  script=$0
+  links=0
+  while [ -L "$script" ]; do
+    [ "$links" -lt 40 ] || fail 'Wrapper symlink chain exceeds 40 links (possible symlink cycle).'
+    links=$((links + 1))
+    if [ -n "${PATH:-}" ]; then
+      target=$(readlink "$script") || fail 'Cannot read wrapper symlink.'
+    elif [ -x /usr/bin/readlink ]; then
+      target=$(/usr/bin/readlink "$script") || fail 'Cannot read wrapper symlink.'
+    else
+      target=$(/bin/readlink "$script") || fail 'Cannot read wrapper symlink.'
+    fi
+    case "$target" in
+      /*) script=$target ;;
+      *) case "$script" in
+           */*) script=${script%/*}/$target ;;
+           *) script=./$target ;;
+         esac ;;
+    esac
+  done
+  case "$script" in
+    */*) script_dir=${script%/*} ;;
     *) script_dir=. ;;
   esac
   checkout=$(CDPATH= cd -P -- "$script_dir/.." && pwd -P) || fail 'Cannot resolve checkout.'

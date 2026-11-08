@@ -75,9 +75,9 @@ fn prepare(root: &Path) -> Result<Prepared> {
                 .ok_or(Error("unsupported_refresh_example_profile"))?,
         ),
     };
-    let cli_command = match std::env::var("COVEN_COMMAND") {
-        Ok(value) if !value.is_empty() => assets::shell_quote(&value),
-        Ok(_) | Err(std::env::VarError::NotPresent) => "coven".to_owned(),
+    let cli_command = match assets::command_environment() {
+        Ok(Some(value)) => assets::shell_quote(&value),
+        Ok(None) => "coven".to_owned(),
         Err(_) => return Err(Error("unsupported_refresh_command_environment_profile")),
     };
     let context = PureAssetContext {

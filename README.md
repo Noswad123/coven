@@ -493,9 +493,21 @@ for asset precedence and staged installation.
 
 Missing/non-executable native selection, relative/empty `COVEN_NATIVE_BIN`, or
 same-inode launcher recursion fails explicitly with build guidance. There is no
-Cargo invocation, Python, debug-binary or PATH fallback. A symlink to the checkout
-launcher does not resolve its source checkout automatically: set an explicit
-absolute `COVEN_NATIVE_BIN` when invoking a relocated/symlinked launcher.
+Cargo invocation, Python, debug-binary or native PATH fallback. Default checkout
+discovery follows relative/absolute launcher symlinks, bounded to 40 links;
+`readlink` is needed only for symlinks (fixed system paths when PATH is empty).
+Relocated copies require an explicit absolute `COVEN_NATIVE_BIN`. `COVEN_HOME`
+is still forwarded as an asset root, not restored as the old binary selector.
+
+### Public callback compatibility
+
+Native init, refresh and lifecycle monitor callbacks select nonempty
+`COVEN_COMMAND`, then nonempty `ARCANA_PUBLIC_COVEN`, then portable `coven`.
+Empty values are unset; `ARCANA_PUBLIC_COMMAND` and `ARCANA_PUBLIC_NUMEN` are
+ignored. Public path spelling is shell-quoted without canonicalization or an
+executable probe. This also applies to installed direct binaries, and preserves
+the Arcana fallback without embedding a source-checkout wrapper path or granting
+execution authority. Non-UTF-8 selected values retain domain-profile errors.
 
 ### Completed locally vs External checklist
 
@@ -537,7 +549,8 @@ cd ~/Projects/new-coven
 
 After the explicit release build, the normal checkout launcher can be used by its
 path. For an installed command, stage the direct Rust binary as described above.
-Symlinked checkout launchers require explicit `COVEN_NATIVE_BIN` selection.
+Symlinked checkout launchers discover their source checkout; relocated copies
+require explicit `COVEN_NATIVE_BIN` selection.
 
 ## Project layout
 

@@ -258,6 +258,9 @@ def audit(root, manifest):
                 raise ValueError(f"duplicate source transition: {source}")
             transitions[source] = (name, change)
     imports = python_inventory(root)
+    active_oracle = manifest["provenance"].get("active_oracle")
+    if active_oracle and digest(local_file(root, active_oracle["path"])) != active_oracle["sha256"]:
+        errors.append("active oracle source drift")
     file_counts, categories = {}, Counter({key: 0 for key in CATEGORIES})
     for entry in manifest["files"]:
         name = entry["path"]
@@ -337,10 +340,35 @@ def audit(root, manifest):
         categories.update(counts)
     if set(transitions) - set(file_counts):
         errors.append("accepted source transition references absent baseline files")
+    supplemental_ids, supplemental_files = set(), {}
+    for entry in manifest.get("supplemental_python", []):
+        name = entry["path"]
+        if name in file_counts or name in supplemental_files or not re.fullmatch(r"tests/test_[a-z0-9_]+\.py", name):
+            raise ValueError(f"duplicate/invalid/overlapping supplemental file: {name}")
+        if (not re.fullmatch(r"[0-9a-f]{7,40}", entry["source_main_commit"])
+                or any(not re.fullmatch(r"[0-9a-f]{64}", entry[key])
+                       for key in ("sha256", "original_main_sha256"))
+                or not isinstance(entry["policy_transition_notes"], str)
+                or not entry["policy_transition_notes"].strip()):
+            raise ValueError(f"invalid supplemental provenance: {name}")
+        baseline = [f"{cls}.{method}" for cls, names in entry["classes"].items() for method in names]
+        if not baseline or len(set(baseline)) != len(baseline):
+            raise ValueError(f"empty/duplicate supplemental method: {name}")
+        identities = {f"python::{name}::{key.replace('.', '::', 1)}" for key in baseline}
+        if identities & (expected_ids | supplemental_ids):
+            raise ValueError(f"overlapping supplemental IDs: {name}")
+        path = local_file(root, name)
+        if set(methods(path)) != set(baseline):
+            errors.append(f"{name}: supplemental method drift")
+        if digest(path) != entry["sha256"]:
+            errors.append(f"{name}: supplemental assertion source drift")
+        supplemental_ids.update(identities)
+        supplemental_files[name] = len(baseline)
     discovered = {f"python::{path.relative_to(root).as_posix()}::{key.replace('.', '::', 1)}"
                   for path in sorted(root.glob("tests/test_*.py")) for key in methods(path)}
-    if discovered != expected_ids:
-        errors.append(f"original ID drift: missing={sorted(expected_ids - discovered)}, added={sorted(discovered - expected_ids)}")
+    approved_ids = expected_ids | supplemental_ids
+    if discovered != approved_ids:
+        errors.append(f"original ID drift / supplemental inventory drift: missing={sorted(approved_ids - discovered)}, added={sorted(discovered - approved_ids)}")
     if len(expected_ids) != manifest["original_method_count"] or dict(categories) != manifest["category_counts"]:
         errors.append("original method/category totals drift")
     for name in ("reviews", "candidate_mappings"):
@@ -359,6 +387,9 @@ def audit(root, manifest):
     return {"schema_version": 1, "provenance": manifest["provenance"], "categories": dict(categories),
             "statuses": dict(sorted(Counter(unit["status"] for unit in units).items())),
             "file_counts": file_counts, "units": units, "independent_python": manifest["independent_python"],
+            "supplemental_python": {"ids": sorted(supplemental_ids), "file_counts": supplemental_files,
+                                    "method_count": len(supplemental_ids)},
+            "full_python_method_count": len(discovered),
             "python_inventory": imports, "native_integration_inventory": native,
             "native_inventory_scope": "static integration-source inventory only; not execution or library-dependency proof",
             "errors": sorted(set(errors))}
@@ -382,6 +413,9 @@ def main(argv=None):
         print(json.dumps(report, sort_keys=True, indent=2, ensure_ascii=True))
     if args.summary or not args.json:
         print(f"Original methods: {len(report['units'])} in {len(report['file_counts'])} files")
+        supplemental = report["supplemental_python"]
+        print(f"Supplemental Python methods: {supplemental['method_count']} in {len(supplemental['file_counts'])} files (not original mapping units)")
+        print(f"Full Python suite methods: {report['full_python_method_count']}")
         print("Categories: " + " ".join(f"{key}={report['categories'][key]}" for key in CATEGORIES))
         print("Statuses: " + " ".join(f"{key}={value}" for key, value in report["statuses"].items()))
         print(f"Independent stdlib Python files (C): {len(report['independent_python'])}")
