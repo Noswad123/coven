@@ -1,45 +1,48 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-if [[ -n "${COVEN_HOME:-}" ]]; then
-  coven_home="$COVEN_HOME"
+fail() {
+  printf '[ERROR] %s\nBuild explicitly with cargo build --release --bin coven in the checkout, or set COVEN_NATIVE_BIN to an absolute prebuilt binary path.\n' "$1" >&2
+  exit 1
+}
+
+if [ "${COVEN_NATIVE_BIN+x}" = x ]; then
+  native_bin=$COVEN_NATIVE_BIN
+  case "$native_bin" in
+    /*) ;;
+    *) fail 'COVEN_NATIVE_BIN must be an absolute path.' ;;
+  esac
 else
-  script="${BASH_SOURCE[0]}"
-  seen=()
-  hops=0
-  while :; do
-    script_dir="$(cd -- "$(dirname -- "$script")" && pwd -P)"
-    script="$script_dir/$(basename -- "$script")"
-    [[ -L "$script" ]] || break
-    for ((index=0; index<hops; index++)); do
-      if [[ "${seen[index]}" == "$script" ]]; then
-        printf '[ERROR] Coven executable symlink cycle: %s\n' "$script" >&2
-        exit 1
-      fi
-    done
-    if (( hops >= 40 )); then
-      printf '[ERROR] Coven executable symlink chain exceeds 40 links\n' >&2
-      exit 1
+  # Normal checkout resolution uses shell builtins only, even with an empty PATH.
+  script=$0
+  links=0
+  while [ -L "$script" ]; do
+    [ "$links" -lt 40 ] || fail 'Wrapper symlink chain exceeds 40 links (possible symlink cycle).'
+    links=$((links + 1))
+    if [ -n "${PATH:-}" ]; then
+      target=$(readlink "$script") || fail 'Cannot read wrapper symlink.'
+    elif [ -x /usr/bin/readlink ]; then
+      target=$(/usr/bin/readlink "$script") || fail 'Cannot read wrapper symlink.'
+    else
+      target=$(/bin/readlink "$script") || fail 'Cannot read wrapper symlink.'
     fi
-    seen+=("$script")
-    hops=$((hops + 1))
-    target="$(readlink "$script")"
     case "$target" in
-      /*) script="$target" ;;
-      *) script="$script_dir/$target" ;;
+      /*) script=$target ;;
+      *) case "$script" in
+           */*) script=${script%/*}/$target ;;
+           *) script=./$target ;;
+         esac ;;
     esac
   done
-  coven_home="$(cd -- "$script_dir/.." && pwd)"
+  case "$script" in
+    */*) script_dir=${script%/*} ;;
+    *) script_dir=. ;;
+  esac
+  checkout=$(CDPATH= cd -P -- "$script_dir/.." && pwd -P) || fail 'Cannot resolve checkout.'
+  native_bin=$checkout/target/release/coven
 fi
 
-runner="$coven_home/runner/coven.py"
-if [[ ! -x "$runner" ]]; then
-  printf '[ERROR] Missing coven runner: %s\n' "$runner" >&2
-  exit 1
-fi
+[ -f "$native_bin" ] && [ -x "$native_bin" ] || fail "Missing or non-executable native coven: $native_bin"
+[ ! "$native_bin" -ef "$0" ] || fail 'Native coven selection resolves to this wrapper (recursive invocation).'
 
-export COVEN_HOME="$coven_home"
-# Empty overrides are treated as unset, matching the runner's policy.
-export COVEN_COMMAND="${COVEN_COMMAND:-${ARCANA_PUBLIC_COVEN:-$coven_home/bin/coven}}"
-
-exec "$runner" "$@"
+exec "$native_bin" "$@"

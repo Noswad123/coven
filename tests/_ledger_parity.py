@@ -274,7 +274,7 @@ def main(binary):
         # Add/assign are now command-tested separately; unported mutations remain
         # parser refusals with no recovery/write.
         before=snapshot(history)
-        for command in (("state","recover-tasks"),("state","import-tasks"),("task","remove"),("task","complete")):
+        for command in (("state","clear-tasks"),("state","export-tasks"),("task","remove"),("task","complete")):
             native(command,history,2)
             assert snapshot(history)==before
             cases+=1

@@ -1,166 +1,140 @@
 use super::*;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
-fn source() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+struct Fixed;
+impl InitIo for Fixed {
+    fn now(&self) -> Result<String> {
+        Ok("2026-01-02T03:04:05+00:00".into())
+    }
+    fn uuid(&self) -> Result<String> {
+        Ok("01234567-89ab-4cde-8012-3456789abcde".into())
+    }
 }
+
 fn blank() -> Options {
     Options {
         blank: true,
-        name: Some("Test".into()),
         ..Options::default()
     }
 }
 
 #[test]
-fn default_and_blank_are_readable_snapshots_with_ordered_events() {
-    for options in [Options::default(), blank()] {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("new");
-        let message = init(&root, &options).unwrap();
-        assert_eq!(message.lines().count(), 3);
-        assert!(!message.ends_with('\n'));
-        let state = workspace::load(&root).unwrap();
-        assert_eq!(
-            state.team.agent_ids().unwrap(),
-            vec!["clippy", "srikanth", "jamal", "kris", "eric"]
-        );
-        assert_eq!(root.join("spec.md").exists(), !options.blank);
-        assert!(!root.join("state/task-authority.json").exists());
-        assert!(!root.join("state/task-ledger").exists());
-        assert!(!root.join("state/execution").exists());
-        let raw = fs::read(root.join("logs/events.jsonl")).unwrap();
-        let mut types = Vec::new();
-        task_delivery::visit_log_records(&raw, &mut |v| {
-            types.push(
-                v.as_object()
-                    .unwrap()
-                    .get("type")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
-                    .to_owned(),
-            );
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(types[0], "workspace.created");
-        if options.blank {
-            assert_eq!(types.len(), 1);
-        } else {
-            assert_eq!(types[1], "goal.seeded");
-            assert_eq!(types.len(), 2 + state.tasks.as_array().unwrap().len());
-            assert!(types[2..].iter().all(|s| s == "task.seeded"));
-        }
-        assert_eq!(
-            fs::read_to_string(root.join("dashboard.md")).unwrap(),
-            task_delivery::prepare_dashboard(&root).unwrap()
-        );
+fn all_flags_semantics_and_no_authority_activation() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("custom");
+    let options = Options {
+        name: Some(String::new()),
+        agents: " Alice Smith , BOB ".into(),
+        opencode_command: "opencode --flag".into(),
+        multiplexer: "tmux".into(),
+        example: "not-supported".into(),
+        blank: true,
+        force: true,
+    };
+    let output = arguments_with(&root, &options, &Fixed).unwrap();
+    assert_eq!(output.exit_code, 0);
+    let state = workspace::load(&root).unwrap();
+    let team = state.team.value().as_object().unwrap();
+    assert_eq!(team.get("name").unwrap().as_str(), Some("custom"));
+    assert!(matches!(team.get("example"), Some(Value::Null)));
+    assert_eq!(team.get("multiplexer").unwrap().as_str(), Some("tmux"));
+    assert_eq!(state.team.agent_ids().unwrap(), ["alice-smith", "bob"]);
+    assert!(state.tasks.as_array().unwrap().is_empty());
+    let mut state_files = fs::read_dir(root.join("state"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    state_files.sort();
+    assert_eq!(
+        state_files,
+        [".workspace.lock", "agents.json", "tasks.json"]
+    );
+    assert!(!root.join("spec.md").exists());
+    for path in [
+        "state/task-authority.json",
+        "state/task-ledger",
+        "state/actions",
+        "state/lead.json",
+        "state/execution",
+        "state/control",
+        "state/repositories",
+        "state/groups",
+        "state/runtime-launch-control.json",
+        "execution",
+        "control",
+        "repositories",
+        "groups",
+    ] {
+        assert!(!root.join(path).exists(), "{path}");
     }
+    assert!(arguments_with(&root, &options, &Fixed).is_err());
 }
 
 #[test]
-fn reserved_inventory_matches_oracle_and_force_never_adopts_any_entry() {
-    let python = include_str!("../../runner/coven.py");
-    let inventory = python
-        .split("INIT_RESERVED_NAMES = (")
-        .nth(1)
-        .unwrap()
-        .split(')')
-        .next()
-        .unwrap();
-    let names = inventory
-        .split('"')
-        .enumerate()
-        .filter_map(|(i, s)| (i % 2 == 1).then_some(s))
-        .collect::<Vec<_>>();
-    assert_eq!(RESERVED, names);
-    for name in RESERVED {
-        for kind in ["file", "directory", "link", "fifo"] {
-            let dir = tempfile::tempdir().unwrap();
-            let path = dir.path().join(name);
-            match kind {
-                "file" => fs::write(&path, b"untouched").unwrap(),
-                "directory" => fs::create_dir(&path).unwrap(),
-                #[cfg(unix)]
-                "link" => std::os::unix::fs::symlink("missing", &path).unwrap(),
-                #[cfg(unix)]
-                "fifo" => {
-                    use std::os::unix::ffi::OsStrExt;
-                    let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
-                    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
-                }
-                _ => continue,
+fn preserved_collisions_precede_flag_semantics() {
+    for reserved in RESERVED {
+        for directory in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let path = root.join(reserved);
+            if directory {
+                fs::create_dir(&path).unwrap();
+            } else {
+                fs::write(&path, b"evidence").unwrap();
             }
             let options = Options {
+                agents: ",".into(),
                 force: true,
-                agents: "!!!".into(),
                 ..blank()
             };
-            assert_eq!(
-                init(dir.path(), &options).unwrap_err().code(),
-                "init_reserved_entry_exists_force_does_not_authorize_reset"
-            );
-            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
-            if kind == "file" {
-                assert_eq!(fs::read(path).unwrap(), b"untouched");
+            let error = arguments_with(root, &options, &Fixed).err().unwrap();
+            assert_eq!(error.code(), "init_reserved_name_exists");
+            if !directory {
+                assert_eq!(fs::read(&path).unwrap(), b"evidence");
             }
+            assert_eq!(fs::read_dir(root).unwrap().count(), 1);
         }
     }
 }
 
+#[cfg(unix)]
 #[test]
-fn resolver_is_noncreating_and_processes_symlink_before_parent() {
-    let dir = tempfile::tempdir().unwrap();
-    let dir = dir.path().canonicalize().unwrap();
-    fs::create_dir_all(dir.join("real/child")).unwrap();
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink("real/child", dir.join("alias")).unwrap();
-        std::os::unix::fs::symlink("missing/suffix", dir.join("dangling")).unwrap();
+fn preserved_dangling_symlinks_and_root_non_utf8() {
+    use std::os::unix::{ffi::OsStringExt, fs::symlink};
+    for reserved in RESERVED {
+        let temp = tempfile::tempdir().unwrap();
+        symlink("absent", temp.path().join(reserved)).unwrap();
         assert_eq!(
-            resolve_root(&dir.join("alias/../new/../target")).unwrap(),
-            dir.join("real/target")
-        );
-        assert_eq!(
-            resolve_root(&dir.join("dangling/../next")).unwrap(),
-            dir.join("missing/next")
+            arguments_with(temp.path(), &blank(), &Fixed)
+                .err()
+                .unwrap()
+                .code(),
+            "init_reserved_name_exists"
         );
     }
-    assert_eq!(
-        resolve_root(&dir.join("absent/../new/deep")).unwrap(),
-        dir.join("new/deep")
-    );
-    assert!(!dir.join("new").exists());
-    fs::write(dir.join("file"), b"x").unwrap();
-    assert_eq!(
-        init(&dir.join("file"), &blank()).unwrap_err().code(),
-        "init_workspace_not_directory"
-    );
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp
+        .path()
+        .join(std::ffi::OsString::from_vec(vec![b'x', 255]));
+    assert!(arguments_with(&root, &blank(), &Fixed).is_err());
+    assert!(!root.exists());
 }
 
 #[test]
-fn initial_json_is_ascii_ordered_and_roundtrips_without_changing_storage() {
-    let value = obj(vec![
-        ("z", s("\u{7f}\u{e9}\u{1f600}")),
-        ("a", s("literal \\u00e9")),
-    ])
-    .unwrap();
-    assert_eq!(
-        initial_json(&value).unwrap(),
-        "{\n  \"z\": \"\\u007f\\u00e9\\ud83d\\ude00\",\n  \"a\": \"literal \\\\u00e9\"\n}\n"
-    );
-    assert!(!value.storage().unwrap().is_ascii());
-    let huge = Value::Array((0..9).map(|_| s("\u{e9}".repeat(MAX_TEXT / 2))).collect());
-    assert!(initial_json(&huge).is_err());
-}
-
-#[test]
-fn deterministic_inputs_and_limits_reject_before_any_mkdir() {
-    let dir = tempfile::tempdir().unwrap();
+fn deterministic_validation_no_root_or_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("missing/child");
     for options in [
         Options {
-            agents: "a,A".into(),
+            agents: "A,a".into(),
+            ..blank()
+        },
+        Options {
+            agents: "a,".into(),
+            ..blank()
+        },
+        Options {
+            multiplexer: "invalid".into(),
             ..blank()
         },
         Options {
@@ -168,407 +142,928 @@ fn deterministic_inputs_and_limits_reject_before_any_mkdir() {
             ..blank()
         },
         Options {
-            name: Some("!!!".into()),
-            ..blank()
-        },
-        Options {
-            multiplexer: "screen".into(),
-            ..blank()
-        },
-        Options {
-            example: "missing-example".into(),
+            example: String::new(),
             ..Options::default()
         },
         Options {
-            name: Some("x".repeat(MAX_TEXT)),
+            name: Some("x".repeat(MAX_TEMPLATE + 1)),
+            ..blank()
+        },
+        Options {
+            agents: (0..MAX_FILES)
+                .map(|i| format!("a{i}"))
+                .collect::<Vec<_>>()
+                .join(","),
             ..blank()
         },
     ] {
-        let root = dir.path().join("absent/deep");
-        assert!(init(&root, &options).is_err());
-        assert!(!dir.path().join("absent").exists());
-    }
-    let assets = tempfile::tempdir().unwrap();
-    let example = assets.path().join("examples/custom");
-    fs::create_dir_all(&example).unwrap();
-    let options = Options {
-        example: "custom".into(),
-        ..Options::default()
-    };
-    let root = dir.path().join("absent/deep");
-    for (manifest, tasks, goal) in [
-        ("{\"id\":7}", "[]", String::new()),
-        ("{\"seed_message\":{}}", "[]", String::new()),
-        ("{}", "[{\"owner\":7}]", String::new()),
-        ("{}", "[{\"id\":\"a\"},{\"id\":\"a\"}]", String::new()),
-        ("{}", "[]", "x".repeat(MAX_TEXT)),
-    ] {
-        fs::write(example.join("example.json"), manifest).unwrap();
-        fs::write(example.join("tasks.json"), tasks).unwrap();
-        fs::write(example.join("goal.md"), goal).unwrap();
-        assert!(run(&root, &options, assets.path(), &SystemIo).is_err());
-        assert!(!dir.path().join("absent").exists());
-    }
-}
-
-struct FaultIo {
-    order: RefCell<Vec<String>>,
-    collision: Option<String>,
-    partial_at: Option<usize>,
-    writes: Cell<usize>,
-    fail_event: Option<usize>,
-    events: Cell<usize>,
-    fail_dashboard: bool,
-}
-impl FaultIo {
-    fn new() -> Self {
-        Self {
-            order: RefCell::new(vec![]),
-            collision: None,
-            partial_at: None,
-            writes: Cell::new(0),
-            fail_event: None,
-            events: Cell::new(0),
-            fail_dashboard: false,
-        }
-    }
-}
-impl InitIo for FaultIo {
-    fn before_file(&self, root: &Path, relative: &str) -> Result<()> {
-        self.order.borrow_mut().push(relative.into());
-        if self.collision.as_deref() == Some(relative) {
-            let path = root.join(relative);
-            fs::create_dir_all(path.parent().unwrap())?;
-            fs::write(path, b"racing writer")?;
-        }
-        Ok(())
-    }
-    fn write(&self, file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
-        let index = self.writes.get();
-        self.writes.set(index + 1);
-        if self.partial_at == Some(index) {
-            file.write_all(&bytes[..bytes.len().min(7)])?;
-            return Err(std::io::Error::other("injected"));
-        }
-        file.write_all(bytes)
-    }
-    fn event(
-        &self,
-        root: &Path,
-        kind: &str,
-        payload: &Value,
-        guard: &WorkspaceGuard,
-    ) -> Result<()> {
-        let index = self.events.get();
-        self.events.set(index + 1);
-        if self.fail_event == Some(index) {
-            let mut file = fs::OpenOptions::new()
-                .append(true)
-                .open(root.join("logs/events.jsonl"))?;
-            file.write_all(b"{partial")?;
-            return Err(Error("event_append_may_be_partial"));
-        }
-        task_delivery::append_event(root, kind, payload, guard)
-    }
-    fn dashboard(&self, root: &Path, guard: &WorkspaceGuard) -> Result<()> {
-        guard.validate_for(root)?;
-        if self.fail_dashboard {
-            task_delivery::refresh_dashboard(root, guard)?;
-            return Err(Error("dashboard_synchronization_uncertain"));
-        }
-        task_delivery::refresh_dashboard(root, guard)
+        assert!(arguments_with(&root, &options, &Fixed).is_err());
+        assert!(!temp.path().join("missing").exists());
     }
 }
 
 #[test]
-fn exact_creation_order_collision_and_partial_write_preserve_progress() {
-    let options = blank();
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("new");
-    let prepared = prepare(&root, &options, source()).unwrap();
-    let expected = prepared
-        .files
-        .iter()
-        .map(|(p, _)| p.clone())
+fn source_context_exact_bytes_and_initial_event_shape() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("demo");
+    let options = Options {
+        agents: "Clippy,Other".into(),
+        ..Options::default()
+    };
+    assert_eq!(
+        arguments_with(&root, &options, &Fixed).unwrap().exit_code,
+        0
+    );
+    let example = assets::init_example("interactive-demo").unwrap();
+    assert_eq!(
+        fs::read(root.join("spec.md")).unwrap(),
+        example.spec.as_bytes()
+    );
+    assert_eq!(
+        fs::read(root.join("work/README.md")).unwrap(),
+        example.work.as_bytes()
+    );
+    let context = PureAssetContext {
+        cli_command: "coven".into(),
+        example_text: example.context,
+    };
+    assert_eq!(
+        fs::read(root.join("prompts/clippy.md")).unwrap(),
+        assets::roleprompt_text("clippy", root.to_str().unwrap(), &context).as_bytes()
+    );
+    let state = workspace::load(&root).unwrap();
+    let tasks = state.tasks.as_array().unwrap();
+    assert_eq!(
+        tasks[0].as_object().unwrap().get("owner").unwrap().as_str(),
+        Some("clippy")
+    );
+    assert!(matches!(
+        tasks[1].as_object().unwrap().get("owner"),
+        Some(Value::Null)
+    ));
+    let log = fs::read_to_string(root.join("logs/events.jsonl")).unwrap();
+    let events = log
+        .lines()
+        .map(|line| values::parse(line.as_bytes(), Profile::LegacySnapshot).unwrap())
         .collect::<Vec<_>>();
+    assert_eq!(events.len(), tasks.len() + 2);
     assert_eq!(
-        &expected[..12],
-        &[
-            "coven.json",
-            "state/agents.json",
-            "state/tasks.json",
-            "goal.md",
-            "coven.toml",
-            "logs/events.jsonl",
-            "logs/messages.jsonl",
-            "tmux/coven.toml",
-            "work/README.md",
-            "output/README.md",
-            "checkpoints/plan-approval.md",
-            "checkpoints/pre-delivery-review.md"
-        ]
+        events[0]
+            .as_object()
+            .unwrap()
+            .entries()
+            .iter()
+            .map(|(k, _)| k.as_str())
+            .collect::<Vec<_>>(),
+        ["event_id", "ts", "type", "name", "agents", "example"]
     );
-    for index in 0..expected.len() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("new");
-        let mut io = FaultIo::new();
-        // Every exclusive-create boundary must stop, never adopt or retry.
-        io.collision = Some(expected[index].clone());
+    assert_eq!(
+        events[1].as_object().unwrap().get("type").unwrap().as_str(),
+        Some("goal.seeded")
+    );
+    for (event, task) in events[2..].iter().zip(tasks) {
         assert_eq!(
-            run(&root, &options, source(), &io).unwrap_err().code(),
-            "initialization_stopped_partial_files_preserved_for_inspection"
+            event
+                .as_object()
+                .unwrap()
+                .get("task")
+                .unwrap()
+                .compact()
+                .unwrap(),
+            task.compact().unwrap()
         );
-        assert_eq!(*io.order.borrow(), expected[..=index]);
-        assert_eq!(
-            fs::read(root.join(&expected[index])).unwrap(),
-            b"racing writer"
-        );
-        assert!(!root.join("state/.workspace.lock").exists());
-        assert!(!root.join("dashboard.md").exists());
     }
-    let mut io = FaultIo::new();
-    io.partial_at = Some(1);
-    assert_eq!(
-        run(&root, &options, source(), &io).unwrap_err().code(),
-        "initialization_stopped_partial_files_preserved_for_inspection"
-    );
-    assert_eq!(fs::read(root.join("state/agents.json")).unwrap().len(), 7);
-    assert!(root.join("coven.json").is_file());
-    assert!(!root.join("state/tasks.json").exists());
-    assert!(!root.join("state/.workspace.lock").exists());
-    assert!(
-        init(
-            &root,
-            &Options {
-                force: true,
-                ..options
-            }
-        )
-        .is_err()
-    );
+    assert!(fs::read(root.join("coven.json")).unwrap().is_ascii());
 }
 
-#[test]
-fn staging_budget_is_incremental_and_render_failure_preserves_all_seeds() {
-    let mut total = values::MAX_OUTPUT - 3;
-    admit_file(&mut total, "goal.md", "abc").unwrap();
-    assert_eq!(total, values::MAX_OUTPUT);
-    assert_eq!(
-        admit_file(&mut total, "goal.md", "x").unwrap_err().code(),
-        "unsupported_init_output_profile"
-    );
-    let dir = tempfile::tempdir().unwrap();
-    let assets = tempfile::tempdir().unwrap();
-    let example = assets.path().join("examples/custom");
-    fs::create_dir_all(&example).unwrap();
-    fs::write(example.join("example.json"), b"{}").unwrap();
-    fs::write(example.join("prompt-context.md"), "x".repeat(MAX_TEXT / 2)).unwrap();
-    let options = Options {
-        agents: (0..70)
-            .map(|i| format!("agent{i}"))
-            .collect::<Vec<_>>()
-            .join(","),
-        example: "custom".into(),
-        ..Options::default()
-    };
-    let root = dir.path().join("new");
-    assert_eq!(
-        run(&root, &options, assets.path(), &SystemIo)
-            .unwrap_err()
-            .code(),
-        "unsupported_init_output_profile"
-    );
-    assert!(!root.exists());
-
-    struct RenderFailure;
-    impl InitIo for RenderFailure {
-        fn dashboard(&self, root: &Path, guard: &WorkspaceGuard) -> Result<()> {
-            guard.validate_for(root)?;
-            assert!(WorkspaceGuard::acquire(root, Duration::ZERO).is_err());
-            fs::write(root.join("goal.md"), b"\xff")?;
-            task_delivery::refresh_dashboard(root, guard)
-        }
-    }
-    assert!(run(&root, &blank(), source(), &RenderFailure).is_err());
-    assert!(root.join("prompts/eric.start.txt").is_file());
-    assert!(!root.join("dashboard.md").exists());
-    assert_eq!(fs::read(root.join("goal.md")).unwrap(), b"\xff");
-    task_delivery::validate_log(&fs::read(root.join("logs/events.jsonl")).unwrap()).unwrap();
+struct Fault {
+    count: Cell<usize>,
+    fail: usize,
 }
-
-#[test]
-fn event_and_dashboard_errors_are_not_success_envelopes_or_rollbacks() {
-    for event in [Some(0), Some(1), Some(2), None] {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("new");
-        let mut io = FaultIo::new();
-        io.fail_event = event;
-        io.fail_dashboard = event.is_none();
-        assert!(run(&root, &Options::default(), source(), &io).is_err());
-        assert!(root.join("prompts/eric.start.txt").is_file());
-        assert!(root.join("state/.workspace.lock").is_file());
-        assert_eq!(root.join("dashboard.md").exists(), event.is_none());
-        let bytes = fs::read(root.join("logs/events.jsonl")).unwrap();
-        if event.is_some() {
-            assert!(bytes.ends_with(b"{partial"));
+impl InitIo for Fault {
+    fn boundary(&self, _: &str, root: &Path) -> Result<()> {
+        assert!(!root.join("coven.json").exists(), "config must be last");
+        let count = self.count.get() + 1;
+        self.count.set(count);
+        if count == self.fail {
+            Err(Error("injected_init_fault"))
         } else {
-            task_delivery::validate_log(&bytes).unwrap();
-        }
-        workspace::load(&root).unwrap();
-    }
-}
-
-#[test]
-fn root_mkdir_failure_has_partial_inspection_code_and_preserves_racing_bytes() {
-    struct RootCollision;
-    impl InitIo for RootCollision {
-        fn mkdir_root(&self, root: &Path) -> Result<()> {
-            fs::write(root, b"racing root file")?;
-            fs::create_dir_all(root)?;
             Ok(())
         }
     }
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("new");
-    assert_eq!(
-        run(&root, &blank(), source(), &RootCollision)
-            .unwrap_err()
-            .code(),
-        "initialization_stopped_partial_files_preserved_for_inspection"
-    );
-    assert_eq!(fs::read(root).unwrap(), b"racing root file");
 }
 
 #[test]
-fn example_fallbacks_and_missing_optional_assets_use_python_defaults() {
-    let assets = tempfile::tempdir().unwrap();
-    let example = assets.path().join("examples/custom");
-    fs::create_dir_all(&example).unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("new");
-    let options = Options {
-        example: "custom".into(),
-        ..Options::default()
+fn config_last_fault_every_boundary_and_no_stale_reset() {
+    let temp = tempfile::tempdir().unwrap();
+    let probe = Fault {
+        count: Cell::new(0),
+        fail: usize::MAX,
     };
-    // Missing, null, false and empty strings all select the same fallback.
-    for id in [None, Some("null"), Some("false"), Some("\"\"")] {
-        for message in [None, Some("null"), Some("false"), Some("\"\"")] {
-            let fields = [("id", id), ("seed_message", message)]
-                .into_iter()
-                .filter_map(|(key, value)| value.map(|value| format!("\"{key}\":{value}")))
-                .collect::<Vec<_>>()
-                .join(",");
-            fs::write(example.join("example.json"), format!("{{{fields}}}")).unwrap();
-            let prepared = prepare(&root, &options, assets.path()).unwrap();
-            let file = |path: &str| {
-                prepared
-                    .files
-                    .iter()
-                    .find(|(p, _)| p == path)
-                    .unwrap()
-                    .1
-                    .as_str()
-            };
-            let team =
-                values::parse(file("coven.json").as_bytes(), Profile::LegacySnapshot).unwrap();
-            assert_eq!(
-                team.as_object().unwrap().get("example").unwrap().as_str(),
-                Some("custom")
-            );
-            assert_eq!(file("state/tasks.json"), "[]\n");
-            assert_eq!(
-                file("goal.md"),
-                "# Goal\n\nDescribe the unified coven goal here.\n"
-            );
-            assert_eq!(
-                file("spec.md"),
-                "# Spec\n\nDescribe the desired behavior here.\n"
-            );
-            for (path, content) in templates_init::structure(assets.path(), None).unwrap() {
-                assert_eq!(file(&path), content);
+    assert_eq!(
+        arguments_with(&temp.path().join("probe"), &blank(), &probe)
+            .unwrap()
+            .exit_code,
+        0
+    );
+    for fail in 1..=probe.count.get() {
+        let root = temp.path().join(format!("fault-{fail}"));
+        let io = Fault {
+            count: Cell::new(0),
+            fail,
+        };
+        let result = arguments_with(&root, &blank(), &io).unwrap();
+        assert_eq!(result.exit_code, 1, "boundary {fail}");
+        assert!(result.stdout.is_empty());
+        assert!(!root.join("coven.json").exists());
+        if root.join("state").exists() {
+            assert!(arguments_with(&root, &blank(), &Fixed).is_err());
+        }
+    }
+}
+
+struct Uncertain;
+impl InitIo for Uncertain {
+    fn marker(&self, reservation: &bootstrap::Reservation, bytes: &[u8]) -> Result<Delivery> {
+        reservation.publish_marker(bytes)?;
+        Ok(Delivery::DurabilityUncertain)
+    }
+}
+
+#[test]
+fn known_marker_uncertainty_is_not_ordinary_failure() {
+    let temp = tempfile::tempdir().unwrap();
+    let result = arguments_with(temp.path(), &blank(), &Uncertain).unwrap();
+    assert_eq!(result.exit_code, 2);
+    assert!(result.stdout.starts_with("[INFO] Coven workspace:"));
+    assert_eq!(result.warnings.len(), 1);
+    assert!(workspace::load(temp.path()).is_ok());
+}
+
+#[test]
+fn role_count_and_stage_bounds() {
+    let mut prepared = Prepared::new();
+    for index in 0..MAX_FILES {
+        prepared
+            .push(format!("file-{index}"), vec![], MAX_TEMPLATE)
+            .unwrap();
+    }
+    assert!(prepared.push("extra".into(), vec![], MAX_TEMPLATE).is_err());
+    let mut prepared = Prepared::new();
+    for index in 0..32 {
+        prepared
+            .push(
+                format!("file-{index}"),
+                vec![b'x'; MAX_TEMPLATE],
+                MAX_TEMPLATE,
+            )
+            .unwrap();
+    }
+    assert!(
+        prepared
+            .push("extra".into(), vec![b'x'], MAX_TEMPLATE)
+            .is_err()
+    );
+}
+
+#[test]
+fn native_reservation_one_winner() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("race");
+    fs::create_dir(&root).unwrap();
+    let results = std::thread::scope(|scope| {
+        let first = scope.spawn(|| arguments_with(&root, &blank(), &Fixed));
+        let second = scope.spawn(|| arguments_with(&root, &blank(), &Fixed));
+        [first.join().unwrap(), second.join().unwrap()]
+    });
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| r.as_ref().is_ok_and(|r| r.exit_code == 0))
+            .count(),
+        1
+    );
+    assert!(workspace::load(&root).is_ok());
+}
+
+struct Collision {
+    at: &'static str,
+    relative: &'static str,
+    fired: Cell<bool>,
+}
+impl InitIo for Collision {
+    fn boundary(&self, operation: &str, root: &Path) -> Result<()> {
+        if operation == self.at && !self.fired.replace(true) {
+            fs::write(root.join(self.relative), b"concurrent evidence")?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn preserved_concurrent_collisions_never_overwrite() {
+    for (at, relative) in [
+        ("reserve", "goal.md"),
+        ("open", "state/agents.json"),
+        ("publish-marker", "coven.json"),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let io = Collision {
+            at,
+            relative,
+            fired: Cell::new(false),
+        };
+        let result = arguments_with(temp.path(), &blank(), &io).unwrap();
+        assert_eq!(result.exit_code, 1);
+        assert!(result.stdout.is_empty());
+        assert_eq!(
+            fs::read(temp.path().join(relative)).unwrap(),
+            b"concurrent evidence"
+        );
+    }
+}
+
+#[test]
+fn ascii_snapshot_and_literal_unicode_history_are_distinct() {
+    let temp = tempfile::tempdir().unwrap();
+    let options = Options {
+        name: Some("caf\u{e9}\nname".into()),
+        ..blank()
+    };
+    let prepared = prepare(temp.path(), &options, &Fixed).unwrap();
+    let config = &prepared
+        .files
+        .iter()
+        .find(|file| file.relative == "coven.json")
+        .unwrap()
+        .bytes;
+    assert!(config.is_ascii());
+    assert!(
+        std::str::from_utf8(config)
+            .unwrap()
+            .contains("caf\\u00e9\\nname")
+    );
+    let events = &prepared
+        .files
+        .iter()
+        .find(|file| file.relative == "logs/events.jsonl")
+        .unwrap()
+        .bytes;
+    assert!(
+        std::str::from_utf8(events)
+            .unwrap()
+            .contains("caf\u{e9}\\nname")
+    );
+    assert!(!temp.path().join("state").exists());
+}
+
+#[test]
+fn encoded_json_and_output_caps_are_pre_effects() {
+    let mut prepared = Prepared::new();
+    // Literal Unicode fits the value profile but ASCII persistence expansion does not.
+    let value = Value::Array(vec![s(&"\u{ffff}".repeat(MAX_TEMPLATE / 3)); 5]);
+    assert!(prepared.json("oversized.json", &value).is_err());
+    assert!(prepared.files.is_empty());
+    assert!(human(&"\u{ffff}".repeat(values::MAX_OUTPUT / 6 + 1)).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn dashboard_private_mode_and_unrelated_files_preserved() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("authored"), b"do not touch").unwrap();
+    assert_eq!(
+        arguments_with(temp.path(), &blank(), &Fixed)
+            .unwrap()
+            .exit_code,
+        0
+    );
+    assert_eq!(
+        fs::metadata(temp.path().join("dashboard.md"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777,
+        0o600
+    );
+    assert_eq!(
+        fs::read(temp.path().join("authored")).unwrap(),
+        b"do not touch"
+    );
+}
+
+#[test]
+fn root_non_directory_precedes_invalid_flags() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("file");
+    fs::write(&root, b"evidence").unwrap();
+    let options = Options {
+        agents: ",".into(),
+        ..blank()
+    };
+    assert!(arguments_with(&root, &options, &Fixed).is_err());
+    assert_eq!(fs::read(&root).unwrap(), b"evidence");
+    assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn defaults_and_independent_metadata_calls() {
+    struct Counting {
+        times: Cell<usize>,
+        ids: Cell<usize>,
+    }
+    impl InitIo for Counting {
+        fn now(&self) -> Result<String> {
+            let index = self.times.get();
+            self.times.set(index + 1);
+            Ok(format!("2026-01-02T03:04:05.{index:06}+00:00"))
+        }
+        fn uuid(&self) -> Result<String> {
+            let index = self.ids.get();
+            self.ids.set(index + 1);
+            Ok(format!("01234567-89ab-4cde-8012-{index:012}"))
+        }
+    }
+    let defaults = Options::default();
+    assert!(defaults.name.is_none());
+    assert_eq!(defaults.agents, "Clippy,Srikanth,Jamal,Kris,Eric");
+    assert_eq!(defaults.opencode_command, "oc");
+    assert_eq!(defaults.multiplexer, "herdr");
+    assert_eq!(defaults.example, "interactive-demo");
+    assert!(!defaults.blank && !defaults.force);
+    let temp = tempfile::tempdir().unwrap();
+    let clock = Counting {
+        times: Cell::new(0),
+        ids: Cell::new(0),
+    };
+    let prepared = prepare(temp.path(), &defaults, &clock).unwrap();
+    assert_eq!(clock.times.get(), 21); // Team + two per task + one per event.
+    assert_eq!(clock.ids.get(), 8);
+    assert_eq!(prepared.files.len(), 29);
+    assert!(!temp.path().join("state").exists());
+}
+
+#[test]
+fn output_escapes_root_before_effects_and_keeps_three_info_lines() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("caf\u{e9}\n\u{1b}");
+    let prepared = prepare(&root, &blank(), &Fixed).unwrap();
+    assert!(!root.exists());
+    assert!(prepared.stdout.is_ascii());
+    assert_eq!(prepared.stdout.lines().count(), 3);
+    assert!(prepared.stdout.contains("caf\\u00e9\\n\\u001b"));
+    assert!(!prepared.stdout.contains('\u{1b}'));
+}
+
+#[test]
+fn replaced_reservation_identity_refuses_before_next_file() {
+    struct ReplaceState;
+    impl InitIo for ReplaceState {
+        fn boundary(&self, operation: &str, root: &Path) -> Result<()> {
+            if operation == "open" {
+                fs::rename(root.join("state"), root.join("saved-state"))?;
+                fs::create_dir(root.join("state"))?;
             }
-            assert_eq!(
-                file("prompts/clippy.md"),
-                templates::prompt("clippy", root.to_str().unwrap(), "")
+            Ok(())
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let result = arguments_with(temp.path(), &blank(), &ReplaceState).unwrap();
+    assert_eq!(result.exit_code, 1);
+    assert!(result.stdout.is_empty());
+    assert!(temp.path().join("saved-state/.workspace.lock").exists());
+    assert_eq!(fs::read_dir(temp.path().join("state")).unwrap().count(), 0);
+    assert!(!temp.path().join("coven.json").exists());
+}
+
+#[test]
+fn command_validation_precedence_is_process_isolated_and_has_no_effects() {
+    const CASE: &str = "COVEN_INIT_COMMAND_VALIDATION_CASE";
+    if let Ok(case) = std::env::var(CASE) {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("missing/child");
+        let options = Options {
+            opencode_command: if case == "spaces" { " \t\n" } else { "" }.into(),
+            ..blank()
+        };
+        let error = arguments_with(&root, &options, &Fixed).err().unwrap();
+        assert_eq!(
+            error.code(),
+            if case == "environment" {
+                "unsupported_multiplexer"
+            } else {
+                "invalid_init_command"
+            }
+        );
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+        return;
+    }
+    for case in ["empty", "spaces", "environment"] {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "init::tests::command_validation_precedence_is_process_isolated_and_has_no_effects",
+                "--nocapture",
+            ])
+            .env(CASE, case)
+            .env_remove("COVEN_COMMAND")
+            .env_remove("COVEN_MULTIPLEXER");
+        if case == "environment" {
+            command.env("COVEN_MULTIPLEXER", "unsupported");
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{case}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn raw_input_caps_refuse_before_clock_or_root_creation() {
+    struct NoClock;
+    impl InitIo for NoClock {
+        fn now(&self) -> Result<String> {
+            panic!("oversized input must be refused before cloning team metadata")
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("missing/child");
+    for options in [
+        Options {
+            agents: "x".repeat(MAX_JSON + 1),
+            ..blank()
+        },
+        Options {
+            agents: "x".repeat(values::MAX_STRING + 1),
+            ..blank()
+        },
+        Options {
+            multiplexer: "x".repeat(MAX_TEMPLATE + 1),
+            ..blank()
+        },
+        Options {
+            example: "x".repeat(MAX_TEMPLATE + 1),
+            ..Options::default()
+        },
+    ] {
+        assert!(arguments_with(&root, &options, &NoClock).is_err());
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+    assert!(prepare(Path::new(&"x".repeat(MAX_TEMPLATE + 1)), &blank(), &NoClock).is_err());
+    for options in [
+        Options {
+            name: Some("x".repeat(values::MAX_STRING + 1)),
+            ..blank()
+        },
+        Options {
+            opencode_command: "x".repeat(values::MAX_STRING + 1),
+            ..blank()
+        },
+    ] {
+        assert_eq!(
+            arguments_with(&root, &options, &Fixed)
+                .err()
+                .unwrap()
+                .code(),
+            "unsupported_init_input_profile"
+        );
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn actual_partial_writes_and_file_sync_failures_preserve_exact_evidence() {
+    struct PartialIo {
+        writes: Cell<usize>,
+        fail: usize,
+        at_sync: bool,
+    }
+    impl InitIo for PartialIo {
+        fn now(&self) -> Result<String> {
+            Fixed.now()
+        }
+        fn uuid(&self) -> Result<String> {
+            Fixed.uuid()
+        }
+        fn write(&self, file: &mut fs::File, bytes: &[u8]) -> Result<()> {
+            let index = self.writes.get();
+            self.writes.set(index + 1);
+            if index == self.fail && !self.at_sync {
+                file.write_all(&bytes[..bytes.len() / 2])?;
+                return Err(Error("injected_partial_write"));
+            }
+            Ok(file.write_all(bytes)?)
+        }
+        fn sync_file(&self, file: &fs::File) -> Result<()> {
+            if self.at_sync && self.writes.get() == self.fail + 1 {
+                return Err(Error("injected_file_sync_failure"));
+            }
+            Ok(file.sync_all()?)
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let options = Options::default();
+    for at_sync in [false, true] {
+        let probe = prepare(&temp.path().join("probe"), &options, &Fixed).unwrap();
+        let count = probe
+            .files
+            .iter()
+            .filter(|file| file.relative != "coven.json")
+            .count();
+        for fail in 0..count {
+            let root = temp.path().join(format!("fault-{at_sync}-{fail}"));
+            let staged = prepare(&root, &options, &Fixed).unwrap();
+            let io = PartialIo {
+                writes: Cell::new(0),
+                fail,
+                at_sync,
+            };
+            let result = arguments_with(&root, &options, &io).unwrap();
+            assert_eq!(result.exit_code, 1);
+            assert!(result.stdout.is_empty());
+            assert!(
+                result.warnings[0]
+                    .contains(&format!("root={}", human(root.to_str().unwrap()).unwrap()))
             );
-            assert_eq!(prepared.events.len(), 2);
+            assert!(result.warnings[0].contains("partial_file=true"));
+            let files = staged
+                .files
+                .iter()
+                .filter(|file| file.relative != "coven.json")
+                .collect::<Vec<_>>();
+            let previous = fail
+                .checked_sub(1)
+                .map_or("none", |index| files[index].relative.as_str());
+            assert!(result.warnings[0].contains(&format!(
+                "target={} last_completed={previous}",
+                files[fail].relative
+            )));
+            assert!(result.warnings[0].contains(if at_sync {
+                "phase=sync-file"
+            } else {
+                "phase=write-file"
+            }));
+            assert!(result.warnings[0].contains(if at_sync {
+                "injected_file_sync_failure"
+            } else {
+                "injected_partial_write"
+            }));
+            assert!(!root.join("coven.json").exists());
+            for (index, file) in staged
+                .files
+                .iter()
+                .filter(|file| file.relative != "coven.json")
+                .enumerate()
+            {
+                let path = root.join(&file.relative);
+                if index > fail {
+                    assert!(!path.exists());
+                    continue;
+                }
+                let expected = if index == fail && !at_sync {
+                    &file.bytes[..file.bytes.len() / 2]
+                } else {
+                    &file.bytes
+                };
+                assert_eq!(
+                    fs::read(&path).unwrap(),
+                    expected,
+                    "{at_sync}/{fail}/{}",
+                    file.relative
+                );
+            }
+            assert!(root.join("state/.workspace.lock").exists());
             assert_eq!(
-                prepared.success.lines().nth(1),
-                Some("[INFO] Seeded example: custom")
+                arguments_with(&root, &blank(), &Fixed)
+                    .err()
+                    .unwrap()
+                    .code(),
+                "init_reserved_name_exists"
             );
         }
     }
-    assert!(!root.exists());
 }
 
 #[test]
-fn example_text_normalizes_crlf_and_bare_cr_before_rendering() {
-    let assets = tempfile::tempdir().unwrap();
-    let example = assets.path().join("examples/custom");
-    fs::create_dir_all(example.join("work")).unwrap();
-    fs::create_dir_all(example.join("output")).unwrap();
-    fs::write(
-        example.join("example.json"),
-        b"{\r\n\"id\": \"custom\"\r\n}",
+fn generated_basename_profile_is_checked_after_normalization_before_effects() {
+    let temp = tempfile::tempdir().unwrap();
+    for label in ["a".repeat(245), format!("  {}  ", "A".repeat(245))] {
+        let root = temp.path().join(format!("valid-{}", label.len()));
+        let options = Options {
+            agents: label,
+            ..Options::default()
+        };
+        let prepared = prepare(&root, &options, &Fixed).unwrap();
+        let result = arguments_with(&root, &options, &Fixed).unwrap();
+        assert_eq!(result.exit_code, 0);
+        for file in prepared.files {
+            assert_eq!(fs::read(root.join(file.relative)).unwrap(), file.bytes);
+        }
+        assert!(
+            fs::metadata(root.join(format!("prompts/{}.start.txt", "a".repeat(245))))
+                .unwrap()
+                .len()
+                > 0
+        );
+    }
+    for label in [
+        "a".repeat(246),
+        format!("  {} ! {}  ", "A".repeat(244), "B"),
+    ] {
+        let root = temp.path().join("missing/child");
+        let error = arguments_with(
+            &root,
+            &Options {
+                agents: label,
+                ..blank()
+            },
+            &Fixed,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code(), "unsupported_init_filename_profile");
+        assert!(!temp.path().join("missing").exists());
+    }
+}
+
+#[test]
+fn directory_syncs_stop_at_changed_creation_chain() {
+    struct Syncs(std::cell::RefCell<Vec<std::path::PathBuf>>);
+    impl InitIo for Syncs {
+        fn sync_directory(&self, path: &Path) -> Result<()> {
+            self.0.borrow_mut().push(path.into());
+            Ok(platform::sync_directory(path)?)
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    for tail in ["existing", "new-parent/new-child/root"] {
+        let root = temp.path().join(tail);
+        if tail == "existing" {
+            fs::create_dir(&root).unwrap();
+        }
+        let io = Syncs(std::cell::RefCell::new(vec![]));
+        assert_eq!(arguments_with(&root, &blank(), &io).unwrap().exit_code, 0);
+        let mut expected = DIRECTORIES
+            .iter()
+            .copied()
+            .chain(std::iter::once("state"))
+            .map(|dir| root.join(dir))
+            .collect::<Vec<_>>();
+        expected.push(root.clone());
+        if tail != "existing" {
+            expected.extend([
+                root.parent().unwrap().to_owned(),
+                temp.path().join("new-parent"),
+                temp.path().to_owned(),
+            ]);
+        }
+        assert_eq!(*io.0.borrow(), expected);
+    }
+}
+
+#[test]
+fn concurrent_root_creator_and_reservation_winner_have_operation_scoped_sync() {
+    use std::{cell::RefCell, path::PathBuf};
+
+    struct Winner {
+        syncs: RefCell<Vec<PathBuf>>,
+        committed: Cell<bool>,
+    }
+    impl InitIo for Winner {
+        fn now(&self) -> Result<String> {
+            Fixed.now()
+        }
+        fn uuid(&self) -> Result<String> {
+            Fixed.uuid()
+        }
+        fn sync_directory(&self, path: &Path) -> Result<()> {
+            self.syncs.borrow_mut().push(path.into());
+            Ok(platform::sync_directory(path)?)
+        }
+        fn marker(&self, reservation: &bootstrap::Reservation, bytes: &[u8]) -> Result<Delivery> {
+            let delivery = reservation.publish_marker(bytes)?;
+            assert_eq!(delivery, Delivery::Committed);
+            self.committed.set(true);
+            Ok(delivery)
+        }
+    }
+    struct Creator {
+        syncs: RefCell<Vec<PathBuf>>,
+        winner: Winner,
+        result: RefCell<Option<TaskOutput>>,
+        expected: RefCell<Option<Prepared>>,
+    }
+    impl InitIo for Creator {
+        fn boundary(&self, operation: &str, root: &Path) -> Result<()> {
+            if operation == "reserve" {
+                // A created the missing chain but has not reserved state or
+                // synced its directory entries. Run B to completion at this barrier.
+                assert!(root.parent().unwrap().is_dir());
+                assert_eq!(fs::read_dir(root)?.count(), 0);
+                assert!(self.syncs.borrow().is_empty());
+                let options = Options {
+                    name: Some("reservation-winner".into()),
+                    ..Options::default()
+                };
+                *self.expected.borrow_mut() = Some(prepare(root, &options, &Fixed)?);
+                let result = arguments_with(root, &options, &self.winner)?;
+                assert_eq!(result.exit_code, 0);
+                assert!(workspace::load(root).is_ok());
+                *self.result.borrow_mut() = Some(result);
+            }
+            Ok(())
+        }
+        fn sync_directory(&self, path: &Path) -> Result<()> {
+            self.syncs.borrow_mut().push(path.into());
+            Ok(platform::sync_directory(path)?)
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("a/b/workspace");
+    assert!(!temp.path().join("a").exists());
+    let creator = Creator {
+        syncs: RefCell::new(vec![]),
+        winner: Winner {
+            syncs: RefCell::new(vec![]),
+            committed: Cell::new(false),
+        },
+        result: RefCell::new(None),
+        expected: RefCell::new(None),
+    };
+    let loser = arguments_with(
+        &root,
+        &Options {
+            name: Some("root-creator".into()),
+            ..blank()
+        },
+        &creator,
     )
     .unwrap();
-    for path in [
-        "goal.md",
-        "spec.md",
-        "prompt-context.md",
-        "work/README.md",
-        "output/README.md",
-    ] {
-        fs::write(example.join(path), b"First\r\nSecond\rThird").unwrap();
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("new");
-    let options = Options {
-        example: "custom".into(),
-        ..Options::default()
-    };
-    run(&root, &options, assets.path(), &SystemIo).unwrap();
-    for path in ["goal.md", "spec.md", "work/README.md", "output/README.md"] {
-        let expected = if path == "goal.md" {
-            "First\nSecond\nThird\n"
-        } else {
-            "First\nSecond\nThird"
-        };
-        assert_eq!(fs::read_to_string(root.join(path)).unwrap(), expected);
-    }
+    let winner = creator.result.borrow_mut().take().unwrap();
+    assert_eq!([loser.exit_code, winner.exit_code], [1, 0]);
     assert_eq!(
-        fs::read_to_string(root.join("prompts/clippy.md")).unwrap(),
-        templates::prompt("clippy", root.to_str().unwrap(), "First\nSecond\nThird")
+        [&loser, &winner]
+            .iter()
+            .filter(|output| output.exit_code == 0)
+            .count(),
+        1
     );
-    workspace::load(&root).unwrap();
+    assert!(loser.stdout.is_empty());
+    assert!(loser.warnings[0].contains("phase=reserve-state"));
+    assert!(loser.warnings[0].contains("last_completed=none partial_file=false"));
+    assert!(winner.warnings.is_empty());
+    assert!(creator.winner.committed.get());
+    assert!(
+        creator.syncs.borrow().is_empty(),
+        "A never reaches creation-chain syncing after losing reservation"
+    );
+    let expected_syncs = DIRECTORIES
+        .iter()
+        .copied()
+        .chain(std::iter::once("state"))
+        .map(|directory| root.join(directory))
+        .chain(std::iter::once(root.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(*creator.winner.syncs.borrow(), expected_syncs);
+    // This characterizes operation scope, not power-loss durability: B does
+    // not sync the outer entries A created, and A has no late sync on failure.
+    for path in [
+        temp.path(),
+        temp.path().join("a").as_path(),
+        root.parent().unwrap(),
+    ] {
+        assert!(
+            !creator
+                .winner
+                .syncs
+                .borrow()
+                .iter()
+                .any(|synced| synced == path)
+        );
+    }
+    for file in creator.expected.borrow_mut().take().unwrap().files {
+        assert_eq!(
+            fs::read(root.join(&file.relative)).unwrap(),
+            file.bytes,
+            "{}",
+            file.relative
+        );
+    }
+    assert!(root.join("state/.workspace.lock").is_file());
+    let state = workspace::load(&root).unwrap();
+    assert_eq!(
+        state
+            .team
+            .value()
+            .as_object()
+            .unwrap()
+            .get("name")
+            .unwrap()
+            .as_str(),
+        Some("reservation-winner")
+    );
+    assert_eq!(state.tasks.as_array().unwrap().len(), 6);
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_directory_collisions_after_recheck_are_never_adopted() {
+    use std::os::unix::fs::symlink;
+    for kind in ["directory", "file", "dangling"] {
+        struct Collide {
+            kind: &'static str,
+            directory: &'static str,
+            fired: Cell<bool>,
+        }
+        impl InitIo for Collide {
+            fn boundary(&self, operation: &str, root: &Path) -> Result<()> {
+                if operation == "mkdir-managed" && !self.fired.replace(true) {
+                    let target = root.join(self.directory);
+                    match self.kind {
+                        "directory" => {
+                            fs::create_dir(&target)?;
+                            fs::write(target.join("foreign"), b"foreign evidence")?;
+                        }
+                        "file" => fs::write(target, b"foreign evidence")?,
+                        _ => symlink("missing-target", target)?,
+                    }
+                }
+                Ok(())
+            }
+        }
+        for directory in DIRECTORIES {
+            let temp = tempfile::tempdir().unwrap();
+            let io = Collide {
+                kind,
+                directory,
+                fired: Cell::new(false),
+            };
+            let result = arguments_with(temp.path(), &blank(), &io).unwrap();
+            assert_eq!(result.exit_code, 1);
+            assert!(result.stdout.is_empty());
+            assert!(result.warnings[0].contains(&format!(
+                "phase=create-directory target={directory} last_completed=none partial_file=false"
+            )));
+            assert!(!temp.path().join("coven.json").exists());
+            assert_eq!(fs::read_dir(temp.path().join("state")).unwrap().count(), 1);
+            match kind {
+                "directory" => {
+                    assert_eq!(
+                        fs::read(temp.path().join(directory).join("foreign")).unwrap(),
+                        b"foreign evidence"
+                    );
+                    assert_eq!(
+                        fs::read_dir(temp.path().join(directory)).unwrap().count(),
+                        1
+                    );
+                }
+                "file" => assert_eq!(
+                    fs::read(temp.path().join(directory)).unwrap(),
+                    b"foreign evidence"
+                ),
+                _ => assert_eq!(
+                    fs::read_link(temp.path().join(directory)).unwrap(),
+                    Path::new("missing-target")
+                ),
+            }
+        }
+    }
 }
 
 #[test]
-fn example_loading_precedes_opencode_and_record_semantics() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("new");
-    let options = Options {
-        example: "missing-example".into(),
-        name: Some("!!!".into()),
-        opencode_command: "".into(),
-        ..Options::default()
+fn progress_is_bounded_escaped_and_does_not_claim_a_foreign_file() {
+    let long_root = format!("/{}", "a/".repeat(2000));
+    let prepared = prepare(Path::new(&long_root), &blank(), &Fixed).unwrap();
+    assert_eq!(prepared.diagnostic_root.len(), 2051);
+    assert!(prepared.diagnostic_root.ends_with("..."));
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("line\n\u{1b}");
+    fs::create_dir(&root).unwrap();
+    let io = Collision {
+        at: "open",
+        relative: "state/agents.json",
+        fired: Cell::new(false),
     };
+    let result = arguments_with(&root, &blank(), &io).unwrap();
+    let message = &result.warnings[0];
+    assert!(message.contains("line\\n\\u001b"));
+    assert!(message.contains(
+        "phase=open-file target=state/agents.json last_completed=none partial_file=false"
+    ));
+    assert!(message.is_ascii());
+    assert_eq!(message.lines().count(), 1);
+    assert!(message.len() < 4096);
     assert_eq!(
-        run(&root, &options, source(), &SystemIo)
-            .unwrap_err()
-            .code(),
-        "init_example_assets_unavailable"
+        fs::read(root.join("state/agents.json")).unwrap(),
+        b"concurrent evidence"
     );
-    assert!(!root.exists());
-    let options = Options {
-        example: "interactive-demo".into(),
-        ..options
-    };
-    assert_eq!(
-        run(&root, &options, source(), &SystemIo)
-            .unwrap_err()
-            .code(),
-        "empty_init_opencode_command"
-    );
-    assert!(!root.exists());
 }
+
+#[cfg(unix)]
+#[path = "overlap.rs"]
+mod overlap;

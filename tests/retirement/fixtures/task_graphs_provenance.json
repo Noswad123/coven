@@ -1,0 +1,275 @@
+{
+  "capture_tool_sha256": "ef7f91aa41148013fc1ad536c27bf3084d2e0b2332033b569a1df5a9ffbf8adb",
+  "cases": 142,
+  "corpus_sha256": "6b74e1fc771ad9af51ce436c22d134cfaac280cc9d6b32efb619139104a3a79d",
+  "documents": 161,
+  "encoding": "Interned raw JSON strings, never serde-normalized; parts concatenate literal strings or repeat a character count times. Raw JSON preserves float 1.0, Unicode and arrays. Canonical bytes are captured as UTF-8 strings. SHA256 and byte length cover expanded raw JSON.",
+  "error_policy": "Record Python GraphError messages for provenance; native refusal acceptance, not diagnostic wording, is compared.",
+  "explicit_oracle_root": "/home/jdawson/Projects/coven-rust-migration",
+  "isolated": true,
+  "methods": {
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_current_binding_not_enrollment_snapshot_is_frozen": {
+      "cases": [
+        "g0001",
+        "g0002",
+        "g0003"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_deep_copies_and_unknown_fields_unicode_operator_values": {
+      "cases": [
+        "g0004",
+        "g0005",
+        "g0006",
+        "g0007"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_digest_domains_key_order_and_array_order": {
+      "cases": [
+        "g0008",
+        "g0009",
+        "g0010",
+        "g0011",
+        "g0012",
+        "g0013",
+        "g0014",
+        "g0015",
+        "g0016",
+        "g0017",
+        "g0018"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_direct_script_import_compatible": {
+      "cases": [],
+      "status": "excluded D"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_document_validation_matrix": {
+      "cases": [
+        "g0019",
+        "g0020",
+        "g0021",
+        "g0022",
+        "g0023",
+        "g0024",
+        "g0025",
+        "g0026",
+        "g0027",
+        "g0028",
+        "g0029",
+        "g0030",
+        "g0031",
+        "g0032",
+        "g0033",
+        "g0034",
+        "g0035",
+        "g0036",
+        "g0037",
+        "g0038",
+        "g0039",
+        "g0040",
+        "g0041",
+        "g0042",
+        "g0043"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_exact_document_and_manifest_byte_bounds": {
+      "cases": [
+        "g0044",
+        "g0045",
+        "g0046",
+        "g0047",
+        "g0048",
+        "g0049",
+        "g0050",
+        "g0051",
+        "g0052",
+        "g0053"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_exact_owner_no_aliases_and_unselected_owner_irrelevant": {
+      "cases": [
+        "g0054",
+        "g0055",
+        "g0056",
+        "g0057",
+        "g0058",
+        "g0059",
+        "g0060"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_invalid_sources_fail_closed_and_strict_json": {
+      "cases": [],
+      "status": "excluded D"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_ledger_identity_and_revision_namespace_not_selected_hash": {
+      "cases": [
+        "g0061",
+        "g0062",
+        "g0063",
+        "g0064",
+        "g0065",
+        "g0066",
+        "g0067",
+        "g0068",
+        "g0069",
+        "g0070",
+        "g0071",
+        "g0072"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_malformed_current_enrollments_fail_closed": {
+      "cases": [
+        "g0073",
+        "g0074",
+        "g0075",
+        "g0076",
+        "g0077",
+        "g0078",
+        "g0079",
+        "g0080",
+        "g0081",
+        "g0082",
+        "g0083"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_manifest_bound_includes_unknown_source_records": {
+      "cases": [
+        "g0084"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_manifest_shape_types_digests_and_snapshot_validation": {
+      "cases": [
+        "g0085",
+        "g0086",
+        "g0087",
+        "g0088",
+        "g0089",
+        "g0090",
+        "g0091",
+        "g0092",
+        "g0093",
+        "g0094",
+        "g0095",
+        "g0096",
+        "g0097",
+        "g0098",
+        "g0099",
+        "g0100",
+        "g0101",
+        "g0102",
+        "g0103",
+        "g0104",
+        "g0105",
+        "g0106"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_match_owner_enrollment_and_authority_changes": {
+      "cases": [
+        "g0107",
+        "g0108",
+        "g0109",
+        "g0110",
+        "g0111",
+        "g0112",
+        "g0113",
+        "g0114"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_node_edge_and_document_size_bounds": {
+      "cases": [
+        "g0115",
+        "g0116",
+        "g0117",
+        "g0118",
+        "g0119"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_pure_operations_do_not_open_files_or_dispatch": {
+      "cases": [],
+      "status": "excluded D"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_rehashed_nodes_still_require_valid_snapshots_and_dag": {
+      "cases": [
+        "g0120",
+        "g0121",
+        "g0122",
+        "g0123",
+        "g0124",
+        "g0125",
+        "g0126",
+        "g0127",
+        "g0128",
+        "g0129",
+        "g0130",
+        "g0131",
+        "g0132"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_selected_drift_and_unrelated_whole_revision_drift": {
+      "cases": [
+        "g0133",
+        "g0134",
+        "g0135",
+        "g0136",
+        "g0137"
+      ],
+      "status": "captured"
+    },
+    "python::tests/test_task_graphs.py::TaskGraphTests::test_topology_lexical_kahn_preserves_arrays": {
+      "cases": [
+        "g0138",
+        "g0139",
+        "g0140",
+        "g0141",
+        "g0142"
+      ],
+      "status": "captured"
+    }
+  },
+  "no_bytecode": true,
+  "oracle_commit": "e389a08669204d4e51a49ffd13cbe01b90b5d8ba",
+  "oracle_version": "3.14.8 (main, Oct 13 2026, 10:33:10) [GCC 16.2.1 20260810]",
+  "reference_result": "15 unchanged original methods passed with all assertions and subcases",
+  "schema_version": 1,
+  "source_hashes": {
+    "runner/actions.py": "0f44f26a9394644b8d54c09052ff71019dac4bf8d84a8cd5423e7f24b87562c4",
+    "runner/checkpoints.py": "6d9af7842ed2d82dc72219115ff750fa79596254c2d5ae871f59b8d83ef2a8dc",
+    "runner/coven.py": "f1303a96c043820913855a7f5b5361e0cbcb0d66ecd9e5b207d417f69c21fb36",
+    "runner/djinn_live_observation.py": "bf84c4e3d059a05024196bdd0e073926facbc3acce0994f84f8ec4219847fc26",
+    "runner/djinn_observation.py": "1d15eab602ca410e373ed469e0bc6096c5ae235144f846ad8eb17ea82620005e",
+    "runner/execution_v2.py": "54564669ce53b2c45abfe21b0d03f8b173c9b83f2d0c9914dd7ae395c1127c1f",
+    "runner/group_live.py": "9ed44ccac38f70b0c30a56226cb7966367f6027334a7e827f32c03c6516764a9",
+    "runner/group_publisher.py": "fa55c5eaac55e841e8bbde1ec31ac4ad60b905be41753982ce3d556c3bd3e9f8",
+    "runner/groups.py": "4fdc58e7f30a6632602b7318cc826fb33e48c01def3f414bfc7976612ad8be4c",
+    "runner/handoffs.py": "071f43dada166b04cd7357c3b6b6721fe5125f2446430acef93f25dfb46bbbeb",
+    "runner/interactive_sessions.py": "057f1d52f84b416f7cba6e755a917aa36b94a81e4073cde72d1addaea73b1bf6",
+    "runner/kitsune_observation.py": "6cac964ed97c024bcec591fb9ab4778a822f962dc3178a513fa416a6daa0d658",
+    "runner/kitsune_process_observation.py": "a4de0a77d2aa658bd91db16b5a63b23ff137cf271c20590d6d399db9203eb89d",
+    "runner/launch.py": "7a6fb3a162840f3b656e8af3f3d8d3316d9a0e1421f65f429051405b6bdc12c0",
+    "runner/records.py": "eb0b96a440cbc6b2acde77b488dacfb6358145f5ca75801b4d2ecc41c124e4ca",
+    "runner/repositories.py": "0ba80554f97e2bf2429677d575001df7f4adbf6309c6a2316153cd2854a61776",
+    "runner/session_inspection.py": "2216c4f707a01bda94ac113387817735c69a097c8679cbf465587838255329e2",
+    "runner/session_prompts.py": "9b54d016ea53860a2e5fedd66de86ea1ff10754b3be5606e9793b008d8f1f216",
+    "runner/session_views.py": "4d807c5fa70f4ab06cd379290f8ab2c313ff94f81b4b77f99e9b82fe91ad644a",
+    "runner/session_watch.py": "5d9f9fc48758d7e5e79f439b689a781503a8630aa5b4f64e9f44d3c520c89443",
+    "runner/storage.py": "36e4687d27b8dac03951fce5bbad51f69001f7b2d43046b9630c6405b42f02ad",
+    "runner/task_attempts.py": "ca8f5bee13f75d88ca6a8296ed4b8b221700b8d3c33366bff8d4bb26f609f358",
+    "runner/task_graphs.py": "2b501af9548d602a8a8075fe0d124612cc6c78e1d45a1e447aaf7210b51e9468",
+    "runner/task_ledger.py": "9b10149548c47ca120a8d2040b0784104c67d1101192d973fbc0fdecf61aaa02",
+    "runner/workers.py": "0a8d694fc7ceb19d69ae6803873e1aab51978e5d6d913b3241ea4602ceed7efb",
+    "tests/test_task_graphs.py": "017febe4272c286b6034c2b0080fbedf7be062399b3eeef8cedee2b95b9c9a61"
+  },
+  "typed_dispositions": "Replay represents validated enrollment state, not a Python map. Outer map-key/task_id disagreement is retained but cannot be submitted directly through Replay. Keep malformed-current-enrollments unresolved pending boundary evidence; do not emulate Python validation in the adapter. Nonfinite numbers, nonstring dict keys, tuples and lone surrogates belong to excluded strict-JSON method and are not silently coerced."
+}

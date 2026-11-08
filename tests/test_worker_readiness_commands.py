@@ -113,6 +113,7 @@ class WorkerReadinessCommandTests(CovenTestCase):
         self.assertEqual(snapshot(self.workspace), before)
 
     def test_real_wrapper_with_help_only_fixture_uses_no_session_or_config_route(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         self.executable.write_text(f"#!{sys.executable}\n" + r'''
 import sys
 args = tuple(sys.argv[1:])
@@ -128,7 +129,8 @@ print('\n'.join(lines))
 ''')
         env = {key: value for key, value in os.environ.items() if key not in {"COVEN_HOME", "COVEN_COMMAND"}}
         before = snapshot(self.workspace)
-        response = subprocess.run([str(ROOT / "bin/coven"), "worker", "readiness", str(self.workspace),
+        env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+        response = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), "worker", "readiness", str(self.workspace),
                                    "--executable", str(self.executable), "--json"], env=env, cwd=ROOT,
                                   text=True, capture_output=True, timeout=30)
         self.assertEqual(response.returncode, 2, response.stderr)

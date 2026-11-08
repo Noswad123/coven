@@ -5,6 +5,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 from unittest import mock
 
 from runner import coven, kitsune_observation, launch, storage, task_attempts, workers
@@ -128,11 +129,13 @@ class ObserveCommandTests(CovenTestCase):
         self.assertEqual(workspace_snapshot(self.workspace), before)
 
     def test_real_wrapper_uses_only_fake_selected_socket(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         before = workspace_snapshot(self.workspace)
         env = {key: value for key, value in os.environ.items() if key not in {"COVEN_HOME", "COVEN_COMMAND"}}
         env.update(KITSUNE_SOCKET_PATH="/not-selected", KITSUNE_CLIENT_SOCKET_PATH="/not-selected")
+        env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
         with FakeSocket(sender(lambda r: reply(r, snapshot(True)))) as server:
-            response = subprocess.run([str(ROOT / "bin/coven"), "observe", "kitsune", "--socket", server.path, "--json"],
+            response = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), "observe", "kitsune", "--socket", server.path, "--json"],
                 cwd=self.workspace, env=env, text=True, capture_output=True, timeout=15)
         self.assertEqual(response.returncode, 0, response.stderr)
         report = json.loads(response.stdout)

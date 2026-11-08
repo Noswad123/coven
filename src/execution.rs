@@ -18,10 +18,24 @@ use crate::{
 use sha2::{Digest as _, Sha256};
 use std::{collections::HashSet, fs, path::Path};
 
+mod confirmation;
 mod graphs;
 mod guards;
+mod inspection;
+mod mutation;
+mod recovery;
+mod source;
 mod v2;
 pub use guards::{ReservationCheck, guard_authority_change, guard_task_mutation};
+pub use inspection::{
+    attempt_inspect_arguments, attempt_list_arguments, graph_export_arguments,
+    graph_inspect_arguments, inspect_arguments,
+};
+pub use mutation::{
+    PreparationInput, WriteOptions, cancel_arguments, decide_arguments, enable_arguments,
+    enroll_arguments, prepare_arguments, propose_arguments, upgrade_arguments,
+};
+pub use recovery::{RecoveryMode as ExecutionRecoveryMode, recover_arguments};
 
 const DISABLED: &str = "execution-disabled:v1";
 const MAX_HISTORY: usize = 1024;
@@ -759,6 +773,8 @@ struct Validated {
     authority: String,
     schema: usize,
     graph: Option<Value>,
+    // Retained reducer state is private; historical presentation remains unchanged.
+    graph_state: Option<v2::Graphs>,
 }
 
 impl Validated {
@@ -778,20 +794,55 @@ impl Validated {
 }
 
 fn validated(control: &Value) -> Result<Validated> {
+    validated_with_work(control, &mut Work::default())
+}
+
+fn validated_with_work(control: &Value, work: &mut Work) -> Result<Validated> {
     if control
         .as_object()
         .and_then(|o| o.get("schema_version"))
         .is_some_and(|v| exact_integer(v, 2))
     {
-        return v2::validated_with_work(control, &mut Work::default());
+        return v2::validated_with_work(control, work);
     }
-    let replayed = replay_v1(control, &mut Work::default())?;
+    let replayed = replay_v1(control, work)?;
     Ok(Validated {
         replayed,
         authority: text(get(control, "execution_authority_id")?)?.to_owned(),
         schema: 1,
         graph: None,
+        graph_state: None,
     })
+}
+
+// Writer-only seam: derive results with the same checked reducers used by replay.
+// Full exact-byte successor validation remains mandatory before publication.
+fn apply_successor(
+    control: &Value,
+    selected: Option<&mut Validated>,
+    binding: &Value,
+    effect: &Value,
+    generation: usize,
+    work: &mut Work,
+) -> Result<Value> {
+    let operation = text(get(binding, "operation")?)?;
+    match selected {
+        Some(view) if exact_integer(get(control, "schema_version")?, 2) => v2::apply_successor(
+            control,
+            &mut view.replayed.state,
+            &mut view.graph_state,
+            binding,
+            operation,
+            effect,
+            generation,
+            work,
+        ),
+        Some(view) => view
+            .replayed
+            .state
+            .apply(control, binding, operation, effect, generation, work),
+        None => Replay::default().apply(control, binding, operation, effect, generation, work),
+    }
 }
 
 struct Replayed {

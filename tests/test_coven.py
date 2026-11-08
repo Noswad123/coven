@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -234,9 +235,11 @@ class CovenTests(CovenTestCase):
         self.assertEqual(self.read_json("state/tasks.json")[0]["owner"], "_")
 
     def test_wrapper_creates_and_refuses_reinit_without_runtime(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         env = {key: value for key, value in os.environ.items()
                if key not in {"COVEN_HOME", "COVEN_COMMAND", "COVEN_MULTIPLEXER"}}
-        command = [str(ROOT / "bin/coven"), "init", str(self.workspace)]
+        env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+        command = [sys.executable, str(ROOT / "runner/coven.py"), "init", str(self.workspace)]
         created = subprocess.run(command, env=env, text=True, capture_output=True, timeout=20)
         self.assertEqual(created.returncode, 0, created.stderr)
         before = snapshot(self.workspace)

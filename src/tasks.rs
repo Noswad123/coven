@@ -228,7 +228,8 @@ pub fn read_snapshot(workspace: &Path) -> Result<Snapshot> {
     Ok(snapshot)
 }
 
-fn capture_snapshot(root: &Path) -> Result<Snapshot> {
+/// Raw snapshot capture only; callers own their distinct workspace/authority policy.
+pub(crate) fn capture_snapshot(root: &Path) -> Result<Snapshot> {
     let raw = optional_bytes(root, "state/tasks.json", values::MAX_INPUT)?;
     let revision = raw
         .as_deref()
@@ -346,6 +347,59 @@ pub fn list_json_argument(workspace: &Path) -> Result<String> {
     list_json(&crate::platform::workspace_argument(workspace)?)
 }
 
+/// CLI presentation over the same admitted, fenced capture as JSON listing.
+pub fn list_argument(workspace: &Path, json: bool) -> Result<String> {
+    if json {
+        return list_json_argument(workspace);
+    }
+    let report = capture_listing(crate::platform::workspace_argument(workspace)?)?.finish()?;
+    render_human(&report)
+}
+
+fn render_human(report: &Value) -> Result<String> {
+    let tasks = report
+        .as_object()
+        .and_then(|report| report.get("tasks"))
+        .and_then(Value::as_array)
+        .ok_or(Error("invalid_task_listing_report"))?;
+    if tasks.is_empty() {
+        return Ok("No tasks yet".to_owned());
+    }
+    let mut output = String::new();
+    for (index, task) in tasks.iter().enumerate() {
+        let task = task
+            .as_object()
+            .ok_or(Error("invalid_task_listing_report"))?;
+        let text = |key| {
+            task.get(key)
+                .and_then(Value::as_str)
+                .ok_or(Error("invalid_task_listing_report"))
+        };
+        let owner = task
+            .get("owner")
+            .and_then(Value::as_str)
+            .filter(|owner| !owner.is_empty())
+            .unwrap_or("unassigned");
+        for part in [
+            if index == 0 { "" } else { "\n" },
+            text("id")?,
+            " [",
+            text("status")?,
+            "] ",
+            owner,
+            " - ",
+            text("title")?,
+        ] {
+            require(
+                part.len() <= values::MAX_OUTPUT.saturating_sub(output.len()),
+                "unsupported_task_list_output_profile",
+            )?;
+            output.push_str(part);
+        }
+    }
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,23 +456,17 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn captured_active_listing_and_inspection_reject_changed_marker() {
-        let root = tempfile::tempdir().unwrap();
-        let workspace = root.path().join("control");
-        let code = "from runner import coven;import sys;w=sys.argv[1];coven.main(['init',w,'--blank','--agents','operator']);r=coven.read_task_snapshot(__import__('pathlib').Path(w))[0];coven.main(['state','import-tasks',w,'--expect-revision',r,'--json'])";
-        let output = std::process::Command::new("python3")
-            .arg("-c")
-            .arg(code)
-            .arg(&workspace)
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .env("COVEN_MULTIPLEXER", "")
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .output()
+        let root = minimal();
+        let workspace = root.path().to_owned();
+        let revision = read_snapshot(&workspace).unwrap().revision().to_owned();
+        {
+            let guard = crate::storage::WorkspaceGuard::acquire(
+                &workspace,
+                std::time::Duration::from_secs(1),
+            )
             .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+            let _activation = ledger::import_tasks(&workspace, &revision, &guard).unwrap();
+        }
         let listing = capture_listing(workspace.clone()).unwrap();
         let inspection = capture_inspection(workspace.clone()).unwrap();
         fs::remove_file(workspace.join(ledger::MARKER)).unwrap();
@@ -429,6 +477,75 @@ mod tests {
         assert_eq!(
             inspection.finish().unwrap_err().code(),
             "task_authority_changed_during_read"
+        );
+    }
+
+    #[test]
+    fn human_render_preserves_raw_fields_and_python_owner_truthiness() {
+        let report = values::parse(
+            br#"{"tasks":[{"id":"one","status":"","title":"\u96ea\t\n\r\u001b\u0000","extra":true},{"id":"two","status":"custom [status]","owner":null,"title":"second"},{"id":"three","status":"done","owner":"","title":"third"},{"id":"four","status":"open","owner":"  ","title":"last\n"}]}"#,
+            Profile::LegacySnapshot,
+        )
+        .unwrap();
+        assert_eq!(
+            render_human(&report).unwrap(),
+            "one [] unassigned - \u{96ea}\t\n\r\u{1b}\0\ntwo [custom [status]] unassigned - second\nthree [done] unassigned - third\nfour [open]    - last\n"
+        );
+        let empty = Value::object(vec![("tasks".into(), Value::Array(vec![]))]).unwrap();
+        assert_eq!(render_human(&empty).unwrap(), "No tasks yet");
+    }
+
+    #[test]
+    fn human_render_does_not_escape_or_trim_any_display_field() {
+        let report = Value::object(vec![(
+            "tasks".into(),
+            Value::Array(vec![
+                Value::object(vec![
+                    ("id".into(), Value::String("task_1".into())),
+                    (
+                        "status".into(),
+                        Value::String(" \u{96ea}\r\t\u{1b} ".into()),
+                    ),
+                    ("owner".into(), Value::String("operator".into())),
+                    ("title".into(), Value::String("\"\\\u{7f}\u{1f600}".into())),
+                ])
+                .unwrap(),
+            ]),
+        )])
+        .unwrap();
+        assert_eq!(
+            render_human(&report).unwrap(),
+            "task_1 [ \u{96ea}\r\t\u{1b} ] operator - \"\\\u{7f}\u{1f600}"
+        );
+    }
+
+    #[test]
+    fn human_output_bound_counts_raw_utf8_and_separators() {
+        let overhead = "t [] unassigned - ".len();
+        let report = |title: String| {
+            Value::object(vec![(
+                "tasks".into(),
+                Value::Array(vec![
+                    Value::object(vec![
+                        ("id".into(), Value::String("t".into())),
+                        ("status".into(), Value::String(String::new())),
+                        ("title".into(), Value::String(title)),
+                    ])
+                    .unwrap(),
+                ]),
+            )])
+            .unwrap()
+        };
+        let title = "\u{e9}".repeat((values::MAX_OUTPUT - overhead) / 2);
+        let remaining = values::MAX_OUTPUT - overhead - title.len();
+        let title = title + &"x".repeat(remaining);
+        assert_eq!(
+            render_human(&report(title.clone())).unwrap().len(),
+            values::MAX_OUTPUT
+        );
+        assert_eq!(
+            render_human(&report(title + "x")).unwrap_err().code(),
+            "unsupported_task_list_output_profile"
         );
     }
 }

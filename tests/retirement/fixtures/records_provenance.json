@@ -1,0 +1,41 @@
+{
+  "boundary_difference": "Python can construct an unpaired surrogate str and rejects it in team text validation. Rust String/Value cannot contain it; escaped JSON is rejected by values::parse before record validation. Error text is provenance, not a native diagnostic contract.",
+  "calls": 55,
+  "capture_command": "env -i PATH=/usr/bin:/bin HOME=/tmp PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I -B tools/freeze_records.py --oracle-root /tmp/opencode/records-retirement-oracle --emit-patch",
+  "capture_tool_sha256": "f0f5ea1f725885ea7752e3cb660e7f827a6ffa9e907d19559ecb79289127fa4f",
+  "corpus": {
+    "path": "tests/retirement/fixtures/records.json",
+    "sha256": "a65e5d492eabfef677824cbad2f64bda2fe1d3be26c69d298035ec4c6ec78da0"
+  },
+  "encoding": "input_json/output_json are ordered finite JSON text, including escaped unpaired surrogate input. Outputs/errors/identity observed only from Python; no native-derived expectations.",
+  "methods": {
+    "python::tests/test_records.py::RecordTests::test_agent_and_lead_schemas_reject_bad_shapes": {
+      "calls": 18,
+      "case_ids": ["r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030"]
+    },
+    "python::tests/test_records.py::RecordTests::test_metadata_contract_rejects_unsupported_versions_runtime_and_labels": {
+      "calls": 21,
+      "case_ids": ["r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051"]
+    },
+    "python::tests/test_records.py::RecordTests::test_task_schema_rejects_bad_shapes_and_known_fields": {
+      "calls": 12,
+      "case_ids": ["r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012"]
+    },
+    "python::tests/test_records.py::RecordTests::test_valid_legacy_records_and_unknown_fields_are_not_normalized": {
+      "calls": 4,
+      "case_ids": ["r052", "r053", "r054", "r055"]
+    }
+  },
+  "oracle_head": "e389a08669204d4e51a49ffd13cbe01b90b5d8ba",
+  "oracle_root": "/tmp/opencode/records-retirement-oracle",
+  "python_isolated": true,
+  "python_no_bytecode": true,
+  "python_version": "3.14.8 (main, Oct 13 2026, 10:33:10) [GCC 16.2.1 20260810]",
+  "reference_files_match_commit": true,
+  "reference_result": "4 unchanged original methods passed once; all assertions and subTests active",
+  "schema_version": 1,
+  "sources_sha256": {
+    "runner/records.py": "eb0b96a440cbc6b2acde77b488dacfb6358145f5ca75801b4d2ecc41c124e4ca",
+    "tests/test_records.py": "b2a45dff593f9f1b60cb36fefa14ccfd1ee4cddcbc447e6348cab04ef2739d65"
+  }
+}

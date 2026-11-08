@@ -1,4 +1,7 @@
 //! Pure graph validation and refreezing from retained source and replay state.
+#[cfg(test)]
+mod retirement;
+
 use super::{
     Error, Number, Replay, Result, TaskRecords, Value, Work, exact_integer, fields, get,
     identifier, integer, intent, object, require, source, string, task_revision, text, timestamp,
@@ -52,7 +55,7 @@ fn header(value: &Value, kind: &str, names: &str, work: &mut Work) -> Result<()>
 }
 
 // This order is only for validation; persisted node and dependency arrays stay intact.
-fn order(nodes: &[Value]) -> Result<Vec<&str>> {
+pub(super) fn order(nodes: &[Value]) -> Result<Vec<&str>> {
     let mut pending = BTreeMap::new();
     let mut children: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for node in nodes {

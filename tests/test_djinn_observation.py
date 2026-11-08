@@ -627,7 +627,9 @@ class DjinnTransportAndCommandTests(unittest.TestCase):
                         "assert not any(k.startswith(('COVEN_', 'KITSUNE_', 'DJINN_')) for k in os.environ)\n"
                         f"os.write(1, {payload!r})\n")
             with self.subTest(assessment=assessment):
-                response = subprocess.run([str(ROOT / "bin/coven"), "observe", "djinn", "--executable",
+                # Direct Python legacy oracle; historical method ID and assertions retained.
+                env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+                response = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), "observe", "djinn", "--executable",
                     str(self.executable), "--folder", str(alias), "--json"], cwd=workspace,
                     env=env, capture_output=True, timeout=10)
                 self.assertEqual(response.returncode, code, response.stderr.decode(errors="replace"))

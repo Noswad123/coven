@@ -1,5 +1,6 @@
 //! Pure historical authority validation, not launch admission or durable replay.
 use super::plans;
+pub(crate) use super::plans::{build_plan, validate_plan};
 use crate::{
     Error, Result,
     error::require,
@@ -148,7 +149,7 @@ fn handle(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
-fn report(value: &Value, budget: &mut Budget) -> Result<()> {
+pub(super) fn report(value: &Value, budget: &mut Budget) -> Result<()> {
     budget.canonical(value)?;
     fields(
         value,

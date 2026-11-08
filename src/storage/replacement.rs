@@ -103,7 +103,9 @@ fn atomic_replace_with(
         .file_name()
         .ok_or(crate::Error("unsafe_replacement_path"))?;
     require(
-        name != ".workspace.lock" && name != ".runtime-transport.lock",
+        name != ".workspace.lock"
+            && name != ".runtime-transport.lock"
+            && name != ".group-publisher.lock",
         "unsafe_replacement_lock",
     )?;
     let target = safe_target(guard, relative)?;
@@ -380,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsafe_paths_and_both_lock_basenames_without_creating_parents() {
+    fn rejects_unsafe_paths_and_all_lock_basenames_without_creating_parents() {
         let (root, guard) = workspace();
         let outside = tempfile::tempdir().unwrap();
         fs::write(outside.path().join("file"), b"outside").unwrap();
@@ -410,10 +412,13 @@ mod tests {
             "state/regular/file",
             ".workspace.lock",
             ".runtime-transport.lock",
+            ".group-publisher.lock",
             "state/.workspace.lock",
             "state/.runtime-transport.lock",
+            "state/.group-publisher.lock",
             "state/directory/.workspace.lock",
             "state/directory/.runtime-transport.lock",
+            "state/directory/.group-publisher.lock",
         ] {
             let io = FaultIo::new("success", false);
             assert!(

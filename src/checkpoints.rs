@@ -14,6 +14,11 @@ use crate::{
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
+mod formatter;
+#[cfg(test)]
+mod retirement;
+pub(crate) use formatter::prepare;
+
 const MAX_INPUT: usize = 1_048_576;
 type Span = (usize, usize);
 

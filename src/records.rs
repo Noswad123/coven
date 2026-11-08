@@ -181,3 +181,6 @@ pub(crate) fn lead(value: &Value) -> Result<()> {
     identifier(required(object, "agent")?)?;
     optional_text(object, &["set_at", "until", "instructions"])
 }
+
+#[cfg(test)]
+mod retirement;

@@ -1,0 +1,73 @@
+name: Rust Migration
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migration:
+    name: Pre-Retirement (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_TERM_COLOR: always
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set Up Pinned Python Oracle
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14.8"
+      - name: Set Up Stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Fetch Locked Dependencies
+        run: cargo fetch --locked
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy (Warnings Denied)
+        run: cargo clippy --offline --locked --all-targets -- -D warnings
+      # Includes native_install: relocated prebuilt product, empty child PATH,
+      # no checkout/runner payload, and refusal of in-place upgrades.
+      - name: Full Rust Tests Including Native Installation
+        timeout-minutes: 45
+        run: cargo test --offline --locked --no-fail-fast
+      - name: Python Regressions (941 Legacy and 5 Native Wrapper Tests)
+        timeout-minutes: 15
+        run: python3 -m unittest discover -s tests -q
+      - name: Retirement Audit Tool Tests (29 Tests)
+        timeout-minutes: 15
+        run: python3 -m unittest discover -s tools/tests -q
+      - name: Validate Retirement Ledger and Summary
+        run: python3 tools/retirement_coverage.py --check --summary
+      # --require-complete is deliberately NOT green CI yet. The explicit local
+      # cutover gate must stay red until every obligation is reviewed and mapped.
+
+  msrv:
+    name: MSRV 1.85.0
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set Up Minimum Supported Rust
+        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Fetch Locked Dependencies
+        run: cargo fetch --locked
+      - name: Check All Targets With MSRV (Warnings Denied)
+        run: cargo check --offline --locked --all-targets

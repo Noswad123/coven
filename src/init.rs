@@ -1,27 +1,25 @@
-//! Bounded snapshot-v1 initialization. Source-tree assets/default wrapper match
-//! refresh's preview policy. No runtime, authority activation, or rollback.
+//! Native bootstrap stages everything before effects and publishes coven.json last.
+//! Partial outputs are evidence: never adopt, overwrite, clean up, or reset them.
 use crate::{
     Error, Result,
     error::require,
-    platform, read_fs, records,
-    refresh::{self, templates},
-    storage::WorkspaceGuard,
-    task_delivery, task_time,
+    output, platform, read_fs,
+    records::{self, TaskRecords, TeamRecord},
+    storage::{Delivery, bootstrap},
+    task_delivery,
+    task_mutation::TaskOutput,
+    task_time,
     values::{self, Profile, Value},
-    workspace,
+    workspace::{self, WorkspaceState},
+    workspace_assets::{self as assets, PureAssetContext},
 };
-use std::{
-    collections::{HashSet, VecDeque},
-    fs,
-    io::Write,
-    path::{Component, Path, PathBuf},
-    time::Duration,
-};
+use std::{collections::HashSet, fs, io::Write, path::Path};
 
-mod templates_init;
-
-const MAX_TEXT: usize = 1_048_576;
-const PROFILE: &str = "unsupported_init_input_profile";
+const MAX_TEMPLATE: usize = 1_048_576;
+const MAX_JSON: usize = 8 * MAX_TEMPLATE;
+const MAX_STAGE: usize = 32 * MAX_TEMPLATE;
+const MAX_FILES: usize = 4096;
+const MAX_AGENT_ID: usize = 255 - ".start.txt".len();
 const RESERVED: &[&str] = &[
     "coven.json",
     "coven.toml",
@@ -37,8 +35,16 @@ const RESERVED: &[&str] = &[
     "output",
     "tmux",
 ];
+const DIRECTORIES: &[&str] = &[
+    "agents",
+    "prompts",
+    "logs",
+    "checkpoints",
+    "work",
+    "output",
+    "tmux",
+];
 
-#[derive(Clone, Debug)]
 pub struct Options {
     pub name: Option<String>,
     pub agents: String,
@@ -46,7 +52,6 @@ pub struct Options {
     pub multiplexer: String,
     pub example: String,
     pub blank: bool,
-    /// Accepted compatibility flag, never authorizes replacement or adoption.
     pub force: bool,
 }
 impl Default for Options {
@@ -63,523 +68,644 @@ impl Default for Options {
     }
 }
 
-pub fn init_argument(path: &Path, options: &Options) -> Result<String> {
-    init(&platform::workspace_argument(path)?, options)
+struct Generated {
+    relative: String,
+    bytes: Vec<u8>,
+}
+struct Prepared {
+    files: Vec<Generated>,
+    size: usize,
+    stdout: String,
+    diagnostic_root: String,
+}
+impl Prepared {
+    fn new() -> Self {
+        Self {
+            files: Vec::new(),
+            size: 0,
+            stdout: String::new(),
+            diagnostic_root: String::new(),
+        }
+    }
+    fn admit(&self, size: usize, limit: usize) -> Result<()> {
+        require(size <= limit, "unsupported_init_file_profile")?;
+        require(
+            self.files.len() < MAX_FILES && size <= MAX_STAGE.saturating_sub(self.size),
+            "unsupported_init_stage_profile",
+        )
+    }
+    fn push(&mut self, relative: String, bytes: Vec<u8>, limit: usize) -> Result<()> {
+        self.admit(bytes.len(), limit)?;
+        self.size += bytes.len();
+        self.files.push(Generated { relative, bytes });
+        Ok(())
+    }
+    fn text(&mut self, relative: &str, text: &str) -> Result<()> {
+        self.admit(text.len(), MAX_TEMPLATE)?;
+        self.push(relative.into(), text.as_bytes().to_vec(), MAX_TEMPLATE)
+    }
+    fn json(&mut self, relative: &str, value: &Value) -> Result<()> {
+        let bytes = value.storage()?;
+        let text = std::str::from_utf8(&bytes)?;
+        let mut size = 0;
+        for ch in text.chars() {
+            size += if ch < '\u{7f}' { 1 } else { 6 * ch.len_utf16() };
+            require(size <= MAX_JSON, "unsupported_init_json_profile")?;
+        }
+        self.admit(size, MAX_JSON)?;
+        let bytes = output::ascii_json(text)?.into_bytes();
+        // Check the encoded reader profile, not just the in-memory value.
+        let decoded = values::parse(&bytes, Profile::LegacySnapshot)?;
+        require(
+            decoded.compact()? == value.compact()?,
+            "invalid_init_json_roundtrip",
+        )?;
+        self.push(relative.into(), bytes, MAX_JSON)
+    }
 }
 
-pub fn init(path: &Path, options: &Options) -> Result<String> {
-    platform::ensure_supported()?;
-    let root = resolve_root(path)?;
-    run(
-        &root,
-        options,
-        Path::new(env!("CARGO_MANIFEST_DIR")),
-        &SystemIo,
+// Private injection only: production cannot select a clock or a publication fault.
+trait InitIo {
+    fn now(&self) -> Result<String> {
+        task_time::now()
+    }
+    fn uuid(&self) -> Result<String> {
+        task_time::uuid_hyphenated()
+    }
+    fn boundary(&self, _operation: &str, _root: &Path) -> Result<()> {
+        Ok(())
+    }
+    fn write(&self, file: &mut fs::File, bytes: &[u8]) -> Result<()> {
+        Ok(file.write_all(bytes)?)
+    }
+    fn sync_file(&self, file: &fs::File) -> Result<()> {
+        Ok(file.sync_all()?)
+    }
+    fn sync_directory(&self, path: &Path) -> Result<()> {
+        Ok(platform::sync_directory(path)?)
+    }
+    fn marker(&self, reservation: &bootstrap::Reservation, bytes: &[u8]) -> Result<Delivery> {
+        reservation.publish_marker(bytes)
+    }
+}
+struct SystemInitIo;
+impl InitIo for SystemInitIo {}
+
+fn s(text: &str) -> Value {
+    Value::String(text.into())
+}
+fn object<const N: usize>(fields: [(&str, Value); N]) -> Result<Value> {
+    Value::object(
+        fields
+            .into_iter()
+            .map(|(key, value)| (key.into(), value))
+            .collect(),
     )
 }
 
-// Unlike existing-workspace readers, init must resolve missing suffixes without
-// creating them. Process symlinks before '..', including dangling root aliases.
-fn resolve_root(path: &Path) -> Result<PathBuf> {
-    let path = if path.is_absolute() {
-        path.to_owned()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-    fn parts(path: &Path) -> VecDeque<std::ffi::OsString> {
-        path.components()
-            .map(|part| part.as_os_str().to_owned())
-            .collect()
-    }
-    let mut pending = parts(&path);
-    let mut root = PathBuf::new();
-    let mut links = 0;
-    while let Some(part) = pending.pop_front() {
-        match Path::new(&part).components().next().unwrap() {
-            Component::RootDir => root.push(Path::new("/")),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                root.pop();
-            }
-            Component::Normal(_) => {
-                let next = root.join(&part);
-                match fs::symlink_metadata(&next) {
-                    Ok(meta) if meta.file_type().is_symlink() => {
-                        links += 1;
-                        require(links <= 40, "unsupported_init_symlink_resolution_profile")?;
-                        let target = fs::read_link(next)?;
-                        let mut target = parts(&target);
-                        target.append(&mut pending);
-                        pending = target;
-                    }
-                    Ok(_) => root.push(part),
-                    Err(error)
-                        if matches!(
-                            error.kind(),
-                            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-                        ) =>
-                    {
-                        root.push(part)
-                    }
-                    Err(error) => return Err(error.into()),
-                }
-            }
-            _ => return Err(Error("unsupported_platform")),
-        }
-    }
-    Ok(root)
-}
-
-fn preflight(root: &Path) -> Result<()> {
+fn check_reserved(root: &Path, owned_state: bool) -> Result<()> {
     match fs::symlink_metadata(root) {
-        Ok(meta) => require(meta.is_dir(), "init_workspace_not_directory")?,
+        Ok(metadata) => require(metadata.is_dir(), "init_root_not_directory")?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
-    let mut conflict = false;
     for name in RESERVED {
+        if owned_state && *name == "state" {
+            continue;
+        }
         match fs::symlink_metadata(root.join(name)) {
-            Ok(_) => conflict = true,
+            Ok(_) => return Err(Error("init_reserved_name_exists")),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
     }
-    require(
-        !conflict,
-        "init_reserved_entry_exists_force_does_not_authorize_reset",
-    )
-}
-
-fn s(text: impl Into<String>) -> Value {
-    Value::String(text.into())
-}
-fn obj(entries: Vec<(&str, Value)>) -> Result<Value> {
-    Value::object(entries.into_iter().map(|(k, v)| (k.into(), v)).collect())
-}
-
-// Only init JSON uses Python's default ensure_ascii=True. Expanding the ordered
-// storage encoding is safe: raw non-ASCII characters occur only inside strings.
-fn initial_json(value: &Value) -> Result<String> {
-    let bytes = value.storage()?;
-    let mut out = String::new();
-    for c in std::str::from_utf8(&bytes)?.chars() {
-        if c.is_ascii() && c != '\u{7f}' {
-            out.push(c);
-        } else {
-            for unit in c.encode_utf16(&mut [0; 2]) {
-                out.push_str(&format!("\\u{unit:04x}"));
-            }
-        }
-        require(out.len() <= values::MAX_INPUT, PROFILE)?;
-    }
-    values::parse(out.as_bytes(), Profile::LegacySnapshot)?;
-    Ok(out)
-}
-
-fn text(source: &Path, directory: Option<&str>, relative: &str, default: &str) -> Result<String> {
-    let Some(directory) = directory else {
-        return Ok(default.into());
-    };
-    let raw = workspace::optional_bytes(
-        source,
-        &Path::new(directory).join(relative),
-        MAX_TEXT,
-        PROFILE,
-    )?;
-    match raw {
-        Some(raw) => Ok(std::str::from_utf8(&raw)?
-            .replace("\r\n", "\n")
-            .replace('\r', "\n")),
-        None => Ok(default.into()),
-    }
-}
-
-struct Prepared {
-    files: Vec<(String, String)>,
-    events: Vec<(&'static str, Value)>,
-    success: String,
-}
-
-fn admit_file(total: &mut usize, relative: &str, content: &str) -> Result<()> {
-    let limit = if relative.ends_with(".json") {
-        values::MAX_INPUT
-    } else {
-        MAX_TEXT
-    };
-    require(content.len() <= limit, PROFILE)?;
-    require(
-        content.len() <= values::MAX_OUTPUT.saturating_sub(*total),
-        "unsupported_init_output_profile",
-    )?;
-    *total += content.len();
     Ok(())
 }
 
-fn prepare(root: &Path, options: &Options, source: &Path) -> Result<Prepared> {
-    let root_text = read_fs::path_text(root)?;
-    require(root_text.len() <= MAX_TEXT, PROFILE)?;
-    let mut seen = HashSet::new();
-    let mut agents = Vec::new();
-    let mut names = Vec::new();
-    require(options.agents.len() <= values::MAX_INPUT, PROFILE)?;
-    for label in options.agents.split(',') {
-        let id = templates::slug(label)?;
-        require(seen.insert(id.clone()), "duplicate_init_agent")?;
-        names.push((id.clone(), s(records::trimmed(label))));
-        agents.push(id);
+fn event(log: &mut Vec<u8>, kind: &str, payload: Value, io: &impl InitIo) -> Result<()> {
+    let mut value = object([
+        ("event_id", s(&io.uuid()?)),
+        ("ts", s(&io.now()?)),
+        ("type", s(kind)),
+    ])?;
+    for (key, value_part) in payload
+        .as_object()
+        .ok_or(Error("invalid_init_event"))?
+        .entries()
+    {
+        value.set_field(key, value_part.clone())?;
     }
-    require(agents.len() <= values::MAX_MEMBERS, PROFILE)?;
-    records::multiplexer(&options.multiplexer)?;
-    let mux = records::trimmed(&options.multiplexer).to_lowercase();
+    let mut bytes = value.compact()?;
+    bytes.push(b'\n');
+    require(
+        bytes.len() <= MAX_JSON.saturating_sub(log.len()),
+        "unsupported_init_log_profile",
+    )?;
+    log.extend(bytes);
+    Ok(())
+}
+
+fn human(text: &str) -> Result<String> {
+    let mut size = 0;
+    for ch in text.chars() {
+        size += match ch {
+            '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+            ch if ch < ' ' => 6,
+            ch if ch >= '\u{7f}' => 6 * ch.len_utf16(),
+            _ => 1,
+        };
+        require(
+            size <= values::MAX_OUTPUT,
+            "unsupported_json_output_profile",
+        )?;
+    }
+    let encoded = serde_json::to_string(text)?;
+    output::ascii_json(&encoded[1..encoded.len() - 1])
+}
+
+fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared> {
+    let root_text = root.to_str().ok_or(Error("non_unicode_path_unsupported"))?;
+    require(
+        root_text.len() <= MAX_TEMPLATE,
+        "unsupported_init_input_profile",
+    )?;
+    require(
+        options.agents.len() <= MAX_JSON,
+        "unsupported_init_input_profile",
+    )?;
+    let mut ids = Vec::new();
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    for label in options.agents.split(',') {
+        require(
+            label.len() <= values::MAX_STRING,
+            "unsupported_init_input_profile",
+        )?;
+        require(ids.len() < MAX_FILES / 3, "unsupported_init_stage_profile")?;
+        let id = assets::slug(label)?;
+        require(
+            id.len() <= MAX_AGENT_ID,
+            "unsupported_init_filename_profile",
+        )?;
+        require(seen.insert(id.clone()), "duplicate_init_agent")?;
+        ids.push(id.clone());
+        names.push((id, s(records::trimmed(label))));
+    }
+    require(
+        options.multiplexer.len() <= MAX_TEMPLATE,
+        "unsupported_init_input_profile",
+    )?;
+    let runtime = records::trimmed(&options.multiplexer).to_lowercase();
+    records::multiplexer(&runtime)?;
     let name = options
         .name
         .as_deref()
-        .filter(|s| !s.is_empty())
+        .filter(|name| !name.is_empty())
         .unwrap_or_else(|| {
             root.file_name()
-                .and_then(|n| n.to_str())
-                .filter(|s| !s.is_empty())
+                .and_then(|name| name.to_str())
+                .filter(|name| !name.is_empty())
                 .unwrap_or("coven")
         });
-    let directory = if options.blank {
+    let example: Option<assets::InitExample> = if options.blank {
         None
     } else {
-        Some(format!("examples/{}", templates::slug(&options.example)?))
+        require(
+            options.example.len() <= MAX_TEMPLATE,
+            "unsupported_init_input_profile",
+        )?;
+        Some(assets::init_example(&options.example)?)
     };
-    let mut example_id = None;
-    let mut seed_message = None;
-    if let Some(directory) = &directory {
-        let raw = workspace::optional_bytes(
-            source,
-            &Path::new(directory).join("example.json"),
-            values::MAX_INPUT,
-            PROFILE,
-        )?
-        .ok_or(Error("init_example_assets_unavailable"))?;
-        let value = values::parse(&raw, Profile::LegacySnapshot)?;
-        let manifest = value.as_object().ok_or(Error("invalid_example_manifest"))?;
-        for (key, slot) in [("id", &mut example_id), ("seed_message", &mut seed_message)] {
-            if let Some(value) = manifest.get(key) {
-                match value {
-                    Value::Null | Value::Bool(false) => {}
-                    Value::String(value) if value.is_empty() => {}
-                    Value::String(value) => *slot = Some(value.clone()),
-                    _ => return Err(Error("unsupported_init_example_string_profile")),
-                }
-            }
-        }
-        example_id.get_or_insert_with(|| directory.rsplit('/').next().unwrap().into());
-    }
-    let team = obj(vec![
-        ("version", Value::integer("1")?),
-        ("name", s(name)),
-        ("created_at", s(task_time::now()?)),
-        ("source_of_truth", s("workspace-files")),
-        ("opencode_command", s(&options.opencode_command)),
-        ("multiplexer", s(&mux)),
-        ("agents", Value::Array(agents.iter().map(s).collect())),
-        ("display_names", Value::object(names)?),
-        ("example", example_id.as_ref().map(s).unwrap_or(Value::Null)),
-    ])?;
-    let effective_mux = match std::env::var("COVEN_MULTIPLEXER") {
-        Ok(value) if !value.is_empty() => {
-            records::multiplexer(&value)?;
-            records::trimmed(&value).to_lowercase()
-        }
-        Ok(_) | Err(std::env::VarError::NotPresent) => mux.clone(),
-        Err(_) => return Err(Error("unsupported_multiplexer")),
-    };
+    let display_names = Value::object(names)?;
+    let roster = Value::Array(ids.iter().map(|id| s(id)).collect());
+    let version = values::parse(b"1", Profile::LegacySnapshot)?;
+    let created_at = io.now()?;
+    let effective_runtime = workspace::select_multiplexer(Some(&runtime))?;
     require(
         !records::trimmed(&options.opencode_command).is_empty(),
-        "empty_init_opencode_command",
+        "invalid_init_command",
     )?;
-    records::TeamRecord::validate(team.clone())?;
-    let tasks = seed_tasks(source, directory.as_deref(), &agents)?;
-    records::TaskRecords::validate(tasks.clone())?;
-    let states = Value::Array(
-        agents
-            .iter()
-            .map(|agent| {
-                obj(vec![
-                    ("id", s(agent)),
-                    ("role", s(templates::role(agent))),
+    require(
+        name.len() <= values::MAX_STRING && options.opencode_command.len() <= values::MAX_STRING,
+        "unsupported_init_input_profile",
+    )?;
+    let team = TeamRecord::validate(object([
+        ("version", version),
+        ("name", s(name)),
+        ("created_at", s(&created_at)),
+        ("source_of_truth", s("workspace-files")),
+        ("opencode_command", s(&options.opencode_command)),
+        ("multiplexer", s(&runtime)),
+        ("agents", roster.clone()),
+        ("display_names", display_names.clone()),
+        (
+            "example",
+            example
+                .as_ref()
+                .map_or(Value::Null, |example| s(&example.id)),
+        ),
+    ])?)?;
+    let cli_command = match assets::command_environment() {
+        Ok(Some(value)) => {
+            require(
+                value.len() <= MAX_TEMPLATE,
+                "unsupported_init_input_profile",
+            )?;
+            assets::shell_quote(&value)
+        }
+        Ok(None) => "coven".into(),
+        Err(_) => return Err(Error("unsupported_init_command_environment_profile")),
+    };
+    let context = PureAssetContext {
+        cli_command,
+        example_text: example
+            .as_ref()
+            .map_or("", |example| example.context.as_str())
+            .into(),
+    };
+    let mut tasks = Vec::new();
+    if let Some(example) = &example {
+        for raw in example
+            .tasks
+            .as_array()
+            .ok_or(Error("invalid_init_tasks"))?
+        {
+            let raw = raw.as_object().ok_or(Error("invalid_init_task"))?;
+            for key in ["id", "title", "owner", "notes"] {
+                require(
+                    matches!(
+                        raw.get(key),
+                        None | Some(Value::Null) | Some(Value::String(_))
+                    ),
+                    "invalid_init_task",
+                )?;
+            }
+            let field = |key| raw.get(key).and_then(Value::as_str);
+            let fallback_id;
+            let id = match field("id").filter(|id| !id.is_empty()) {
+                Some(id) => id,
+                None => {
+                    fallback_id = assets::slug(
+                        field("title")
+                            .filter(|title| !title.is_empty())
+                            .unwrap_or("task"),
+                    )?;
+                    &fallback_id
+                }
+            };
+            require(
+                id.bytes()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                    && id.bytes().all(|c| {
+                        c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'_' | b'-')
+                    }),
+                "invalid_init_task_id",
+            )?;
+            let owner = field("owner")
+                .filter(|owner| !owner.is_empty())
+                .map(assets::slug)
+                .transpose()?;
+            let owner = owner.filter(|owner| seen.contains(owner));
+            tasks.push(object([
+                ("id", s(id)),
+                (
+                    "title",
+                    s(field("title")
+                        .filter(|title| !title.is_empty())
+                        .unwrap_or(id)),
+                ),
+                (
+                    "status",
+                    s(if owner.is_some() {
+                        "assigned"
+                    } else {
+                        "pending"
+                    }),
+                ),
+                ("owner", owner.as_deref().map_or(Value::Null, s)),
+                (
+                    "notes",
+                    s(field("notes")
+                        .filter(|notes| !notes.is_empty())
+                        .unwrap_or("Starter example task.")),
+                ),
+                ("created_at", s(&io.now()?)),
+                ("updated_at", s(&io.now()?)),
+            ])?);
+        }
+    }
+    let tasks = TaskRecords::validate(Value::Array(tasks))?.into_value();
+    let agents = Value::Array(
+        ids.iter()
+            .map(|id| {
+                object([
+                    ("id", s(id)),
+                    ("role", s(&assets::agent_role(id))),
                     ("status", s("idle")),
                 ])
             })
-            .collect::<Result<_>>()?,
+            .collect::<Result<Vec<_>>>()?,
     );
-    records::agents(&states)?;
-    let mut goal = text(
-        source,
-        directory.as_deref(),
-        "goal.md",
-        "# Goal\n\nDescribe the unified coven goal here.\n",
+    records::agents(&agents)?;
+    let mut result = Prepared::new();
+    result.json("coven.json", team.value())?;
+    result.json("state/agents.json", &agents)?;
+    result.json("state/tasks.json", &tasks)?;
+    let goal = example
+        .as_ref()
+        .map_or(assets::default_goal(), |example| example.goal.as_str());
+    result.text("goal.md", goal)?;
+    let toml = assets::team_toml(
+        name,
+        &ids,
+        &options.opencode_command,
+        &runtime,
+        &display_names,
     )?;
-    if !goal.ends_with('\n') {
-        goal.push('\n');
-    }
-    let refs = agents.iter().map(String::as_str).collect::<Vec<_>>();
-    let mut files: Vec<(String, String)> = vec![
-        ("coven.json".into(), initial_json(&team)?),
-        ("state/agents.json".into(), initial_json(&states)?),
-        ("state/tasks.json".into(), initial_json(&tasks)?),
-        ("goal.md".into(), goal.clone()),
-        (
-            "coven.toml".into(),
-            templates_init::team(
-                name,
-                &agents,
-                &options.agents,
-                &options.opencode_command,
-                &mux,
-            ),
-        ),
-        ("logs/events.jsonl".into(), String::new()),
-        ("logs/messages.jsonl".into(), String::new()),
-        (
-            "tmux/coven.toml".into(),
-            templates::manifest(
-                name,
-                &root_text,
-                &refs,
-                &options.opencode_command,
-                &refresh::launch_cli()?,
-            )?,
-        ),
-    ];
-    let mut total = 0;
-    for (relative, content) in &files {
-        admit_file(&mut total, relative, content)?;
-    }
-    for (relative, content) in templates_init::structure(source, directory.as_deref())? {
-        admit_file(&mut total, &relative, &content)?;
-        files.push((relative, content));
-    }
-    if !options.blank {
-        let spec = text(
-            source,
-            directory.as_deref(),
-            "spec.md",
-            "# Spec\n\nDescribe the desired behavior here.\n",
-        )?;
-        admit_file(&mut total, "spec.md", &spec)?;
-        files.push(("spec.md".into(), spec));
-    }
-    let context = text(source, directory.as_deref(), "prompt-context.md", "")?;
-    for agent in &agents {
-        for (relative, content) in [
-            (format!("agents/{agent}.md"), templates_init::agent(agent)),
-            (
-                format!("prompts/{agent}.md"),
-                templates::prompt(agent, &root_text, &context),
-            ),
-            (
-                format!("prompts/{agent}.start.txt"),
-                templates::starter(agent, &root_text),
-            ),
-        ] {
-            admit_file(&mut total, &relative, &content)?;
-            files.push((relative, content));
-        }
-    }
-    for index in [4, 7] {
-        files[index]
-            .1
-            .parse::<toml::Value>()
-            .map_err(|_| Error("invalid_init_toml"))?;
-    }
-    let mut events = vec![(
-        "workspace.created",
-        obj(vec![
-            ("name", s(name)),
-            ("agents", Value::Array(agents.iter().map(s).collect())),
-            ("example", s(example_id.as_deref().unwrap_or("blank"))),
-        ])?,
-    )];
-    if let Some(id) = &example_id {
-        events.push(("goal.seeded", obj(vec![("example", s(id))])?));
-        for task in tasks.as_array().unwrap() {
-            events.push(("task.seeded", obj(vec![("task", task.clone())])?));
-        }
-    }
-    // Admit complete wrapped records as well as aggregate log bytes/line count.
-    let mut log = Vec::new();
-    for (kind, payload) in &events {
-        let mut record = obj(vec![
-            ("event_id", s("00000000-0000-4000-8000-000000000000")),
-            ("ts", s("2000-01-01T00:00:00.000000+00:00")),
-            ("type", s(*kind)),
-        ])?;
-        for (key, value) in payload.as_object().unwrap().entries() {
-            record.set_field(key, value.clone())?;
-        }
-        log.extend(record.compact()?);
-        log.push(b'\n');
-        require(log.len() <= values::MAX_INPUT, PROFILE)?;
-    }
-    task_delivery::validate_log(&log)?;
-    let dashboard = task_delivery::prepare_initial_dashboard(
-        workspace::WorkspaceState {
-            team: records::TeamRecord::validate(team)?,
-            tasks,
-            agents: states,
-            lead: Value::Null,
-            multiplexer: effective_mux,
-        },
-        &goal,
+    require(toml.len() <= MAX_TEMPLATE, "unsupported_init_file_profile")?;
+    toml.parse::<toml::Value>()
+        .map_err(|_| Error("invalid_init_toml"))?;
+    result.text("coven.toml", &toml)?;
+    let agent_refs = ids.iter().map(String::as_str).collect::<Vec<_>>();
+    let manifest = assets::tmux_manifest(
+        name,
+        root_text,
+        &agent_refs,
+        &options.opencode_command,
+        &context,
     )?;
     require(
-        dashboard.len() <= values::MAX_OUTPUT.saturating_sub(total),
-        "unsupported_init_output_profile",
+        manifest.len() <= MAX_TEMPLATE,
+        "unsupported_init_file_profile",
     )?;
-    let next = if options.blank {
-        format!("Next: coven goal {root_text} \"<your goal>\"")
-    } else {
-        seed_message.unwrap_or_else(|| format!("Seeded example: {}", example_id.unwrap()))
-    };
-    Ok(Prepared {
-        files,
-        events,
-        success: format!(
-            "[INFO] Coven workspace: {root_text}\n[INFO] {next}\n[INFO] Launch ({mux}): coven up {root_text}"
-        ),
-    })
-}
-
-fn seed_tasks(source: &Path, directory: Option<&str>, agents: &[String]) -> Result<Value> {
-    let raw = match directory {
-        Some(dir) => workspace::optional_bytes(
-            source,
-            &Path::new(dir).join("tasks.json"),
-            values::MAX_INPUT,
-            PROFILE,
-        )?,
-        None => None,
-    };
-    let raw = raw
-        .map(|raw| values::parse(&raw, Profile::LegacySnapshot))
-        .transpose()?
-        .unwrap_or(Value::Array(vec![]));
-    let mut tasks = Vec::new();
-    let mut ids = HashSet::new();
-    for task in raw.as_array().ok_or(Error("invalid_example_tasks"))? {
-        let task = task.as_object().ok_or(Error("invalid_example_task"))?;
-        for key in ["id", "title", "owner", "notes"] {
-            require(
-                task.get(key)
-                    .is_none_or(|v| matches!(v, Value::Null | Value::String(_))),
-                "invalid_example_task_text",
+    manifest
+        .parse::<toml::Value>()
+        .map_err(|_| Error("invalid_init_toml"))?;
+    result.text("tmux/coven.toml", &manifest)?;
+    result.text(
+        "work/README.md",
+        example
+            .as_ref()
+            .map_or(assets::default_work(), |example| example.work.as_str()),
+    )?;
+    result.text(
+        "output/README.md",
+        example
+            .as_ref()
+            .map_or(assets::default_output(), |example| example.output.as_str()),
+    )?;
+    if let Some(example) = &example {
+        result.text("spec.md", &example.spec)?;
+    }
+    for (relative, text) in assets::checkpoint_files() {
+        result.text(&relative, &text)?;
+    }
+    for id in &ids {
+        result.text(&format!("agents/{id}.md"), &assets::agent_state_text(id))?;
+        result.text(
+            &format!("prompts/{id}.md"),
+            &assets::roleprompt_text(id, root_text, &context),
+        )?;
+        result.text(
+            &format!("prompts/{id}.start.txt"),
+            &assets::starter_text(id, root_text),
+        )?;
+    }
+    let mut log = Vec::new();
+    let example_id = example
+        .as_ref()
+        .map_or("blank", |example| example.id.as_str());
+    event(
+        &mut log,
+        "workspace.created",
+        object([
+            ("name", s(name)),
+            ("agents", roster),
+            ("example", s(example_id)),
+        ])?,
+        io,
+    )?;
+    if example.is_some() {
+        event(
+            &mut log,
+            "goal.seeded",
+            object([("example", s(example_id))])?,
+            io,
+        )?;
+        for task in tasks.as_array().ok_or(Error("invalid_init_tasks"))? {
+            event(
+                &mut log,
+                "task.seeded",
+                object([("task", task.clone())])?,
+                io,
             )?;
         }
-        let get = |key| {
-            task.get(key)
-                .and_then(Value::as_str)
-                .filter(|v| !v.is_empty())
-        };
-        let id = match get("id") {
-            Some(id) => id.into(),
-            None => templates::slug(get("title").unwrap_or("task"))?,
-        };
-        require(
-            id.as_bytes()
-                .first()
-                .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-                && id
-                    .bytes()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"_-".contains(&c)),
-            "invalid_example_task_id",
-        )?;
-        require(ids.insert(id.clone()), "duplicate_example_task_id")?;
-        let owner = get("owner")
-            .map(templates::slug)
-            .transpose()?
-            .filter(|id| agents.contains(id));
-        tasks.push(obj(vec![
-            ("id", s(&id)),
-            ("title", s(get("title").unwrap_or(&id))),
-            (
-                "status",
-                s(if owner.is_some() {
-                    "assigned"
-                } else {
-                    "pending"
-                }),
-            ),
-            ("owner", owner.map(s).unwrap_or(Value::Null)),
-            ("notes", s(get("notes").unwrap_or("Starter example task."))),
-            ("created_at", s(task_time::now()?)),
-            ("updated_at", s(task_time::now()?)),
-        ])?);
     }
-    Ok(Value::Array(tasks))
+    // Complete JSONL reader validation, with compact literal-Unicode records.
+    require(
+        log.len() <= MAX_JSON && log.last() == Some(&b'\n'),
+        "unsupported_init_log_profile",
+    )?;
+    for (index, line) in log.split_inclusive(|byte| *byte == b'\n').enumerate() {
+        require(index < 65_536, "unsupported_init_log_profile")?;
+        let value = values::parse(&line[..line.len() - 1], Profile::LegacySnapshot)?;
+        require(value.as_object().is_some(), "invalid_init_event")?;
+    }
+    result.push("logs/events.jsonl".into(), log, MAX_JSON)?;
+    result.text("logs/messages.jsonl", "")?;
+    let dashboard = task_delivery::prepare_initial_dashboard(
+        WorkspaceState {
+            team,
+            tasks,
+            agents,
+            lead: Value::Null,
+            multiplexer: effective_runtime,
+        },
+        goal,
+    )?;
+    result.push("dashboard.md".into(), dashboard, MAX_TEMPLATE)?;
+    let root_display = human(root_text)?;
+    result.diagnostic_root = root_display.chars().take(2048).collect();
+    if result.diagnostic_root.len() < root_display.len() {
+        result.diagnostic_root.push_str("...");
+    }
+    let detail = match example {
+        Some(example) => human(&example.seed_message)?,
+        None => format!("Next: coven goal {root_display} \"<your goal>\""),
+    };
+    result.stdout = format!(
+        "[INFO] Coven workspace: {root_display}\n[INFO] {detail}\n[INFO] Launch ({runtime}): coven up {root_display}"
+    );
+    require(
+        result.stdout.len() <= values::MAX_OUTPUT,
+        "unsupported_init_output_profile",
+    )?;
+    Ok(result)
 }
 
-trait InitIo {
-    fn mkdir_root(&self, root: &Path) -> Result<()> {
-        fs::create_dir_all(root)?;
-        Ok(())
-    }
-    fn before_file(&self, _root: &Path, _relative: &str) -> Result<()> {
-        Ok(())
-    }
-    fn write(&self, file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
-        file.write_all(bytes)
-    }
-    fn event(
-        &self,
-        root: &Path,
-        kind: &str,
-        payload: &Value,
-        guard: &WorkspaceGuard,
-    ) -> Result<()> {
-        task_delivery::append_event(root, kind, payload, guard)
-    }
-    fn dashboard(&self, root: &Path, guard: &WorkspaceGuard) -> Result<()> {
-        task_delivery::refresh_dashboard(root, guard)
-    }
-}
-struct SystemIo;
-impl InitIo for SystemIo {}
-
-fn run(root: &Path, options: &Options, source: &Path, io: &impl InitIo) -> Result<String> {
-    preflight(root)?;
-    let prepared = prepare(root, options, source)?;
-    let stopped = |_| Error("initialization_stopped_partial_files_preserved_for_inspection");
-    io.mkdir_root(root).map_err(stopped)?;
-    for (relative, content) in &prepared.files {
-        io.before_file(root, relative).map_err(stopped)?;
-        create_seed(root, relative, content, io).map_err(stopped)?;
-    }
-    for (kind, payload) in &prepared.events {
-        workspace::load(root)?;
-        let guard = WorkspaceGuard::acquire(root, Duration::from_secs(5))?;
-        io.event(root, kind, payload, &guard)?;
-    }
-    workspace::load(root)?;
-    let guard = WorkspaceGuard::acquire(root, Duration::from_secs(5))?;
-    io.dashboard(root, &guard)?;
-    Ok(prepared.success)
+struct Progress<'a> {
+    root: &'a str,
+    phase: &'static str,
+    current: Option<&'a str>,
+    last_completed: Option<&'a str>,
+    partial_file: bool,
 }
 
-#[cfg(unix)]
-fn create_seed(root: &Path, relative: &str, content: &str, io: &impl InitIo) -> Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let path = read_fs::managed(root, Path::new(relative), false)?;
-    fs::create_dir_all(path.parent().ok_or(Error("unsafe_init_path"))?)?;
-    let path = read_fs::managed(root, Path::new(relative), false)?;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o666)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
-    require(file.metadata()?.is_file(), "unsafe_init_output_type")?;
-    io.write(&mut file, content.as_bytes())?;
-    Ok(())
+fn publish<'a>(
+    root: &Path,
+    prepared: &'a Prepared,
+    io: &impl InitIo,
+    progress: &mut Progress<'a>,
+) -> Result<(Delivery, bootstrap::Reservation)> {
+    progress.phase = "inspect-root";
+    let mut missing = Vec::new();
+    for ancestor in root.ancestors() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                require(metadata.is_dir(), "init_root_not_directory")?;
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => missing.push(ancestor),
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let containing_parent = missing.last().and_then(|path| path.parent());
+    for directory in missing.iter().rev() {
+        progress.phase = "create-root";
+        io.boundary("mkdir-root", root)?;
+        // Concurrent init may create a shared missing ancestor, but never adopt
+        // managed directories: state/ and every managed output stay exclusive.
+        match fs::create_dir(directory) {
+            Ok(()) => {}
+            Err(error)
+                if error.kind() == std::io::ErrorKind::AlreadyExists && directory.is_dir() => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    progress.phase = "reserve-state";
+    io.boundary("reserve", root)?;
+    let reservation = bootstrap::reserve(root)?;
+    progress.phase = "recheck-reserved";
+    io.boundary("recheck-reserved", root)?;
+    reservation.validate()?;
+    check_reserved(root, true)?;
+    for directory in DIRECTORIES {
+        progress.phase = "create-directory";
+        progress.current = Some(directory);
+        io.boundary("mkdir-managed", root)?;
+        reservation.validate()?;
+        fs::create_dir(root.join(directory))?;
+    }
+    for generated in &prepared.files {
+        if generated.relative == "coven.json" {
+            continue;
+        }
+        progress.phase = "open-file";
+        progress.current = Some(&generated.relative);
+        progress.partial_file = false;
+        io.boundary("open", root)?;
+        reservation.validate()?;
+        let path = read_fs::managed(root, Path::new(&generated.relative), false)?;
+        let mut file = platform::open_generated(&path, true)?;
+        progress.partial_file = true;
+        if generated.relative == "dashboard.md" {
+            progress.phase = "dashboard-mode";
+            io.boundary("dashboard-mode", root)?;
+            platform::apply_replacement_mode(&file, 0o600)?;
+            progress.phase = "verify-dashboard-mode";
+            io.boundary("verify-dashboard-mode", root)?;
+            platform::verify_replacement_mode(&file, 0o600)?;
+        }
+        progress.phase = "write-file";
+        io.boundary("write", root)?;
+        reservation.validate()?;
+        io.write(&mut file, &generated.bytes)?;
+        progress.phase = "sync-file";
+        io.boundary("sync-file", root)?;
+        io.sync_file(&file)?;
+        progress.last_completed = Some(&generated.relative);
+        progress.partial_file = false;
+    }
+    for directory in DIRECTORIES.iter().copied().chain(std::iter::once("state")) {
+        progress.phase = "sync-managed-directory";
+        progress.current = Some(directory);
+        io.boundary("sync-managed-directory", root)?;
+        reservation.validate()?;
+        io.sync_directory(&root.join(directory))?;
+    }
+    // Sync the chain observed missing by this invocation, through its existing
+    // containing parent. Existing ancestor entries are assumed durable, even if
+    // another initializer just created them; Committed is operation-scoped.
+    for ancestor in std::iter::once(root)
+        .chain(missing.iter().copied().filter(|path| *path != root))
+        .chain(containing_parent)
+    {
+        progress.phase = "sync-creation-chain";
+        progress.current = None;
+        io.boundary("sync-ancestor", root)?;
+        reservation.validate()?;
+        io.sync_directory(ancestor)?;
+    }
+    let marker = prepared
+        .files
+        .iter()
+        .find(|file| file.relative == "coven.json")
+        .ok_or(Error("missing_init_marker"))?;
+    progress.phase = "publish-marker";
+    progress.current = Some("coven.json");
+    io.boundary("publish-marker", root)?;
+    reservation.validate()?;
+    // No fallible work follows a known linked marker. Bootstrap reports final
+    // directory-sync uncertainty as Delivery, not an ordinary failure.
+    let delivery = io.marker(&reservation, &marker.bytes)?;
+    Ok((delivery, reservation))
 }
-#[cfg(not(unix))]
-fn create_seed(_: &Path, _: &str, _: &str, _: &impl InitIo) -> Result<()> {
-    Err(Error("unsupported_platform"))
+
+pub fn arguments(workspace: &Path, options: &Options) -> Result<TaskOutput> {
+    arguments_with(workspace, options, &SystemInitIo)
+}
+fn arguments_with(workspace: &Path, options: &Options, io: &impl InitIo) -> Result<TaskOutput> {
+    platform::ensure_supported()?;
+    let root = platform::resolve_init_target(workspace)?;
+    check_reserved(&root, false)?;
+    let prepared = prepare(&root, options, io)?;
+    let mut progress = Progress {
+        root: &prepared.diagnostic_root,
+        phase: "prepared",
+        current: None,
+        last_completed: None,
+        partial_file: false,
+    };
+    // --force is deliberately not consulted: it never authorizes a reset.
+    match publish(&root, &prepared, io, &mut progress) {
+        Err(error) => Ok(TaskOutput {
+            stdout: String::new(),
+            warnings: vec![format!(
+                "[ERROR] Initialization stopped; partial files have been preserved for inspection: {} (root={} phase={} target={} last_completed={} partial_file={})",
+                error.code(),
+                progress.root,
+                progress.phase,
+                progress.current.unwrap_or("none"),
+                progress.last_completed.unwrap_or("none"),
+                progress.partial_file
+            )],
+            exit_code: 1,
+        }),
+        Ok((delivery, _reservation)) => Ok(TaskOutput {
+            stdout: prepared.stdout,
+            warnings: if matches!(delivery, Delivery::DurabilityUncertain) {
+                vec!["[WARN] init_marker_durability_uncertain: workspace initialized; inspect before retrying".into()]
+            } else {
+                Vec::new()
+            },
+            exit_code: if matches!(delivery, Delivery::DurabilityUncertain) {
+                2
+            } else {
+                0
+            },
+        }),
+    }
 }
 
 #[cfg(test)]

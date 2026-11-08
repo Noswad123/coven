@@ -6,6 +6,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 from unittest import mock
 
 from runner import coven, group_publisher as publisher, groups, launch, storage, task_attempts, workers
@@ -228,10 +229,12 @@ class GroupCommandTests(CovenTestCase):
         self.assertEqual(replay["outcome"], "unchanged")
 
     def test_real_wrapper_create_observe_add_publish_and_list(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         env = {key: value for key, value in os.environ.items() if key not in {"COVEN_HOME", "COVEN_COMMAND"}}
         env.update(KITSUNE_SOCKET_PATH="/not-selected", KITSUNE_CLIENT_SOCKET_PATH="/not-selected")
         def run(*args):
-            response = subprocess.run([str(ROOT / "bin/coven"), *map(str, args)], cwd=ROOT,
+            env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+            response = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), *map(str, args)], cwd=ROOT,
                 env=env, text=True, capture_output=True, timeout=15)
             self.assertEqual(response.returncode, 0, response.stderr)
             return json.loads(response.stdout)

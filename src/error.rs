@@ -5,6 +5,15 @@ use std::fmt;
 pub struct Error(pub(crate) &'static str);
 
 impl Error {
+    /// Fixed CLI-boundary refusal, without exposing arbitrary diagnostic text.
+    pub fn invalid_cli_arguments() -> Self {
+        Self("invalid_cli_arguments")
+    }
+
+    pub fn non_unicode_operand() -> Self {
+        Self("non_unicode_path_unsupported")
+    }
+
     pub fn code(&self) -> &'static str {
         self.0
     }

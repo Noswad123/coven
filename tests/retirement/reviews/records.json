@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "scope": "RecordTests batch review fragment only. Not a global ledger update or retirement acceptance. Parent must review and merge explicitly.",
+  "original_source": {
+    "path": "tests/test_records.py",
+    "sha256": "b2a45dff593f9f1b60cb36fefa14ccfd1ee4cddcbc447e6348cab04ef2739d65"
+  },
+  "category_changes_proposed": [
+    {
+      "id": "python::tests/test_records.py::RecordTests::test_valid_legacy_records_and_unknown_fields_are_not_normalized",
+      "from": "D",
+      "to": "A",
+      "reason": "All four assertIs subcases have a reviewed ownership/borrowing analogue, with exact output bytes and stable mutable-descendant allocations. No root stack-address equivalence is claimed for moved owned values."
+    }
+  ],
+  "proposed_file_counts": {"A": 4, "B": 0, "C": 0, "D": 0},
+  "capture_summary": {
+    "original_methods_run_once": 4,
+    "outermost_calls": 55,
+    "reference_successes": 5,
+    "reference_ValueError_refusals": 50,
+    "native_corpus_record_validation_routes": 54,
+    "native_corpus_input_boundary_refusals": 1,
+    "oracle_commit": "e389a08669204d4e51a49ffd13cbe01b90b5d8ba",
+    "oracle_python": "3.14.8",
+    "provenance": "tests/retirement/fixtures/records_provenance.json"
+  },
+  "native_test_command": "env PYTHONDONTWRITEBYTECODE=1 CARGO_BUILD_JOBS=2 cargo test --offline --locked --lib records::retirement",
+  "msrv_test_command": "env PYTHONDONTWRITEBYTECODE=1 CARGO_BUILD_JOBS=2 rustup run 1.85.0 cargo test --offline --locked --lib records::retirement",
+  "native_test_fullnames": [
+    "records::retirement::task_schema_rejects_bad_shapes_and_known_fields",
+    "records::retirement::agent_and_lead_schemas_reject_bad_shapes",
+    "records::retirement::metadata_contract_rejects_unsupported_versions_runtime_and_labels",
+    "records::retirement::valid_legacy_records_and_unknown_fields_are_not_normalized",
+    "records::retirement::ordered_finite_extensions_retain_numbers_bytes_and_allocations",
+    "records::retirement::frozen_inventory_and_provenance_are_complete"
+  ],
+  "reviews": {
+    "python::tests/test_records.py::RecordTests::test_task_schema_rejects_bad_shapes_and_known_fields": {
+      "status": "mapped",
+      "category": "A",
+      "assertion_review": "All 12 original assertRaises(ValueError) subcases r001-r012 replay against actual TaskRecords::validate with typed ordered finite Value: null/object outer shapes, null/object list elements, duplicate IDs, path-like ID, array title, bool status, integer owner, object notes, bool created_at and null updated_at. Each original refusal remains a refusal; no bool/number/string coercion. Original tests assert exception type only, not diagnostic wording; exact Python messages remain frozen provenance. Fixture inventory/hash and exact case-to-method membership are checked by the shared integrity test.",
+      "native_tests": [
+        "rust::src/records/retirement.rs::task_schema_rejects_bad_shapes_and_known_fields",
+        "rust::src/records/retirement.rs::frozen_inventory_and_provenance_are_complete"
+      ],
+      "fixtures": [
+        {"path": "tests/retirement/fixtures/records.json", "sha256": "a65e5d492eabfef677824cbad2f64bda2fe1d3be26c69d298035ec4c6ec78da0"},
+        {"path": "tests/retirement/fixtures/records_provenance.json", "sha256": "990024f8dfb6df76d53346ba5b0b7919f45940d199231a5901eb0a30fdf67294"}
+      ]
+    },
+    "python::tests/test_records.py::RecordTests::test_agent_and_lead_schemas_reject_bad_shapes": {
+      "status": "mapped",
+      "category": "A",
+      "assertion_review": "All 18 calls r013-r030: seven agent ValueError cases (null/object outer shapes, bool/object element, duplicate ID, null role, integer status), ten lead ValueError cases (empty object/list, bool, empty string, integer, null/path-like agent, integer set_at, array until, object instructions), and final assertIsNone(lead(None)). Actual private agents/lead validators are called directly within records' cfg(test) module. Null lead validation succeeds and the original borrowed Value remains exactly Null; Result<()> is the native immutable-borrow interface, not an invented returned Value. Borrowed input bytes and every descendant allocation stay unchanged even on refusals. Shared integrity test retains every original subcase and recorded source hash.",
+      "native_tests": [
+        "rust::src/records/retirement.rs::agent_and_lead_schemas_reject_bad_shapes",
+        "rust::src/records/retirement.rs::frozen_inventory_and_provenance_are_complete"
+      ],
+      "fixtures": [
+        {"path": "tests/retirement/fixtures/records.json", "sha256": "a65e5d492eabfef677824cbad2f64bda2fe1d3be26c69d298035ec4c6ec78da0"},
+        {"path": "tests/retirement/fixtures/records_provenance.json", "sha256": "990024f8dfb6df76d53346ba5b0b7919f45940d199231a5901eb0a30fdf67294"}
+      ]
+    },
+    "python::tests/test_records.py::RecordTests::test_metadata_contract_rejects_unsupported_versions_runtime_and_labels": {
+      "status": "mapped",
+      "category": "A",
+      "assertion_review": "All 21 original ValueError subcases r031-r051 retained: null/list/missing roster; punctuation-only/array name; true, 2 and string 1 versions; empty roster; case-folded and hyphen-trimmed alias collisions; unsupported multiplexer; blank command; integer created_at; array source_of_truth; false example; non-object display_names; unsafe display key; null, blank and surrogate labels. r036 explicitly inhabits Value::Bool(true) and TeamRecord::validate refuses unsupported_workspace_version, without coercion to integer one. Twenty calls go directly to TeamRecord::validate. r051 is an explicit representation-boundary substitution: the exact escaped unpaired surrogate JSON is rejected by values::parse with unsupported_or_invalid_json_scalar, before records validation. Python constructs a surrogate str and rejects it inside text validation; such a Value cannot exist in Rust. Rejection acceptance is preserved, not identical failure location or Python diagnostic. No impossible Rust string is fabricated and this case is not silently omitted. Shared integrity test checks inventory and corpus hash.",
+      "native_tests": [
+        "rust::src/records/retirement.rs::metadata_contract_rejects_unsupported_versions_runtime_and_labels",
+        "rust::src/records/retirement.rs::frozen_inventory_and_provenance_are_complete"
+      ],
+      "fixtures": [
+        {"path": "tests/retirement/fixtures/records.json", "sha256": "a65e5d492eabfef677824cbad2f64bda2fe1d3be26c69d298035ec4c6ec78da0"},
+        {"path": "tests/retirement/fixtures/records_provenance.json", "sha256": "990024f8dfb6df76d53346ba5b0b7919f45940d199231a5901eb0a30fdf67294"}
+      ]
+    },
+    "python::tests/test_records.py::RecordTests::test_valid_legacy_records_and_unknown_fields_are_not_normalized": {
+      "status": "mapped",
+      "category": "A",
+      "assertion_review": "Complete review of the four original assertIs(validator(value), value) subcases r052-r055, not merely structural equality. Frozen Python outputs are identical objects and unchanged full ordered JSON. Team keeps absent version, underscore ID, duplicate display labels and retired display-name key without reconciliation. Task keeps empty title, custom status, retired owner, old timestamp and extension. Agent keeps retired ID, empty role, custom status and extension. Lead keeps underscore agent, old timestamp and extension. For each owned TeamRecord/TaskRecords input, capture all original object-entry buffers, array buffers, object-key and string backing pointers/lengths before moving the same Value into the real validator; assert those exact allocations, compact bytes and storage bytes survive in value(), and for tasks also into_value(). This excludes cloning or normalization as the implementation substitute. A moved Rust root stack slot has no Python-object address analogue and is deliberately not asserted. For agents/lead the actual fn(&Value)->Result<()> signature is rustc-checked, the source immutable borrow cannot be replaced, and root address, full bytes and all nested allocations remain stable after validation. No public API or test-only validator returning its input is introduced. The original shared extension object across independent Python inputs is not a separate cross-call alias assertion; each original call preserves all of its descendants. Additional authored-input invariants test all four routes with ordered extensions, a 30-digit integer, negative zero, fractional float, bool/null, whitespace text and nested/empty containers; these are native preservation properties, not invented oracle captures. Shared integrity test verifies every original success and case membership. This justifies proposed D-to-A reclassification, subject to parent review.",
+      "native_tests": [
+        "rust::src/records/retirement.rs::valid_legacy_records_and_unknown_fields_are_not_normalized",
+        "rust::src/records/retirement.rs::ordered_finite_extensions_retain_numbers_bytes_and_allocations",
+        "rust::src/records/retirement.rs::frozen_inventory_and_provenance_are_complete"
+      ],
+      "fixtures": [
+        {"path": "tests/retirement/fixtures/records.json", "sha256": "a65e5d492eabfef677824cbad2f64bda2fe1d3be26c69d298035ec4c6ec78da0"},
+        {"path": "tests/retirement/fixtures/records_provenance.json", "sha256": "990024f8dfb6df76d53346ba5b0b7919f45940d199231a5901eb0a30fdf67294"}
+      ]
+    }
+  },
+  "remaining_limitations": [
+    "Fragment only; global coverage.json, coverage tooling, docs and global mapped totals are exclusively parent-owned and unchanged by this batch.",
+    "Python exception messages are captured exactly but not imposed as native diagnostic codes; originals assert ValueError only.",
+    "Unpaired-surrogate rejection occurs at the native JSON input boundary, not record validation, because Rust String cannot represent it.",
+    "Owned Rust roots move; identity analogue is retention of source Value allocations and bytes, not the address of a former stack slot. Borrowed agents/lead return unit and leave the original immutable value intact.",
+    "Scoped unit tests establish these four obligations only; no global, platform, package or universal no-I/O claim. All original tests remain active."
+  ]
+}

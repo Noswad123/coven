@@ -249,6 +249,14 @@ fn validate_toml_datetimes(value: &toml::Value) -> Result<()> {
     Ok(())
 }
 
+/// Configuration/path diagnostics, without parsing source tasks, agents or lead.
+/// Used for state inspection and explicit pending archival, not writer admission.
+pub(crate) fn diagnostic(root: &Path) -> Result<()> {
+    check_paths(root)?;
+    read_team(root)?;
+    Ok(())
+}
+
 fn read_team(root: &Path) -> Result<(TeamRecord, String)> {
     let raw = optional_bytes(
         root,
@@ -278,19 +286,26 @@ fn read_team(root: &Path) -> Result<(TeamRecord, String)> {
         }
     }
     let effective = TeamRecord::validate(effective)?;
+    let multiplexer = effective_multiplexer(&effective)?;
+    crate::actions::validate_workspace_control(root)?;
+    Ok((effective, multiplexer))
+}
+
+/// Pure configuration/environment selection; does not inspect or create authority.
+pub(crate) fn effective_multiplexer(team: &TeamRecord) -> Result<String> {
+    select_multiplexer(team.configured_multiplexer())
+}
+
+/// Init validates the environment override before validating its other records.
+pub(crate) fn select_multiplexer(configured: Option<&str>) -> Result<String> {
     let environment = match std::env::var("COVEN_MULTIPLEXER") {
         Ok(value) if !value.is_empty() => Some(value),
         Ok(_) | Err(std::env::VarError::NotPresent) => None,
         Err(_) => return Err(Error("unsupported_multiplexer")),
     };
-    let multiplexer = environment
-        .as_deref()
-        .or(effective.configured_multiplexer())
-        .unwrap_or("herdr");
+    let multiplexer = environment.as_deref().or(configured).unwrap_or("herdr");
     records::multiplexer(multiplexer)?;
-    let multiplexer = records::trimmed(multiplexer).to_lowercase();
-    crate::actions::validate_workspace_control(root)?;
-    Ok((effective, multiplexer))
+    Ok(records::trimmed(multiplexer).to_lowercase())
 }
 
 pub(crate) struct WorkspaceState {

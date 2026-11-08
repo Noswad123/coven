@@ -1,588 +1,601 @@
 use super::*;
-use std::cell::RefCell;
+use std::cell::Cell;
 
-fn minimal() -> tempfile::TempDir {
-    let temp = tempfile::tempdir().unwrap();
+fn workspace() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
     fs::write(
-        temp.path().join("coven.json"),
-        br#"{"name":"Test team","agents":["operator","Reviewer"],"multiplexer":"tmux"}"#,
+        root.path().join("coven.json"),
+        br#"{"name":"test","agents":["architect","CUSTOM"]}"#,
     )
     .unwrap();
-    temp
-}
-
-fn error<T>(result: Result<T>) -> &'static str {
-    result.err().expect("expected refusal").code()
-}
-
-fn lock_busy(root: &Path) {
-    assert_eq!(
-        error(WorkspaceGuard::existing(root, Duration::ZERO)),
-        "workspace_lock_busy"
-    );
+    root
 }
 
 #[test]
-fn disposable_prepare_and_success_preserve_authored_state() {
-    let temp = minimal();
-    let root = temp.path();
-    fs::create_dir(root.join("prompts")).unwrap();
-    fs::write(root.join("prompts/operator.md"), b"custom\xff").unwrap();
-    fs::write(root.join("goal.md"), "# Goal\r\n\r\nA goal\r").unwrap();
-    let before = fs::read(root.join("coven.json")).unwrap();
-    let prepared = prepare(root).unwrap();
-    assert_eq!(prepared.missing.len(), 1);
-    assert!(prepared.dashboard.contains("\nA goal\n"));
-    assert!(!root.join("state").exists());
-    assert!(!root.join("tmux").exists());
-    let output = refresh(root).unwrap();
-    let runtime = workspace::load(root).unwrap().multiplexer;
-    assert_eq!(
-        output,
-        format!("[INFO] Regenerated tmux/coven.toml and starter prompt files (runtime={runtime})")
-    );
-    assert_eq!(fs::read(root.join("coven.json")).unwrap(), before);
-    assert_eq!(
-        fs::read(root.join("prompts/operator.md")).unwrap(),
-        b"custom\xff"
-    );
-    assert!(!root.join("state/tasks.json").exists());
-    assert!(!root.join("logs").exists());
-    assert_eq!(
-        fs::read_to_string(root.join("dashboard.md")).unwrap(),
-        prepared.dashboard
-    );
-    assert_eq!(
-        fs::read_to_string(root.join("tmux/coven.toml")).unwrap(),
-        prepared.manifest
-    );
-    assert!(prepared.manifest.contains("bin/coven"));
-}
-
-#[test]
-fn deterministic_failures_do_not_create_first_lock_or_outputs() {
-    for (relative, content) in [
-        ("goal.md", vec![0xff]),
-        ("logs/messages.jsonl", b"{}".to_vec()),
-        ("logs/events.jsonl", b"[]\n".to_vec()),
-        ("logs/messages.jsonl", b"{\"checkpoint\":null}\n".to_vec()),
+fn refresh_preserves_authored_bytes_and_updates_only_generated_files() {
+    let root = workspace();
+    fs::create_dir(root.path().join("prompts")).unwrap();
+    fs::create_dir(root.path().join("logs")).unwrap();
+    fs::create_dir(root.path().join("state")).unwrap();
+    let authored = [
+        ("prompts/architect.md", b"\xffcustom role".as_slice()),
+        ("goal.md", b"# Goal\n\nPreserve me".as_slice()),
         (
             "logs/messages.jsonl",
-            b"{\"checkpoint\":\"../outside\"}\n".to_vec(),
+            b"{\"body\":\"history\"}\n".as_slice(),
+        ),
+        ("logs/events.jsonl", b"{\"type\":\"custom\"}\n".as_slice()),
+        ("state/tasks.json", b"[]".as_slice()),
+    ];
+    for (path, bytes) in authored {
+        fs::write(root.path().join(path), bytes).unwrap();
+    }
+    let output = arguments(root.path()).unwrap();
+    assert_eq!(output.exit_code, 0);
+    assert!(output.warnings.is_empty());
+    for (path, bytes) in authored {
+        assert_eq!(fs::read(root.path().join(path)).unwrap(), bytes);
+    }
+    assert!(root.path().join("prompts/CUSTOM.md").is_file());
+    assert!(root.path().join("prompts/CUSTOM.start.txt").is_file());
+    assert!(root.path().join("dashboard.md").is_file());
+    assert!(!root.path().join("agents").exists());
+    let before = fs::read(root.path().join("tmux/coven.toml")).unwrap();
+    arguments(root.path()).unwrap();
+    assert_eq!(
+        fs::read(root.path().join("tmux/coven.toml")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn deterministic_invalid_inputs_never_create_first_lock() {
+    for (path, bytes) in [
+        ("goal.md", b"\xff".as_slice()),
+        ("logs/messages.jsonl", b"{\"checkpoint\":42}\n".as_slice()),
+        (
+            "logs/events.jsonl",
+            b"{\"checkpoint\":\"../escape\"}\n".as_slice(),
+        ),
+        (
+            "coven.json",
+            br#"{"name":"test","agents":["a"],"example":"custom"}"#.as_slice(),
         ),
     ] {
-        let temp = minimal();
-        let path = temp.path().join(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, content).unwrap();
-        assert!(refresh(temp.path()).is_err(), "{relative}");
-        assert!(!temp.path().join("state/.workspace.lock").exists());
-        assert!(!temp.path().join("tmux").exists());
+        let root = workspace();
+        if path.starts_with("logs/") {
+            fs::create_dir(root.path().join("logs")).unwrap();
+        }
+        fs::write(root.path().join(path), bytes).unwrap();
+        assert!(arguments(root.path()).is_err(), "{path}");
+        assert!(!root.path().join("state/.workspace.lock").exists());
+        assert!(!root.path().join("tmux").exists());
+        assert!(!root.path().join("prompts").exists());
     }
 }
 
+struct Rebind;
+impl RefreshIo for Rebind {
+    fn prepared(&self, root: &Path, guarded: bool) -> Result<()> {
+        if !guarded {
+            fs::write(
+                root.join("coven.json"),
+                br#"{"name":"fresh","agents":["fresh"]}"#,
+            )?;
+        } else {
+            fs::create_dir(root.join("prompts"))?;
+            fs::write(root.join("prompts/fresh.md"), b"concurrent custom role")?;
+        }
+        Ok(())
+    }
+}
 #[test]
-fn logs_validate_batches_then_all_references_messages_before_events() {
-    let temp = minimal();
-    let root = temp.path();
-    fs::create_dir(root.join("logs")).unwrap();
-    fs::write(
-        root.join("logs/messages.jsonl"),
-        b"{\"checkpoint\":null}\n[]\n",
-    )
-    .unwrap();
-    fs::write(root.join("logs/events.jsonl"), b"broken\n").unwrap();
-    assert_eq!(error(checkpoint_logs(root)), "invalid_jsonl_record");
-    fs::write(root.join("logs/messages.jsonl"), b"{\"checkpoint\":null}\n").unwrap();
+fn guarded_preparation_rebinds_and_preserves_new_role_collision() {
+    let root = workspace();
+    assert_eq!(arguments_with(root.path(), &Rebind).unwrap().exit_code, 0);
     assert_eq!(
-        error(checkpoint_logs(root)),
-        "invalid_checkpoint_identifier"
+        fs::read(root.path().join("prompts/fresh.md")).unwrap(),
+        b"concurrent custom role"
     );
-    for id in ["", "../outside", "with.dot", "/absolute"] {
-        fs::write(
-            root.join("logs/messages.jsonl"),
-            format!(
-                "{{\"checkpoint\":{}}}\n",
-                serde_json::to_string(id).unwrap()
-            ),
+    assert!(!root.path().join("prompts/architect.start.txt").exists());
+    assert!(
+        fs::read_to_string(root.path().join("tmux/coven.toml"))
+            .unwrap()
+            .contains("Coven: fresh")
+    );
+}
+
+struct Fault {
+    index: Cell<usize>,
+    fail: usize,
+    uncertain: bool,
+}
+impl RefreshIo for Fault {
+    fn write(&self, file: &mut File, bytes: &[u8]) -> Result<()> {
+        let index = self.index.get();
+        self.index.set(index + 1);
+        if index == self.fail {
+            file.write_all(&bytes[..bytes.len().min(7)])?;
+            return Err(Error("injected_generated_write"));
+        }
+        Ok(file.write_all(bytes)?)
+    }
+    fn dashboard(&self, guard: &WorkspaceGuard, bytes: &[u8]) -> Result<Delivery> {
+        if self.fail == self.index.get() {
+            return Err(Error("injected_dashboard_write"));
+        }
+        let delivery = storage::atomic_replace_bytes(guard, Path::new("dashboard.md"), bytes)?;
+        Ok(if self.uncertain {
+            Delivery::DurabilityUncertain
+        } else {
+            delivery
+        })
+    }
+}
+#[test]
+fn publication_faults_retain_partial_generated_prefix_and_dashboard_is_last() {
+    for fail in 0..=5 {
+        let root = workspace();
+        fs::write(root.path().join("goal.md"), b"goal").unwrap();
+        fs::write(root.path().join("dashboard.md"), b"old dashboard").unwrap();
+        let output = arguments_with(
+            root.path(),
+            &Fault {
+                index: Cell::new(0),
+                fail,
+                uncertain: false,
+            },
         )
         .unwrap();
+        assert_eq!(output.exit_code, 1);
+        assert!(output.stdout.is_empty());
+        assert!(output.warnings[0].starts_with("[ERROR] refresh_outputs_may_be_partial: "));
         assert_eq!(
-            error(checkpoint_logs(root)),
-            "invalid_checkpoint_identifier"
+            fs::read(root.path().join("dashboard.md")).unwrap(),
+            b"old dashboard"
         );
+        assert_eq!(fs::read(root.path().join("goal.md")).unwrap(), b"goal");
+        assert!(!root.path().join("logs").exists());
+        assert!(!root.path().join("state/tasks.json").exists());
     }
-    fs::write(
-        root.join("logs/messages.jsonl"),
-        b"{\"checkpoint\":\"missing\",\"type\":\"not-a-request\"}\r\n\r\n",
+    let root = workspace();
+    let output = arguments_with(
+        root.path(),
+        &Fault {
+            index: Cell::new(0),
+            fail: usize::MAX,
+            uncertain: true,
+        },
     )
     .unwrap();
-    assert_eq!(error(checkpoint_logs(root)), "invalid_jsonl_record"); // now reaches events
-    fs::write(root.join("logs/events.jsonl"), b"{}\n").unwrap();
-    checkpoint_logs(root).unwrap();
-    fs::create_dir(root.join("checkpoints")).unwrap();
-    fs::write(root.join("checkpoints/missing.md"), [0xff]).unwrap();
-    assert_eq!(error(checkpoint_logs(root)), "invalid_utf8");
-    fs::write(root.join("checkpoints/missing.md"), "one\r\ntwo\rthree").unwrap();
-    assert_eq!(
-        optional_text(root, "checkpoints/missing.md").unwrap(),
-        "one\ntwo\nthree"
-    );
-}
-
-struct Changes {
-    phase: &'static str,
-}
-impl RefreshIo for Changes {
-    fn observe(&self, phase: &str, root: &Path) -> Result<()> {
-        if phase == self.phase {
-            fs::write(root.join("coven.json"), "null")?;
-        }
-        Ok(())
-    }
+    assert_eq!(output.exit_code, 1);
+    assert!(output.warnings[0].contains("refresh_dashboard_durability_uncertain"));
+    assert!(root.path().join("dashboard.md").is_file());
 }
 
 #[test]
-fn outer_held_nested_and_locked_prepare_preflights_are_effective() {
-    for phase in [
-        "draft",
-        "outer",
-        "locked",
-        "outer-held",
-        "nested-before",
-        "nested",
-    ] {
-        let temp = minimal();
-        assert_eq!(
-            error(run(temp.path(), &Changes { phase })),
-            "invalid_team_record"
-        );
-        assert_eq!(
-            temp.path().join("state/.workspace.lock").exists(),
-            phase != "draft"
-        );
-        assert!(!temp.path().join("tmux").exists());
-        assert!(!temp.path().join("dashboard.md").exists());
-    }
-}
-
-struct Fresh;
-impl RefreshIo for Fresh {
-    fn observe(&self, phase: &str, root: &Path) -> Result<()> {
-        if phase == "draft" {
-            let _guard = WorkspaceGuard::acquire(root, Duration::ZERO)?;
-            fs::write(root.join("goal.md"), "# Goal\nNew locked goal")?;
-        }
-        if matches!(phase, "locked" | "nested" | "prepared") {
-            lock_busy(root);
-        }
-        Ok(())
-    }
-    fn write(&self, root: &Path, relative: &str, text: &str, missing: bool) -> Result<()> {
-        lock_busy(root);
-        direct_write(root, relative, text, missing)
-    }
-    fn dashboard(&self, guard: &WorkspaceGuard, text: &str) -> Result<Delivery> {
-        lock_busy(guard.root());
-        assert!(text.contains("New locked goal"));
-        SystemIo.dashboard(guard, text)
-    }
-}
-
-#[test]
-fn fresh_prepare_and_all_publication_are_inside_same_guard() {
-    let temp = minimal();
-    fs::write(temp.path().join("goal.md"), "old goal").unwrap();
-    run(temp.path(), &Fresh).unwrap();
-    WorkspaceGuard::existing(temp.path(), Duration::ZERO).unwrap();
-}
-
-struct FailPublication {
-    fail: usize,
-    seen: RefCell<Vec<String>>,
-}
-impl RefreshIo for FailPublication {
-    fn write(&self, root: &Path, relative: &str, text: &str, missing: bool) -> Result<()> {
-        let mut seen = self.seen.borrow_mut();
-        seen.push(relative.into());
-        if seen.len() == self.fail {
-            return Err(Error("injected_publication_failure"));
-        }
-        direct_write(root, relative, text, missing)
-    }
-    fn dashboard(&self, _: &WorkspaceGuard, _: &str) -> Result<Delivery> {
-        self.seen.borrow_mut().push("dashboard.md".into());
-        Err(Error("injected_publication_failure"))
-    }
-}
-
-#[test]
-fn publication_is_ordered_partial_and_dashboard_last() {
-    let expected = [
-        "tmux/coven.toml",
-        "prompts/operator.md",
-        "prompts/Reviewer.md",
-        "prompts/operator.start.txt",
-        "prompts/Reviewer.start.txt",
-        "dashboard.md",
-    ];
-    for fail in 1..=6 {
-        let temp = minimal();
-        fs::write(temp.path().join("dashboard.md"), "old dashboard").unwrap();
-        let io = FailPublication {
-            fail,
-            seen: RefCell::new(Vec::new()),
-        };
-        assert_eq!(error(run(temp.path(), &io)), "injected_publication_failure");
-        assert_eq!(*io.seen.borrow(), &expected[..fail]);
-        assert_eq!(
-            fs::read_to_string(temp.path().join("dashboard.md")).unwrap(),
-            "old dashboard"
-        );
-        if fail > 1 {
-            assert!(temp.path().join("tmux/coven.toml").is_file());
-        }
-    }
-}
-
-#[test]
-fn assets_and_bounded_helpers_refuse_explicitly() {
-    assert_eq!(
-        error(example_directory(
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            Some("no-such-native-refresh-example")
-        )),
-        "refresh_example_assets_unavailable"
-    );
-    let mut total = MAX_OUTPUT;
-    assert_eq!(
-        error(admit(&mut total, 1)),
-        "unsupported_refresh_output_profile"
-    );
-    assert_eq!(total, MAX_OUTPUT);
-    let temp = minimal();
-    fs::write(temp.path().join("goal.md"), vec![b'x'; MAX_TEXT + 1]).unwrap();
-    assert_eq!(error(optional_text(temp.path(), "goal.md")), PROFILE);
-    assert_eq!(templates::slug("  A.!B__- ").unwrap(), "a-b__");
-    assert!(templates::slug("_-_").is_err());
-    assert_eq!(templates::shell_quote("a'b"), "'a'\"'\"'b'");
-    assert_eq!(templates::shell_quote("/safe/path"), "/safe/path");
-}
-
-fn assert_refresh_refusal_preserves(root: &Path, code: &'static str, files: &[&str]) {
-    let before: Vec<_> = files
-        .iter()
-        .map(|path| fs::read(root.join(path)).unwrap())
-        .collect();
-    assert!(!root.join("state/.workspace.lock").exists());
-    assert_eq!(error(refresh(root)), code);
-    assert!(!root.join("state/.workspace.lock").exists());
-    for (path, bytes) in files.iter().zip(before) {
-        assert_eq!(fs::read(root.join(path)).unwrap(), bytes, "{path}");
-    }
-}
-
-#[test]
-fn preparation_generated_output_budget_is_inclusive_and_one_byte_over_has_no_effects() {
-    let temp = minimal();
-    let root = temp.path();
-    let agents: Vec<_> = (0..40).map(|index| format!("a{index:02}")).collect();
-    let mut team = serde_json::json!({
-        "name": "budget", "agents": agents, "multiplexer": "tmux", "opencode_command": "x"
-    });
-    fs::write(root.join("coven.json"), serde_json::to_vec(&team).unwrap()).unwrap();
-    for directory in ["tmux", "prompts", "state"] {
-        fs::create_dir(root.join(directory)).unwrap();
-    }
-    for (path, text) in [
-        ("tmux/coven.toml", "old manifest"),
-        ("prompts/a00.md", "authored role"),
-        ("prompts/a00.start.txt", "old starter"),
-        ("dashboard.md", "old dashboard"),
-        ("state/tasks.json", "[]"),
-        ("goal.md", "x"),
-    ] {
-        fs::write(root.join(path), text).unwrap();
-    }
-    let output_len = |prepared: &Prepared| {
-        prepared.manifest.len()
-            + prepared.dashboard.len()
-            + prepared
-                .missing
-                .iter()
-                .chain(&prepared.starters)
-                .map(|(_, text)| text.len())
-                .sum::<usize>()
-    };
-    let base = prepare(root).unwrap();
-    let available = MAX_OUTPUT - output_len(&base);
-    let agent_refs: Vec<_> = agents.iter().map(String::as_str).collect();
-    // A simple command grows once in vars and once per agent. Derive the
-    // coefficient rather than hard-coding manifest/path/CLI overhead.
-    let slope = templates::manifest(
-        "budget",
-        root.to_str().unwrap(),
-        &agent_refs,
-        "xx",
-        &launch_cli().unwrap(),
+fn custom_checkpoint_reference_is_text_not_decision_grammar_and_messages_are_first() {
+    let root = workspace();
+    fs::create_dir(root.path().join("logs")).unwrap();
+    fs::create_dir(root.path().join("checkpoints")).unwrap();
+    fs::write(
+        root.path().join("checkpoints/custom.md"),
+        b"not decision grammar",
     )
-    .unwrap()
-    .len()
-        - base.manifest.len();
-    assert_eq!(slope, 41);
-    drop(base);
-    let command = "x".repeat(1 + available / slope);
-    assert!(command.len() < MAX_TEXT);
-    team["opencode_command"] = command.into();
-    fs::write(root.join("coven.json"), serde_json::to_vec(&team).unwrap()).unwrap();
-    let mut goal = "x".repeat(1 + available % slope);
-    fs::write(root.join("goal.md"), &goal).unwrap();
-    let exact = prepare(root).unwrap();
-    assert!(exact.manifest.len() < MAX_OUTPUT);
-    assert_eq!(exact.starters.len(), 40);
-    assert_eq!(exact.missing.len(), 39);
-    assert_eq!(output_len(&exact), MAX_OUTPUT);
-    drop(exact);
-    assert!(!root.join("state/.workspace.lock").exists());
-
-    // Only the final dashboard grows: the manifest still fits independently.
-    goal.push('x');
-    fs::write(root.join("goal.md"), goal).unwrap();
-    assert_refresh_refusal_preserves(
-        root,
-        "unsupported_refresh_output_profile",
-        &[
-            "coven.json",
-            "goal.md",
-            "state/tasks.json",
-            "tmux/coven.toml",
-            "prompts/a00.md",
-            "prompts/a00.start.txt",
-            "dashboard.md",
-        ],
+    .unwrap();
+    fs::write(
+        root.path().join("logs/messages.jsonl"),
+        b"{\"checkpoint\":\"custom\",\"type\":\"other\"}\n",
+    )
+    .unwrap();
+    assert_eq!(arguments(root.path()).unwrap().exit_code, 0);
+    fs::write(
+        root.path().join("logs/messages.jsonl"),
+        b"{\"checkpoint\":42}\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("logs/events.jsonl"), b"broken\n").unwrap();
+    assert_eq!(
+        arguments(root.path()).err().unwrap().code(),
+        "invalid_checkpoint_history_reference"
     );
-    for agent in &agents[1..] {
-        assert!(!root.join(format!("prompts/{agent}.md")).exists());
-        assert!(!root.join(format!("prompts/{agent}.start.txt")).exists());
+}
+
+#[test]
+fn staged_limits_are_incremental_and_do_not_mutate_stage_on_refusal() {
+    let mut stage = Prepared {
+        files: Vec::new(),
+        dashboard: Vec::new(),
+        runtime: "tmux".into(),
+        size: 0,
+    };
+    assert_eq!(
+        stage
+            .push("large".into(), "x".repeat(MAX_TEMPLATE + 1), false)
+            .unwrap_err()
+            .code(),
+        "unsupported_refresh_template_profile"
+    );
+    assert!(stage.files.is_empty());
+    for index in 0..MAX_FILES {
+        stage.push(index.to_string(), String::new(), false).unwrap();
     }
-    assert!(!root.join("logs").exists());
+    assert_eq!(
+        stage
+            .push("overflow".into(), String::new(), true)
+            .unwrap_err()
+            .code(),
+        "unsupported_refresh_stage_profile"
+    );
+    stage.files.clear();
+    for index in 0..32 {
+        stage
+            .push(index.to_string(), "x".repeat(MAX_TEMPLATE), false)
+            .unwrap();
+    }
+    assert_eq!(stage.size, MAX_STAGE);
+    assert_eq!(
+        stage
+            .push("overflow".into(), "x".into(), false)
+            .unwrap_err()
+            .code(),
+        "unsupported_refresh_stage_profile"
+    );
+    assert_eq!(stage.size, MAX_STAGE);
+    assert_eq!(stage.files.len(), 32);
 }
 
 #[test]
 fn preparation_checkpoint_work_budget_is_inclusive_and_overages_have_no_effects() {
-    let temp = minimal();
-    let root = temp.path();
+    let root = workspace();
+    let root = root.path();
     for directory in ["checkpoints", "logs", "tmux", "prompts"] {
         fs::create_dir(root.join(directory)).unwrap();
     }
-    for (path, text) in [
+    let authored = [
         ("tmux/coven.toml", "old manifest"),
-        ("prompts/operator.md", "authored role"),
-        ("prompts/operator.start.txt", "old starter"),
+        ("prompts/architect.md", "authored role"),
+        ("prompts/architect.start.txt", "old starter"),
         ("dashboard.md", "old dashboard"),
         ("goal.md", "authored goal"),
         ("checkpoints/byte.md", "x"),
-    ] {
+    ];
+    for (path, text) in authored {
         fs::write(root.join(path), text).unwrap();
     }
-    // Reuse one safe file, not 256 MiB of stored fixtures. Non-request records
-    // must consume work too, and the budget is shared across the two logs.
-    fs::write(root.join("checkpoints/budget.md"), vec![b'x'; MAX_TEXT]).unwrap();
+    // Only 1 MiB stored: repeated non-request references consume work too.
+    // CRLF distinguishes raw byte accounting from normalized text accounting.
+    let checkpoint = b"\r\n".repeat(MAX_TEMPLATE / 2);
+    fs::write(root.join("checkpoints/budget.md"), &checkpoint).unwrap();
     let record = "{\"checkpoint\":\"budget\",\"type\":\"unrelated\"}\n";
     let half = record.repeat(128);
     fs::write(root.join("logs/messages.jsonl"), &half).unwrap();
     fs::write(root.join("logs/events.jsonl"), &half).unwrap();
-    prepare(root).unwrap(); // Exactly 256 * 1 MiB must be accepted.
+    prepare(root).unwrap(); // Exactly 256 MiB, split across both logs.
+    prepare(root).unwrap(); // Each preparation has a fresh budget.
     assert!(!root.join("state").exists());
 
     for last in ["{\"checkpoint\":\"byte\"}\n", record] {
-        fs::write(root.join("logs/events.jsonl"), format!("{half}{last}")).unwrap();
-        // Test both exactly one byte over and a 257th full-size reference.
-        assert_refresh_refusal_preserves(
-            root,
-            "unsupported_refresh_checkpoint_work_profile",
-            &[
-                "coven.json",
-                "goal.md",
-                "tmux/coven.toml",
-                "dashboard.md",
-                "prompts/operator.md",
-                "prompts/operator.start.txt",
-                "logs/messages.jsonl",
-                "logs/events.jsonl",
-                "checkpoints/budget.md",
-                "checkpoints/byte.md",
-            ],
-        );
-        assert!(!root.join("state").exists());
-        assert!(!root.join("prompts/Reviewer.md").exists());
-        assert!(!root.join("prompts/Reviewer.start.txt").exists());
-    }
-}
-
-#[test]
-fn pending_import_is_not_an_automatic_refresh_blocker() {
-    let temp = minimal();
-    fs::create_dir_all(temp.path().join("state/task-ledger")).unwrap();
-    fs::write(temp.path().join("state/tasks.json"), "[]").unwrap();
-    refresh(temp.path()).unwrap();
-    assert!(!temp.path().join("state/task-authority.json").exists());
-    assert_eq!(
-        fs::read_to_string(temp.path().join("state/tasks.json")).unwrap(),
-        "[]"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn direct_outputs_preserve_inode_mode_and_partial_failures() {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let temp = minimal();
-    let root = temp.path();
-    fs::create_dir(root.join("tmux")).unwrap();
-    let path = root.join("tmux/coven.toml");
-    fs::write(&path, "old long manifest").unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
-    let before = fs::metadata(&path).unwrap();
-    direct_write(root, "tmux/coven.toml", "new", false).unwrap();
-    let after = fs::metadata(&path).unwrap();
-    assert_eq!((before.ino(), before.mode()), (after.ino(), after.mode()));
-    assert_eq!(fs::read(&path).unwrap(), b"new");
-    struct Partial;
-    impl DirectIo for Partial {
-        fn write(&self, file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
-            file.write_all(&bytes[..2])?;
-            Err(std::io::Error::other("injected partial write"))
-        }
-    }
-    assert!(direct_with(root, "tmux/coven.toml", "partial", false, &Partial).is_err());
-    assert_eq!(fs::read(&path).unwrap(), b"pa");
-    assert_eq!(fs::metadata(&path).unwrap().ino(), before.ino());
-    direct_write(root, "tmux/coven.toml", "not written", true).unwrap();
-    assert_eq!(fs::read(&path).unwrap(), b"pa");
-}
-
-#[cfg(unix)]
-#[test]
-fn unsafe_outputs_and_checkpoint_references_never_follow_or_block() {
-    use std::os::unix::{ffi::OsStrExt, fs::symlink};
-    let temp = minimal();
-    let root = temp.path();
-    fs::create_dir(root.join("checkpoints")).unwrap();
-    fs::create_dir(root.join("logs")).unwrap();
-    fs::write(
-        root.join("logs/messages.jsonl"),
-        "{\"checkpoint\":\"external\"}\n",
-    )
-    .unwrap();
-    let target = root.join("checkpoints/external.md");
-    let name = std::ffi::CString::new(target.as_os_str().as_bytes()).unwrap();
-    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
-    assert_eq!(error(checkpoint_logs(root)), "unsafe_archive_path");
-    fs::remove_file(&target).unwrap();
-    symlink(root.join("coven.json"), &target).unwrap();
-    assert_eq!(error(checkpoint_logs(root)), "unsafe_archive_path");
-    fs::create_dir(root.join("tmux")).unwrap();
-    symlink(root.join("coven.json"), root.join("tmux/coven.toml")).unwrap();
-    assert_eq!(
-        error(direct_write(root, "tmux/coven.toml", "bad", false)),
-        "unsafe_archive_path"
-    );
-}
-
-#[test]
-fn generated_templates_retain_coordination_rules_and_valid_toml() {
-    let manifest = templates::manifest(
-        "A team",
-        "/a/space's/\u{1f600}",
-        &["operator"],
-        "oc --flag",
-        "/source/bin/coven",
-    )
-    .unwrap();
-    let parsed: toml::Value = manifest.parse().unwrap();
-    let vars = parsed.get("vars").unwrap();
-    assert_eq!(
-        vars.get("COVEN_DIR").unwrap().as_str(),
-        Some("/a/space's/\u{1f600}")
-    );
-    assert!(
-        vars.get("OPENCODE_CMD")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .contains("exec opencode --flag")
-    );
-    assert!(manifest.ends_with('\n') && !manifest.ends_with("\n\n"));
-    assert!(
-        templates::prompt("Reviewer", "/workspace", "\r\n context \n")
-            .contains("Role: Review diffs")
-    );
-    assert!(templates::prompt("operator", "/workspace", " context ").ends_with("\n\ncontext\n\n"));
-    let starter = templates::starter("operator", "/workspace");
-    assert!(starter.starts_with("Read `/workspace/prompts/operator.md`"));
-    assert!(starter.contains("same key\nand original arguments/revision"));
-}
-
-#[test]
-fn example_manifest_is_an_object_and_context_is_read_even_with_existing_roles() {
-    let temp = minimal();
-    let root = temp.path();
-    fs::write(
-        root.join("coven.json"),
-        br#"{"name":"test","agents":["operator"],"example":" Demo "}"#,
-    )
-    .unwrap();
-    fs::create_dir(root.join("prompts")).unwrap();
-    fs::write(root.join("prompts/operator.md"), "custom role").unwrap();
-    let source = tempfile::tempdir().unwrap();
-    let example = source.path().join("examples/demo");
-    fs::create_dir_all(&example).unwrap();
-    for raw in ["[]", "null", "1", "\"string\""] {
-        fs::write(example.join("example.json"), raw).unwrap();
+        let events = format!("{half}{last}");
+        fs::write(root.join("logs/events.jsonl"), &events).unwrap();
         assert_eq!(
-            error(prepare_with_assets(root, source.path())),
-            "invalid_example_manifest"
+            arguments(root).err().unwrap().code(),
+            "unsupported_refresh_checkpoint_work_profile"
         );
+        for (path, text) in authored {
+            assert_eq!(fs::read(root.join(path)).unwrap(), text.as_bytes());
+        }
+        assert_eq!(
+            fs::read(root.join("checkpoints/budget.md")).unwrap(),
+            checkpoint
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("logs/messages.jsonl")).unwrap(),
+            half
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("logs/events.jsonl")).unwrap(),
+            events
+        );
+        assert!(!root.join("state").exists()); // No first lock either.
+        assert!(!root.join("prompts/CUSTOM.md").exists());
+        assert!(!root.join("prompts/CUSTOM.start.txt").exists());
+        assert_eq!(fs::read_dir(root.join("prompts")).unwrap().count(), 2);
     }
-    fs::write(example.join("example.json"), "{}").unwrap();
-    fs::write(example.join("prompt-context.md"), [0xff]).unwrap();
+}
+
+struct StageFailure;
+impl RefreshIo for StageFailure {
+    fn prepared(&self, _root: &Path, _guarded: bool) -> Result<()> {
+        Err(Error("injected_stage_failure"))
+    }
+}
+#[test]
+fn staged_failure_cannot_create_lock_or_outputs() {
+    let root = workspace();
     assert_eq!(
-        error(prepare_with_assets(root, source.path())),
-        "invalid_utf8"
-    );
-    fs::write(example.join("prompt-context.md"), "\r\nExample context\r").unwrap();
-    assert!(
-        prepare_with_assets(root, source.path())
+        arguments_with(root.path(), &StageFailure)
+            .err()
             .unwrap()
-            .missing
-            .is_empty()
+            .code(),
+        "injected_stage_failure"
     );
-    fs::remove_file(root.join("prompts/operator.md")).unwrap();
-    let prepared = prepare_with_assets(root, source.path()).unwrap();
-    assert!(prepared.missing[0].1.ends_with("\n\nExample context\n\n"));
-    assert!(!root.join("state/.workspace.lock").exists());
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn force_writes_keep_inode_and_mode_but_role_symlink_collisions_are_errors() {
+    use std::os::unix::{
+        fs::symlink,
+        fs::{MetadataExt, PermissionsExt},
+    };
+    let root = workspace();
+    fs::create_dir(root.path().join("tmux")).unwrap();
+    let manifest = root.path().join("tmux/coven.toml");
+    fs::write(&manifest, b"old").unwrap();
+    fs::set_permissions(&manifest, fs::Permissions::from_mode(0o640)).unwrap();
+    let before = fs::metadata(&manifest).unwrap();
+    assert_eq!(arguments(root.path()).unwrap().exit_code, 0);
+    let after = fs::metadata(&manifest).unwrap();
+    assert_eq!(before.ino(), after.ino());
+    assert_eq!(after.mode() & 0o777, 0o640);
+
+    struct UnsafeCollision;
+    impl RefreshIo for UnsafeCollision {
+        fn prepared(&self, root: &Path, guarded: bool) -> Result<()> {
+            if guarded {
+                fs::create_dir(root.join("prompts"))?;
+                symlink(root.join("goal.md"), root.join("prompts/architect.md"))?;
+            }
+            Ok(())
+        }
+    }
+    let root = workspace();
+    fs::write(root.path().join("goal.md"), b"authored").unwrap();
+    let output = arguments_with(root.path(), &UnsafeCollision).unwrap();
+    assert_eq!(output.exit_code, 1);
+    assert_eq!(fs::read(root.path().join("goal.md")).unwrap(), b"authored");
+    assert!(!root.path().join("dashboard.md").exists());
 }
 
 #[test]
-fn dashboard_sync_uncertainty_keeps_the_published_dashboard_without_success() {
-    struct Uncertain;
-    impl RefreshIo for Uncertain {
-        fn dashboard(&self, guard: &WorkspaceGuard, text: &str) -> Result<Delivery> {
-            SystemIo.dashboard(guard, text)?;
-            Ok(Delivery::DurabilityUncertain)
+fn effective_runtime_changes_info_not_tmux_launch_data() {
+    let root = workspace();
+    fs::write(
+        root.path().join("coven.toml"),
+        "[runtime]\nmultiplexer='tmux'\nopencode_command='opencode --special'\n",
+    )
+    .unwrap();
+    let output = arguments(root.path()).unwrap();
+    assert!(output.stdout.ends_with("(runtime=tmux)"));
+    let manifest = fs::read_to_string(root.path().join("tmux/coven.toml")).unwrap();
+    assert!(manifest.contains("tmux load-buffer"));
+    assert!(manifest.contains("opencode --special"));
+    fs::write(
+        root.path().join("coven.toml"),
+        "[runtime]\nmultiplexer='herdr'\nopencode_command='opencode --special'\n",
+    )
+    .unwrap();
+    let output = arguments(root.path()).unwrap();
+    assert!(output.stdout.ends_with("(runtime=herdr)"));
+    assert_eq!(
+        fs::read_to_string(root.path().join("tmux/coven.toml")).unwrap(),
+        manifest
+    );
+}
+
+fn state_bytes(root: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    fn visit(root: &Path, directory: &Path, out: &mut Vec<(std::path::PathBuf, Vec<u8>)>) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                out.push((path.strip_prefix(root).unwrap().to_owned(), Vec::new()));
+                visit(root, &path, out);
+            } else {
+                out.push((
+                    path.strip_prefix(root).unwrap().to_owned(),
+                    fs::read(path).unwrap(),
+                ));
+            }
         }
     }
-    let temp = minimal();
-    fs::write(temp.path().join("dashboard.md"), "old").unwrap();
-    assert_eq!(
-        error(run(temp.path(), &Uncertain)),
-        "dashboard_synchronization_uncertain"
-    );
-    assert!(
-        fs::read_to_string(temp.path().join("dashboard.md"))
+    let mut out = Vec::new();
+    visit(root, &root.join("state"), &mut out);
+    out.sort();
+    out
+}
+
+#[test]
+fn pending_import_is_not_refresh_authority_and_active_unsafe_projection_is_ignored() {
+    for active in [false, true] {
+        let root = workspace();
+        fs::create_dir(root.path().join("state")).unwrap();
+        fs::write(
+            root.path().join("state/tasks.json"),
+            br#"[{"id":"original","title":"Original task","status":"assigned"}]"#,
+        )
+        .unwrap();
+        let snapshot = crate::tasks::read_snapshot(root.path()).unwrap();
+        let guard = WorkspaceGuard::acquire(root.path(), Duration::ZERO).unwrap();
+        let _report =
+            crate::ledger::import_tasks(root.path(), snapshot.revision(), &guard).unwrap();
+        drop(guard);
+        if active {
+            fs::remove_file(root.path().join("state/tasks.json")).unwrap();
+            fs::create_dir(root.path().join("state/tasks.json")).unwrap();
+        } else {
+            fs::remove_file(root.path().join(crate::ledger::MARKER)).unwrap();
+        }
+        fs::write(
+            root.path().join("state/handoff.json"),
+            b"opaque handoff bytes",
+        )
+        .unwrap();
+        fs::create_dir(root.path().join("checkpoints")).unwrap();
+        let checkpoint = b"# Plan\nStatus: pending\n\n## User decision\n- [ ] Approved\n";
+        fs::write(root.path().join("checkpoints/plan-approval.md"), checkpoint).unwrap();
+        fs::create_dir(root.path().join("logs")).unwrap();
+        let history = b"{\"type\":\"checkpoint.approved\",\"checkpoint\":\"plan-approval\"}\n";
+        fs::write(root.path().join("logs/events.jsonl"), history).unwrap();
+        let before = state_bytes(root.path());
+        let output = arguments(root.path()).unwrap();
+        assert_eq!(output.exit_code, 0);
+        assert_eq!(state_bytes(root.path()), before);
+        assert_eq!(
+            fs::read(root.path().join("checkpoints/plan-approval.md")).unwrap(),
+            checkpoint
+        );
+        assert_eq!(
+            fs::read(root.path().join("logs/events.jsonl")).unwrap(),
+            history
+        );
+        let dashboard = fs::read_to_string(root.path().join("dashboard.md")).unwrap();
+        assert!(dashboard.contains("Original task"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn forced_hardlinks_are_rejected_before_first_lock_without_changing_any_inode() {
+    use std::{
+        os::unix::fs::{MetadataExt, PermissionsExt},
+        path::PathBuf,
+    };
+    type Entry = (PathBuf, u64, u64, u32, Vec<u8>);
+    fn tree(directory: &Path) -> Vec<Entry> {
+        let mut result = Vec::new();
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            let metadata = fs::symlink_metadata(&path).unwrap();
+            let bytes = if metadata.is_dir() {
+                result.extend(tree(&path));
+                Vec::new()
+            } else {
+                fs::read(&path).unwrap()
+            };
+            result.push((
+                path,
+                metadata.ino(),
+                metadata.nlink(),
+                metadata.mode(),
+                bytes,
+            ));
+        }
+        result.sort();
+        result
+    }
+    for target in [
+        "tmux/coven.toml",
+        "prompts/architect.start.txt",
+        "prompts/CUSTOM.start.txt",
+    ] {
+        for authored in [
+            "goal.md",
+            "prompts/architect.md",
+            "state/tasks.json",
+            "unlisted-authored.bin",
+        ] {
+            let root = workspace();
+            for directory in ["tmux", "prompts", "state"] {
+                fs::create_dir(root.path().join(directory)).unwrap();
+            }
+            fs::write(root.path().join("goal.md"), b"authored goal").unwrap();
+            fs::write(root.path().join("prompts/architect.md"), b"\xffcustom role").unwrap();
+            fs::write(root.path().join("state/tasks.json"), b"[]").unwrap();
+            fs::write(
+                root.path().join("unlisted-authored.bin"),
+                b"\xffarbitrary bytes",
+            )
+            .unwrap();
+            fs::set_permissions(
+                root.path().join(authored),
+                fs::Permissions::from_mode(0o640),
+            )
+            .unwrap();
+            fs::hard_link(root.path().join(authored), root.path().join(target)).unwrap();
+            let before = tree(root.path());
+            assert_eq!(
+                arguments(root.path()).err().unwrap().code(),
+                "unsafe_generated_hardlink",
+                "{target} -> {authored}"
+            );
+            assert_eq!(tree(root.path()), before, "{target} -> {authored}");
+            assert!(!root.path().join("state/.workspace.lock").exists());
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn existing_role_and_atomic_dashboard_hardlinks_do_not_modify_authored_inode() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let root = workspace();
+    fs::create_dir(root.path().join("prompts")).unwrap();
+    let goal = root.path().join("goal.md");
+    fs::write(&goal, b"authored goal").unwrap();
+    fs::set_permissions(&goal, fs::Permissions::from_mode(0o640)).unwrap();
+    let role = root.path().join("prompts/architect.md");
+    fs::hard_link(&goal, &role).unwrap();
+    fs::hard_link(&goal, root.path().join("dashboard.md")).unwrap();
+    let before = fs::metadata(&goal).unwrap();
+    assert_eq!(arguments(root.path()).unwrap().exit_code, 0);
+    for path in [&goal, &role] {
+        assert_eq!(fs::read(path).unwrap(), b"authored goal");
+        let after = fs::metadata(path).unwrap();
+        assert_eq!(after.ino(), before.ino());
+        assert_eq!(after.mode(), before.mode());
+        assert_eq!(after.nlink(), 2);
+    }
+    assert_ne!(
+        fs::metadata(root.path().join("dashboard.md"))
             .unwrap()
-            .starts_with("# Coven Dashboard:")
+            .ino(),
+        before.ino()
     );
-    assert!(temp.path().join("tmux/coven.toml").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn forced_hardlinks_are_rechecked_under_guard_and_before_descriptor_truncation() {
+    struct AddAlias {
+        guarded: bool,
+    }
+    impl RefreshIo for AddAlias {
+        fn prepared(&self, root: &Path, guarded: bool) -> Result<()> {
+            if guarded == self.guarded {
+                fs::hard_link(root.join("goal.md"), root.join("prompts/CUSTOM.start.txt"))?;
+            }
+            Ok(())
+        }
+    }
+    for guarded in [false, true] {
+        let root = workspace();
+        fs::create_dir(root.path().join("prompts")).unwrap();
+        fs::create_dir(root.path().join("tmux")).unwrap();
+        fs::write(root.path().join("goal.md"), b"authored goal").unwrap();
+        fs::write(root.path().join("tmux/coven.toml"), b"old manifest").unwrap();
+        let result = arguments_with(root.path(), &AddAlias { guarded });
+        if guarded {
+            let output = result.unwrap();
+            assert_eq!(output.exit_code, 1);
+            assert!(output.stdout.is_empty());
+            assert_eq!(
+                output.warnings,
+                ["[ERROR] refresh_outputs_may_be_partial: unsafe_generated_hardlink"]
+            );
+        } else {
+            assert_eq!(result.err().unwrap().code(), "unsafe_generated_hardlink");
+            assert_eq!(
+                fs::read(root.path().join("tmux/coven.toml")).unwrap(),
+                b"old manifest"
+            );
+            assert!(!root.path().join("prompts/architect.md").exists());
+        }
+        assert_eq!(
+            fs::read(root.path().join("goal.md")).unwrap(),
+            b"authored goal"
+        );
+        assert!(!root.path().join("dashboard.md").exists());
+    }
 }

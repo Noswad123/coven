@@ -2,12 +2,41 @@
 use super::*;
 use std::collections::BTreeMap;
 
-struct Graphs {
-    id: Value,
-    head: Value,
+pub(super) struct Graphs {
+    pub(super) id: Value,
+    pub(super) head: Value,
     revisions: BTreeMap<String, Value>,
     managed: HashSet<String>,
     decisions: HashSet<String>,
+}
+
+fn empty_graphs() -> Graphs {
+    Graphs {
+        id: Value::Null,
+        head: Value::Null,
+        revisions: BTreeMap::new(),
+        managed: HashSet::new(),
+        decisions: HashSet::new(),
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Share the checked v2 reducer with writers without rebuilding it from reports"
+)]
+pub(super) fn apply_successor(
+    control: &Value,
+    state: &mut Replay,
+    graphs: &mut Option<Graphs>,
+    binding: &Value,
+    operation: &str,
+    effect: &Value,
+    generation: usize,
+    work: &mut Work,
+) -> Result<Value> {
+    graphs
+        .get_or_insert_with(empty_graphs)
+        .apply(control, state, binding, operation, effect, generation, work)
 }
 
 fn revision(value: &Value, schema: usize) -> Result<()> {
@@ -22,7 +51,7 @@ fn revision(value: &Value, schema: usize) -> Result<()> {
     )
 }
 
-fn binding<'a>(value: &'a Value, work: &mut Work) -> Result<&'a str> {
+pub(super) fn binding<'a>(value: &'a Value, work: &mut Work) -> Result<&'a str> {
     fields(
         value,
         "schema_version operation parameters expected_execution_revision expected_tasks_revision",
@@ -121,7 +150,7 @@ fn checked_source<'a>(
 }
 
 impl Graphs {
-    fn head(&self, revision: &Value) -> Result<&Value> {
+    pub(super) fn head(&self, revision: &Value) -> Result<&Value> {
         require(
             !matches!(self.head, Value::Null) && text(revision)? == text(&self.head)?,
             "execution_graph_not_head",
@@ -452,13 +481,7 @@ pub(super) fn validated_with_work(control: &Value, work: &mut Work) -> Result<Va
         "invalid_execution_upgrade_metadata",
     )?;
     let authority = text(get(control, "execution_authority_id")?)?;
-    let mut graphs = Graphs {
-        id: Value::Null,
-        head: Value::Null,
-        revisions: BTreeMap::new(),
-        managed: HashSet::new(),
-        decisions: HashSet::new(),
-    };
+    let mut graphs = empty_graphs();
     for (index, entry) in history.iter().enumerate() {
         let generation = legacy_history.len() + index + 1;
         fields(entry, "generation request_id binding effect result")?;
@@ -531,23 +554,30 @@ pub(super) fn validated_with_work(control: &Value, work: &mut Work) -> Result<Va
             canonical::digest(&bytes)
         );
     }
-    let mut managed: Vec<_> = graphs.managed.into_iter().collect();
+    let mut managed: Vec<_> = graphs.managed.iter().cloned().collect();
     managed.sort();
     Ok(Validated {
         replayed,
         authority: authority.to_owned(),
         schema: 2,
         graph: Some(object(vec![
-            ("graph_id", graphs.id),
-            ("current_graph_revision", graphs.head),
+            ("graph_id", graphs.id.clone()),
+            ("current_graph_revision", graphs.head.clone()),
             (
                 "graphs",
-                Value::object(graphs.revisions.into_iter().collect())?,
+                Value::object(
+                    graphs
+                        .revisions
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect(),
+                )?,
             ),
             (
                 "graph_managed_tasks",
                 Value::Array(managed.into_iter().map(string).collect()),
             ),
         ])?),
+        graph_state: Some(graphs),
     })
 }

@@ -1,6 +1,5 @@
 """Offline installation-layout and public callback identity regressions."""
 
-import json
 import os
 from pathlib import Path
 import shlex
@@ -24,22 +23,32 @@ class WrapperTests(unittest.TestCase):
         self.root = Path(temp.name).resolve()
         self.home = self.root / "isolated tree"
         (self.home / "bin").mkdir(parents=True)
-        (self.home / "runner").mkdir()
         self.wrapper = self.home / "bin/coven"
         shutil.copy2(ROOT / "bin/coven", self.wrapper)
-        runner = self.home / "runner/coven.py"
-        runner.write_text(
-            "#!/usr/bin/env python3\nimport json, os\n"
-            "print(json.dumps([os.environ['COVEN_HOME'], os.environ['COVEN_COMMAND']]))\n"
-        )
-        runner.chmod(0o755)
+        native = Path(os.environ.get("COVEN_NATIVE_BIN", ROOT / "target/debug/coven"))
+        if not native.is_absolute() or not native.is_file() or not os.access(native, os.X_OK):
+            self.fail("Prerequisite: build the native Rust binary first or set absolute COVEN_NATIVE_BIN")
+        self.native = self.home / "target/release/coven"
+        self.native.parent.mkdir(parents=True)
+        shutil.copy2(native, self.native)
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("COVEN_", "ARCANA_PUBLIC_"))}
 
-    def run_wrapper(self, path, **env):
-        # Exercise Apple's Bash 3.2 too, not just a newer PATH-selected Bash.
-        return subprocess.run(["/bin/bash", str(path)], env=self.env | env,
+    def run_wrapper(self, path, *args, **env):
+        return subprocess.run([str(path), *args], env=self.env | env,
                               text=True, capture_output=True, timeout=10)
+
+    def assert_callbacks(self, path, overrides, expected):
+        workspace = self.root / "workspace"
+        for args in (["init", str(workspace), "--blank"], ["refresh", str(workspace)]):
+            result = self.run_wrapper(path, *args, **overrides)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = tomllib.loads((workspace / "tmux/coven.toml").read_text())
+            panes = manifest["sessions"][0]["windows"][0]["panes"]
+            for title in ("events", "messages"):
+                command = next(pane["command"] for pane in panes if pane["title"] == title)
+                self.assertIn(shlex.quote(expected) + " " + title + ";", command)
+        shutil.rmtree(workspace)
 
     def test_relative_and_absolute_symlink_chain_finds_full_tree(self):
         relative = self.root / "relative"
@@ -48,34 +57,44 @@ class WrapperTests(unittest.TestCase):
         absolute.symlink_to(relative)
         for path in (self.wrapper, relative, absolute):
             with self.subTest(path=path):
-                result = self.run_wrapper(path)
+                result = self.run_wrapper(path, "--help", PATH="")
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(json.loads(result.stdout), [str(self.home), str(self.wrapper)])
+                self.assertIn("coven", result.stdout)
 
     def test_explicit_home_bypasses_discovery(self):
         elsewhere = self.root / "elsewhere"
         elsewhere.mkdir()
         wrapper = elsewhere / "coven"
         shutil.copy2(self.wrapper, wrapper)
-        result = self.run_wrapper(wrapper, COVEN_HOME=str(self.home))
+        assets = self.home / "examples/custom"
+        assets.mkdir(parents=True)
+        (assets / "example.json").write_text('{"id":"custom"}')
+        (assets / "goal.md").write_text("asset home goal\n")
+        workspace = self.root / "workspace"
+        result = self.run_wrapper(wrapper, "init", str(workspace), "--example", "custom",
+                                  COVEN_HOME=str(self.home), COVEN_NATIVE_BIN=str(self.native))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), [str(self.home), str(self.wrapper)])
+        self.assertEqual((workspace / "goal.md").read_text(), "asset home goal\n")
+        result = self.run_wrapper(wrapper, "--help", COVEN_HOME=str(self.home))
+        self.assertNotEqual(result.returncode, 0)
 
     def test_public_identity_precedence_and_empty_policy(self):
-        public = "/future/Arcana Public/coven"
-        explicit = "/custom/coven"
+        public = "/future/Arcana Public/../bin/co'ven"
+        explicit = "/custom/../chosen coven"
         for overrides, expected in (
             ({"ARCANA_PUBLIC_COVEN": public}, public),
             ({"ARCANA_PUBLIC_COVEN": public, "COVEN_COMMAND": explicit}, explicit),
             ({"ARCANA_PUBLIC_COVEN": public, "COVEN_COMMAND": ""}, public),
-            ({"ARCANA_PUBLIC_COVEN": "", "COVEN_COMMAND": ""}, str(self.wrapper)),
+            ({"ARCANA_PUBLIC_COVEN": "", "COVEN_COMMAND": ""}, "coven"),
+            ({"COVEN_COMMAND": ""}, "coven"),
+            ({"ARCANA_PUBLIC_COVEN": ""}, "coven"),
+            ({}, "coven"),
             ({"ARCANA_PUBLIC_COMMAND": "/wrong/numen", "ARCANA_PUBLIC_NUMEN": "/wrong/numen"},
-             str(self.wrapper)),
+             "coven"),
         ):
             with self.subTest(overrides=overrides):
-                result = self.run_wrapper(self.wrapper, **overrides)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(json.loads(result.stdout)[1], expected)
+                for path in (self.wrapper, self.native):
+                    self.assert_callbacks(path, overrides, expected)
 
     def test_cycles_and_excessive_chains_fail_boundedly(self):
         entry = self.root / "entry"
@@ -95,24 +114,14 @@ class WrapperTests(unittest.TestCase):
                     ["/bin/bash", "-c", 'entry="$1"; target="$2"; '
                      'readlink() { if [[ "$1" == "$entry" ]]; then '
                      'command ln -sf "$target" "$entry"; fi; command readlink "$1"; }; '
-                     'source "$entry"', "test", str(entry), target],
+                     'source "$entry"', str(entry), str(entry), target],
                     env=self.env, text=True, capture_output=True, timeout=10)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(message, result.stderr)
 
     def test_stable_callbacks_and_direct_runner_flat_root_fallback(self):
         public = "/future/Arcana Public/../bin/coven"
-        workspace = self.root / "workspace"
-        env = self.env | {"ARCANA_PUBLIC_COVEN": public}
-        for args in (["init", str(workspace), "--blank"], ["refresh", str(workspace)]):
-            result = subprocess.run([str(ROOT / "bin/coven"), *args], env=env,
-                                    text=True, capture_output=True, timeout=20)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            manifest = tomllib.loads((workspace / "tmux/coven.toml").read_text())
-            panes = manifest["sessions"][0]["windows"][0]["panes"]
-            events = next(pane["command"] for pane in panes if pane["title"] == "events")
-            self.assertIn(shlex.quote(public) + " events", events)
-            self.assertNotIn(str(ROOT / "bin/coven"), events)
+        self.assert_callbacks(self.native, {"ARCANA_PUBLIC_COVEN": public}, public)
         with mock.patch.dict(os.environ, self.env, clear=True):
             self.assertEqual(coven.cli_command(), shlex.quote(str(ROOT / "bin/coven")))
         with mock.patch.dict(os.environ, {"COVEN_COMMAND": public}):

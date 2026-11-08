@@ -2,22 +2,22 @@
 //! never rolls back an already committed task when either publication fails.
 //! JSONL: 8 MiB total/file, 65536 physical LF-terminated lines (including blanks),
 //! and the finite LegacySnapshot value profile per record. Python is unbounded.
-mod unicode;
+use crate::unicode;
 
 use crate::{
     Error, Result, checkpoints,
     error::require,
-    platform, read_fs, records,
+    logs::{self, AppendIo, LogKind, SystemAppendIo, read_log},
+    read_fs, records,
     storage::{self, Delivery, WorkspaceGuard},
     task_time,
-    values::{self, Object, Profile, Value},
+    values::{Object, Value},
     workspace::{self, WorkspaceState},
 };
-use std::{fs::File, io::Write, path::Path};
+use std::path::Path;
 
-const MAX_LOG: usize = 8 * 1_048_576;
-const MAX_LINES: usize = 65_536;
 const MAX_TEXT: usize = 1_048_576;
+const MAX_REFRESH_CHECKPOINT_WORK: usize = 256 * MAX_TEXT;
 const MAX_DASHBOARD: usize = 32 * 1_048_576;
 const CHECKPOINTS: [(&str, &str); 2] = [
     ("plan-approval", "consult user before implementation"),
@@ -46,60 +46,6 @@ fn optional_bytes(
     }
 }
 
-pub(crate) fn validate_log(bytes: &[u8]) -> Result<usize> {
-    visit_log_records(bytes, &mut |_| Ok(()))
-}
-
-pub(crate) fn visit_log_records(
-    bytes: &[u8],
-    visit: &mut dyn FnMut(&Value) -> Result<()>,
-) -> Result<usize> {
-    require(bytes.len() <= MAX_LOG, "unsupported_event_log_size_profile")?;
-    require(
-        bytes.is_empty() || bytes.last() == Some(&b'\n'),
-        "event_log_unterminated_line",
-    )?;
-    let mut count = 0;
-    // Split LF only: CR remains JSON whitespace, never a record separator.
-    for raw in bytes.split_inclusive(|c| *c == b'\n') {
-        count += 1;
-        require(count <= MAX_LINES, "unsupported_event_log_line_profile")?;
-        let text =
-            std::str::from_utf8(&raw[..raw.len() - 1]).map_err(|_| Error("invalid_jsonl_utf8"))?;
-        if records::trimmed(text).is_empty() {
-            continue;
-        }
-        // Do not trim nonblank records: json.loads accepts JSON whitespace only.
-        let record = values::parse(text.as_bytes(), Profile::LegacySnapshot).map_err(|error| {
-            // Add history context only to record errors, never resource/profile
-            // refusals whose specific limits remain actionable to the caller.
-            match error.code() {
-                "invalid_compat_json"
-                | "invalid_compat_json_string"
-                | "invalid_json_trailing_data"
-                | "invalid_json_number"
-                | "unsupported_nonfinite_json"
-                | "unsupported_or_invalid_json_scalar" => Error("invalid_jsonl_record"),
-                _ => error,
-            }
-        })?;
-        require(record.as_object().is_some(), "invalid_jsonl_record")?;
-        visit(&record)?;
-    }
-    Ok(count)
-}
-
-fn read_log(root: &Path, relative: &str) -> Result<(usize, usize)> {
-    let bytes = optional_bytes(
-        root,
-        relative,
-        MAX_LOG,
-        "unsupported_event_log_size_profile",
-    )?
-    .unwrap_or_default();
-    Ok((bytes.len(), validate_log(&bytes)?))
-}
-
 /// Snapshot callers run this before task commit. Ledger callers intentionally
 /// defer log *content* checks to secondary publication after the task commit.
 pub(crate) fn validate_snapshot_logs(root: &Path) -> Result<()> {
@@ -108,19 +54,56 @@ pub(crate) fn validate_snapshot_logs(root: &Path) -> Result<()> {
     Ok(())
 }
 
-trait AppendIo {
-    fn open(&self, path: &Path) -> Result<File> {
-        platform::open_append(path)
+/// Refresh discards history ordering but validates every explicit checkpoint
+/// reference, including non-request records. This never restores decisions.
+pub(crate) fn validate_checkpoint_history(root: &Path) -> Result<()> {
+    let mut remaining = MAX_REFRESH_CHECKPOINT_WORK;
+    for kind in [LogKind::Messages, LogKind::Events] {
+        checkpoint_log_records_with_budget(root, kind, Some(&mut remaining))?;
     }
-    fn write(&self, file: &mut File, bytes: &[u8]) -> std::io::Result<()> {
-        file.write_all(bytes)
-    }
-    fn sync(&self, file: &File) -> std::io::Result<()> {
-        file.sync_all()
-    }
+    Ok(())
 }
-struct SystemAppendIo;
-impl AppendIo for SystemAppendIo {}
+
+/// Validate the complete selected log before checking every explicit reference.
+/// These records remain observations; referenced decisions are never restored.
+pub(crate) fn checkpoint_log_records(root: &Path, kind: LogKind) -> Result<Vec<Value>> {
+    checkpoint_log_records_with_budget(root, kind, None)
+}
+
+fn checkpoint_log_records_with_budget(
+    root: &Path,
+    kind: LogKind,
+    mut remaining: Option<&mut usize>,
+) -> Result<Vec<Value>> {
+    let records = logs::read(root, kind)?;
+    for record in &records {
+        if let Some(reference) = record
+            .as_object()
+            .and_then(|object| object.get("checkpoint"))
+        {
+            let id = reference
+                .as_str()
+                .ok_or(Error("invalid_checkpoint_history_reference"))?;
+            checkpoints::inspect_bytes(id, None)?; // ID only, not referenced decision grammar.
+            if let Some(raw) = optional_bytes(
+                root,
+                &format!("checkpoints/{id}.md"),
+                MAX_TEXT,
+                "unsupported_checkpoint_history_profile",
+            )? {
+                std::str::from_utf8(&raw)?;
+                // Charge every reread's raw UTF-8 bytes, without deduplication
+                // or universal-newline normalization (CRLF costs two bytes).
+                if let Some(remaining) = remaining.as_deref_mut() {
+                    *remaining = remaining
+                        .checked_sub(raw.len())
+                        .ok_or(Error("unsupported_refresh_checkpoint_work_profile"))?;
+                }
+            }
+        }
+    }
+    Ok(records)
+}
 
 pub(crate) fn append_event(
     root: &Path,
@@ -164,31 +147,11 @@ fn append_with_metadata(
         event.set_field(key, value.clone())?;
     }
     read_log(root, "logs/events.jsonl")?;
-    let mut encoded = event.compact()?;
-    encoded.push(b'\n');
-    // Check the actual complete encoded record, not only the caller's value.
-    require(validate_log(&encoded)? == 1, "invalid_encoded_event")?;
+    let encoded = logs::encode_record(&event)?;
     workspace::load(root)?; // workspace_mutation's pre-context preflight
     guard.validate_for(root)?;
     workspace::load(root)?; // borrowed held-context preflight
-    let (bytes, lines) = read_log(root, "logs/events.jsonl")?;
-    require(
-        encoded.len() <= MAX_LOG - bytes,
-        "unsupported_event_log_size_profile",
-    )?;
-    require(lines < MAX_LINES, "unsupported_event_log_line_profile")?;
-    // Python's append_event wrapper creates only this managed parent, after
-    // admission and under the held guard, with mkdir's default umask policy.
-    let logs = read_fs::managed(root, Path::new("logs"), true)?;
-    std::fs::create_dir_all(&logs)?;
-    read_fs::managed(root, Path::new("logs"), true)?;
-    let path = read_fs::managed(root, Path::new("logs/events.jsonl"), false)?;
-    // No truncate, tail repair, deduplication, or rollback. A failed write
-    // or sync can leave evidence behind; future writes must validate it afresh.
-    let mut file = io.open(&path)?;
-    io.write(&mut file, &encoded)
-        .and_then(|()| io.sync(&file))
-        .map_err(|_| Error("event_append_may_be_partial"))
+    logs::append_encoded_with(root, LogKind::Events, &encoded, guard, io)
 }
 
 struct CapturedDashboard {
@@ -205,11 +168,13 @@ fn goal(root: &Path) -> Result<String> {
         "unsupported_dashboard_input_profile",
     )?
     .unwrap_or_default();
-    let text = std::str::from_utf8(&bytes)?
-        .replace("\r\n", "\n")
-        .replace('\r', "\n");
+    Ok(goal_text(std::str::from_utf8(&bytes)?))
+}
+
+fn goal_text(raw: &str) -> String {
+    let text = raw.replace("\r\n", "\n").replace('\r', "\n");
     let text = records::trimmed(&text);
-    Ok(records::trimmed(text.strip_prefix("# Goal").unwrap_or(text)).to_owned())
+    records::trimmed(text.strip_prefix("# Goal").unwrap_or(text)).to_owned()
 }
 
 fn capture(root: &Path) -> Result<CapturedDashboard> {
@@ -238,19 +203,27 @@ pub(crate) fn refresh_dashboard(root: &Path, guard: &WorkspaceGuard) -> Result<(
     refresh_with(root, guard, &SystemDashboardIo)
 }
 
-/// Read-only preparation seam: callers must retain their guard through publication.
-pub(crate) fn prepare_dashboard(root: &Path) -> Result<String> {
-    render(&capture(root)?)
+pub(crate) fn validate_dashboard_inputs(root: &Path) -> Result<()> {
+    workspace::load(root)?;
+    goal(root)?;
+    Ok(())
 }
 
-/// Admission-only initial render. Publication must recapture under the guard.
-pub(crate) fn prepare_initial_dashboard(state: WorkspaceState, goal: &str) -> Result<String> {
-    let goal = records::trimmed(goal);
-    render(&CapturedDashboard {
+/// Prepare only; refresh stages all generated outputs before any file write and
+/// repeats preparation under its borrowed workspace guard.
+pub(crate) fn prepare_dashboard_bytes(root: &Path) -> Result<Vec<u8>> {
+    Ok(render(&capture(root)?)?.into_bytes())
+}
+
+/// Init has validated all state in memory before a workspace marker exists.
+/// Reuse the formatter without relaxing ordinary capture or guard admission.
+pub(crate) fn prepare_initial_dashboard(state: WorkspaceState, goal: &str) -> Result<Vec<u8>> {
+    Ok(render(&CapturedDashboard {
         state,
-        goal: records::trimmed(goal.strip_prefix("# Goal").unwrap_or(goal)).to_owned(),
-        statuses: ["pending".into(), "pending".into()],
-    })
+        goal: goal_text(goal),
+        statuses: ["pending".to_owned(), "pending".to_owned()],
+    })?
+    .into_bytes())
 }
 
 trait DashboardIo {

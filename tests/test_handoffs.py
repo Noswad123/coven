@@ -423,8 +423,10 @@ class ProcessTests(HandoffFixture):
                     stream.close()
 
     def test_real_wrapper_validates_without_runtime_dependency(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         env = {**os.environ, "COVEN_HOME": str(ROOT), "PYTHONDONTWRITEBYTECODE": "1"}
-        result = subprocess.run([str(ROOT / "bin/coven"), "handoff", "validate", str(self.file), "--json"],
+        env["COVEN_COMMAND"] = str(ROOT / "bin/coven")
+        result = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), "handoff", "validate", str(self.file), "--json"],
                                 cwd=self.root, env=env, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["assessment"], "valid_unverified")
