@@ -18,6 +18,10 @@ pub(crate) fn session_snapshot(reply: &observation_socket::Reply) -> WireResult<
     Ok((*schema::snapshot(reply, true)?).clone())
 }
 
+pub(crate) fn comparison_snapshot(reply: &observation_socket::Reply) -> WireResult<Value> {
+    schema::comparison_snapshot(reply)
+}
+
 pub(crate) fn session_processes(
     reply: &observation_socket::Reply,
     pane: &str,

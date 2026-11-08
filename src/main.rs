@@ -492,6 +492,9 @@ enum Observe {
         socket: String,
         #[arg(long, allow_negative_numbers = true)]
         process_pane: Option<String>,
+        /// Compare reported built-in agent hints with generic Djinn-family evidence.
+        #[arg(long, conflicts_with = "process_pane")]
+        compare_agents: bool,
         #[arg(long, default_value = "3", allow_hyphen_values = true)]
         timeout: f64,
         #[arg(long, default_value = "1048576", allow_hyphen_values = true)]
@@ -1210,19 +1213,31 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                 Observe::Kitsune {
                     socket,
                     process_pane,
+                    compare_agents,
                     timeout,
                     max_response_bytes,
                     json,
                 },
         } => {
+            let max_response_bytes: usize = max_response_bytes
+                .try_into()
+                .map_err(|_| coven::Error::invalid_cli_arguments())?;
+            if compare_agents {
+                return coven::kitsune_comparison::arguments(
+                    &coven::kitsune_comparison::Request {
+                        socket,
+                        timeout,
+                        max_response_bytes,
+                    },
+                    json,
+                );
+            }
             let result = group_commands::observe_kitsune(
                 &coven::kitsune_observation::Request {
                     socket,
                     process_pane,
                     timeout,
-                    max_response_bytes: max_response_bytes
-                        .try_into()
-                        .map_err(|_| coven::Error::invalid_cli_arguments())?,
+                    max_response_bytes,
                 },
                 json,
             )?;

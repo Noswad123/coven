@@ -12,6 +12,15 @@ automatic following, and extraction remain open. Characterize generic surfaces
 before extraction and before further worker/worktree implementation. No scheduler, daemon, plugin framework, or native
 admission design is prerequisite for observation/grouping.
 
+Local progress: native opt-in `observe kitsune --compare-agents` now characterizes
+built-in hints against generic Djinn-family evidence; see the
+[comparison contract](KITSUNE_AGENT_COMPARISON_CONTRACT.md). Existing modes and
+Kitsune built-ins remain unchanged; extraction/replacement equivalence is not
+established. Next small step: generic process-selection characterization and pure
+provider policy behind compatibility wrappers, with per-runtime/cross-platform
+gates before removal. No scheduler is needed. Scoped parent validation and source
+provenance are in the contract, not a new full-CI result; changes remain local/uncommitted.
+
 Annotations target bounded badges/labels/group hints/progress on existing
 panes/workspaces, useful for build/test/export services as well as coordinators.
 Kitsune/user own space, layout, rendering, clipping, and quotas; source-owned values

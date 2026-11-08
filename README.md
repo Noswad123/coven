@@ -703,6 +703,21 @@ an authenticated binary, active agent, verified session, or lifecycle fact. No
 launch/resume/detection behavior is removed. See
 [KITSUNE_PROCESS_OBSERVATION_CONTRACT.md](KITSUNE_PROCESS_OBSERVATION_CONTRACT.md).
 
+Native opt-in comparison characterizes built-in hints against Coven's generic
+Djinn-family evidence across one bounded endpoint cohort. Reference syntax only
+(replace the uppercase placeholder with an explicitly inspected absolute socket):
+
+```text
+coven observe kitsune --compare-agents --socket ABS_SOCKET --timeout 3 --max-response-bytes 1048576 --json
+```
+
+It conflicts with `--process-pane`; existing modes are unchanged. Default output
+is pretty ASCII JSON, `--json` compact. Mismatches still exit 0 when observed;
+comparison grants no active-agent, identity, readiness or replacement guarantee.
+No bindings, state writes or built-in disabling follow. See
+[KITSUNE_AGENT_COMPARISON_CONTRACT.md](KITSUNE_AGENT_COMPARISON_CONTRACT.md) for
+the strict N+2 query contract, privacy, categories and extraction decision matrix.
+
 **Read method does not mean zero server-side effects:** existing Kitsune dispatch
 housekeeping may expire metadata, drain events, sync titles, or create a default
 workspace (potentially spawning a shell). No live connections were run for this

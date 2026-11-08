@@ -20,6 +20,7 @@ pub mod groups;
 pub mod handoff;
 pub mod init;
 pub mod interactive_sessions;
+pub mod kitsune_comparison;
 pub mod kitsune_observation;
 mod launch;
 pub mod lead;

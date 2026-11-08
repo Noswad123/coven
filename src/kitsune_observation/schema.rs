@@ -262,6 +262,18 @@ pub(super) fn command_snapshot(reply: &observation_socket::Reply) -> WireResult<
     Ok((*snapshot).clone())
 }
 
+pub(super) fn comparison_snapshot(reply: &observation_socket::Reply) -> WireResult<Value> {
+    let snapshot = snapshot(reply, false)?;
+    for inventory in ["panes", "agents"] {
+        for row in snapshot[inventory].as_array().into_iter().flatten() {
+            for key in LOCATORS {
+                require(row[key].as_str().is_some_and(opaque))?;
+            }
+        }
+    }
+    Ok((*snapshot).clone())
+}
+
 pub(super) fn publication_annotations(a: &N) -> WireResult<Value> {
     let epoch = string(field(a, "epoch")?)?;
     require(!epoch.is_empty())?;

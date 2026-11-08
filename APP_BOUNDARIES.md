@@ -8,6 +8,7 @@ implemented in Kitsune; explicit participant groups/roles and a foreground publi
 implemented in Coven, including explicit process-evidence group binding independent
 of Kitsune's agent inventory; explicit Djinn live attachments and read-only
 busy/unknown group status and explicit expiry-bounded live publishing implemented;
+native opt-in agent comparison implemented as extraction characterization;
 native lifecycle/scheduling, automatic following, extraction, and workspace
 annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
@@ -138,6 +139,25 @@ static layer or lower-source fallback. Compatible Unix clocks and normal monoton
 progression are assumed, not arbitrary rollback/skew/suspend or pixel-expiry safety.
 This is not Coven taking over the UI.
 
+### Agent comparison and extraction gates
+
+Native `coven observe kitsune --compare-agents --socket ABS_SOCKET` now compares
+strict built-in snapshot hints with Coven's generic Djinn-family process evidence.
+It is opt-in, conflicts with `--process-pane`, and leaves existing modes unchanged.
+One shared deadline/budget bounds N+2 reads over at most 64 panes; no bindings,
+workspace writes, input, adoption or built-in disabling follow. Matching hints do
+not establish active agents, native identity/readiness or replacement equivalence.
+Read requests can still trigger existing server housekeeping.
+
+See [the comparison contract](KITSUNE_AGENT_COMPARISON_CONTRACT.md) for exact
+categories, private legacy-change detection, provenance and the extraction matrix.
+Panes/process evidence, command submission and terminal annotations already have
+generic surfaces. Status/attention authority, native references/automatic restore,
+provider resume/hook installers and Windows agent-aware process selection remain
+extraction blockers. No removal until characterized per runtime and cross-platform.
+Next: generic process-selection characterization and pure provider policy behind
+compatibility wrappers, not a scheduler. Broader workspace annotations remain proposed.
+
 ## Data Flow
 
 These are independent paths, not a required round trip:
@@ -210,7 +230,8 @@ acceptance interpretation without overwriting native execution facts.
   immediately detected, so accepted text can last until TTL. Source conflicts
   cannot grant terminal control or agent/group authority.
 - Default observation requests only `session.snapshot`; the explicit process-pane
-  shadow mode and explicit process group binding also request `pane.process_info`. Existing Kitsune
+   shadow mode, explicit comparison and explicit process group binding also request
+   `pane.process_info`. Existing Kitsune
   dispatch housekeeping can expire metadata, drain events, sync titles, or create
   a default workspace (potentially spawning a shell). Zero server-side effects
   are not promised. Snapshot receipt does not establish server freshness.
@@ -276,7 +297,14 @@ example is also in the [Kitsune guide](../kitsune/ANNOTATIONS.md).
    Static defaults stay unchanged; unsupported servers fail closed. Offline fixtures
    are not actual Kitsune enforcement or live-runtime validation.
 
-The full offline suite now passes **763 tests**, including 33 opt-in live-publisher
+9. Native opt-in agent comparison is implemented as characterization, not completed
+   extraction. Built-ins remain; replacement equivalence is not established. The
+   [comparison contract](KITSUNE_AGENT_COMPARISON_CONTRACT.md) records the scoped
+   parent validation (10 unit, 29 workflow, 21 existing observer passes and MSRV 1.85),
+   source provenance and remaining extraction gates; no real endpoint/UI/provider
+   calls or full-CI result are claimed. This update remains local and uncommitted.
+
+The historical offline suite passed **763 tests**, including 33 opt-in live-publisher
 tests, 24 live-attachment authority tests and 34 workflow/status tests alongside
 the existing observer, publisher and transport coverage. The separate live producer passed
 54 focused opencode tests, 3 schema tests and both Bun typechecks, not the full UI
@@ -299,6 +327,7 @@ contracts remain necessary for future execution, not for observing existing agen
 ## Related files
 
 - [README.md](README.md) — current behavior and existing safety contracts.
+- [KITSUNE_AGENT_COMPARISON_CONTRACT.md](KITSUNE_AGENT_COMPARISON_CONTRACT.md) — native bounded comparison and extraction decision matrix.
 - [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md) — schema-3 declarations, status expiry and no-authority boundaries.
 - [ROADMAP.md](ROADMAP.md) — longer-term orchestration backlog.
 - [CODING_ORCHESTRATION_ROADMAP.md](CODING_ORCHESTRATION_ROADMAP.md) — coding backlog.
