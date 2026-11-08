@@ -9,7 +9,13 @@ use std::{
     },
     path::{Path, PathBuf},
     process::{Command, Output},
+    sync::Mutex,
 };
+
+// These tests prepare prebuilt executables, not concurrent executable writers.
+// A parallel test's fork can temporarily inherit another fixture's writable
+// copy descriptor until exec, causing ETXTBSY even after the owner closed it.
+static EXECUTABLE_FIXTURES: Mutex<()> = Mutex::new(());
 
 fn wrapper(root: &Path) -> PathBuf {
     let path = root.join("bin/coven");
@@ -80,6 +86,7 @@ fn traps(root: &Path) -> PathBuf {
 
 #[test]
 fn default_is_only_prebuilt_release_and_direct_shebang_needs_no_path() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let wrapper = wrapper(root);
@@ -119,6 +126,7 @@ fn default_is_only_prebuilt_release_and_direct_shebang_needs_no_path() {
 
 #[test]
 fn explicit_absolute_selection_works_relocated_and_through_a_symlink() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let wrapper = wrapper(root);
@@ -150,6 +158,7 @@ fn explicit_absolute_selection_works_relocated_and_through_a_symlink() {
 
 #[test]
 fn bad_selections_and_same_inode_recursion_fail_without_runtime_calls() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let wrapper = wrapper(root);
@@ -202,6 +211,7 @@ fn bad_selections_and_same_inode_recursion_fail_without_runtime_calls() {
 
 #[test]
 fn native_arguments_command_override_and_asset_home_keep_their_meaning() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let wrapper = wrapper(root);
@@ -265,6 +275,7 @@ fn native_arguments_command_override_and_asset_home_keep_their_meaning() {
 
 #[test]
 fn exec_preserves_pid_and_signal_status_with_a_compiled_inert_helper() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let wrapper = wrapper(root);
@@ -316,6 +327,7 @@ fn exec_preserves_pid_and_signal_status_with_a_compiled_inert_helper() {
 
 #[test]
 fn default_symlink_chain_discovers_release_with_empty_path() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let wrapper = wrapper(root);
@@ -331,6 +343,7 @@ fn default_symlink_chain_discovers_release_with_empty_path() {
 
 #[test]
 fn arcana_non_utf8_callback_keeps_domain_errors_and_explicit_precedence() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     use std::os::unix::ffi::OsStringExt;
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
@@ -375,6 +388,7 @@ fn arcana_non_utf8_callback_keeps_domain_errors_and_explicit_precedence() {
 
 #[test]
 fn explicit_inert_target_receives_unchanged_callback_and_asset_environment() {
+    let _fixtures = EXECUTABLE_FIXTURES.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let wrapper = wrapper(root);

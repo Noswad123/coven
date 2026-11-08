@@ -59,7 +59,10 @@ subprocess-only helpers ignored), 946 Python tests in 192.483s and 29 audit-tool
 tests in 257.093s. Native results combine the completed full regression run with
 the eight-test entrypoint rerun after replacing a transient write-open script
 fixture with an existing prebuilt inert executable; no production assertion or
-timeout was relaxed. The complete regression output is saved at
+timeout was relaxed. Post-merge checks also serialize executable-fixture lifetimes
+so another test's fork cannot retain a writable copy descriptor; all eight
+entrypoint tests passed three consecutive runs with eight harness threads.
+The complete regression output is saved at
 `/home/jdawson/.local/share/opencode/tool-output/tool_1bb52e65d001K26PqvTY7WzwgR`.
 The retirement audit separately preserves 941 original plus five explicitly
 reviewed main-branch supplemental methods; it does not redefine mapping totals.
