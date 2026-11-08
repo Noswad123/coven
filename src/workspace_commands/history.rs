@@ -1,7 +1,6 @@
 //! Read-only history observations. Literal output intentionally preserves controls.
 //! No lock, durability confirmation, or execution authority is acquired here.
-#[path = "python.rs"]
-mod python;
+use super::python;
 
 use crate::{
     Error, Result,

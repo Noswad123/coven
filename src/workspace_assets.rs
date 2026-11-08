@@ -1,7 +1,11 @@
-//! Frozen workspace assets, ported from runner/coven.py (native asset profile v1).
+//! Workspace templates and the shared relocatable example asset service.
 //! Shell commands here are inert template data, never executed by refresh.
-use crate::{Error, Result, error::require, records};
+use crate::{Result, error::require, records};
 
+#[path = "example_assets.rs"]
+pub(crate) mod example_assets;
+
+#[path = "workspace_assets/init.rs"]
 mod init;
 pub(crate) use init::{
     InitExample, agent_state_text, checkpoint_files, default_goal, default_output, default_work,
@@ -14,13 +18,10 @@ pub(crate) struct PureAssetContext {
 }
 
 pub(crate) fn example_text(example: Option<&str>) -> Result<String> {
-    match example {
-        None | Some("") => Ok(String::new()),
-        Some(value) if slug(value).is_ok_and(|value| value == "interactive-demo") => {
-            Ok(include_str!("../examples/interactive-demo/prompt-context.md").to_owned())
-        }
-        Some(_) => Err(Error("unsupported_refresh_example_profile")),
+    if example.is_none() {
+        return Ok(String::new());
     }
+    example_assets::AssetBundle::environment()?.context(example)
 }
 
 pub(crate) fn slug(value: &str) -> Result<String> {
@@ -148,6 +149,82 @@ pub(crate) fn normalize_opencode_command(command: &str) -> String {
     }
 }
 
+pub(crate) fn agent_launch_command(
+    name: &str,
+    root: &str,
+    agent: &str,
+    command: &str,
+    multiplexer: &str,
+) -> Result<String> {
+    // Reject original bytes before oc normalization can JSON-escape the NUL.
+    require(!command.contains('\0'), "invalid_runtime_command")?;
+    require(
+        command.len() <= 1_048_576,
+        "unsupported_refresh_template_profile",
+    )?;
+    normalized_agent_launch_command(
+        name,
+        root,
+        agent,
+        &normalize_opencode_command(command),
+        multiplexer,
+    )
+}
+
+fn normalized_agent_launch_command(
+    name: &str,
+    root: &str,
+    agent: &str,
+    command: &str,
+    multiplexer: &str,
+) -> Result<String> {
+    require(
+        agent.len() <= 255 - ".start.txt".len()
+            && root.len() <= 1_048_576
+            && !root.contains('\0')
+            && command.len() <= 1_048_576
+            && name.len() <= 1_048_576,
+        "unsupported_refresh_template_profile",
+    )?;
+    // Reuse the record identifier contract; path components then cannot escape
+    // prompts/, and the longest generated basename fits the filesystem bound.
+    records::lead(&crate::values::parse(
+        format!("{{\"agent\":{}}}", q(agent)).as_bytes(),
+        crate::values::Profile::LegacySnapshot,
+    )?)?;
+    records::multiplexer(multiplexer)?;
+    let prompt = format!("prompts/{agent}.start.txt");
+    // Preserve legacy bytes for ordinary paths, but never interpolate shell
+    // quotes or printf format/escape sequences from workspace metadata.
+    let label = if root.contains(['\'', '%', '\\']) {
+        format!(
+            "printf '%s\\n' {} {}",
+            shell_quote(&format!("Agent: {agent}")),
+            shell_quote(&format!("Prompt: {root}/prompts/{agent}.md"))
+        )
+    } else {
+        format!("printf 'Agent: {agent}\\nPrompt: {root}/prompts/{agent}.md\\n'")
+    };
+    let launch = if records::trimmed(multiplexer).eq_ignore_ascii_case("herdr") {
+        format!(
+            "{label}; printf 'Auto-bootstrapping OpenCode with {prompt}...\\n\\n'; pane=\"${{HERDR_PANE_ID:-}}\"; herdr_bin=\"${{HERDR_BIN_PATH:-herdr}}\"; (sleep 5; if [ -n \"$pane\" ]; then prompt=\"$(cat {})\"; \"$herdr_bin\" pane send-text \"$pane\" \"$prompt\"; \"$herdr_bin\" pane send-keys \"$pane\" enter; fi) & {command}",
+            shell_quote(&prompt)
+        )
+    } else {
+        let buffer = q(&format!("coven-{}-{agent}-starter", slug(name)?));
+        format!(
+            "{label}; printf 'Auto-bootstrapping OpenCode with {prompt}...\\n\\n'; pane=\"$(tmux display-message -p '#{{pane_id}}')\"; (sleep 5; tmux load-buffer -b {buffer} {}; tmux paste-buffer -b {buffer} -t \"$pane\"; tmux send-keys -t \"$pane\" Enter) & {command}",
+            q(&prompt)
+        )
+    };
+    require(!launch.contains('\0'), "invalid_runtime_command")?;
+    require(
+        launch.len() <= 1_048_576,
+        "unsupported_refresh_template_profile",
+    )?;
+    Ok(launch)
+}
+
 pub(crate) fn tmux_manifest(
     name: &str,
     root: &str,
@@ -155,15 +232,16 @@ pub(crate) fn tmux_manifest(
     command: &str,
     context: &PureAssetContext,
 ) -> Result<String> {
+    require(!command.contains('\0'), "invalid_runtime_command")?;
     let session = format!("coven-{}", slug(name)?);
-    let command = normalize_opencode_command(command);
+    let normalized_command = normalize_opencode_command(command);
     let tq = toml_quote;
     let mut output = format!(
         "version = 1\nname = {}\ndefault_session = {}\n\n[vars]\nCOVEN_DIR = {}\nOPENCODE_CMD = {}\n\n[[sessions]]\nname = {}\nif_exists = \"attach\"\n\n[[sessions.windows]]\nname = \"orchestrator\"\n\n[sessions.windows.layout]\nstrategy = \"services-left-playground-right\"\nplayground_pane = \"shell\"\nplayground_percent = 50\n",
         tq(&format!("Coven: {name}")),
         tq(&session),
         tq(root),
-        tq(&command),
+        tq(&normalized_command),
         tq(&session)
     );
     for (title, command, role) in [
@@ -197,23 +275,8 @@ pub(crate) fn tmux_manifest(
         output.push_str(&format!("\n[[sessions.windows.panes]]\ntitle = {}\ndir = \"${{COVEN_DIR}}\"\ncommand = {}\nrole = {}\n", tq(title), tq(&command), tq(role)));
     }
     for agent in agents {
-        let buffer = q(&format!("{session}-{agent}-starter"));
-        let prompt = format!("prompts/{agent}.start.txt");
-        // Preserve legacy bytes for ordinary paths, but never interpolate shell
-        // quotes or printf format/escape sequences from workspace metadata.
-        let label = if root.contains(['\'', '%', '\\']) {
-            format!(
-                "printf '%s\\n' {} {}",
-                shell_quote(&format!("Agent: {agent}")),
-                shell_quote(&format!("Prompt: {root}/prompts/{agent}.md"))
-            )
-        } else {
-            format!("printf 'Agent: {agent}\\nPrompt: {root}/prompts/{agent}.md\\n'")
-        };
-        let launch = format!(
-            "{label}; printf 'Auto-bootstrapping OpenCode with {prompt}...\\n\\n'; pane=\"$(tmux display-message -p '#{{pane_id}}')\"; (sleep 5; tmux load-buffer -b {buffer} {}; tmux paste-buffer -b {buffer} -t \"$pane\"; tmux send-keys -t \"$pane\" Enter) & {command}",
-            q(&prompt)
-        );
+        let launch =
+            normalized_agent_launch_command(name, root, agent, &normalized_command, "tmux")?;
         output.push_str(&format!("\n[[sessions.windows]]\nname = {}\n\n[[sessions.windows.panes]]\ntitle = {}\ndir = \"${{COVEN_DIR}}\"\ncommand = {}\n", tq(&format!("agent-{agent}")), tq(agent), tq(&launch)));
         require(
             output.len() <= 1_048_576,
@@ -224,4 +287,5 @@ pub(crate) fn tmux_manifest(
 }
 
 #[cfg(test)]
+#[path = "workspace_assets/tests.rs"]
 mod tests;

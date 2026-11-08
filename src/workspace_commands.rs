@@ -1,5 +1,6 @@
 //! Local workspace writers. Output is complete literal text, not terminal-sanitized.
 mod history;
+pub(crate) mod python;
 pub use history::{HistoryKind, history_arguments};
 
 use crate::{
@@ -22,6 +23,11 @@ use std::{
 const MAX_TEXT: usize = 1_048_576;
 const MAX_OUTPUT: usize = 32 * MAX_TEXT;
 const LOCK_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[doc(hidden)]
+pub fn split_optional_workspace(items: &[PathBuf]) -> Result<(PathBuf, &[PathBuf])> {
+    workspace::split_optional_workspace(items)
+}
 
 // Domain-local fault seam; never selected by environment or public callers.
 trait Io {

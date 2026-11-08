@@ -9,6 +9,7 @@ from pathlib import Path
 import socket
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 from types import SimpleNamespace
@@ -680,6 +681,7 @@ class DjinnLiveObservationTests(unittest.TestCase):
             self.command(["--json"], expected=1)
 
     def test_actual_wrapper_dynamic_fresh_sample_ascii_and_corrupt_workspace(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         workspace = self.root / "workspace with spaces \u00e9"
         workspace.mkdir(mode=0o700)
         corrupt = workspace / "coven.json"
@@ -697,7 +699,8 @@ class DjinnLiveObservationTests(unittest.TestCase):
                 value["schema_version"] = 2
             self.write(value)
             with self.subTest(kind=kind):
-                response = subprocess.run([str(ROOT / "bin/coven"), *self.argv(), "--json"],
+                env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+                response = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), *self.argv(), "--json"],
                     cwd=workspace, env=env, capture_output=True, timeout=10)
                 self.assertEqual(response.returncode, code, response.stderr.decode(errors="replace"))
                 self.assertEqual(response.stderr, b"")

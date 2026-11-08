@@ -1,0 +1,152 @@
+{
+  "source": "tests/test_session_prompts.py",
+  "source_sha256": "25cadb5403c1a09be98989fa43a664f8c30a8e606fa279943c296bc38f2d8a4d",
+  "summary": {
+    "source_ids": 21,
+    "mapped": 15,
+    "unresolved": 6,
+    "existing_B_reviewed_and_mapped": 4,
+    "D_to_B_suggestions": 11,
+    "global_ledger_modified": false
+  },
+  "instrumentation_scope": "Test-only caller-thread RAII poison/counter at the actual native libc::socket construction site; no global counter and no effect on unscoped/other-thread construction. A caught constructor poison plus subsequent counted successful admission validate the probe and unwind restoration. This proves the socket-constructor obligation for the exercised public prompt_arguments authority refusals only, not universal absence of filesystem, process or other I/O. The post-ack hook is also thread-local/scoped and cfg(test, unix), runs after outcome/delivery/native_prompt_acceptance/native_message_id are all assigned, and raises real SIGINT synchronously before final cancellation observation. Both new parent tests invoke exact ignored helpers in separate Rust test processes; helpers are implementation details, not independently counted coverage. Neither instrumentation path exists in release builds.",
+  "native_test_counts": {"unit_independent": 11, "workflow_independent": 19, "isolated_ignored_helpers_not_independent": 2},
+  "isolated_helpers": ["session_prompts::tests::retirement::authority_socket_poison_child", "session_prompts::tests::retirement::after_ack_sigint_child"],
+  "provenance": "Assertion-by-assertion review of all 21 methods, their subcases, setUp, args/call/plan helpers and native_handler. No Python implementation or generated Rust expectation is embedded. The socket fixture is Rust-owned; literal_receipt_contract_keeps_prompt_and_peer_extensions_private additionally supplies a literal protocol receipt and published SHA-256 of hello, independently of the fixture's computed receipt. No new data fixtures are needed. Source IDs and original file are unchanged. Native workflow tests spawn only the Rust CLI; original subprocess poison guards are not represented as native process instrumentation. In particular, the exact-admission no-terminal obligation remains unresolved rather than being inferred from successful delivery.",
+  "native_sources": [
+    {"path": "src/session_prompts/tests.rs", "sha256": "6062918078eee632e1dcbadd0adfd11093747b5ef5b0df5b9d861587301f7204"},
+    {"path": "src/session_prompts/retirement.rs", "sha256": "cfdeaafd69392c0679b05f81041e645ba124c3998fe8176fc893ee6c8c8519cf"},
+    {"path": "src/session_prompts.rs", "sha256": "9e8f7db89de0269666eb3faf422a97982fa120b1d90893c090ef07bce8e31362"},
+    {"path": "src/platform/unix/observation_socket.rs", "sha256": "d871c095a20703f9c233b8a322b73f8289d041ce795638940377faa8e72c5ef3"},
+    {"path": "tests/session_prompts_workflow.rs", "sha256": "410a8a7170851cf017b38fe82c2e38b9bcf3e4801d14044cee466a1e8a9f6fab"},
+    {"path": "tests/support/session_prompt_fixture.rs", "sha256": "e42659df82743aebf310af13716a9c1fcd90bd514f85fb42cbdd804621612d7d"}
+  ],
+  "reviews": {
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_preview_is_pure_and_does_not_read_prompt_or_workspace": {
+      "status": "unresolved",
+      "category_suggestion": "D",
+      "assertion_review": "Native preview checks exit 0, not_attempted, authorization none, null digest, missing workspace/prompt/socket, and no created entries. Existing unit preview also checks not_attempted/null digest. These do not reproduce the original os.open/os.lstat/socket.socket poison guards or the initialized-root snapshot after deleting task.txt. Successful preview of missing paths cannot prove those APIs were never called. Keep D.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::pure_preview_needs_no_files_or_endpoint", "rust::tests/session_prompts_workflow.rs::empty_and_nonexistent_workspace_previews_have_no_effects", "rust::src/session_prompts/tests.rs::pure_preview_and_literal_validation"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_invalid_arguments_fail_before_io": {
+      "status": "unresolved",
+      "category_suggestion": "D",
+      "assertion_review": "New CLI test retains all six original flag/value pairs: relative socket, w1:p1 runtime, non-UUID request, folder session, /x/../y prompt, nan timeout. Each refuses and the live native endpoint sees no request. Unit validation exercises malformed paths/identifiers/nonfinite timeout. A socket-constructor poison seam now exists, but these six invalid argument cases have not been exercised under it; the authority-refusal proof cannot be transferred to them. Keep D rather than equating a parse failure/no contact with no socket construction.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::original_invalid_argument_cases_refuse_without_endpoint_contact", "rust::src/session_prompts/tests.rs::pure_preview_and_literal_validation"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_frozen_plan_rejects_extra_controls_and_boolean_version": {
+      "status": "unresolved",
+      "category_suggestion": "D",
+      "assertion_review": "Original mutates the frozen dict with schema_version=True, model=override and text=not approved and requires ValueError in all three cases. Rust Request has no schema_version/model/text controls and preview takes &Request, not a JSON plan. Typed exclusion is not a tested runtime rejection of these mutations. Existing preview validation is related coverage only. No invented serde plan adapter or compatibility API was added.",
+      "native_tests": ["rust::src/session_prompts/tests.rs::pure_preview_and_literal_validation"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_exact_native_admission_no_terminal_calls_and_no_workspace_writes": {
+      "status": "unresolved",
+      "category_suggestion": "D",
+      "assertion_review": "Workflow now asserts exact capabilities/submit sequence, literal file text including Unicode/metacharacters, request UUID, accepted delivery and prompt acceptance, msg_fixture, unestablished worker acceptance/job completion, no prompt text in report, and complete workspace directory/file-byte snapshot equality after priming the transport lock as original setup does. Separate literal receipt test independently asserts params, digest, bytes and privacy. Original setUp poisons subprocess.run/Popen and asserts neither called; native successful admission and source inspection are not equivalent process-call poison instrumentation. Keep D for that explicit no-terminal obligation.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::exact_admission_preserves_text_and_reports_only_digest", "rust::tests/session_prompts_workflow.rs::literal_receipt_contract_keeps_prompt_and_peer_extensions_private"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_capabilities_query_is_metadata_only": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Retains existing B: real CLI capabilities request without workspace, exactly one capabilities method and no submit, exact runtime UUID, authorization none, exit 0. Fixture accepts only capabilities/submit and records all requests.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::capabilities_are_workspace_independent"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_changed_runtime_refuses_before_submission": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Both envelope/result runtime IDs change to another valid UUID. CLI exits 1, delivery unsent, exact diagnostics [native_runtime_mismatch], and exactly capabilities with no submit. Replaces random alternate UUID with a fixed distinct valid UUID, not malformed identity.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::runtime_mismatch_and_unsupported_capability_never_submit"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_unsupported_capability_never_probes_with_a_write": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "All three original subcases now run through native CLI/socket: result version true, contract other, max_prompt_bytes true. Each exits 1, remains unsent, and records exactly one capabilities request, no speculative submit. Unit capability test separately checks these strict types.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::runtime_mismatch_and_unsupported_capability_never_submit", "rust::src/session_prompts/tests.rs::capability_strict_types_correlation_and_open_extensions"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_missing_ack_is_uncertain_and_never_retried": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Mode 0 closes submit connection without receipt, while capability succeeds. CLI exits 2, reports uncertain and native prompt acceptance unestablished, and records exactly capabilities/submit, proving no retry.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::lost_bad_duplicate_and_safe_rejection_are_not_retried"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_malformed_or_mismatched_ack_is_uncertain": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "New eight-case CLI/socket test retains every original mutation: different valid request UUID, boolean envelope version, different valid runtime UUID, ses_other, 64-zero digest, boolean prompt_bytes, w1:p1 message ID, and error {code:[],delivery:[]} added alongside result. Each exits 2, uncertain, exactly two methods/no retry; additional checks forbid established prompt acceptance or message ID on malformed receipt. Unit receipt validation is supplementary, not a substitute for missing socket cases.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::all_original_malformed_ack_cases_are_uncertain_without_retry", "rust::src/session_prompts/tests.rs::receipt_and_safe_errors_never_echo_peer_text"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_typed_rejection_and_duplicate_uncertainty": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Modes 3/2/6 cover all original typed errors with result removed: session_unavailable/rejected exits 1; request_already_seen/uncertain and admission_uncertain/uncertain exit 2. Exact capabilities/submit sequence for each. Additional unknown-code/private-message case confirms conservative uncertainty and safe diagnostics without peer text.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::lost_bad_duplicate_and_safe_rejection_are_not_retried", "rust::src/session_prompts/tests.rs::receipt_and_safe_errors_never_echo_peer_text"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_unsafe_parent_and_socket_permissions_fail_without_contact": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Added original parent 0755 and socket 0666 cases, with restoration to parent 0700/socket 0600 between phases; both return unsent/exit 1 and cumulative fixture request list stays empty. Existing 0400/0660 socket cases are additional. Unit test checks exact endpoint modes, parent aliases and inode fences independently.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::strict_permissions_and_prompt_bounds_prevent_contact", "rust::src/session_prompts/tests.rs::unix::endpoint_exact_modes_symlinks_and_parent_inode_fence"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_prompt_file_bounds_utf8_and_symlink_rejection": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Retains existing B with stronger explicit symlink delivery assertion. Socket workflow tests empty, ASCII whitespace, 65537 bytes, invalid UTF-8, embedded NUL and final symlink to workspace goal.md; each exits 1/unsent and cumulative requests stay empty. Unit reader additionally preserves literal Unicode/CRLF and accepts exactly 65536, rejects DEL/nonregular directory. NUL strings differ in surrounding letters only, not the refusal obligation.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::strict_permissions_and_prompt_bounds_prevent_contact", "rust::src/session_prompts/tests.rs::unix::bounded_regular_utf8_prompt_preserves_bytes"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_missing_or_wrong_gate_cannot_invoke_endpoint": {
+      "status": "unresolved",
+      "category_suggestion": "D",
+      "assertion_review": "New unit test creates a real shared TransportGuard for a different root and asserts invalid_transport_gate_owner from the exact admission validator used before native I/O. Original execute(gate=None) and execute(gate=other) are externally callable API cases. Native prompt_arguments acquires its own gate; it has no optional gate argument and exchange is private. Wrong-root validator coverage does not establish the unavailable external gate=None path. Keep D for API disposition rather than adding a compatibility executor.",
+      "native_tests": ["rust::src/session_prompts/retirement.rs::wrong_workspace_gate_fails_admission_validation"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_approved_launch_mode_blocks_before_io": {
+      "status": "unresolved",
+      "category_suggestion": "D",
+      "assertion_review": "Workflow enables approved launch via the actual CLI, then prompt fails with no endpoint request. New isolated public-API test also builds a valid location-bound enabled control and, under actual native constructor poison, checks legacy_runtime_disabled, zero constructions and no requests from prompt_arguments. Original additionally checks user-facing Approved runtime-launch mode diagnostic and directly invokes execute with an externally supplied matching gate. The exact diagnostic and external execute(gate=...) API disposition remain unresolved. Constructor poison gap is closed for native enabled authority, not claimed as universal I/O purity.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::enabled_invalid_and_orphan_launch_authority_block_before_contact", "rust::src/session_prompts/retirement.rs::authority_refusals_never_construct_a_native_socket"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_orphaned_authority_blocks_before_io": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Re-reviewed rather than automatically approving baseline B. A valid workspace first demonstrates the poison trips at actual libc::socket construction in public prompt_arguments (caught panic, count 1, no requests), and after RAII teardown succeeds with count 2 and exactly capabilities/submit. After adding state/actions/orphan.json containing {} newline to that same valid workspace, public prompt_arguments under a fresh constructor poison returns exact action_orphan_bundles, count 0, and no requests. Thus workspace validation cannot mask the orphan authority check, and constructing a socket before refusing would fail. Existing CLI workflow separately proves unsuccessful command exit for the orphan. Isolated helper prevents process-wide InterruptGuard interference; thread-local instrumentation does not poison fixture threads. This closes the original socket.socket poison obligation, not arbitrary I/O purity.",
+      "native_tests": ["rust::src/session_prompts/retirement.rs::authority_refusals_never_construct_a_native_socket", "rust::tests/session_prompts_workflow.rs::enabled_invalid_and_orphan_launch_authority_block_before_contact"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_maximum_prompt_size_is_accepted_without_text_in_report": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Exactly 65536 x bytes accepted with exit 0; report prompt_bytes 65536 and no 100-x substring. Added exact fixture submit text byte length 65536 and capabilities/submit method list, so report-size alone cannot satisfy original submission-size assertion.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::maximum_prompt_is_accepted_without_disclosing_text"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_endpoint_replacement_after_capabilities_is_unsent": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "New direct transport test completes capability exchange/validation before renaming original socket aside and moving a second live socket into its path, exactly preserving original injection phase. Submit exchange returns native_endpoint_changed/Unsent before contacting either listener; original sees only capabilities and replacement sees none. New CLI fixture also swaps leaf during capability response and checks exit 1/unsent/no submit. Existing parent-retarget test is additional, not substituted for the original leaf replacement.",
+      "native_tests": ["rust::src/session_prompts/retirement.rs::replacement_after_completed_capability_exchange_is_unsent", "rust::tests/session_prompts_workflow.rs::leaf_socket_replacement_after_capabilities_contacts_neither_submit_endpoint", "rust::tests/session_prompts_workflow.rs::parent_retarget_preserving_leaf_inode_is_unsent"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_response_byte_overflow_after_mutation_is_uncertain": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Mode 5 sends 65537 non-newline x bytes after submit, with successful capability response first. Exit 2/uncertain and exactly capabilities/submit/no retry. Separate shared-response-budget workflow additionally exhausts the same budget across both exchanges, checking response_limit.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::lost_bad_duplicate_and_safe_rejection_are_not_retried", "rust::tests/session_prompts_workflow.rs::response_budget_is_shared_across_both_exchanges"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_transport_gate_held_but_global_workspace_lock_free_during_native_io": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Retains existing B: inside submit handler independent descriptors attempt nonblocking exclusive flock. Runtime transport lock returns -1/WouldBlock; global workspace lock succeeds. The real CLI then accepts receipt/exit 0. This checks lock state during actual native I/O rather than reconstructing it after return.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::transport_gate_is_held_and_workspace_lock_is_free_during_io"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_interrupt_before_or_during_mutation_has_no_retry": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Native child receives real SIGINT while fixture holds capabilities or submit response. Both exit 130; capability-phase interruption is unsent, submit-phase interruption uncertain, with respectively one/two requests and no retry. Original injected PromptError(interrupted=True) at those method boundaries rather than real signals; native test exercises the same asserted classifications with actual possible-send. New unit matrix additionally proves pre-send cancellation and already-expired monotonic deadline leave BOTH methods Unsent and zero endpoint requests. It deliberately does not misclassify genuinely pre-send submit cancellation as uncertain merely to imitate an injected failure label.",
+      "native_tests": ["rust::tests/session_prompts_workflow.rs::interruption_is_confined_to_child_and_never_retries", "rust::src/session_prompts/retirement.rs::expired_clock_and_pre_send_cancel_leave_both_methods_unsent"]
+    },
+    "python::tests/test_session_prompts.py::SessionPromptTests::test_interruption_after_recorded_ack_retains_accepted_fact": {
+      "status": "mapped",
+      "category_suggestion": "B",
+      "assertion_review": "Original lines 295-308 substitute Interrupted.update: FIRST record all kwargs including outcome=accepted, THEN raise KeyboardInterrupt. New parent test invokes an exact ignored Rust helper in a fresh process. Actual public prompt_arguments reads hello and performs real capabilities/submit with a Rust socket fixture; the receipt is validated normally. Test-only after-ack hook at the production accounting cutpoint asserts outcome/delivery/native_prompt_acceptance accepted, msg_fixture, five bytes and literal known digest AFTER all four accepted fields have been assigned and BEFORE final cancel check. It proves transport gate remains held via runtime_transport_gate_busy, then synchronously raises real SIGINT. Actual returned TaskOutput has exit_code 130; accepted outcome/delivery/prompt acceptance, message and digest survive, with interrupted true and diagnostics [interrupted]. Exactly two socket constructions and exactly capabilities/submit, original request ID/text and no retry are asserted, then gate release is confirmed. Helper is not independent coverage. Existing render-only test is not used as proof and a signal merely after server write would not suffice.",
+      "native_tests": ["rust::src/session_prompts/retirement.rs::interruption_after_real_ack_accounting_preserves_accepted_fact"]
+    }
+  }
+}

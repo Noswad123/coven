@@ -43,6 +43,7 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT))
 from runner import coven
 import _state_refresh_parity as refresh_parity
@@ -58,7 +59,12 @@ ORACLE_CODE = ("import sys, subprocess; "
                " raise AssertionError('init corpus attempted runtime subprocess')\n"
                "subprocess.run=forbidden; subprocess.Popen=forbidden\n"
                "raise SystemExit(coven.main(sys.argv[1:]))")
-ORACLE = [PYTHON, "-c", ORACLE_CODE]
+ORACLE = [PYTHON, "-B", "-c", ORACLE_CODE]
+LIMIT_CODE = ("import os,resource,signal,sys; "
+              "signal.signal(signal.SIGXFSZ,signal.SIG_IGN); "
+              "soft,hard=resource.getrlimit(resource.RLIMIT_FSIZE); "
+              "resource.setrlimit(resource.RLIMIT_FSIZE,(128,hard)); "
+              "os.execve(sys.argv[1],sys.argv[1:],dict(os.environ))")
 RESERVED = ("coven.json", "coven.toml", "goal.md", "spec.md", "dashboard.md",
             "agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux")
 
@@ -152,8 +158,10 @@ class Suite:
         path.mkdir()
         return path
 
-    def spawn(self, args, cwd, env=None, oracle=False, code=None, mask=0o022):
-        command = ([PYTHON, "-c", code] if code else ORACLE) if oracle or self.oracle_only else [self.binary]
+    def spawn(self, args, cwd, env=None, oracle=False, code=None, mask=0o022, limited=False):
+        command = ([PYTHON, "-B", "-c", code] if code else ORACLE) if oracle or self.oracle_only else [self.binary]
+        if limited:
+            command = [PYTHON, "-B", "-c", LIMIT_CODE, *command]
         child = subprocess.Popen([*command, *map(str, args)], cwd=cwd, env=env or self.env,
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  start_new_session=True, umask=mask)
@@ -371,6 +379,16 @@ class Suite:
                     (["--na", "prefix", "--ag", "Solo", "--op", "oc", "--mul", "tmux", "--bl", "--fo"], "abbreviations"),
                     (["--ex", "interactive-demo"], "example-prefix"),
                     (["--name=-1", "--opencode-command=-9"], "negative-equals")]
+        profiles.extend([
+            (["--blank", "--name", "-1team"], "negative-name-suffix"),
+            (["--blank", "--name=-1team"], "negative-name-suffix-equals"),
+            (["--blank", "--agents", "-1agent"], "negative-agents-suffix"),
+            (["--blank", "--opencode-command", "-1runner"], "negative-command-suffix"),
+            (["--blank", "--name", "-.5suffix", "--agents", "-.5agent",
+              "--opencode-command", "-.5runner"], "negative-fraction-suffixes"),
+            (["--blank", "--na", "-1team", "--ag", "-1agent", "--op", "-1runner",
+              "--ex", "-.5ignored"], "negative-abbreviated-values"),
+        ])
         for extra, label in profiles:
             self.run("seed-bytes", label, lambda extra=extra: self.success(extra, lifecycle=True))
         for location in ("new", "empty", "current", "home", "alias", "dotdot"):
@@ -414,6 +432,8 @@ class Suite:
                      (["--agents", "\u03bb"], r"letter|number|agent|slug"),
                      (["--opencode-command", " "], r"empty|command"),
                      (["--example", "missing-example"], r"example"),
+                     (["--example", "-1missing-example"], r"example"),
+                     (["--agents", "-1agent,-1AGENT"], r"duplicate"),
                      (["--agents", "a,A", "--example", "missing"], r"duplicate")]
         for extra, pattern in semantics:
             self.run("semantic-no-effects", repr(extra), lambda extra=extra, pattern=pattern: self.reject(extra, semantic=pattern))
@@ -425,6 +445,9 @@ class Suite:
                         ["--multiplexer", "invalid", "--multiplexer", "tmux"],
                         ["--name", "-x"], ["--agents", "-x"], ["--opencode-command", "-x"],
                         ["--example", "-x"], ["--blank=yes"], ["--force=no"],
+                        ["--multiplexer", "-1mux"], ["--m", "-.5mux"],
+                        ["--multiplexer=-1mux"], ["--name", "-inf"],
+                        ["--ag", "-nan"], ["--op", "-.thing"],
                         ["--", "extra"], ["extra"]]
         for extra in parser_cases:
             self.run("parser-no-effects", repr(extra), lambda extra=extra: self.reject(extra, parser=True))
@@ -432,7 +455,8 @@ class Suite:
             self.run("parser-negative", repr(extra), lambda extra=extra: self.success(extra))
         def terminator():
             area = self.area()
-            for name, separator in (("-workspace", ["--"]), ("--blank", ["--"]), ("-1", [])):
+            for name, separator in (("-workspace", ["--"]), ("--blank", ["--"]), ("-1", []),
+                                    ("-2026-demo", []), ("-.5workspace", []), ("-0xFF", [])):
                 for oracle in (False, True):
                     w = area / name
                     result = self.call(["init", "--blank", *separator, name], area, oracle=oracle)
@@ -497,6 +521,7 @@ class Suite:
         self.run("semantic-no-effects", "environment before empty command", lambda: self.reject(
             ["--opencode-command", " "], env=dict(self.env, COVEN_MULTIPLEXER="invalid"), semantic=r"multiplexer"))
         self.run("example-policy", "local custom example", self.custom_example)
+        self.run("partial-write", "real file size limit; distinct publication order", self.partial_write)
         self.normalization_checks()
         if not self.oracle_only:
             for example in ("", "custom", "../another-example"):
@@ -505,6 +530,47 @@ class Suite:
             self.run("bootstrap-race", "native/native gated start", self.native_race)
             self.run("bootstrap-race", "Python config-first paused collision", self.python_first)
             self.run("bootstrap-race", "stale Python preflight exclusive final collision", self.stale_python)
+
+    def partial_write(self):
+        # A real OS short write, not a native failpoint. Each implementation gets
+        # a separate root because config-last intentionally changes the artifacts.
+        area = self.area()
+        for oracle in (False, True):
+            w = area / ("oracle" if oracle else "candidate")
+            w.mkdir()
+            sentinel = w / "project.txt"
+            sentinel.write_bytes(b"Authored data survives failed initialization\n")
+            sentinel.chmod(0o640)
+            authored = files(w)["project.txt"]
+            name = "Partial-" + "x" * 160
+            result = self.call(["init", w, "--blank", "--name", name], area, oracle=oracle,
+                               limited=True)
+            assert result[0] == 1 and not result[1], result
+            assert re.search(r"Initialization stopped; partial files have been preserved for inspection|"
+                             r"initialization_stopped_partial_files_preserved_for_inspection",
+                             result[2], re.I), result
+            tree = files(w)
+            assert tree["project.txt"] == authored, "partial init changed authored bytes/inode/mode/mtime"
+            if oracle or self.oracle_only:
+                prefix = (b'{\n  "version": 1,\n  "name": "' + name.encode())[:128]
+                assert tree.keys() == {"project.txt", "coven.json"}, tree
+                assert tree["coven.json"][:3] == ("file", 0o644, prefix), tree
+            else:
+                directories = {"agents", "prompts", "state", "logs", "checkpoints", "work", "output", "tmux"}
+                assert tree.keys() == directories | {"project.txt", "state/.workspace.lock", "state/agents.json"}, tree
+                partial = tree["state/agents.json"]
+                assert partial[:2] == ("file", 0o644) and len(partial[2]) == 128, partial
+                assert partial[2].startswith(b'[\n  {\n    "id": "clippy"'), partial
+                for directory in directories:
+                    assert tree[directory][:2] == ("dir", 0o755), tree
+                assert tree["state/.workspace.lock"][:3] == ("file", 0o600, b""), tree
+                assert "phase=write-file target=state/agents.json last_completed=none partial_file=true" in result[2], result
+            before = files(area)
+            for flags in ([], ["--force"], ["--blank"], ["--force", "--blank"]):
+                for retry_oracle in (False, True):
+                    refused = self.call(["init", w, *flags], area, oracle=retry_oracle)
+                    assert refused[0] == 1 and not refused[1] and refused[2], refused
+                    assert files(area) == before, "partial workspace refusal had effects"
 
     def normalization_checks(self):
         stamp = datetime.now(timezone.utc).isoformat()

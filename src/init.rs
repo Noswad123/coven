@@ -302,7 +302,7 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
             "example",
             example
                 .as_ref()
-                .map_or(Value::Null, |example| s(example.id)),
+                .map_or(Value::Null, |example| s(&example.id)),
         ),
     ])?)?;
     let cli_command = match std::env::var("COVEN_COMMAND") {
@@ -320,7 +320,7 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
         cli_command,
         example_text: example
             .as_ref()
-            .map_or("", |example| example.context)
+            .map_or("", |example| example.context.as_str())
             .into(),
     };
     let mut tasks = Vec::new();
@@ -331,8 +331,37 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
             .ok_or(Error("invalid_init_tasks"))?
         {
             let raw = raw.as_object().ok_or(Error("invalid_init_task"))?;
+            for key in ["id", "title", "owner", "notes"] {
+                require(
+                    matches!(
+                        raw.get(key),
+                        None | Some(Value::Null) | Some(Value::String(_))
+                    ),
+                    "invalid_init_task",
+                )?;
+            }
             let field = |key| raw.get(key).and_then(Value::as_str);
-            let id = field("id").ok_or(Error("invalid_init_task"))?;
+            let fallback_id;
+            let id = match field("id").filter(|id| !id.is_empty()) {
+                Some(id) => id,
+                None => {
+                    fallback_id = assets::slug(
+                        field("title")
+                            .filter(|title| !title.is_empty())
+                            .unwrap_or("task"),
+                    )?;
+                    &fallback_id
+                }
+            };
+            require(
+                id.bytes()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                    && id.bytes().all(|c| {
+                        c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'_' | b'-')
+                    }),
+                "invalid_init_task_id",
+            )?;
             let owner = field("owner")
                 .filter(|owner| !owner.is_empty())
                 .map(assets::slug)
@@ -385,7 +414,7 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
     result.json("state/tasks.json", &tasks)?;
     let goal = example
         .as_ref()
-        .map_or_else(assets::default_goal, |example| example.goal);
+        .map_or(assets::default_goal(), |example| example.goal.as_str());
     result.text("goal.md", goal)?;
     let toml = assets::team_toml(
         name,
@@ -418,16 +447,16 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
         "work/README.md",
         example
             .as_ref()
-            .map_or_else(assets::default_work, |example| example.work),
+            .map_or(assets::default_work(), |example| example.work.as_str()),
     )?;
     result.text(
         "output/README.md",
         example
             .as_ref()
-            .map_or_else(assets::default_output, |example| example.output),
+            .map_or(assets::default_output(), |example| example.output.as_str()),
     )?;
     if let Some(example) = &example {
-        result.text("spec.md", example.spec)?;
+        result.text("spec.md", &example.spec)?;
     }
     for (relative, text) in assets::checkpoint_files() {
         result.text(&relative, &text)?;
@@ -444,7 +473,9 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
         )?;
     }
     let mut log = Vec::new();
-    let example_id = example.as_ref().map_or("blank", |example| example.id);
+    let example_id = example
+        .as_ref()
+        .map_or("blank", |example| example.id.as_str());
     event(
         &mut log,
         "workspace.created",
@@ -500,7 +531,7 @@ fn prepare(root: &Path, options: &Options, io: &impl InitIo) -> Result<Prepared>
         result.diagnostic_root.push_str("...");
     }
     let detail = match example {
-        Some(example) => human(example.seed_message)?,
+        Some(example) => human(&example.seed_message)?,
         None => format!("Next: coven goal {root_display} \"<your goal>\""),
     };
     result.stdout = format!(

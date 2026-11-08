@@ -23,5 +23,7 @@ for index, agent in enumerate(agents):
                           starter=coven.starter_prompt_text(agent, root),
                           normalized=coven.normalize_opencode_command(command),
                           shell_quote=shlex.quote(cli),
-                          manifest=coven.tmux_manifest("A 'name' \" \x7f café 😀", root, [agent], command)))
+                           manifest=coven.tmux_manifest("A 'name' \" \x7f café 😀", root, [agent], command),
+                           launches={backend: coven.agent_launch_command("A 'name' \" \x7f café 😀", root, agent, command, backend)
+                                     for backend in ["tmux", "herdr"]}))
 print(json.dumps(cases))

@@ -17,6 +17,7 @@ use crate::{
 use std::path::Path;
 
 const MAX_TEXT: usize = 1_048_576;
+const MAX_REFRESH_CHECKPOINT_WORK: usize = 256 * MAX_TEXT;
 const MAX_DASHBOARD: usize = 32 * 1_048_576;
 const CHECKPOINTS: [(&str, &str); 2] = [
     ("plan-approval", "consult user before implementation"),
@@ -56,8 +57,9 @@ pub(crate) fn validate_snapshot_logs(root: &Path) -> Result<()> {
 /// Refresh discards history ordering but validates every explicit checkpoint
 /// reference, including non-request records. This never restores decisions.
 pub(crate) fn validate_checkpoint_history(root: &Path) -> Result<()> {
+    let mut remaining = MAX_REFRESH_CHECKPOINT_WORK;
     for kind in [LogKind::Messages, LogKind::Events] {
-        checkpoint_log_records(root, kind)?;
+        checkpoint_log_records_with_budget(root, kind, Some(&mut remaining))?;
     }
     Ok(())
 }
@@ -65,6 +67,14 @@ pub(crate) fn validate_checkpoint_history(root: &Path) -> Result<()> {
 /// Validate the complete selected log before checking every explicit reference.
 /// These records remain observations; referenced decisions are never restored.
 pub(crate) fn checkpoint_log_records(root: &Path, kind: LogKind) -> Result<Vec<Value>> {
+    checkpoint_log_records_with_budget(root, kind, None)
+}
+
+fn checkpoint_log_records_with_budget(
+    root: &Path,
+    kind: LogKind,
+    mut remaining: Option<&mut usize>,
+) -> Result<Vec<Value>> {
     let records = logs::read(root, kind)?;
     for record in &records {
         if let Some(reference) = record
@@ -82,6 +92,13 @@ pub(crate) fn checkpoint_log_records(root: &Path, kind: LogKind) -> Result<Vec<V
                 "unsupported_checkpoint_history_profile",
             )? {
                 std::str::from_utf8(&raw)?;
+                // Charge every reread's raw UTF-8 bytes, without deduplication
+                // or universal-newline normalization (CRLF costs two bytes).
+                if let Some(remaining) = remaining.as_deref_mut() {
+                    *remaining = remaining
+                        .checked_sub(raw.len())
+                        .ok_or(Error("unsupported_refresh_checkpoint_work_profile"))?;
+                }
             }
         }
     }

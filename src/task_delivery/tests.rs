@@ -225,6 +225,68 @@ mod io_tests {
     }
 
     #[test]
+    fn checkpoint_work_budget_preserves_validation_and_unbudgeted_consumers() {
+        use std::os::unix::fs::symlink;
+        let (dir, _guard) = fixture();
+        let root = dir.path();
+        fs::create_dir(root.join("checkpoints")).unwrap();
+        let checkpoint = root.join("checkpoints/custom.md");
+        let log = root.join("logs/messages.jsonl");
+        let record = "{\"checkpoint\":\"custom\",\"type\":\"not-a-request\"}\n";
+        fs::write(&checkpoint, "\u{e9}\r\n").unwrap(); // Four raw UTF-8 bytes.
+        fs::write(&log, record.repeat(2)).unwrap();
+        let mut remaining = 8;
+        checkpoint_log_records_with_budget(root, LogKind::Messages, Some(&mut remaining)).unwrap();
+        assert_eq!(remaining, 0); // No deduplication and no newline normalization.
+        assert_eq!(
+            checkpoint_log_records_with_budget(root, LogKind::Messages, Some(&mut remaining))
+                .unwrap_err()
+                .code(),
+            "unsupported_refresh_checkpoint_work_profile"
+        );
+        assert_eq!(
+            checkpoint_log_records(root, LogKind::Messages)
+                .unwrap()
+                .len(),
+            2
+        );
+
+        fs::write(&log, format!("{record}{{\n")).unwrap();
+        assert_eq!(
+            checkpoint_log_records_with_budget(root, LogKind::Messages, Some(&mut remaining))
+                .unwrap_err()
+                .code(),
+            "invalid_jsonl_record"
+        );
+        fs::write(&log, record).unwrap();
+        fs::write(&checkpoint, b"\xff").unwrap();
+        let utf8_error = checkpoint_log_records(root, LogKind::Messages)
+            .unwrap_err()
+            .code();
+        assert_eq!(
+            checkpoint_log_records_with_budget(root, LogKind::Messages, Some(&mut remaining))
+                .unwrap_err()
+                .code(),
+            utf8_error
+        );
+        fs::remove_file(&checkpoint).unwrap();
+        let external = tempfile::NamedTempFile::new().unwrap();
+        symlink(external.path(), &checkpoint).unwrap();
+        let unsafe_error = checkpoint_log_records(root, LogKind::Messages)
+            .unwrap_err()
+            .code();
+        assert_eq!(
+            checkpoint_log_records_with_budget(root, LogKind::Messages, Some(&mut remaining))
+                .unwrap_err()
+                .code(),
+            unsafe_error
+        );
+        fs::remove_file(&checkpoint).unwrap();
+        // Missing references consume no text bytes even with an exhausted budget.
+        checkpoint_log_records_with_budget(root, LogKind::Messages, Some(&mut remaining)).unwrap();
+    }
+
+    #[test]
     fn complete_event_order_metadata_literal_utf8_and_both_snapshot_logs() {
         let (dir, guard) = fixture();
         let root = dir.path();
@@ -503,7 +565,7 @@ mod io_tests {
             "data=b'# Plan\\r\\nStatus: pending\\r\\n## User decision\\r\\n- [ ] Approved\\r\\n'\n",
             "data,_=checkpoints.prepare('plan-approval',data,'approved','',decision_id='1'*32,decided_at='test',source='cli')\n",
             "sys.stdout.buffer.write(data)"
-        )]).current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
+        )]).current_dir(env!("CARGO_MANIFEST_DIR")).env("PYTHONDONTWRITEBYTECODE", "1").output().unwrap();
         assert!(
             approved.status.success(),
             "{}",

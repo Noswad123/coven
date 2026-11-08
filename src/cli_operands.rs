@@ -10,40 +10,214 @@ use std::path::PathBuf;
 pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<OsString>) {
     let command = Cli::command();
     let mut parsed = arguments.to_vec();
-    let (start, field, route): (_, _, &[&str]) =
-        match arguments.get(1).and_then(|value| value.to_str()) {
-            Some("checkpoint") if arguments.get(2).is_some_and(|value| value == "inspect") => {
-                (3, "items", &["checkpoint", "inspect"])
-            }
-            Some("next") => (2, "workspace", &["next"]),
-            Some("execution") if arguments.get(2).is_some_and(|value| value == "inspect") => {
-                (3, "workspace", &["execution", "inspect"])
-            }
-            Some("execution") if arguments.get(2).is_some_and(|value| value == "recover") => {
-                (3, "workspace", &["execution", "recover"])
-            }
-            Some("task") => match (
-                arguments.get(2).and_then(|value| value.to_str()),
-                arguments.get(3).and_then(|value| value.to_str()),
-            ) {
-                (Some("attempt"), Some("list")) => (4, "workspace", &["task", "attempt", "list"]),
-                (Some("attempt"), Some("inspect")) => (4, "items", &["task", "attempt", "inspect"]),
-                (Some("attempt"), Some("cancel")) => (4, "items", &["task", "attempt", "cancel"]),
-                (Some("graph"), Some("inspect")) => (4, "items", &["task", "graph", "inspect"]),
-                (Some("graph"), Some("export")) => (4, "items", &["task", "graph", "export"]),
-                _ => return (command, parsed),
-            },
+    let (start, field, route): (_, _, &[&str]) = match arguments
+        .get(1)
+        .and_then(|value| value.to_str())
+    {
+        Some("approve") => (2, "items", &["approve"]),
+        Some("init") => (2, "workspace", &["init"]),
+        Some("suggest") => (2, "items", &["suggest"]),
+        Some("review") => (2, "items", &["review"]),
+        Some("send") => (2, "items", &["send"]),
+        Some("lead") => (2, "items", &["lead"]),
+        Some("standup") => (2, "workspace", &["standup"]),
+        Some("console") => (2, "workspace", &["console"]),
+        Some("bootstrap") => (2, "workspace", &["bootstrap"]),
+        Some("plan") => (2, "workspace", &["plan"]),
+        Some("up" | "start") => (2, "workspace", &["up"]),
+        Some("restart") => (2, "workspace", &["restart"]),
+        Some("down" | "stop") => (2, "workspace", &["down"]),
+        Some("agent") if arguments.get(2).is_some_and(|value| value == "send") => {
+            (3, "items", &["agent", "send"])
+        }
+        Some("agent") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("status") => (3, "items", &["agent", "status"]),
+            Some("start") => (3, "items", &["agent", "start"]),
+            Some("stop") => (3, "items", &["agent", "stop"]),
+            Some("restart") => (3, "items", &["agent", "restart"]),
             _ => return (command, parsed),
-        };
+        },
+        Some("action") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("enable-runtime-launch") => (3, "workspace", &["action", "enable-runtime-launch"]),
+            Some("prepare-runtime-launch") => {
+                (3, "workspace", &["action", "prepare-runtime-launch"])
+            }
+            Some("inspect") => (3, "workspace_or_action", &["action", "inspect"]),
+            Some("submit") => (3, "workspace_or_action", &["action", "submit"]),
+            Some("acknowledge-unknown") => {
+                (3, "workspace_or_action", &["action", "acknowledge-unknown"])
+            }
+            Some("stop") => (3, "workspace_or_action", &["action", "stop"]),
+            _ => return (command, parsed),
+        },
+        Some("checkpoint") if arguments.get(2).is_some_and(|value| value == "inspect") => {
+            (3, "items", &["checkpoint", "inspect"])
+        }
+        Some("next") => (2, "workspace", &["next"]),
+        Some("repository") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("inspect") => (3, "workspace", &["repository", "inspect"]),
+            Some("register") => (3, "workspace", &["repository", "register"]),
+            _ => return (command, parsed),
+        },
+        Some("worker") if arguments.get(2).is_some_and(|value| value == "readiness") => {
+            (3, "workspace", &["worker", "readiness"])
+        }
+        Some("observe") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("djinn") => (3, "", &["observe", "djinn"]),
+            Some("kitsune") => (3, "", &["observe", "kitsune"]),
+            Some("djinn-live") => (3, "", &["observe", "djinn-live"]),
+            _ => return (command, parsed),
+        },
+        Some("group") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("create") => (3, "workspace", &["group", "create"]),
+            Some("add") => (3, "workspace", &["group", "add"]),
+            Some("remove") => (3, "workspace", &["group", "remove"]),
+            Some("list") => (3, "workspace", &["group", "list"]),
+            Some("attach-live") => (3, "workspace", &["group", "attach-live"]),
+            Some("detach-live") => (3, "workspace", &["group", "detach-live"]),
+            Some("status") => (3, "workspace", &["group", "status"]),
+            Some("publish") => (3, "workspace", &["group", "publish"]),
+            _ => return (command, parsed),
+        },
+        Some("session") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("list") => (3, "workspace", &["session", "list"]),
+            Some("inspect") => (3, "workspace", &["session", "inspect"]),
+            Some("watch") => (3, "workspace", &["session", "watch"]),
+            Some("start") => (3, "workspace", &["session", "start"]),
+            Some("resume") => (3, "workspace", &["session", "resume"]),
+            Some("prompt") => (3, "workspace", &["session", "prompt"]),
+            Some("prompt-capabilities") => (3, "", &["session", "prompt-capabilities"]),
+            _ => return (command, parsed),
+        },
+        Some("execution") if arguments.get(2).is_some_and(|value| value == "inspect") => {
+            (3, "workspace", &["execution", "inspect"])
+        }
+        Some("execution") if arguments.get(2).is_some_and(|value| value == "recover") => {
+            (3, "workspace", &["execution", "recover"])
+        }
+        Some("execution") if arguments.get(2).is_some_and(|value| value == "enable") => {
+            (3, "workspace", &["execution", "enable"])
+        }
+        Some("execution") if arguments.get(2).is_some_and(|value| value == "enroll") => {
+            (3, "items", &["execution", "enroll"])
+        }
+        Some("execution") if arguments.get(2).is_some_and(|value| value == "upgrade") => {
+            (3, "workspace", &["execution", "upgrade"])
+        }
+        Some("task") => match (
+            arguments.get(2).and_then(|value| value.to_str()),
+            arguments.get(3).and_then(|value| value.to_str()),
+        ) {
+            (Some("attempt"), Some("list")) => (4, "workspace", &["task", "attempt", "list"]),
+            (Some("attempt"), Some("inspect")) => (4, "items", &["task", "attempt", "inspect"]),
+            (Some("attempt"), Some("cancel")) => (4, "items", &["task", "attempt", "cancel"]),
+            (Some("attempt"), Some("prepare")) => (4, "items", &["task", "attempt", "prepare"]),
+            (Some("graph"), Some("propose")) => (4, "workspace", &["task", "graph", "propose"]),
+            (Some("graph"), Some("decide")) => (4, "items", &["task", "graph", "decide"]),
+            (Some("graph"), Some("inspect")) => (4, "items", &["task", "graph", "inspect"]),
+            (Some("graph"), Some("export")) => (4, "items", &["task", "graph", "export"]),
+            _ => return (command, parsed),
+        },
+        _ => return (command, parsed),
+    };
     let string_fields: &[&str] = match route {
+        ["session", "list"] => &["socket", "group", "member"],
+        ["session", "inspect" | "watch"] => {
+            &["socket", "pane", "expected_terminal", "group", "member"]
+        }
+        ["session", "start"] => &["executable", "socket", "pane", "expected_terminal"],
+        ["session", "resume"] => &[
+            "executable",
+            "socket",
+            "pane",
+            "expected_terminal",
+            "session",
+        ],
+        ["session", "prompt"] => &[
+            "native_socket",
+            "expected_runtime",
+            "session",
+            "request_id",
+            "prompt_file",
+        ],
+        ["session", "prompt-capabilities"] => &["native_socket"],
+        ["init"] => &["name", "agents", "opencode_command", "example"],
+        ["approve"] => &["agent", "message", "expect_revision"],
+        ["suggest"] => &["agent", "expect_revision"],
+        ["review"] => &["agent", "message"],
+        ["lead"] => &["message"],
+        ["action", "submit"] => &[
+            "action_id",
+            "expect_manifest",
+            "expect_checkpoint",
+            "expect_decision",
+        ],
+        ["action", "acknowledge-unknown"] => &["action_id", "expect_claim"],
+        ["action", "inspect" | "stop"] => &["action_id"],
+        ["repository", "register"] => &["base", "delivery_target", "expect_repository_revision"],
+        ["observe", "djinn"] => &["executable", "folder"],
+        ["observe", "kitsune"] => &["socket", "process_pane"],
+        ["observe", "djinn-live"] => &["file", "runtime", "instance", "session"],
+        ["group", "create"] => &["group", "name", "expect_revision"],
+        ["group", "add"] => &[
+            "group",
+            "member",
+            "role",
+            "socket",
+            "pane",
+            "expect_revision",
+        ],
+        ["group", "remove" | "detach-live"] => &["group", "member", "expect_revision"],
+        ["group", "attach-live"] => &[
+            "group",
+            "member",
+            "expect_revision",
+            "file",
+            "runtime",
+            "instance",
+            "session",
+        ],
+        ["group", "status"] => &["group", "member"],
+        ["group", "publish"] => &["group", "socket", "source"],
         ["task", "attempt", "list"] => &["task"],
         ["task", "attempt", "cancel"] => &["reason", "expect_execution_revision", "request_id"],
         ["execution", "recover"] => &["expect_execution_revision"],
+        ["execution", "enable" | "upgrade"] => &["expect_execution_revision", "request_id"],
+        ["execution", "enroll"] => &[
+            "expect_execution_revision",
+            "expect_tasks_revision",
+            "request_id",
+        ],
+        ["task", "attempt", "prepare"] => &[
+            "graph_revision",
+            "expect_execution_revision",
+            "expect_tasks_revision",
+            "request_id",
+        ],
+        ["task", "graph", "propose"] => &[
+            "expect_execution_revision",
+            "expect_tasks_revision",
+            "request_id",
+        ],
+        ["task", "graph", "decide"] => &[
+            "reason",
+            "expect_graph_digest",
+            "expect_execution_revision",
+            "expect_tasks_revision",
+            "request_id",
+        ],
+        _ => &[],
+    };
+    let path_fields: &[&str] = match route {
+        ["repository", "register"] => &["path"],
+        ["worker", "readiness"] => &["executable"],
+        ["task", "attempt", "prepare"] => &["intent"],
+        ["task", "graph", "propose"] => &["document"],
         _ => &[],
     };
     let mut occupied = arguments.iter().cloned().collect::<HashSet<_>>();
-    if !string_fields.is_empty() {
-        // Attached option values also reach String parsers as standalone strings.
+    if !string_fields.is_empty() || !path_fields.is_empty() {
+        // Attached values reach custom typed parsers as standalone values too.
         occupied.extend(arguments.iter().filter_map(|argument| {
             argument
                 .to_str()?
@@ -53,9 +227,44 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
     }
     let mut originals = HashMap::new();
     let mut serial = 0usize;
+    let numeric_names: &[&str] = match route {
+        ["session", "list" | "inspect"] => &["runtime", "timeout", "max-response-bytes"],
+        ["session", "watch"] => &[
+            "runtime",
+            "timeout",
+            "max-response-bytes",
+            "duration",
+            "interval",
+        ],
+        ["session", "start" | "resume"] => &["runtime", "timeout"],
+        ["session", "prompt" | "prompt-capabilities"] => &["timeout"],
+        ["init"] => &["multiplexer"],
+        ["worker", "readiness"] | ["observe", "djinn"] => &["timeout", "max-output-bytes"],
+        ["observe", "kitsune"] => &["timeout", "max-response-bytes"],
+        ["observe", "djinn-live"] | ["group", "attach-live" | "status"] => &["timeout"],
+        ["group", "publish"] => &["duration"],
+        _ => &[],
+    };
+    let mut numeric_value = false;
     for argument in parsed.iter_mut().skip(start) {
         if argument == "--" {
             break;
+        }
+        // Keep numeric and choice values transparent to Clap's validators,
+        // including invalid raw values in their diagnostics.
+        if numeric_value {
+            numeric_value = false;
+            continue;
+        }
+        if !numeric_names.is_empty()
+            && argument.to_str().is_some_and(|value| {
+                value.strip_prefix("--").is_some_and(|name| {
+                    !name.is_empty() && numeric_names.iter().any(|option| option.starts_with(name))
+                })
+            })
+        {
+            numeric_value = true;
+            continue;
         }
         if !argument.to_str().is_some_and(|value| {
             let Some(tail) = value.strip_prefix('-') else {
@@ -91,7 +300,14 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
     let parser = clap::builder::OsStringValueParser::new()
         .map(move |value| PathBuf::from(originals.get(&value).cloned().unwrap_or(value)));
     let install = |command: clap::Command| {
-        let mut command = command.mut_arg(field, |argument| argument.value_parser(parser));
+        let mut command = if field.is_empty() {
+            command
+        } else {
+            command.mut_arg(field, |argument| argument.value_parser(parser.clone()))
+        };
+        for field in path_fields {
+            command = command.mut_arg(*field, |argument| argument.value_parser(parser.clone()));
+        }
         for field in string_fields {
             command = command.mut_arg(*field, |argument| {
                 argument.value_parser(string_parser.clone())

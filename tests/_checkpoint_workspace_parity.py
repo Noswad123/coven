@@ -283,9 +283,10 @@ def main(binary=None, oracle_only=False):
                            ("required-json", ["checkpoint", "inspect", str(w)]),
                            ("repeat-json", ["checkpoint", "inspect", str(w), "--json", "--json"]),
                            ("unsupported-approve", ["checkpoint", "approve", str(w), "--json"]),
-                           ("unsupported-mutation", ["approve", str(w), "--json"])):
+                            ("unsupported-mutation", ["approve", str(w), "--invalid-checkpoint-option", "--json"])):
             if name == "unsupported-mutation":
-                # Do not run a Python mutation merely to verify native refusal.
+                # Approve is native now; retain a no-effect invalid-flag guard,
+                # without running a Python mutation to verify parser refusal.
                 before = snapshot(root)
                 if not oracle_only:
                     result = subprocess.run([binary, *args], cwd=w, env=env, capture_output=True, timeout=5)

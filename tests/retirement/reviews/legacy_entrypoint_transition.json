@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "transition": "native-only production checkout entrypoint; explicit Python development oracle",
+  "approval_status": "parent_approved",
+  "approval": {
+    "basis": "Parent and independent reviewer explicitly approved all eleven invocation/hash transitions; parent reviewed the complete eleven-file diff against e389a08669204d4e51a49ffd13cbe01b90b5d8ba before ledger integration.",
+    "verification": "All old hashes match the frozen ledger and e389 source; all new hashes match current files. Independent AST equality normalized only imports, the old bin/coven argv prefix to sys.executable plus runner/coven.py, and restored COVEN_HOME/COVEN_COMMAND. Assertions, subtests, cwd, timeouts and fixtures are unchanged.",
+    "disposition": "Accept source-hash transitions only, retaining historical original_sha256. No method promotion, fixture recapture, source deletion, full retirement or platform/package acceptance."
+  },
+  "scope": "Product entrypoint cutover only. Python source remains a development oracle; neither source deletion nor full platform closure is claimed. Installed product remains a direct native binary.",
+  "argv_change": {
+    "old_prefix": ["str(ROOT / 'bin/coven')"],
+    "new_prefix": ["sys.executable", "str(ROOT / 'runner/coven.py')"],
+    "remaining_arguments": "Unchanged, including splats, map(str, args), options and subtest-specific arguments."
+  },
+  "environment_change": {
+    "reason": "Direct Python invocation explicitly reproduces the old source wrapper's exported environment instead of invoking the now-native production wrapper.",
+    "COVEN_HOME": "Set to str(ROOT), the source asset root; previously exported by the old source wrapper. Existing filtering and other environment entries remain unchanged.",
+    "COVEN_COMMAND": "Set to str(ROOT / 'bin/coven'); previously overwritten/exported by the old wrapper, including when the caller supplied a value.",
+    "test_handoffs.py": "Existing explicit COVEN_HOME=str(ROOT) remains; only COVEN_COMMAND is added to the existing env dict.",
+    "test_kitsune_process_observation.py": "Previously inherited env implicitly. Now pass a copy of os.environ with explicit source COVEN_HOME and COVEN_COMMAND. The subprocess remains the True branch of the original (False, True) loop; the False in-process branch is unchanged. A caller-supplied alternate COVEN_HOME no longer selects a different runner: this test is explicitly a source Python oracle.",
+    "other_environment": "Existing exclusions, PYTHONDONTWRITEBYTECODE, PYTHONPATH handling, runtime/socket poison values, and COVEN_MULTIPLEXER behavior are retained. No native selector is introduced into legacy tests."
+  },
+  "preservation": {
+    "method_ids": "No test methods renamed, added, removed, skipped, or native-retargeted in these 11 Python files. Historical wrapper-oriented names are annotated in place.",
+    "assertions_and_subtests": "AST comparison against each pre-change source confirms every assertion and subTest call is identical, in order, within every test method.",
+    "other_call_options": "cwd, capture_output, text, timeout values, fixtures and expected return codes are unchanged; only the kitsune process subprocess gains the explicit env keyword described above.",
+    "runner_source": "Unchanged by this transition.",
+    "global_retirement_ledgers": "Not modified. Parent owns source-hash/ledger updates and approval after diff review; the frozen 941 method IDs/counts are not redefined here."
+  },
+  "files": [
+    {
+      "path": "tests/test_coven.py",
+      "old_sha256": "942399d5160afde7ffb37f2497b8e17ff6257a546e8b1bdb4588d9d95c656234",
+      "new_sha256": "40029a3ea58bcdbebf8f9d25ad8d62207589455de2f0763465f2f85f66575cd9",
+      "method_ids": ["test_coven.CovenTests.test_wrapper_creates_and_refuses_reinit_without_runtime"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_handoffs.py",
+      "old_sha256": "963ee41178dfdc00a378a8756c57552d811ec05a73cf033808cbc4b29976b9bf",
+      "new_sha256": "204919e4d3cd05cb534f8aa4b0df95a24f9e6e6c3f3d99fcf2baf0d23f116ef5",
+      "method_ids": ["test_handoffs.ProcessTests.test_real_wrapper_validates_without_runtime_dependency"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_repository_commands.py",
+      "old_sha256": "97899e42d3ee896decd39685d261616240bbe395ebd6717b4c24ef7670fd7093",
+      "new_sha256": "1a85d330e4a7c007ef3e0b036c04c23fdc44378bee704b75bb7786744d7a3729",
+      "method_ids": ["test_repository_commands.RepositoryCommandTests.test_real_wrapper_register_and_inspect_are_standalone_compatible"],
+      "argv_sites_changed": 2
+    },
+    {
+      "path": "tests/test_worker_readiness_commands.py",
+      "old_sha256": "10115ba5457701bab4cbf9478e432a14cb1b92c7f1d9ff69e58d18d57e6ba3af",
+      "new_sha256": "581fa4426711d4f348e3f0f48c23f04ba90bc524814068b04636d8dfc1739557",
+      "method_ids": ["test_worker_readiness_commands.WorkerReadinessCommandTests.test_real_wrapper_with_help_only_fixture_uses_no_session_or_config_route"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_observe_commands.py",
+      "old_sha256": "de344d3296df6299b2ffcce45bc97117ebefea5cb9906e00d3f6e7141c9a2a38",
+      "new_sha256": "f07f9c4fb3eb43bab1b117f2841a8265bdab6465663b03684199bbc0534cf341",
+      "method_ids": ["test_observe_commands.ObserveCommandTests.test_real_wrapper_uses_only_fake_selected_socket"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_kitsune_process_observation.py",
+      "old_sha256": "8857f5834303a407be745dfaf5d6ad8aaa4ad474238868be9deb628f3dd1bd78",
+      "new_sha256": "8137aab32ecb3bf66e4ef9b9796d70c7f418e47197c04fd0b50f435937bc7716",
+      "method_ids": ["test_kitsune_process_observation.ProcessObservationTests.test_cli_and_wrapper_integration_without_workspace_or_runtime"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_djinn_observation.py",
+      "old_sha256": "839f66107a99ed702f29053c6538da379fd777a8815c12ed813ca6f03d7e5d14",
+      "new_sha256": "690ba61ba151a2dcea2a0b22522f33dbc487f5023bc82487e3a313439354c38b",
+      "method_ids": ["test_djinn_observation.DjinnTransportAndCommandTests.test_actual_bin_corrupt_workspace_independence_and_explicit_folder_alias"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_djinn_live_observation.py",
+      "old_sha256": "4431d73c17f3ba2edb33873769883b938eaa8b76b67c4830971f46f284573d46",
+      "new_sha256": "105228cc8c8d0e64411502dbd999a380d343bc9146acb2d3231b591881a8ddf4",
+      "method_ids": ["test_djinn_live_observation.DjinnLiveObservationTests.test_actual_wrapper_dynamic_fresh_sample_ascii_and_corrupt_workspace"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_group_commands.py",
+      "old_sha256": "b6759818ed87aafe64b66020f21c316b8aeb41703360f4d8f32b05f2b96847c6",
+      "new_sha256": "dc5b1a6c6a10b5d62b2908b3f54ffb8db5e6b670e2949af4498fee1c850b52b9",
+      "method_ids": ["test_group_commands.GroupCommandTests.test_real_wrapper_create_observe_add_publish_and_list"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_process_groups.py",
+      "old_sha256": "8a83bb43dd79c8a0276ecd3b1600be8b8eb4fbc4e92d7252c6e78dd13f4c9b71",
+      "new_sha256": "02b677a14cb2be9c2ad9a9d3c3c04fb8be063bfcf962681f9440e27b40578444",
+      "method_ids": ["test_process_groups.ProcessGroupWorkflowTests.test_actual_wrapper_uses_explicit_fake_socket_for_add_publish_and_list"],
+      "argv_sites_changed": 1
+    },
+    {
+      "path": "tests/test_group_live.py",
+      "old_sha256": "a875a053bb2668a2db2c6d97217103390eaecc16b7bdad82f164bf633868ae01",
+      "new_sha256": "4bd8e316bbdae49ee11e4913d21ea18e92cc73a545ba5493151e831436227776",
+      "method_ids": ["test_group_live.GroupLiveTests.test_cli_requires_explicit_arguments_and_actual_wrapper_workflow_is_offline"],
+      "argv_sites_changed": 1
+    }
+  ],
+  "validation": {
+    "targeted_python": "213 tests passed across all 11 files (47.033 seconds).",
+    "full_python": "python -m unittest discover -s tests -p 'test_*.py': all 941 tests passed (193.376 seconds), with PYTHONDONTWRITEBYTECODE=1.",
+    "native_entrypoint": "5 Rust integration tests passed, using copied real native coven binaries plus a compiled inert Rust PID/exit/signal helper.",
+    "checks": ["/bin/sh -n bin/coven", "rustfmt --edition 2024 --check tests/native_entrypoint.rs", "cargo build --release --bin coven", "env -i PATH= /home/jdawson/Projects/coven-rust-migration/bin/coven --help", "git diff --check (owned tracked files)"],
+    "review_limit": "Parent approval accepts only the eleven recorded source-hash transitions after explicit diff review; the reported 941 Python and five native entrypoint passes are gate evidence, not full deletion or retirement acceptance."
+  },
+  "trust_boundary": "Reject direct, symlink and hard-link same-inode wrapper recursion. Copied-wrapper and indirect recursion are outside the trusted prebuilt-binary selection contract; no catchall executable inspection is claimed."
+}

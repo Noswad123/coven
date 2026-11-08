@@ -185,7 +185,7 @@ fn source_context_exact_bytes_and_initial_event_shape() {
     );
     let context = PureAssetContext {
         cli_command: "coven".into(),
-        example_text: example.context.into(),
+        example_text: example.context,
     };
     assert_eq!(
         fs::read(root.join("prompts/clippy.md")).unwrap(),

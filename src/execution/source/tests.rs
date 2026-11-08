@@ -405,3 +405,88 @@ fn protected_existing_workspace_observation_preserves_lock_and_control_files() {
     assert!(!dir.path().join("state/task-ledger").exists());
     assert!(!dir.path().join("state/tasks.json").exists());
 }
+
+#[test]
+fn prelock_observation_rejects_full_preflight_without_creating_artifacts() {
+    for (name, bytes) in [
+        (
+            "coven.toml",
+            b"[runtime]\nmultiplexer='unsupported'".as_slice(),
+        ),
+        ("coven.toml", b"[runtime]\nopencode_command=''"),
+        ("state/agents.json", b"null"),
+        ("state/lead.json", b"[]"),
+        ("state/runtime-launch-control.json", b"null"),
+        ("checkpoints/invalid name.md", b"ok"),
+        ("checkpoints/plan-approval.md", b"\xff"),
+        ("state/tasks.json", b"null"),
+        ("coven.json", b"null"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "coven.json",
+            br#"{"name":"test","agents":["worker"]}"#,
+        );
+        fs::create_dir(dir.path().join("state")).unwrap();
+        fs::create_dir(dir.path().join("checkpoints")).unwrap();
+        write(dir.path(), name, bytes);
+        let before = fs::read(dir.path().join(name)).unwrap();
+        assert!(
+            observe(dir.path(), &string("0".repeat(32)), &mut Work::default()).is_err(),
+            "{name}"
+        );
+        assert_eq!(fs::read(dir.path().join(name)).unwrap(), before);
+        for absent in [
+            "state/.workspace.lock",
+            "state/execution",
+            "state/task-ledger",
+        ] {
+            assert!(!dir.path().join(absent).exists(), "{name}: {absent}");
+        }
+    }
+}
+
+#[test]
+fn zero_id_prelock_observation_is_read_only_and_guarded_capture_is_fresh() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "coven.json",
+        br#"{"name":"test","agents":["worker"]}"#,
+    );
+    let value = observe(dir.path(), &string("0".repeat(32)), &mut Work::default()).unwrap();
+    assert_eq!(
+        get(get(&value, "identity").unwrap(), "source_id")
+            .unwrap()
+            .as_str(),
+        Some("00000000000000000000000000000000")
+    );
+    assert!(!dir.path().join("state").exists());
+    assert_eq!(
+        observe(
+            dir.path(),
+            &string("0".repeat(32)),
+            &mut Work(super::super::MAX_WORK)
+        )
+        .unwrap_err()
+        .code(),
+        "unsupported_execution_work_profile"
+    );
+    assert!(!dir.path().join("state").exists());
+    let guard = WorkspaceGuard::execution_maintenance(dir.path(), Duration::ZERO).unwrap();
+    write(
+        dir.path(),
+        "state/tasks.json",
+        br#"[{"id":"fresh","title":"Fresh","status":"pending"}]"#,
+    );
+    let fresh = captured(dir.path(), &guard).unwrap();
+    assert_eq!(
+        get(get(&fresh, "identity").unwrap(), "source_id")
+            .unwrap()
+            .as_str(),
+        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    );
+    assert_eq!(get(&fresh, "tasks").unwrap().as_array().unwrap().len(), 1);
+    assert!(!dir.path().join("state/execution").exists());
+}

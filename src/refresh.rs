@@ -1,6 +1,6 @@
 //! Existing-workspace refresh. Only generated assets are published; no runtime
 //! is contacted and authored state/history is never repaired or replayed.
-//! Native profile: only the frozen interactive-demo example is supported;
+//! Examples use the shared relocatable asset bundle;
 //! COVEN_COMMAND defaults intentionally to `coven`, not a checkout wrapper.
 use crate::{
     Error, Result,

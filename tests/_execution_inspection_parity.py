@@ -607,8 +607,8 @@ def parser_cases(s, active, attempt, revision):
     s.check("attempt/unknown", ["task", "attempt", "inspect", active, "f" * 32], active, category="selectors", code=1, contains="Unknown attempt ID")
     s.check("graph/unknown", ["task", "graph", "inspect", active, "f" * 32], active, category="selectors", code=1, contains="Unknown graph revision")
     s.check("graph/invalid", ["task", "graph", "inspect", active, "bad"], active, category="selectors", code=1, contains="Invalid graph revision")
-    # Never invoke Python runtime writers. Only native must refuse these routes.
-    # Cancel/recover are ported: retain their no-effects guards with invalid flags.
+    # Never invoke Python runtime writers. Keep authoring no-effects guards even
+    # as routes are ported: invalid flags must reject before reading or writing.
     if not s.oracle_only:
         view = v1.Store(active).read()
         flags = ["--expect-execution-revision", view.revision, "--request-id", "forbidden-native-write", "--json"]
@@ -623,10 +623,10 @@ def parser_cases(s, active, attempt, revision):
                      ["task", "graph", "decide", active, revision, "--decision", "changes-requested", "--reason", "never write",
                       "--expect-graph-digest", view.graphs[revision]["digest"], *flags]):
             before = snapshot(s.root)
-            result = subprocess.run([s.binary, *args], cwd=active, env=ENV, capture_output=True, timeout=5)
+            result = subprocess.run([s.binary, *args, "--invalid-authoring-guard"], cwd=active, env=ENV, capture_output=True, timeout=5)
             assert result.returncode != 0 and result.stdout == b"", (args, result)
             assert snapshot(s.root) == before
-            s.counts["unsupported_writers"] += 1
+            s.counts["authoring_no_effects_guards"] += 1
 
 
 def oracle_seams(s, workspace):

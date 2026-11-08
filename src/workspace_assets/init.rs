@@ -1,23 +1,23 @@
-//! Pure initial workspace assets. The example is embedded, never located at runtime.
-use super::{agent_role, slug, toml_quote};
+//! Pure initial workspace templates and the portable embedded seed.
+use super::{agent_role, toml_quote};
 use crate::{Error, Result, error::require, values};
 
 pub(crate) struct InitExample {
-    pub id: &'static str,
-    pub seed_message: &'static str,
-    pub goal: &'static str,
-    pub spec: &'static str,
-    pub work: &'static str,
-    pub output: &'static str,
-    pub context: &'static str,
+    pub id: String,
+    pub seed_message: String,
+    pub goal: String,
+    pub spec: String,
+    pub work: String,
+    pub output: String,
+    pub context: String,
     pub tasks: values::Value,
 }
 
 pub(crate) fn init_example(selector: &str) -> Result<InitExample> {
-    require(
-        slug(selector).is_ok_and(|id| id == "interactive-demo"),
-        "unsupported_init_example_profile",
-    )?;
+    super::example_assets::AssetBundle::environment()?.load(selector)
+}
+
+pub(super) fn embedded_example() -> Result<InitExample> {
     #[derive(serde::Deserialize)]
     struct Manifest<'a> {
         id: &'a str,
@@ -27,13 +27,13 @@ pub(crate) fn init_example(selector: &str) -> Result<InitExample> {
         serde_json::from_str(include_str!("../../examples/interactive-demo/example.json"))
             .map_err(|_| Error("unsupported_init_example_profile"))?;
     Ok(InitExample {
-        id: manifest.id,
-        seed_message: manifest.seed_message,
-        goal: include_str!("../../examples/interactive-demo/goal.md"),
-        spec: include_str!("../../examples/interactive-demo/spec.md"),
-        work: include_str!("../../examples/interactive-demo/work/README.md"),
-        output: include_str!("../../examples/interactive-demo/output/README.md"),
-        context: include_str!("../../examples/interactive-demo/prompt-context.md"),
+        id: manifest.id.into(),
+        seed_message: manifest.seed_message.into(),
+        goal: include_str!("../../examples/interactive-demo/goal.md").into(),
+        spec: include_str!("../../examples/interactive-demo/spec.md").into(),
+        work: include_str!("../../examples/interactive-demo/work/README.md").into(),
+        output: include_str!("../../examples/interactive-demo/output/README.md").into(),
+        context: include_str!("../../examples/interactive-demo/prompt-context.md").into(),
         tasks: values::parse(
             include_bytes!("../../examples/interactive-demo/tasks.json"),
             values::Profile::LegacySnapshot,

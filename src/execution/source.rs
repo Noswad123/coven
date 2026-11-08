@@ -1,4 +1,4 @@
-//! Current source observations under a caller-owned lock, never mutation authority.
+//! Read-only source observations, never mutation authority.
 use super::{Work, get, object, string, uuid};
 use crate::{
     Result, error::require, ledger, storage::WorkspaceGuard, tasks, values::Value, workspace,
@@ -30,6 +30,32 @@ fn capture_inner(
 ) -> Result<Value> {
     uuid(snapshot_source_id)?;
     guard.validate_for(root)?;
+    observe_inner(
+        root,
+        snapshot_source_id,
+        work,
+        #[cfg(test)]
+        after_workspace,
+    )
+}
+
+pub(super) fn observe(root: &Path, snapshot_id: &Value, work: &mut Work) -> Result<Value> {
+    observe_inner(
+        root,
+        snapshot_id,
+        work,
+        #[cfg(test)]
+        &mut || {},
+    )
+}
+
+fn observe_inner(
+    root: &Path,
+    snapshot_source_id: &Value,
+    work: &mut Work,
+    #[cfg(test)] after_workspace: &mut dyn FnMut(),
+) -> Result<Value> {
+    uuid(snapshot_source_id)?;
     let state = workspace::load(root)?;
     let roster = get(state.team.value(), "agents")?.clone();
     // Preflight tasks are deliberately discarded: revision and tasks must come

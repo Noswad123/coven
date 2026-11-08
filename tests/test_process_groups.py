@@ -10,6 +10,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import unittest
 from unittest import mock
 
@@ -251,12 +252,14 @@ class ProcessGroupWorkflowTests(ProcessGroupCase):
                          {key: value for key, value in before.items() if key != "state/groups.json"})
 
     def test_actual_wrapper_uses_explicit_fake_socket_for_add_publish_and_list(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         env = {key: value for key, value in os.environ.items() if key not in {"COVEN_HOME", "COVEN_COMMAND"}}
         env.update(PYTHONDONTWRITEBYTECODE="1", KITSUNE_SOCKET_PATH="/not-selected",
                    KITSUNE_CLIENT_SOCKET_PATH="/not-selected")
 
         def run(*args):
-            result = subprocess.run([str(ROOT / "bin/coven"), *map(str, args)], cwd=ROOT,
+            env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+            result = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), *map(str, args)], cwd=ROOT,
                                     env=env, text=True, capture_output=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             return json.loads(result.stdout)

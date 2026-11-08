@@ -1,5 +1,16 @@
 use crate::Result;
 pub(super) mod init;
+pub(crate) mod live_artifact;
+pub(crate) mod observation_socket;
+mod process;
+mod runtime_child;
+mod runtime_command;
+mod runtime_foreground;
+pub(crate) use process::{process_run, supervisor_entry};
+pub(crate) use runtime_command::{
+    open_transport_lock, runtime_command_run, try_transport_lock, unlock_transport,
+};
+pub(crate) use runtime_foreground::{runtime_foreground_run, runtime_terminal_ttys};
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
@@ -12,6 +23,31 @@ use std::{
 
 pub(crate) fn ensure_supported() -> Result<()> {
     Ok(())
+}
+
+fn file_metadata(metadata: std::fs::Metadata) -> Result<super::FileMetadata> {
+    crate::error::require(metadata.is_file(), "executable_not_regular")?;
+    Ok(super::FileMetadata {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        size: metadata.len(),
+        mtime_ns: i128::from(metadata.mtime()) * 1_000_000_000 + i128::from(metadata.mtime_nsec()),
+    })
+}
+
+pub(crate) fn executable_metadata(path: &Path) -> Result<super::FileMetadata> {
+    let metadata = file_metadata(std::fs::symlink_metadata(path)?)?;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| crate::Error("executable_path_invalid"))?;
+    crate::error::require(
+        unsafe { libc::access(path.as_ptr(), libc::X_OK) } == 0,
+        "executable_not_executable",
+    )?;
+    Ok(metadata)
+}
+
+pub(crate) fn descriptor_metadata(file: &File) -> Result<super::FileMetadata> {
+    file_metadata(file.metadata()?)
 }
 
 pub(crate) fn random_uuid_hex() -> Result<String> {

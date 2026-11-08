@@ -245,6 +245,65 @@ fn staged_limits_are_incremental_and_do_not_mutate_stage_on_refusal() {
     assert_eq!(stage.files.len(), 32);
 }
 
+#[test]
+fn preparation_checkpoint_work_budget_is_inclusive_and_overages_have_no_effects() {
+    let root = workspace();
+    let root = root.path();
+    for directory in ["checkpoints", "logs", "tmux", "prompts"] {
+        fs::create_dir(root.join(directory)).unwrap();
+    }
+    let authored = [
+        ("tmux/coven.toml", "old manifest"),
+        ("prompts/architect.md", "authored role"),
+        ("prompts/architect.start.txt", "old starter"),
+        ("dashboard.md", "old dashboard"),
+        ("goal.md", "authored goal"),
+        ("checkpoints/byte.md", "x"),
+    ];
+    for (path, text) in authored {
+        fs::write(root.join(path), text).unwrap();
+    }
+    // Only 1 MiB stored: repeated non-request references consume work too.
+    // CRLF distinguishes raw byte accounting from normalized text accounting.
+    let checkpoint = b"\r\n".repeat(MAX_TEMPLATE / 2);
+    fs::write(root.join("checkpoints/budget.md"), &checkpoint).unwrap();
+    let record = "{\"checkpoint\":\"budget\",\"type\":\"unrelated\"}\n";
+    let half = record.repeat(128);
+    fs::write(root.join("logs/messages.jsonl"), &half).unwrap();
+    fs::write(root.join("logs/events.jsonl"), &half).unwrap();
+    prepare(root).unwrap(); // Exactly 256 MiB, split across both logs.
+    prepare(root).unwrap(); // Each preparation has a fresh budget.
+    assert!(!root.join("state").exists());
+
+    for last in ["{\"checkpoint\":\"byte\"}\n", record] {
+        let events = format!("{half}{last}");
+        fs::write(root.join("logs/events.jsonl"), &events).unwrap();
+        assert_eq!(
+            arguments(root).err().unwrap().code(),
+            "unsupported_refresh_checkpoint_work_profile"
+        );
+        for (path, text) in authored {
+            assert_eq!(fs::read(root.join(path)).unwrap(), text.as_bytes());
+        }
+        assert_eq!(
+            fs::read(root.join("checkpoints/budget.md")).unwrap(),
+            checkpoint
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("logs/messages.jsonl")).unwrap(),
+            half
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("logs/events.jsonl")).unwrap(),
+            events
+        );
+        assert!(!root.join("state").exists()); // No first lock either.
+        assert!(!root.join("prompts/CUSTOM.md").exists());
+        assert!(!root.join("prompts/CUSTOM.start.txt").exists());
+        assert_eq!(fs::read_dir(root.join("prompts")).unwrap().count(), 2);
+    }
+}
+
 struct StageFailure;
 impl RefreshIo for StageFailure {
     fn prepared(&self, _root: &Path, _guarded: bool) -> Result<()> {

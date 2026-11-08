@@ -3,8 +3,10 @@
 import contextlib
 import io
 import json
+import os
 import socket
 import subprocess
+import sys
 import time
 import unittest
 from unittest import mock
@@ -284,12 +286,14 @@ class ProcessObservationTests(unittest.TestCase):
                 process_observation.inspect("/s", "pane:1", timeout=float("nan"))
 
     def test_cli_and_wrapper_integration_without_workspace_or_runtime(self):
+        # Historical method ID/branches retained; wrapper branch is now the direct Python legacy oracle.
         for wrapper in (False, True):
             with SequenceSocket(sequence([process(argv=["djinn"])])) as server:
                 args = ["observe", "kitsune", "--socket", server.path, "--process-pane", "pane:1", "--json"]
                 if wrapper:
-                    result = subprocess.run([str(ROOT / "bin/coven"), *args], capture_output=True,
-                                            text=True, timeout=15)
+                    env = {**os.environ, "COVEN_HOME": str(ROOT), "COVEN_COMMAND": str(ROOT / "bin/coven")}
+                    result = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), *args], capture_output=True,
+                                            text=True, timeout=15, env=env)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     output = result.stdout
                 else:

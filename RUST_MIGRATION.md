@@ -1,13 +1,35 @@
 # Coven Rust migration
 
-Status: **native workspace init, goal/message/history/status, checkpoint inspect/next guidance, task add/assign, state import/recovery, existing-workspace refresh,
+## Overview
+
+Status: **native production cutover; Python source retained as a development oracle**.
+Native workspace init, goal/message/history/status, checkpoint inspect/next guidance, task add/assign, state import/recovery, existing-workspace refresh,
 evidence capture and authority readers, all five execution inspection/export routes,
-preparation cancellation and both explicit execution-recovery modes**,
-not a complete Rust replacement.
-The retained Python implementation and its safety contracts remain the public
-default and compatibility oracle. `bin/coven` is unchanged. No workspace/state
-migration, executable replacement, install or authority activation happens when
-the Rust crate is built.
+preparation cancellation, both explicit execution-recovery modes, and all six
+runtime-free execution authoring routes (enable, enroll/rebind, upgrade, intent/graph
+prepare, graph propose and approve/changes-requested decide), repository inspect
+(including verify)/register, worker readiness, persisted `observe djinn`,
+Kitsune/Djinn-live observation, all eight Group routes, all seven Session routes,
+human-default task listing, custom example assets, reviewed
+cold-launch action writers, checkpoint approve/suggest/review, legacy send/agent
+send and down/stop, standup, console, lead, bootstrap, agent status/start/stop/restart,
+plan, up/start alias and restart are implemented. All 78 original command paths
+are represented; native-only execution history is extra, not a parity percentage.
+The parent selected native product execution without deleting all 25 retained
+Python source oracles. `bin/coven` is native-only; installed `coven` is the direct
+Rust binary. No unsupported command delegates to Python. Source cleanup, full
+compatibility-policy approval and macOS closure are not claimed. The original
+full-migration-before-merge requirement remains; no merge, source push or external
+promotion is authorized. Building alone does not install, migrate workspace/state
+or activate authority.
+
+Migration development is being consolidated in the dedicated `rust-migration`
+worktree (`../coven-rust-migration` from the main checkout). Check `git worktree
+list` and current uncommitted work before starting another slice. The overlapping
+main-checkout init/refresh implementations were not transplanted: this worktree's
+config-last bootstrap, embedded assets and stronger generated-file safety remain
+canonical. Only useful parser, work-budget and regression-test additions were
+adapted; the main checkout's changes remain preserved separately.
 
 ## One command, one replacement
 
@@ -16,12 +38,120 @@ parity tests invoke its explicit Cargo/build path, never the installed command
 or an automatically selected implementation. There is no second native command
 or compatibility alias to maintain.
 
-Python remains temporarily as the current entrypoint and migration oracle while
-coverage is incomplete. This is a staged replacement, not a dual-implementation
-product: the final package will ship only Rust `coven`. Cutover must update the
-existing entrypoint/install assets and remove Python runtime packaging after the
-remaining parity gates pass; the Rust binary will not delegate unsupported work
-to Python. Renaming the build target does not authorize an early install/cutover.
+Python remains a checkout-only development oracle, not a second product or runtime
+fallback. The native source-package allowlist excludes `runner/`, bytecode, build
+outputs and interim trees while retaining production Rust and compile-time inputs,
+including development `*oracle*.py` files; those files are not installed. The full
+oracle regression suite requires the checkout, not a standalone Cargo source package.
+See [RUST_RETIREMENT.md](RUST_RETIREMENT.md) for separate source-cleanup and release gates.
+
+## API / Interfaces
+
+```sh
+cargo build --offline --locked --release --bin coven
+bin/coven --help
+COVEN_NATIVE_BIN=/abs/prebuilt/coven /abs/checkout/bin/coven --help
+```
+
+Absolute paths above are placeholders. Offline builds need the locked dependency
+cache. Help is titled `Manage multi-agent coven workspaces`.
+
+## Data Flow
+
+The `#!/bin/sh` checkout launcher `exec`s absolute `COVEN_NATIVE_BIN` when set,
+otherwise only its normal checkout's `target/release/coven`. Missing selection
+fails with explicit build instructions: no automatic Cargo, Python, debug or PATH
+fallback. It forwards argv/environment without overwriting `COVEN_COMMAND` or
+`COVEN_HOME`. The former overrides generated commands; the latter means the asset
+root `COVEN_HOME/examples`, not executable selection. Relocated/symlinked launchers
+require explicit absolute native selection; installed binaries need no wrapper.
+
+## Completed locally vs External checklist
+
+- **Local scoped evidence:** five independent entrypoint, two package and nine
+  install tests cover native runtime guards. Nested harnesses that caused Cargo to
+  omit production modules moved to `tools/harnesses/group_publisher` and
+  `tools/harnesses/group_live`; production modules remain under `src/`. An agent
+  verified the 300-file crate build and extracted release install with empty
+  PATH/cleared environment for help, blank/demo init and refresh.
+- **Local acceptance:** split validation totals **1,225 native passes**; strict
+  all-target Clippy and Rust **1.85.0** all-target check pass after the two MSRV
+  import/let-chain fixes, with no production-policy changes. The implementation is
+  ready for local review and manual native use within documented profiles. See
+  [final local acceptance](#final-local-acceptance), not the historical 1,191-native
+  run, for current results and qualifications.
+- **External:** macOS has not run; actual Homebrew clean install/upgrade is untested.
+  `packaging/coven.rb` is a native-only candidate, not a promoted external tap.
+  Its remote `main` URL cannot be promoted until a reviewed release. No source push
+  or merge is authorized. No changes have been committed, pushed or merged.
+- **Separate cleanup/policy:** all 941 original Python tests remain active. The
+  audit's 67 mapped / 874 unresolved IDs concern development-oracle removal, not
+  874 missing features or product native-execution coverage. Non-UTF-8 and finite
+  value/resource restrictions require explicit disposition, not silent approval.
+
+### Final local acceptance
+
+Final local evidence is **split validation**, not a single fresh all-command green
+invocation:
+
+- The initial full `cargo test --no-fail-fast` run passed **86 CLI tests and 118
+  integration tests across 39 suites**, but had a library-test flake. Saved output:
+  `/home/jdawson/.local/share/opencode/tool-output/tool_1b8cf6da8001vCV3PzWpPztZn5`.
+- After test-only corrections, the final complete library run passed **1,021 tests,
+  with 5 ignored and 0 failed**. Saved output:
+  `/home/jdawson/.local/share/opencode/tool-output/tool_1b960241a0014zirTOTvdLveg4`.
+  Combined native passes are **1,021 + 86 + 118 = 1,225**. Ignored subprocess helpers
+  are exercised by parents; nested runs/helpers are not counted twice.
+- Lease tests were isolated so unrelated raw-fork descriptors could not retain an
+  OFD lease. A subsequent library retry exposed a Git fixture's `maintenance.lock`
+  disappearing during background maintenance; fixture Git commands now disable
+  `maintenance.auto` and `gc.auto`. These are test-only changes; all original
+  snapshot assertions remain. They do not alter production policy.
+- The final standalone Python suite passed **941 tests in 191.978s**. A prior run
+  concurrent with heavy builds failed one pre-existing 0.2-second descendant test;
+  the final pass was obtained after load subsided, without loosening its timeout,
+  changing assertions or skipping tests. **22 development-tool tests passed in
+  156.071s**. The audit passes with **67 mapped / 874 unresolved**, unchanged.
+- Independent native entrypoint **5**, package **2** and installer **9** tests pass
+  (evidence layers within the native results, not additions to the aggregate).
+  Actual Cargo packaging verified **300 files**, excluding runner/bytecode/target
+  payloads while retaining all production modules. Root and extracted-source
+  release builds/install checks pass; `env -i PATH= /abs/bin/coven --help` shows
+  `Manage multi-agent coven workspaces`. Installed blank/demo init and refresh pass.
+- Strict all-target Clippy and Rust **1.85.0** all-target check pass after the
+  `crate::execution` import and nested-`if` replacement for let-chains. The moved
+  harness commands were verified: publisher **177** and live **25** tests pass;
+  these separate harness results are not added to the 1,225 native total.
+
+All legacy source remains unchanged. The eleven reviewed invocation-only test
+retargets preserve all 941 original tests and accepted AST/hash-transition
+provenance. This evidence supports local review/manual native use within profiles,
+not unconditional compatibility, macOS parity, source deletion or external release.
+
+## Edge Cases
+
+The launcher rejects empty/relative overrides, missing/non-executable files and
+same-inode recursion. Native product execution and a native payload do not imply
+full source deletion, standalone-package oracle test closure or platform acceptance.
+Detailed filesystem, encoding, output and resource risks remain documented below.
+
+## Example usage
+
+For a new, absent prefix with an existing trusted parent:
+
+```sh
+sh scripts/install-native.sh --binary /abs/prebuilt/coven --prefix /abs/existing-parent/new-prefix --examples /abs/checkout/examples
+/abs/existing-parent/new-prefix/bin/coven --help
+```
+
+The installer refuses upgrades/adoption and preserves partial failures without
+rollback. See [packaging/README.md](packaging/README.md).
+
+## Related files
+
+`bin/coven`, `src/main.rs`, `src/example_assets.rs`, `Cargo.toml`,
+`scripts/install-native.sh`, `tests/native_{entrypoint,package,install}.rs` and
+[RUST_RETIREMENT.md](RUST_RETIREMENT.md).
 
 ## Native commands available
 
@@ -48,6 +178,14 @@ cargo run --offline --locked --bin coven -- events WORKSPACE --raw
 cargo run --offline --locked --bin coven -- status WORKSPACE
 cargo run --offline --locked --bin coven -- execution history WORKSPACE --json
 cargo run --offline --locked --bin coven -- execution inspect WORKSPACE
+cargo run --offline --locked --bin coven -- execution enable WORKSPACE --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- execution enroll WORKSPACE TASK_ID --expect-tasks-revision TOKEN --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- execution upgrade WORKSPACE --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- task attempt prepare WORKSPACE TASK_ID --intent FILE --expect-tasks-revision TOKEN --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- task attempt prepare WORKSPACE TASK_ID --graph-revision REV --expect-tasks-revision TOKEN --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- task graph propose WORKSPACE --document FILE --expect-tasks-revision TOKEN --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- task graph decide WORKSPACE REV --decision approve --reason TEXT --expect-graph-digest DIGEST --expect-tasks-revision TOKEN --expect-execution-revision TOKEN --request-id KEY --json
+cargo run --offline --locked --bin coven -- task graph decide WORKSPACE REV --decision changes-requested --reason TEXT --expect-graph-digest DIGEST --expect-execution-revision TOKEN --request-id KEY --json
 cargo run --offline --locked --bin coven -- task attempt list WORKSPACE --task TASK_ID --json
 cargo run --offline --locked --bin coven -- task attempt inspect WORKSPACE ATTEMPT_ID --json
 cargo run --offline --locked --bin coven -- task attempt cancel WORKSPACE ATTEMPT_ID --reason TEXT --expect-execution-revision TOKEN --request-id KEY --json
@@ -56,16 +194,37 @@ cargo run --offline --locked --bin coven -- execution recover WORKSPACE --archiv
 cargo run --offline --locked --bin coven -- task graph inspect WORKSPACE --json
 cargo run --offline --locked --bin coven -- task graph export WORKSPACE GRAPH_REVISION --json
 cargo run --offline --locked --bin coven -- action inspect WORKSPACE ACTION_ID --json
+cargo run --offline --locked --bin coven -- action enable-runtime-launch WORKSPACE --json
+cargo run --offline --locked --bin coven -- action prepare-runtime-launch WORKSPACE --json
+cargo run --offline --locked --bin coven -- action submit WORKSPACE ACTION_ID --expect-manifest MANIFEST --expect-checkpoint APPROVED_SNAPSHOT --expect-decision DECISION_ID --json
+cargo run --offline --locked --bin coven -- action acknowledge-unknown WORKSPACE ACTION_ID --expect-claim CLAIM_ID --json
+cargo run --offline --locked --bin coven -- action stop WORKSPACE ACTION_ID --json
+cargo run --offline --locked --bin coven -- approve WORKSPACE CHECKPOINT --expect-revision SNAPSHOT --json
+cargo run --offline --locked --bin coven -- suggest WORKSPACE CHECKPOINT "Requested changes" --expect-revision SNAPSHOT --json
+cargo run --offline --locked --bin coven -- review WORKSPACE CHECKPOINT
+cargo run --offline --locked --bin coven -- send WORKSPACE AGENT "Literal message"
+cargo run --offline --locked --bin coven -- agent send WORKSPACE AGENT "Literal message"
+cargo run --offline --locked --bin coven -- down WORKSPACE
+cargo run --offline --locked --bin coven -- stop WORKSPACE
 cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID
 cargo run --offline --locked --bin coven -- checkpoint inspect WORKSPACE CHECKPOINT_ID --json
 cargo run --offline --locked --bin coven -- next WORKSPACE
+cargo run --offline --locked --bin coven -- repository inspect WORKSPACE --verify --json
+cargo run --offline --locked --bin coven -- repository register WORKSPACE --path CHECKOUT --base FULL_COMMIT --delivery-target refs/heads/review --expect-repository-revision repository-unregistered:v1 --json
+cargo run --offline --locked --bin coven -- worker readiness WORKSPACE --adapter djinn --profile research-readonly --executable TRUSTED_EXECUTABLE --timeout 3 --max-output-bytes 131072 --json
+cargo run --offline --locked --bin coven -- observe djinn --executable ABS_TRUSTED_EXECUTABLE --folder ABS_FOLDER --timeout 3 --max-output-bytes 131072 --json
 ```
 
 The compiled `target/debug/coven` can also be invoked directly, including with
-Python absent from PATH. Its production code has no Python, subprocess, runtime
-or network dependency. Python is needed only for migration-oracle tests and the
-existing default CLI. Unsupported commands, including lead/plan workflows, reject
-at argument parsing before effects; there is **no automatic Python fallback**.
+Python absent from PATH. Production has no Python helper or fallback. It now uses
+trusted bounded local subprocesses for Git, help/version and fixed persisted-session
+observation, plus actual reviewed cold-launch and legacy runtime transport effects.
+Cold startup can start unrestricted tools; it is not task dispatch, sandboxing or
+worker acceptance. Observation/readiness and execution preparation remain non-dispatching.
+Python is needed only for development fixtures, oracle tests and audit tools,
+not native product execution. Groups, all Session routes and Kitsune/Djinn-live observers
+are native. Unknown commands/flags reject at parsing before effects; there is
+**no automatic Python fallback**.
 
 Handoff commands preserve [HANDOFF_CONTRACT.md](HANDOFF_CONTRACT.md): syntax-valid
 handoffs remain worker claims, collected history remains unverified, authorization
@@ -79,6 +238,15 @@ dashboard, repair, migration marker or runtime state.
 ```text
 src/
   main.rs            Thin explicit CLI; escaped reports and exact literal workspace output
+  process.rs         Private ProbeRequest/ProbeRunner/ProbeResult observation transport
+  process/identity.rs Shared executable selection, metadata/alias checks and SHA256 pinning
+  platform/unix/process.rs Same-binary private bootstrap, watchdog, drain and group cleanup
+  repositories.rs    Inspect/register CLI adapters and ASCII JSON delivery
+  repositories/{record,registration,git,timestamp}.rs Immutable raw authority, retry, Git and chronology
+  workers.rs         Help-only readiness CLI and unverified capability report
+  workers/help.rs    Strict advertised help/version parsing and declaration limits
+  djinn_observation.rs Fixed persisted session.observe adapter and ASCII report
+  djinn_observation/schema.rs Closed bounded producer contract validation
   cli_operands.rs     Narrow checkpoint/next and execution-reader/maintenance operand lexing
   workspace_commands.rs Local goal/message writers and dashboard-publishing status
   workspace_commands/history.rs Read-only pretty/raw event and message history
@@ -95,7 +263,14 @@ src/
   records.rs         Extension-preserving validated workspace/task views
   tasks.rs           Preflight, captured task/state reports and authority fences
   state_commands.rs  State inspection/import/recovery CLI admission and known-outcome delivery
-  init.rs            Complete staged blank/embedded-example init CLI service
+  init.rs            Complete staged blank/embedded/custom-example init CLI service
+  example_assets.rs  Relocatable read-only AssetBundle, explicit roots and bounded custom files
+  session_inspection.rs Bracketed generic inventory and historical declaration joins
+  session_views.rs   Pure selection after full bounded observation
+  session_watch.rs   Foreground streaming samples and summary, no buffered replay
+  interactive_sessions.rs Pure start/resume plans and explicit pinned generic submission
+  session_prompts.rs Native-only capabilities/prompt, correlated receipts and no retry
+  session_support.rs Shared empty-workspace normalization, transport admission and output
   storage/bootstrap.rs Private exclusive state reservation and config-last publication
   platform/unix/init.rs Filesystem-order missing-root resolution and bootstrap identity
   refresh.rs         Prepare-all, guarded existing-workspace asset regeneration
@@ -117,6 +292,12 @@ src/
   execution/graphs.rs Pure bounded graph validation, refreezing and source matching
   execution/guards.rs Confirmed reservation checks under a borrowed writer guard
   execution/mutation.rs Source-free cancellation, receipt-before-CAS and exact-byte successor admission
+  execution/mutation/commands.rs Six authoring CLI adapters; strict document-value bindings
+  execution/mutation/lifecycle.rs Private receipt-first coordinator, activation and delivery
+  execution/mutation/effects.rs Enable/enroll/standalone preparation successor effects
+  execution/mutation/graphs.rs Typed graph proposal/review/preparation effects and reducers
+  execution/mutation/upgrade.rs Exact raw v1 backup, mode/readback/sync before replacement
+  execution/mutation/capacity.rs Writer-only native cancellation/revocation escape headroom
   execution/mutation/delivery.rs Preadmitted confirmed/uncertain frozen-result delivery
   execution/confirmation.rs Full typed reread and control/execution/state/root synchronization
   execution/recovery.rs Explicit authority confirmation and whole pending-directory archival
@@ -126,6 +307,22 @@ src/
   execution/inspection/commands.rs Five native inspection/export wrappers and selector timing
   execution/inspection/projection.rs Pure binding/graph projections in proposal order
   actions.rs         Captured launch-control/bundle/checkpoint inspection
+  actions/mutation/  Immutable preparation, durable single-use submission, acknowledgement and frozen stop
+  actions/mutation/capacity.rs Writer-only claim/plan/control and pending-report headroom
+  launch{.rs,/executable.rs} Frozen plan execution/stop and ordered pre-image PATH fallback
+  runtime{.rs,/transport.rs} Legacy send/down and unlocked checkpoint text/Enter notices
+  runtime_command.rs Direct-child runtime transport; separate from observation probes
+  platform/unix/runtime_command.rs Descriptor hygiene, capture and direct-child cleanup
+  runtime_foreground.rs Separate inherited-stdio foreground request/runner, no capture deadline
+  platform/unix/runtime_foreground.rs TTY query and direct-child foreground wait
+  platform/unix/runtime_child.rs Shared child-only CLOEXEC hygiene, preserving exec-error handshake
+  runtime/lifecycle{.rs,/create.rs,/staging.rs} Legacy topology/reuse/restart and aggregate staging
+  runtime/bootstrap.rs Whole-batch prompt admission and immediate unchecked-nonzero attempts
+  runtime/presentation{.rs,/standup.rs} Approved-aware unverified status and bounded standup
+  lead{.rs,/prompt.rs} Extension-preserving atomic set, unlink/sync clear and unlocked notices
+  console{.rs,/services.rs} Borrowed-I/O loop and displayed-revision checkpoint composition
+  transport_gate.rs Shared legacy admission/exclusive activation before workspace exclusion
+  checkpoint_decisions/ Scope-preserving decisions, displayed-snapshot review and unlocked notices
   actions/authority.rs Pure all-claim validation, reference lookup and work budget
   actions/plans.rs   Pure deterministic tmux/Herdr frozen-plan validation
   checkpoints.rs     Pure byte-oriented checkpoint views and framed scope hashes
@@ -145,6 +342,13 @@ formatting policy. TOML parses the existing workspace runtime configuration.
 Tempfile creates exclusive private same-directory evidence temps. All are
 conventional cached crates, not an external agent,
 interpreter/daemon dependency or a new plugin framework.
+
+Git raw-object SHA-1 integrity is independently recomputed using cached **ring
+0.17.14**, with default features disabled. The minimal SHA-1 crate was not cached;
+no online Cargo resolution was used. Ring adds native C/crypto build dependencies,
+not runtime Python. SHA-256 object hashing and all existing SHA-256 digest domains
+are unchanged. Cargo.lock adds the required dependencies only, without unrelated
+upgrades. SHA-1 integrity is not authentication.
 
 Current filesystem support is POSIX Linux/macOS, matching existing Coven scope;
 only Linux was executed here. Non-Unix filesystem commands fail closed. The pure
@@ -191,7 +395,8 @@ families instead preserve literal Python text; see the terminal warning below.
 
 ## Snapshot task preview and shared-lock foundation
 
-`task list WORKSPACE --json` validates the known workspace managed paths, JSON
+`task list WORKSPACE` defaults to human output; `--json` selects the existing
+structured envelope. Both validate the known workspace managed paths, JSON
 team/agent/lead records, checkpoint paths/text and TOML runtime fields. It retains
 the complete task values, unknown nested extensions, exact IDs, arbitrary legacy
 status strings, missing versus null owner, and uninterpreted timestamp strings.
@@ -596,8 +801,10 @@ sources. The observed revision is not a latest/linearizable, authenticated or
 durability-confirmed view. Historical reservation observation is **not** a reusable
 mutation guard: writers still need receipt-before-mutable-state ordering, matching
 lock ownership and durable authority confirmation. Native cancellation and explicit
-recovery use the separate maintenance protocol below; execution enable/enroll/prepare,
-upgrade, graph approval and runtime admission remain unsupported. Native task writes
+recovery use the separate maintenance protocol below; enable/enroll/prepare,
+upgrade and graph review use the separate authoring coordinator. This execution
+authority still grants no runtime admission; the separate reviewed cold-launch
+action protocol below supplies its own durable claim boundary. Native task writes
 call the separate confirmed guards rather than treating history as permission.
 Task and handoff readers/collectors retain their existing independence from this
 execution history path. Unsupported or malformed schemas refuse rather than
@@ -641,7 +848,7 @@ Schema2 reports add graph_id, current_graph_revision, graphs and sorted
 graph_managed_tasks to the existing historical envelope. Graph review states and
 source_match inside frozen receipts are historical facts only: no fresh approval,
 preparation eligibility, current-source match, durable writer guard or execution
-admission is inferred. No graph mutation or upgrade command is enabled.
+admission is inferred. Graph mutation and upgrade require the separate writer protocol.
 
 Native profile: 8 MiB raw input, the shared finite value/output bounds, at most
 1024 total entries across legacy plus v2, and conservative prefix preflight
@@ -816,9 +1023,10 @@ Authorization remains `none`, dispatchable `false`. Current workspace config,
 or used as guards. In particular, a preparation does not block its own cancellation.
 No events, dashboard, task projection or current-source files are written.
 
-Enable, enroll, preparation in **both intent and graph modes**, upgrade, graph
-mutations and repository inspect/verify remain outside native scope; unsupported
-old routes still refuse at argument parsing. No dependencies, production Python,
+Enable, enroll, preparation in **both intent and graph modes**, upgrade and graph
+mutations are implemented by the separate authoring coordinator below. Repository
+commands use the separate bounded observation/registration workflow below. This
+maintenance milestone changed no dependencies, production Python,
 `bin/coven`, runtime/providers, fallback, installation or default-entrypoint cutover
 are changed. All other command contracts remain unchanged.
 
@@ -895,13 +1103,14 @@ must independently confirm execution authority under their own held guard.
 
 ### Edge Cases
 
-- **Native cancellation liveness is bounded, not reserved.** A valid predecessor
+- **Historical cancellation liveness remains bounded.** An older valid predecessor
   can have a cancellation successor refused by the **8 MiB exact stored-byte limit,
   1024 combined legacy/v2 history entries, 256 MiB prefix/replay-work profile, finite
   value profile or 32 MiB output limit**, despite Python's 512 KiB per-preparation
   reserve within its 16 MiB authority policy. There is no pruning, limit raising or
-  fallback. Native escape headroom must be separately planned before future native
-  preparation/history-growth writers. Work bounds apply per replay, not as one
+  fallback. New native authoring reserves escape headroom as described below;
+  historical reads/cancel/recover keep their accepted limits unchanged and do not
+  rehabilitate arbitrary older control. Work bounds apply per replay, not as one
   command-wide CPU/heap/latency guarantee.
 - After uncertainty, inspect before blindly choosing a new key. The original key
   with exact original arguments retrieves its authoritative historical result,
@@ -919,7 +1128,7 @@ must independently confirm execution authority under their own held guard.
 
 ### Example usage
 
-Use an **existing disposable workspace with Python-prepared authority**. Replace
+Use an **existing disposable workspace with prepared authority** (native or Python). Replace
 every placeholder with actual inspected IDs/revisions; do not auto-enable, enroll,
 prepare, upgrade or start a runtime as part of maintenance:
 
@@ -953,15 +1162,116 @@ and restore arguments. Module-local fault tests and
 `tests/execution_maintenance.rs` / `tests/_execution_maintenance_parity.py` cover
 CLI parity and mixed-writer behavior. No current-source loader is in this pipeline.
 
-## Runtime-launch action inspection and checkpoint decisions
+## Native execution authoring
 
-`action inspect [WORKSPACE] ACTION_ID --json` requires only an existing root; one
+### Overview
+
+All six remaining runtime-free execution writer routes are implemented. Fresh
+standalone and reviewed two-node graph workflows can start with native init/task
+add, without Python/SDK bootstrap. This is preparation authority, not an agent
+executor: authorization stays `none`, dispatchable `false`, dependencies do not
+gate preparation, and review revocation does not cancel existing attempts.
+Python source remains only as a development oracle; the launcher and installed
+product are native-only. Source deletion still requires separate cleanup approval.
+
+### API / Interfaces
+
+| Route | Required inputs / variants |
+| --- | --- |
+| `execution enable [WORKSPACE]` | Execution CAS and request key; initially `execution-disabled:v1` |
+| `execution enroll [WORKSPACE] TASK_ID` | Task/execution CAS and request key; optional `--rebind-source` |
+| `execution upgrade [WORKSPACE]` | V1 execution CAS and request key; no active preparations |
+| `task attempt prepare [WORKSPACE] TASK_ID` | Exactly one of `--intent FILE` / `--graph-revision REV`; task/execution CAS and request key |
+| `task graph propose [WORKSPACE] --document FILE` | Task/execution CAS and request key; v2 required |
+| `task graph decide [WORKSPACE] REV` | `--decision approve` / `changes-requested`, `--reason`, `--expect-graph-digest`, execution CAS and request key; task CAS required only for approve, forbidden for changes-requested |
+
+CAS flags are `--expect-execution-revision` and `--expect-tasks-revision`; the key
+flag is `--request-id`. Default output is pretty ASCII JSON, `--json` compact,
+each with one terminal LF. Frozen `result` and live `delivery` are distinct:
+confirmed new/replayed receipts exit 0, known-result uncertainty 2, ordinary service
+errors 1 (parser errors can also exit 2). Keep exact original arguments for retries.
+
+### Data Flow
+
+1. Intent/document adapters read and strictly validate the selected **file first**,
+   before invoking the mutator, even for receipt replay. Bind parsed values, not
+   pathname or formatting; missing/unreadable retry files still fail at this boundary.
+2. Initial enable preflight uses `source::observe` with a zero snapshot ID to perform
+   **full workspace validation before lock creation**. Under the persistent shared
+   guard, fresh capture repeats workspace preflight and independently selects ledger
+   authority or raw snapshot tasks/revision using actual generated IDs. Preflight
+   tasks are discarded rather than paired with a later revision.
+3. Fully replay under the guard. Retained receipt schema controls binding comparison,
+   including v1 retries after upgrade. Lookup precedes fresh CAS, source, graph and
+   backup work. A matching key returns its original result; conflicting values refuse.
+   Fresh requests derive effects through typed reducers, not report projections.
+4. Before activation directories, upgrade backup or control replacement, serialize
+   canonical control **plus LF**, enforce 8 MiB, parse `Profile::Authority`, fully
+   replay with measured Work, admit native escape headroom, and preadmit both pretty/
+   compact and confirmed/uncertain output variants.
+5. Activation exclusively creates the execution directory with normal `0777`/umask
+   semantics, syncing state/root; no pending-directory adoption. Control uses
+   mode-verified atomic replacement (existing `07777` bits; verified default `0600`).
+   Upgrade first preserves exact raw v1 bytes/mode and source SHA, exclusively writes
+   a fresh backup, verifies readback/mode and syncs backup through the root chain.
+   It needs no current source. Failed backups remain inert; no orphan adoption.
+6. Known replacement uncertainty immediately retains the result with exit 2; a
+   confirmed replacement or known retry performs full authority reread and the
+   control/execution/state/root sync chain. **Any post-known confirmation failure**
+   preserves the result with exit 2. Upgrade retry lookup needs no backup access.
+
+### Edge Cases
+
+- Writer-only admission reserves one escape for every active attempt plus the
+  currently approved graph head: 512 KiB per closed cancellation/revocation entry
+  with worst-case reason escaping, plus history entries, parser nodes, prefix
+  capacity and actual replay Work within 256 MiB. Both current output forms are
+  independently bounded. See private `capacity.rs` for the proof, not a new public
+  resource guarantee.
+- A real approval revocation **spends** its reserve; another fresh changes-requested
+  decision on an already-revoked head is history growth and must preserve all other
+  escapes (including A's cancellation). Historical control is not automatically
+  rehabilitated. Existing historical read/cancel/recover acceptance is unchanged.
+- Hard profiles remain explicit: 8 MiB stored control including LF, 1024 combined
+  legacy/v2 entries, 256 MiB replay Work, 1 MiB documents, 64 graph nodes/256 edges,
+  and 32 MiB output, plus finite JSON limits. Refusal is not permission to prune,
+  raise caps, rewrite old authority or fall back to Python.
+- Pending/corrupt authority fails closed. Incomplete activation/backup evidence is
+  retained for inspection. Static/cooperating local paths and Linux-only validation
+  remain the scope, not hostile-path or universal crash/power-loss guarantees.
+
+### Example usage
+
+See the README's [fresh standalone loop](README.md#fresh-native-standalone-loop)
+and [reviewed two-node loop](README.md#fresh-native-reviewed-two-node-loop). They
+explicitly label setup as pseudocode and require inspected tokens/IDs. Rebinding
+uses the enrollment route with `--rebind-source`, not implicit source adoption.
+
+### Related files
+
+`src/main.rs` routes `execution/mutation/commands.rs`; its `WriteOptions` and
+`PreparationInput` feed private `lifecycle.rs`, `effects.rs`, `graphs.rs`,
+`upgrade.rs` and `capacity.rs`. `execution/source.rs`, `execution/{v2,graphs}.rs`,
+`confirmation.rs` and `storage/replacement.rs` supply fresh source, typed replay,
+confirmation and publication. `tests/execution_lifecycle.rs` and its temporary
+`_execution_lifecycle_parity.py` parent oracle cover CLI workflows; module-local
+tests own activation/upgrade faults and coordinator capacity proofs. See also
+[EXECUTION_INTENT_CONTRACT.md](EXECUTION_INTENT_CONTRACT.md) and
+[TASK_GRAPH_CONTRACT.md](TASK_GRAPH_CONTRACT.md).
+
+## Runtime-launch action inspection and checkpoint views
+
+`action inspect [WORKSPACE] ACTION_ID [--json]` requires only an existing root; one
 operand means an action ID in the current directory, while two supply an explicit
 workspace (including quoted empty workspace and tilde expansion). No coven.json
 marker or current task/config/runtime preflight is required. The command validates
 the complete launch control before selecting a claim, then reads only that action's
 bundle and dedicated `runtime-launch-<id>` checkpoint. It neither scans other
 bundles nor follows frozen inventory paths, environment values or shell strings.
+Default output is pretty literal-Unicode JSON; optional `--json` retains compact
+ASCII output.
+Both have one terminal LF. `task list` now defaults to human output with optional
+`--json`; both default-output implementation gaps are closed, not retirement gates.
 
 Control validates all claims, including unselected ones: exact schemas and literal
 integers/booleans, UUID/reference tokens, head membership, unique claim IDs, status/
@@ -1181,10 +1491,10 @@ without ancestor search. `checkpoint_guidance::next_arguments(&Path)` returns
 
 - Root/path output is **literal**, including ANSI, bidi and other controls under
   the current literal-output policy, not a terminal sanitizer or shell-quoting API.
-  Suggested `coven approve` is inert text naming the existing Python command;
-  it is unsupported in the native preview. `approve`, `suggest` and interactive
-  `review` stay deferred intact: they include real transport notifiers, which must
-  not be silently dropped or replaced by invented local-only success.
+  Suggested `coven approve` is inert text. Native `approve`, `suggest` and interactive
+  `review` are supported by the product and explicit development build paths,
+  including real legacy transport notices. Guidance itself
+  neither invokes those writers nor grants their authority.
 - Existing UTF-8 path, finite-value and strict log caps remain: 8 MiB/log,
   65,536 physical LF lines, object records and terminal LF; checkpoint text 1 MiB,
   each checkpoint scan 4096 entries. Admit **all** output within 32 MiB before
@@ -1432,16 +1742,27 @@ Refresh never activates/repairs authority or executes the generated commands.
   arguments, never untrusted format/escape interpretation. The default generated
   `COVEN_COMMAND` is canonical `coven`; an explicit nonempty environment override
   is shell-quoted. There is no Python fallback or executable lookup during refresh.
-- Refresh supports blank context or the embedded `interactive-demo` context only;
-  custom example directories refuse with `unsupported_refresh_example_profile`.
+- Refresh supports blank, embedded `interactive-demo` and custom example context
+  through [AssetBundle root selection](examples/README.md). It validates the custom
+  manifest/context only, not unrelated seed files. Absent example metadata ignores
+  unused invalid roots; empty metadata still refuses.
   Each generated prompt/manifest is capped at **1 MiB**; non-dashboard outputs have
   a separate aggregate **32 MiB / 4096-output** budget. Dashboard output has its own
   **32 MiB** cap. Existing workspace/JSON/log/checkpoint limits still apply.
+- Each refresh preparation also caps aggregate checkpoint-reference work at
+  **256 MiB of validated raw UTF-8 bytes**, shared across messages then events.
+  Repeated references, including non-request records, are charged on every reread;
+  CRLF is not normalized for accounting. Exact-limit input is admitted and overage
+  returns `unsupported_refresh_checkpoint_work_profile`. The disposable and locked
+  preparations each start a fresh budget. A deterministic refusal creates no first
+  lock or generated outputs. Other checkpoint-history consumers retain their
+  existing profiles; this is not caching, replay or decision authority.
 
 These protocols assume a static/cooperating namespace and local filesystem, not
 hostile-swap immunity, a sandbox or universal power-loss durability. Validation is
-Linux-only; macOS execution has not been established. No dependency, installation,
-default-entrypoint or production Python change is part of this preview.
+Linux-only; macOS execution has not been established. The original state/refresh
+slice did not change installation; current native-only entrypoint/payload policy
+is documented in the overview.
 
 ### Example usage
 
@@ -1475,10 +1796,10 @@ See also [TASK_LEDGER_CONTRACT.md](TASK_LEDGER_CONTRACT.md) and
 ### Overview
 
 Native init is implemented end to end, not SDK-only: it creates the complete seeded
-`interactive-demo` or blank snapshot workspace without Python, runtime calls or
+`interactive-demo`, custom-example or blank snapshot workspace without Python, runtime calls or
 executing generated commands. It does not activate ledger/execution authority.
-Python remains the installed/default CLI; no dependency, install, PATH or default
-change accompanies this slice.
+The product CLI is native. The original init slice did not itself change installation;
+the current native-only launcher and payload policy are described above.
 
 ### API / Interfaces
 
@@ -1493,9 +1814,18 @@ Use the explicit native build path. WORKSPACE defaults to cwd; defaults are rost
 `interactive-demo`, and name from the resolved root basename (also for empty
 `--name`). Unambiguous long-option prefixes and repeated options are accepted;
 the last value wins. `--force` is a compatibility no-op, never reset permission.
-`--blank` overrides example selection, including invalid selections. Otherwise only
-aliases slug-normalizing to `interactive-demo` are supported; custom and empty
-selections return `unsupported_init_example_profile` before effects.
+Init uses the shared Python 3.14 negative-digit-prefix compatibility adapter, so
+values such as `-1team`, `-.5suffix` and Unicode decimal-digit prefixes retain
+their literal spelling. Unknown flags still refuse; attached values and `--`
+retain their normal meaning, and invalid multiplexer choices cannot be hidden by
+a later repeated valid choice.
+`--blank` overrides example selection, including invalid selections and unused
+invalid asset roots. Otherwise selectors slug-normalize to an example directory;
+empty/unknown selections refuse before effects. The demo remains embedded by
+default; explicit roots also override it. See [examples](examples/README.md) for
+absolute authoritative `COVEN_EXAMPLES_DIR`, compatibility `COVEN_HOME/examples`,
+installed prefix roots and Cargo-target-only development fallback, plus defaults,
+newline/coercion rules and bounded no-follow leaf checks.
 
 `init::arguments(&Path, &init::Options)` returns the shared `TaskOutput` delivery
 shape. Bootstrap reservation is private; ordinary `WorkspaceGuard` still requires
@@ -1513,9 +1843,10 @@ a regular workspace marker. No reader/guard marker-admission rule is weakened.
    CLI syntax errors still precede service preflight.
 3. Prepare and validate the entire tree, generated TOML, state, initial events,
    dashboard and safely escaped informational output before any creation. All seven
-   original `examples/interactive-demo/` assets are embedded, with no dynamic search
-   or Python fallback; refresh uses the same original prompt context, not a copied
-   context asset. Missing custom-roster owners become unassigned/pending.
+   original `examples/interactive-demo/` assets remain embedded; custom assets are
+   loaded read-only through the selected root, with no Python fallback. Refresh
+   uses embedded context for the implicit demo, selected context otherwise.
+   Missing custom-roster owners become unassigned/pending.
 4. Create missing root directories; exclusively reserve `state/`, create and hold
    its persistent private flock inode, recheck reserved names and identity, then
    exclusively create managed directories and final files. Sync files, managed
@@ -1719,6 +2050,389 @@ preflight; `src/logs.rs`, `src/task_delivery.rs`, `src/storage/replacement.rs` a
 unchanged shared printability table. Existing task/state/refresh outcome policies
 remain separate from this family's delivery policy.
 
+## Native reviewed runtime lifecycle
+
+### Overview
+
+Twelve new represented routes complete the native reviewed cold-launch batch:
+five action writers, three checkpoint decisions and four legacy transport paths
+(including the `stop` alias). Checkpoint and action workflow gates are accepted
+on Linux within the native profile. At that milestone legacy workspace/runtime/agent
+covered **4/16** previously missing routes; the subsequent completion below closes
+the other twelve. This is actual effectful cold
+startup, not a no-effects framework, task dispatch or worker-readiness acceptance.
+No dependencies were added in this batch; production Python and `bin/coven` are
+unchanged. Nothing here authorizes staging, commits, installation or cutover.
+
+### API / Interfaces
+
+```text
+action enable-runtime-launch [WORKSPACE] [--json]
+action prepare-runtime-launch [WORKSPACE] [--json]
+action submit [WORKSPACE] ACTION_ID --expect-manifest TOKEN
+  --expect-checkpoint APPROVED_SNAPSHOT --expect-decision DECISION_ID [--json]
+action acknowledge-unknown [WORKSPACE] ACTION_ID --expect-claim CLAIM_ID [--json]
+action stop [WORKSPACE] ACTION_ID [--json]
+approve [WORKSPACE] [CHECKPOINT] [--agent AGENT] [--message TEXT]
+  [--expect-revision SNAPSHOT] [--json]
+suggest [WORKSPACE] CHECKPOINT TEXT... [--agent AGENT]
+  [--expect-revision SNAPSHOT] [--json]
+review [WORKSPACE] [CHECKPOINT] [--agent AGENT] [--message TEXT]
+send [WORKSPACE] AGENT TEXT...
+agent send [WORKSPACE] AGENT TEXT...
+down [WORKSPACE]
+stop [WORKSPACE]  # alias of down
+```
+
+Action selectors use arity, not workspace-marker inference. Legacy/checkpoint
+operand selection retains its narrow marker-based compatibility rules. Action
+writers return pretty JSON by default, compact with `--json`; action inspection
+now defaults to pretty literal-Unicode JSON (its compact `--json` remains ASCII).
+Approve/suggest have human/default or ASCII
+JSON reports; review is interactive and binds the displayed snapshot. Main appends
+one terminal LF. Checkpoint committed-with-warning remains exit 0; uncertain
+replacement exits 2 and skips notices/secondary work. Action claimed/unknown/
+durability-uncertain outcomes exit 2, failed/partial transport exits 1; completion
+describes CLI transport, not worker health or task success.
+
+### Data Flow
+
+1. **Activation/admission:** persistent shared legacy transport admission precedes
+   workspace exclusion. Exclusive activation drains admitted cooperating sends
+   before enabling reviewed mode; no lock upgrade or automatic reset. Legacy paths
+   recheck enabled mode after admission. Workspace exclusion is released before
+   native lookup/text/Enter/down or frozen-plan I/O; shared admission may remain held.
+2. **Prepare/review:** publish an immutable captured inventory/plan bundle before
+   its dedicated checkpoint. Decisions preserve exact checkpoint scope, CAS the raw
+   snapshot under lock, and perform secondary history/dashboard plus freshness-checked
+   notices after publication. Positive legacy notification uses actual text + Enter;
+   enabled mode does not silently bypass transport gates. Interactive review never
+   refreshes/retries a stale displayed revision automatically.
+3. **Submit:** check exact manifest, approved checkpoint snapshot/decision/scope,
+   captured current inputs and control binding before publishing one durable claim.
+   Only a fresh confirmed consumption creates the private execution permit. Release
+   the workspace lock, then execute only the frozen plan, including five-second
+   per-agent delays. Drift/revocation before claim refuses; after claim it cannot
+   change or cancel that attempt. Acknowledged/consumed retries never execute again.
+4. **Outcome/recovery:** retain observed completed/failed/partial or unknown outcomes.
+   Uncertain claim publication never executes; death after claim leaves it consumed.
+   Explicit acknowledgement accepts uncertainty without success inference or reset.
+   Stop uses recorded frozen scope/backend, not current mutable configuration, and
+   never grants replay or removes consumption. There is no automatic rollback.
+
+### Edge Cases
+
+- **Separate process ownership:** observation probes retain <=30-second configurable
+  budgets and same-binary supervised process-group cleanup. Runtime CLI commands
+  instead use **60 seconds and 1 MiB combined output**, own/reap only the direct
+  child and intentionally leave native daemon/server effects alive. Failure is not
+  proof of no effects. Inherited nonstandard child descriptors are closed/CLOEXEC,
+  including lock descriptors; low/high-FD sentinel tests cover this boundary.
+- **Environment and selection:** frozen launch/stop use the captured six-key
+  environment (`PATH`, `HOME`, `SHELL`, `LANG`, `LC_ALL`, `TERM`) and frozen cwd.
+  Legacy sends/down/notices preserve all caller environment and caller cwd, not
+  workspace cwd. Relative/empty PATH components resolve against the applicable cwd;
+  absent PATH uses `/bin:/usr/bin`. Symlink/`..` traversal remains in filesystem
+  order. Ordered candidates advance **only** on proven pre-image `ExecFailed`
+  (`Command::spawn` error), never timeout/output limit/generic `SpawnError`/executed
+  nonzero 127. Lookup and fallback attempts share one command deadline.
+- **Writer-only admission:** `actions/mutation/capacity.rs` admits at most 128 claims,
+  128 KiB canonical plan, 4 MiB bundle/projected control, with 128 KiB and 2048 nodes
+  reserved per pending report. Captured inputs are at most 2 MiB aggregate/768 KiB
+  per file; checkpoints retain 1 MiB. Known retries, historical inspection,
+  acknowledgement and stop are not retroactively tightened by fresh-writer limits.
+  These finite profiles still require explicit compatibility disposition at retirement.
+- **Limits of evidence:** trusted/cooperating paths/tools, default SIGCHLD/no competing
+  reaper and static descriptor limits are assumed. Synchronous spawn/FD-scan/filesystem
+  setup and uninterruptible kernel waits are not universally hard-bounded. Unit fault/
+  uncertainty/crash seams are not universal power-loss proof. No actual provider,
+  installed runtime or tmux session was used for acceptance; unrestricted startup
+  remains possible when an operator deliberately submits against real tools.
+
+### Example usage
+
+See the README's [reviewed startup pseudocode](README.md#optional-reviewed-runtime-startup).
+All IDs, manifest/snapshot/decision/claim tokens require manual inspection and
+substitution. Review does not automatically submit; checkpoint approval, execution
+preparation and observations cannot substitute for fresh durable action admission.
+
+### Related files
+
+`src/actions/mutation{.rs,/submission.rs,/inputs.rs,/capacity.rs}` owns capture and
+single-use claims; `src/launch{.rs,/executable.rs}` executes frozen plans.
+`src/runtime{.rs,/transport.rs}`, `src/runtime_command.rs`,
+`src/platform/unix/runtime_command.rs` and `src/transport_gate.rs` own effectful
+transport, FD hygiene and admission. `src/checkpoint_decisions/` and
+`src/checkpoints/formatter.rs` own decisions/review/notice semantics.
+`tests/runtime_launch_workflow.rs`, `tests/_runtime_launch_parity.py` and
+`tests/support/runtime_backend_fixture.rs` provide compiled inert-backend acceptance;
+module-local tests retain fault, race and oracle characterizations. See
+[RUNTIME_LAUNCH_CONTRACT.md](RUNTIME_LAUNCH_CONTRACT.md) for the existing contract.
+
+## Native repository, readiness and persisted Djinn observation
+
+### Overview
+
+Four complete CLI routes now represent repository inspect/register, worker readiness
+and persisted `observe djinn`. Verification is a mode of inspect, not a fifth route.
+They use the real production native supervisor, not an SDK-only transport or Python
+helper. Repository/readiness **Linux implementation workflow gates are accepted**
+after targeted acceptance and the full gate; profile and macOS gates remain open.
+Observe is only **1/3** complete. Djinn-live and Kitsune are
+not ported. None grants execution, job, policy or worker authority.
+
+### API / Interfaces
+
+```text
+repository inspect [WORKSPACE] [--verify] [--json]
+repository register [WORKSPACE] --path CHECKOUT --base FULL_COMMIT
+  --delivery-target refs/heads/NAME --expect-repository-revision TOKEN [--json]
+worker readiness [WORKSPACE] [--adapter djinn] [--profile research-readonly]
+  [--executable PATH] [--timeout SECONDS] [--max-output-bytes BYTES] [--json]
+observe djinn --executable ABS_PATH --folder ABS_FOLDER
+  [--timeout SECONDS] [--max-output-bytes BYTES] [--json]
+```
+
+Workspace defaults to cwd. Readiness supports only the shown adapter/profile,
+selects explicit executable or caller PATH `djinn`, and needs an existing directory,
+not a loaded workspace configuration. Its selector preserves filesystem resolution
+order through symlink/`..` components (the P1 selector correction). Persisted Djinn
+requires explicit absolute UTF-8 selectors; it has no PATH/default-folder discovery.
+Both configurable probes default to 3 seconds and 131072 combined output bytes;
+timeout must be finite, greater than zero and at most 30 seconds, output 1024..1048576.
+These routes accept repeated flags with the last value winning and unambiguous long
+flag abbreviations; validation still applies to the resulting selectors/bounds.
+
+Repository and persisted Djinn default to two-space pretty ASCII-escaped JSON;
+`--json` selects compact ASCII JSON. Repository's compact separators retain Python's
+spaces. Readiness defaults to human text, while `--json` emits Unicode JSON. Main
+adds exactly one terminal LF. Readiness exits 1 only for healthy advertised evidence
+missing required session/run routes (`blocked`); failed/changed/unverified evidence
+is `unknown`, exit 2. It never reports compatible. Persisted Djinn exits 0 observed,
+1 unavailable, 2 incompatible. Repository exits 0 readable/confirmed, 1 unavailable
+or prepublication error, 2 known-result durability uncertainty.
+
+Private `ProbeRequest`, `ProbeRunner`, `ProbeResult` and `ProbeStatus` separate domain
+allowlists from native transport. Shared `platform::FileMetadata` records device,
+inode, size and nanosecond mtime. Fingerprints stream SHA-256 with a shared **1 GiB
+per-hash cap**, checking path and descriptor metadata. Git is pinned too: alias and
+metadata before each probe, final complete hash and alias recheck. This detects
+ordinary changes, including content changes with restored mtime, not authentication,
+race-free execution or a hostile-program sandbox.
+
+### Data Flow
+
+- **Repository:** read a duplicate-free, closed-schema record at
+  `state/repository.json` (at most 65536 bytes). Revision is SHA-256 of
+  `coven.repository-registration:v1\0` plus the **exact original record bytes**,
+  not reserialized JSON. Default inspect is source-free: no Git, checkout, lock or
+  fsync. Explicit `--verify` observes the original selector, retaining frozen record
+  and revision on ordinary checkout/Git-pin failure, with unavailable observations.
+- **Registration:** compare immutable normalized original request **before Git**.
+  Exact retry uses the original expected token, never opens the checkout or runs
+  Git, and confirms known bytes under the shared persistent workspace lock.
+  Lock/confirmation failure preserves the known result with
+  `delivery.outcome: durability_uncertain`, exit 2; confirmed uses the literal label
+  `durably_committed`. Changed arguments conflict. Fresh registration requires
+  `repository-unregistered:v1`, observes once before locking and again under lock,
+  compares frozen facts, then publishes and confirms exact bytes. No source/task/
+  runtime gates, events, dashboard, ref writes or index writes are added.
+- **Git:** trusted caller-PATH Git >=2.48, clean environment and closed read-only
+  options disable optional locks, hooks, fsmonitor, maintenance, replacements, lazy
+  fetch and protocols. Each observation gets its own 20-second checked budget
+  (fresh registration has **two**, not one shared budget), each Git probe at most
+  3 seconds and 1 MiB combined output. Check split-index/config, promisor packs,
+  alternates and linked-worktree common-directory storage **before status**.
+  Existing linked worktrees are allowed subject to exclusions; worktree-specific
+  config, includes, filters and unsupported extensions/storage are not. Independently
+  hash raw base commit and root tree with Git framing for SHA-1/SHA-256 and validate
+  root-tree structure; this is **not full transitive object closure** or complete
+  checkout availability. HEAD/dirty observations are ephemeral, not frozen authority.
+- **Readiness:** root help gates advertised session/ask/agents help; session help
+  gates run/status/watch help; root **Options** gates `--version`. All eight surfaces
+  are allowlisted; no bare execution or status/watch invocation follows help. All
+  eleven semantic capabilities remain unknown. Missing routes are blocked only
+  when all relevant observation is healthy; probe/parse/identity failure dominates
+  as unknown. Native transcripts are withheld; reports retain bounded provenance.
+- **Persisted Djinn:** pin one trusted executable, invoke only
+  `session observe ABS_FOLDER --json` from `/` with filtered environment, rehash,
+  then validate bounded producer schema and exact folder. There is no help fallback,
+  live status, actual-instance validation, enrollment or readiness upgrade. Persisted
+  IDs/timestamps and digests do not establish live identity, freshness or job success.
+
+The transport self-execs the **same single `coven` binary** into private bootstrap
+**before Clap**. An anonymous bounded request and private liveness socket gate the
+bootstrap. It launches the target in its cooperating process group only after
+arming parent-EOF monitoring and an independent watchdog at probe budget + 1 second.
+Completion requires **both target leader status and stdout/stderr EOF**. Exact
+combined output capacity is accepted; one additional byte yields output-limit.
+Normal and nonzero completion also clean descendants that already closed pipes.
+The caller kills the **unreaped supervisor PGID before reaping**, never signals a
+reused PGID after reap, and rejects SIGCHLD-reaper/auto-reap contexts. Cleanup faults
+become `SpawnError`, not successful observations; adapters do not leak transcripts.
+
+### Edge Cases
+
+- Budgets are not a universal setup-inclusive hard wall clock. Synchronous entropy,
+  tempfile, FD enumeration, self-exec setup and filesystem/hash I/O are not
+  interruptibly hard-bounded. Executable hashing is outside subprocess deadlines
+  and Git's observation budget. Drain/scan/acceptance checks enforce their budgets
+  when control returns; cleanup has a separate at-most-one-second reap allowance.
+- Containment assumes static/cooperating paths and process groups. A trusted target
+  can ignore arguments, access files/network or escape with `setsid`; this is not
+  containment of malicious descendants. Filtered environment is not isolation.
+- Each readiness surface admits at most **65536 unique commands and 65536 unique
+  flags**. A 65537-declaration help payload can fit 1 MiB yet exceed the common
+  `Value` array profile: it is a **failed observation / unknown / exit 2 in both
+  renderers**, not silent JSON loss or human-only success. This explicit native
+  restriction still requires explicit compatibility disposition for release approval.
+- Git-pin ordinary-change failure makes live verification unavailable; source-free
+  inspect and exact known retries remain independent. Registration is immutable,
+  not a rebind API or a task/execution grant.
+- Timestamp consumption quirks follow the Python 3.14 oracle. Two strings reported
+  as trailing-garbage cases are actually accepted by that oracle; do not claim
+  blanket strict trailing-junk rejection or silently tighten retained authority.
+- Linux validation does not close the macOS gate. POSIX implementation is not
+  evidence that all supported-platform acceptance is complete.
+
+### Example usage
+
+The README's [native bounded local observation](README.md#native-bounded-local-observation)
+examples exercise actual commands with every mode/flag shown above. Paths and full
+commit selectors there are **inert reference values**, not runnable fixture IDs.
+For real-Git validation use a fresh disposable local checkout with Git >=2.48 and
+an independently inspected full lowercase commit ID; register only in a disposable
+Coven workspace. Repeat the **identical original request/token** for retry, not the
+returned revision. No provider, worker or actual Djinn instance is needed for the
+controlled Rust-producer acceptance batch.
+
+### Related files
+
+- `src/main.rs`, `src/lib.rs`: CLI routing and early private supervisor entry.
+- `src/process.rs`, `src/process/identity.rs`, `src/platform/{mod,unix}.rs`,
+  `src/platform/unix/process.rs`: transport, shared metadata/pinning and supervision.
+- `src/repositories{.rs,/record.rs,/registration.rs,/git.rs,/timestamp.rs}`:
+  immutable authority, known-result confirmation, bounded Git and retained chronology.
+- `src/workers{.rs,/help.rs}`, `src/djinn_observation{.rs,/schema.rs}`:
+  help-only and persisted-evidence projections.
+- `tests/process_integrations.rs`, `tests/_process_integrations_parity.py`,
+  `tests/process_supervision.rs`, `tests/workers_readiness_native.rs`: actual CLI,
+  temporary oracle, actual-binary supervisor bridge and development fixtures.
+- [Repository contract](REPOSITORY_REGISTRATION_CONTRACT.md),
+  [readiness contract](WORKER_READINESS_CONTRACT.md),
+  [persisted Djinn contract](DJINN_OBSERVATION_CONTRACT.md): underlying semantics;
+  native profile and validation qualifications above remain explicit.
+
+## Native legacy lifecycle completion
+
+### Overview
+
+The twelve remaining legacy routes are implemented and the **Linux native workflow
+gate is accepted within the documented profiles**, not all legacy compatibility or
+macOS. Prior send/agent send/down/stop and approved-action behavior remain protected.
+Coverage is now **61 represented / 17 absent of 78 Python paths** (aliases count),
+plus native-only `execution history`; this is not a parity percentage.
+No new dependencies or production Python edits accompany this batch. There is no
+staging, commit, push, installation or default-entrypoint cutover.
+
+### API / Interfaces
+
+```text
+standup [WORKSPACE]
+console [WORKSPACE]
+lead [WORKSPACE] [show|status|set AGENT|AGENT|clear|remove|unset] [--clear] [--message TEXT]
+bootstrap [WORKSPACE]
+agent status [WORKSPACE] [AGENT...]
+agent start|stop|restart [WORKSPACE] AGENT...
+plan [WORKSPACE]
+up [WORKSPACE] [--replace]
+start [WORKSPACE] [--replace]  # alias of up
+restart [WORKSPACE]
+```
+
+Selectors retain exact persisted IDs and narrow legacy operand selection. Lead
+`--clear` takes precedence; absent/empty `--message` uses the literal default
+prompt. Safe historical lead/state IDs need not be current roster members; explicit
+agent selections must all validate against today's roster before backend creation.
+
+### Data Flow
+
+1. Preflight the full workspace/operand/script or prompt batch before effects.
+   Shared transport admission precedes workspace exclusion, with fresh mode and
+   state rechecks. Native backend I/O occurs outside workspace exclusion. Lifecycle
+   preserves complete tmux/Herdr topology, reuse/replacement, restart and ordered
+   agent-batch effects; partial effects are not implicitly rolled back.
+2. Focus requires **both stdin and stdout TTY**. tmux attach/switch uses a distinct
+   inherited-stdio foreground runner with no capture/output budget or 60-second cap.
+   Shared admission remains held through attach, so activation waits (and may time
+   out); unrelated workspace I/O remains lock-free during the foreground wait.
+   Only the direct CLI is owned/reaped; servers/daemon effects remain alive.
+3. Bootstrap stages all existing/custom/missing starter text before creation or
+   sending, and revalidates the batch under exclusion. Ordinary nonzero text/paste/
+   Enter exits are intentionally ignored: counts/events describe **attempts**, not
+   delivery or worker acceptance. Setup, timeout and capture errors stop, without retry.
+4. Lead set preserves unknown extensions and atomically publishes exact preadmitted
+   storage bytes. Clear **unlinks and syncs the parent**, never writes JSON null.
+   Known primary sync uncertainty exits 1 and skips secondaries/notices; committed
+   secondary failures warn and continue with exit 0. Notice admission is independent
+   after releasing workspace exclusion; activation can suppress it without rollback.
+   Message history is written once, not again through public send.
+5. Standup/status returns approved-mode **unverified** without constructing a backend.
+   Console shares the native services and borrowed input/output with nested review;
+   it never relocks stdin. Confirmation defaults to No, decisions bind the displayed
+   revision with no refresh/retry, and maximum checkpoint status survives EOF/quit.
+
+### Edge Cases
+
+- **Delayed shell input is not fenced.** Generated backend-owned senders preserve
+  the real five-second legacy delay. Tests release shared creation admission, hold
+  exclusive admission, and still observe delayed input. Activation drains admitted
+  calls, not already-scheduled shell input; do not infer stronger quiescence.
+- Captured backend calls retain 60 seconds/1 MiB combined output, null stdin,
+  caller cwd/environment, pre-image-only PATH fallback and direct-child ownership.
+  Foreground execution is deliberately separate from capture and observation probes.
+  Shared child hygiene applies CLOEXEC to low/high nonstandard descriptors without
+  corrupting the exec-error handshake or changing the parent's flags.
+- New incremental staging profiles: **8 MiB aggregate scripts + agent IDs** for
+  launch drafts (including full-roster validation for a selected agent), and **8 MiB
+  aggregate starter texts + IDs + relative paths** for bootstrap, checked before
+  append. Each generated script is at most **1 MiB**. Standup retains at most
+  **32 MiB staged rows**, independently of its **32 MiB complete output** cap.
+- Lead exact storage bytes are parsed as `LegacySnapshot` and structurally checked
+  before publication, including the 8 MiB input and node/container/string/depth
+  profiles. Pretty expansion or metadata-added nodes cannot publish an unreadable
+  candidate. The actual timestamp/reloaded candidate is admitted again under lock.
+- Raw configured-command NUL is rejected **before normalization**, before a
+  destructive restart; final generated scripts are validated too. Existing reader
+  limits remain unchanged. These new writer/display caps require explicit final
+  retirement compatibility disposition; staging caps are not universal heap bounds.
+- Shared Python-compatible formatting has one implementation (visibility refactor),
+  not duplicated formatter code or duplicate test counts. Literal/control output
+  remains surface-specific; no sandbox, worker readiness or universal crash guarantee.
+
+### Example usage
+
+Use explicit `target/debug/coven` paths as in the README's
+[legacy examples](README.md#native-legacy-lifecycle). Plan appends an event; lead
+clear mutates metadata. `up`/`start`, restart and agent start/restart may launch
+unrestricted tools; bootstrap sends input. Do not validate them against actual user
+workspaces or installed runtimes merely to reproduce the acceptance batch.
+
+### Related files
+
+- `src/main.rs`, `src/cli_operands.rs`: CLI route/operand compatibility.
+- `src/runtime/lifecycle{.rs,/create.rs,/staging.rs}`, `src/runtime/bootstrap.rs`:
+  topology, admission and bounded whole-batch drafts.
+- `src/runtime{.rs,/transport.rs}`, `src/transport_gate.rs`: preserved legacy effects.
+- `src/runtime_foreground.rs`, `src/platform/unix/runtime_foreground.rs`,
+  `src/platform/unix/runtime_child.rs`: foreground wait/TTY and shared FD hygiene.
+- `src/runtime/presentation{.rs,/standup.rs}`, `src/lead{.rs,/prompt.rs}`,
+  `src/console{.rs,/services.rs}`, `src/checkpoint_decisions/review.rs`: presentation,
+  metadata, notices and borrowed-I/O review.
+- `src/workspace_assets.rs`: shared pure launch-script generation and NUL admission.
+- `tests/legacy_lifecycle_workflow.rs`, `tests/_legacy_lifecycle_parity.py`,
+  `tests/support/legacy_backend_fixture.rs`: compiled inert CLI acceptance.
+
 ## Validation
 
 Use the existing installed Rust toolchain; this slice was exercised with Rust/
@@ -1731,12 +2445,181 @@ just test-python   # All retained Python regressions
 just check         # rustfmt check, strict clippy, both test suites
 ```
 
-The full pinned `just check` passed rustfmt, all-target offline locked Clippy with
-`-D warnings`, **533 native tests** (459 library + 28 binary + 46 integration), and
+The historical full pinned `just check` passed rustfmt, all-target offline locked Clippy with
+`-D warnings`, **586 native tests** (507 library + 32 binary + 47 integration), and
 **941 Python tests**.
 
-Focused coverage includes **104 execution tests**, **10 storage-maintenance tests**
-and **28 binary tests**, all subsets of the full native total. Maintenance acceptance
+Current process-integration acceptance reports **144 native CLI cases** with a
+compiled Rust producer, no Python children, and real disposable Git. Targeted
+results report **24 repository, 11 readiness, 10 Djinn and 14 identity tests** plus
+the actual-application-binary supervisor bridge. These are separate coverage layers,
+not additive full-suite totals. Supervisor tests were added for closed stdio, FD
+churn, malformed private bootstrap, delayed descendants and reported cleanup faults,
+alongside exact/+1 combined caps, parent death/stoppage, leader/EOF ordering and
+normal/nonzero descendant cleanup. No actual Djinn instance/provider/job was called.
+
+The preceding process-integration full pinned gate passed **659 native tests
+(569 library + 37 binary + 53 top-level integration)** and **941 Python tests in
+195.379s**; this is historical evidence, not the current total.
+
+**Historical reviewed-runtime full pinned `just check`: PASS — 763 native passed (663 library + 46 binary
++ 54 top-level integration), plus 941 Python tests in 190.822s (`OK`).** Rustfmt and
+offline locked all-target Clippy with `-D warnings` also passed. This verifies the
+working tree based on HEAD `e389a08`, including the uncommitted execution-authoring
+and process-integration work plus reviewed runtime; it is not evidence of a
+committed release or cutover.
+The complete saved output was inspected through its final Python `OK`; no expensive
+tests were rerun for this documentation update.
+
+That historical aggregation uses the final result of each top-level Cargo suite: library **663
+passed / 2 ignored** out of 665 entries, binary 46, and 28 integration suites
+totaling 54 (zero doc-tests). The ignored `closed_stdio_entry` and
+`inherited_descriptors_entry` are subprocess-only fixtures exercised by parent
+tests, not two extra passes or omitted workflow coverage. Nested filtered
+libtest invocations are excluded, including the library rerun and isolated children
+inside `tests/process_supervision.rs`, and mode/privilege child runs elsewhere.
+CLI acceptance cases within a harness are not additional Cargo tests. This avoids
+double-counting the actual-binary supervisor bridge's child output.
+
+**Historical legacy-lifecycle full pinned `just check`: PASS — 863 native passed (752 library + 56
+binary + 55 top-level integration across 29 suites), and 941 Python tests in
+189.082s (`OK`).** Formatting and offline locked all-target Clippy with warnings
+denied passed. Saved output:
+`/home/jdawson/.local/share/opencode/tool-output/tool_1ac64b61f001wobNiDPT9BLMgQ`.
+The library's top-level result is **752 passed / 3 ignored** (755 entries). Its
+`closed_stdio_entry`, `inherited_descriptors_entry` and foreground `isolated_entry`
+helpers are exercised by parents, not extra passes. Sum only the final top-level
+results; exclude nested libtest children/reruns and internal CLI cases. Doc-tests
+contribute zero. The complete output ends with Python `OK`; this docs-only update
+does not rerun full tests or imply a release/default cutover.
+
+### Worktree reconciliation validation
+
+The selective main-checkout ports pass their focused gates: **215 init CLI cases**,
+**208 state/refresh CLI cases**, four new init parser tests, exact/over checkpoint
+work bounds and a Python-held/native-refresh descriptor/wait-state handshake that
+changes tasks before release and verifies a freshly rendered dashboard. A real
+`RLIMIT_FSIZE=128`/ignored-`SIGXFSZ` test preserves native partial
+`state/agents.json` plus reservation/lock, versus Python's config-first partial
+`coven.json`; both refuse reset attempts without changing evidence. Failure-artifact
+equality is deliberately not claimed.
+
+The initial reconciliation run passed focused checks but exposed two integration
+blockers. Both are now fixed without weakening the assertions:
+
+- Group reservation now clones the selected declaration's first endpoint directly
+  from ordered authority under the lock, after CAS and whole-target validation.
+  Native report conversion can reorder JSON keys; it must not choose persisted
+  counter bytes. Existing counter representations, arbitrary-precision endpoint
+  integers, declarations and revision semantics remain unchanged. The workflow
+  compares complete native/Python authority bytes for all six endpoint-key orders.
+- The actual-binary supervisor could lose captured stdout under closed-stdio/FD
+  churn: a pipe writer could occupy FD 1, where `dup2(1,1)` retains `CLOEXEC` and
+  exec closes stdout. Null stdin and both ends of each explicit output pipe are now
+  owned high-numbered CLOEXEC descriptors before `Command` maps stdio. Tests retain
+  every closed-stdio mask, exact output, churn, spawn failure and cleanup check,
+  with added deterministic low-slot pipe allocation/EOF/CLOEXEC assertions.
+
+**Historical pre-cutover complete Linux validation: PASS — 1,191 native tests (998 library +
+86 CLI + 107 top-level integration tests across 37 suites), all 941 Python
+regressions in 220.389s, and 18 development-tool tests in 27.407s.**
+The preceding Group/Observe milestone was 1,086 native / 941 Python in 207.460s;
+that result remains historical. Three subprocess-only library helpers remain ignored in
+the outer suite and exercised by parents. Nested libtest reruns, helper processes
+and internal CLI cases are excluded from the total; doc-tests contribute zero.
+The final Rust output ends with successful doc-tests:
+`/home/jdawson/.local/share/opencode/tool-output/tool_1b7a1d1a2001GMqI85WV31aS2C`.
+Its outer library result is 998 passed / 3 ignored (1001 entries), CLI is 86 passed,
+and the 37 top-level integration results sum to 107 passed. Nested library/helper
+reruns (including process supervision) and internal acceptance cases are not added.
+Formatting, offline locked all-target Clippy with warnings denied, and whitespace
+checks also pass. Commands were the existing format/lint/Python recipes plus
+`PYTHONDONTWRITEBYTECODE=1 CARGO_BUILD_JOBS=2 cargo test --offline --locked --no-fail-fast`.
+Rust/Cargo **1.99.1** was used. The pipe implementation remains compatible with
+the declared 1.85 API profile; that compiler itself was not independently run.
+
+Group/Observe acceptance now reports **79 cases across all ten routes** (eight
+Group plus Kitsune/Djinn-live), including all six endpoint-key permutations and
+the retained reservation race/uncertainty checks. This closes the bounded Linux
+implementation gates, not compatibility-profile disposition or retirement.
+The actual-binary process-supervision bridge passes in the same full run.
+
+The pipe fix uses atomic `pipe2(O_CLOEXEC)` on Linux; non-Linux POSIX uses
+`pipe` followed by CLOEXEC setup before high-FD duplication. That fallback retains
+a concurrent fork/exec inheritance window during initial flag setup; macOS was
+not exercised. Extra transient descriptor pressure fails closed on allocation
+errors. Production process ownership, watchdog, output bounds and cleanup policy
+are unchanged. Independent scoped review found no material issues; descriptor-
+exhaustion fault injection and explicit mixed-order two-member endpoint tests remain
+optional strengthening, not claimed coverage.
+
+Three earlier fixture failures were corrected without production changes: stable
+manifest-root lookup for Kitsune Python oracles and owner-writable private Git
+copies. A signal test uses real thread-directed `raise(SIGINT)` so the handler
+completes before fixture EOF, and prints child exit status on failure; production
+signal ownership is unchanged. These checks cover the preserved uncommitted
+migration tree, not a committed release, macOS validation or default cutover.
+
+Legacy lifecycle acceptance reports **53 cases, 314 native CLI calls, all 12
+routes, 1503 compiled-backend calls, 151 parent Python oracle replays and 16
+TTY-mask cases**. Native children have no Python in fake-backend PATH; no actual
+tmux/Herdr/provider/user sessions are used. Separate unit evidence includes an
+actual **61-second foreground inherited-stdio child**, all four PTY masks,
+low/high-FD CLOEXEC, shared admission held through attach, activation waiting and
+workspace I/O availability. Generated-shell proof is **one test / two backend
+cases**, actually executed via inert `/bin/sh` and compiled fake tools at special
+paths, with a real five-second sleep each. It checks Herdr command substitution
+strips final LF whereas tmux preserves file bytes. Delayed input still occurs
+after shared creation admission ends while exclusive admission is held: intentional
+legacy behavior, **not activation fencing**. These layers are not additive Cargo
+test totals. The retained reviewed **16-case / 176-call** batch and every full
+suite remain green. Reviews fixed lead unreadable-candidate admission, raw NUL
+restart and aggregate staging/output amplification; existing readers are unchanged.
+
+The 586/941, 659/941 and 763/941 totals above remain historical. Repository and worker readiness
+have accepted Linux implementation workflow gates, not full platform/profile or
+retirement acceptance. Standalone
+readiness fixture tests intentionally use a Python fake **target** as development
+coverage, not proof of Python absence. The separate compiled-Rust-producer CLI batch
+establishes interpreter-independent children. The parent Python oracle and retained
+runner-backed assertions still require retirement without losing coverage. All
+current evidence is Linux-only; macOS acceptance remains open.
+
+Reviewed runtime acceptance reports **16 compiled-fixture cases, 176 native CLI
+calls and all 12 new routes**. Every call carries low and high (>=2048) inherited-FD
+sentinels; both backends exercise real five-second delays. Children use compiled
+inert fixtures without Python, actual providers or tmux sessions. Parent Python
+oracles remain development-only. Coverage includes positive legacy checkpoint
+text/Enter, committed warnings, exact scope/CAS, durable consumption, no replay,
+current-input drift, uncertainty/crash seams and frozen stop. Unit uncertainty
+seams are not a universal power-loss guarantee. Independent review reports no
+remaining findings after the lock-scope, unresolved-name, FD, failed-interpreter
+fallback and legacy caller-cwd corrections.
+
+`tests/_action_parity.py` and the checkpoint-workspace refusal corpus now use
+invalid flags for newly supported writers; all no-effect guards are preserved,
+not dropped as inconvenient coverage. Full-gate harness success is one top-level
+test, not another 16 or 176 tests added to the native total.
+
+Execution authoring has **141 green acceptance cases**, including **128 CLI cases**
+and **six uncontrolled shared-lock races**, with empty child PATH (Python parent
+oracle only, not fallback). These cover fresh standalone and reviewed two-node
+flows, not maximum-size lifecycle coverage or both lock orderings. Targeted native
+activation/upgrade process-death and uncertainty tests and real-coordinator near-limit
+revocation proofs pass. Historical inspection/cancel/recover/export remain
+protected; these layers are not additive native-test counts.
+
+Critical architecture, publication and capacity reviews found no material code
+defects. Activation faults cover mkdir and both directory-sync boundaries. A real
+test-process death after complete backup publication leaves v1 authoritative and
+the evidence intact; retry uses a new backup UUID. The capacity coordinator test
+permits a real approved-head revocation but rejects repeated growth that would
+consume active preparations' escape room. These are targeted failure/interleaving
+proofs under the existing filesystem assumptions, not universal crash survival or
+both winner orders for every race.
+
+Previously delivered maintenance coverage includes **104 execution tests** and
+**10 storage-maintenance tests**, retained within the expanded native total. Maintenance acceptance
 passes **229 cases**, including **210 CLI cases**, **12 mixed-writer races**, and a
 process-death lock-release check. These describe different test layers, not additive
 native-test counts. Coverage includes v1/v2,
@@ -1791,7 +2674,7 @@ Independent architecture, persistence and history reviews found no remaining
 actionable issues after corrections; these are bounded local tests, not universal
 crash-durability or hostile-namespace guarantees.
 
-Native init adds **200 green real CLI cases**, including complete tree/byte/mode
+Native init has **215 green real CLI cases**, including complete tree/byte/mode
 comparisons, every flag, 104 reserved-name/type/force combinations, path and
 environment selection, offline execution without Python/tools, native-created
 workspace interoperability, and native/mixed-language contention. The Python-only
@@ -2020,52 +2903,162 @@ Private fault tests cover authority/backup/replacement uncertainty and late rend
 without erasing known primary outcomes. These are local validation results, not
 hostile-swap or cross-platform guarantees.
 
-The historical full gate passed **941 Python tests**. They are not all black-box CLI
-tests; a passing Python suite alone is not proof of Rust coverage. Remaining writer
-families need equivalent differential/fault/coordination gates, not just these passes.
+The historical legacy-lifecycle full gate passed **941 Python tests in 189.082s**;
+the historical reconciliation gate passed all 941 in 220.389s. They are not all black-box CLI
+tests; a passing Python suite alone is not proof of Rust coverage. Exact original
+assertion/fault/coordination obligations still need review, not just these passes.
+
+## Native Session completion
+
+### Overview
+
+All seven routes are native: `session list`, `inspect`, `watch`, `start`, `resume`,
+`prompt-capabilities` and `prompt`. Views are flags on readers/watch, not another
+route. Independent fixtures pass without a Python child or live user runtime;
+the Session implementation gate is **implemented on Linux within profile**.
+This does not close original-obligation review or certify retirement. The
+authoritative inventory retains 941 original method IDs: 67 mapped, 874 unresolved.
+These are source-oracle cleanup obligations, not product feature counts.
+
+### API / Interfaces
+
+`session_inspection::Request` carries workspace/socket, optional pane/terminal,
+runtime, timeout, byte budget and selection flags. Readers default to runtime
+`djinn`, timeout 3 seconds and 1 MiB response budget; accepted budget is 1 KiB–8 MiB.
+Watch defaults to 60 seconds / 2-second interval (duration 0.1–3600 seconds,
+interval 0.1–60 seconds). Inspect requires a pane; a terminal pin requires a pane.
+`interactive_sessions::Request` adds operation/executable/execute and resume selector;
+`session_prompts::Request` instead carries the native socket, runtime/session/request
+pins and prompt file. Timeout is positive, finite and at most 30 seconds.
+Native Session, action inspect and handoff parsing accepts unambiguous long-option
+prefixes and repeated flags/values (last value wins); unknown flags still refuse.
+
+### Data Flow
+
+Readers take complete bounded generic pane/process observations before pure view
+selection, preserving original counts/declaration qualifiers. They do not open live
+attachments, mutate groups, create a session registry or infer native activity.
+Watch streams and flushes samples and one scoped summary through its writer; its returned
+`TaskOutput.stdout` is empty. No stale positive fallback, output retry or daemon exists.
+Start/resume construct pure plans, then only with `--execute` acquire shared legacy
+transport admission and submit through discovered, terminal-pinned generic control.
+Prompt capabilities uses the explicit native socket; prompt preview performs lexical
+validation only. Execute reads the bounded prompt and uses native capability/runtime/
+session pins plus a correlated acceptance receipt, without terminal input fallback.
+
+### Edge Cases
+
+Previews never touch workspace/files/endpoints; pins are not grants or native
+permission inheritance. Empty workspace means cwd. The reviewed empty-workspace,
+symlink-parent/double-slash no-follow and sample/summary EINTR exit-130 regressions
+are covered. Ordinary stream failure stops without summary retry; returned buffered
+stdout remains empty. Endpoint privacy and response/prompt bounds still apply.
+Queued input is not startup/resume/readiness; accepted prompt is not model execution,
+worker-policy admission or completion. Uncertainty never authorizes automatic retry.
+Parent aliases are trusted, metadata checks are not authentication, filesystem calls
+are not interruptible hard deadlines and read requests may cause server housekeeping.
+
+### Example usage
+
+See [all seven placeholder command examples](README.md#native-session-workflows).
+These are reference syntax, not instructions to contact live user endpoints;
+capabilities/read/watch do I/O, while start/resume/prompt without execute are pure.
+See [staged installer usage](README.md#native-only-staged-installation-not-cutover)
+for actual `--binary`, `--prefix`, optional `--examples` flags. The installer requires
+a prebuilt executable and absent prefix with existing parent; it never builds,
+selects the default wrapper, copies/deletes the runner or performs an upgrade.
+
+### Related files
+
+- `src/main.rs`, `src/cli_operands/tests/session.rs`: seven-route routing and nine new parser units.
+- `src/{session_inspection,session_views,session_watch,session_support}.rs`,
+  `src/{observation_socket,observation_time}.rs`: readers, selection, streaming,
+  admission, cancellation and output bounds.
+- `src/interactive_sessions.rs`, `src/session_prompts{.rs,/endpoint.rs,/protocol.rs}`:
+  pure plans, pinned submission and native prompt correlation.
+- `tests/session_readers_workflow.rs` (**11 tests**), `tests/session_prompts_workflow.rs`
+  (**15 tests**), `tests/interactive_sessions_workflow.rs` (**one multi-scenario test**)
+  and `tests/support/`: interpreter-independent workflow fixtures, not additional totals.
+- `tests/session_views_vectors.rs`: five native tests over 127 captured calls,
+  46 deduplicated documents, 107 value cases and 20 typed-boundary cases.
+- `scripts/install-native.sh`, `packaging/coven.rb`, `tests/native_install.rs`:
+  native-only staged installation/candidate formula, not external release promotion.
+
+The original-obligation ledger records **941 IDs: 67 mapped / 874 unresolved**;
+categories **A 53 / B 15 / C 0 / D 873** describe mechanisms, not missing behaviors.
+Recorded audit `--check --summary` passes, while `--require-complete` deliberately
+exits 1 for source-oracle cleanup. Eleven reviewed legacy-entrypoint transitions
+retain original/current hashes and all 941 IDs; only invocation prefixes and former
+wrapper environment exports changed, not assertions, cwd, timeout or remaining argv.
+Independent AST review accepted those transitions, not source deletion. See
+[retirement obligations](RUST_RETIREMENT.md#original-obligation-ledger-not-a-missing-behavior-count).
+
+Native production execution has cut over without deleting all 25 Python source
+oracles or tracked bytecode. Neither is installed or included in the Cargo package.
+The external formula was located/read only;
+`packaging/coven.rb` is unpromoted and actual install/upgrade untested. macOS was not
+run because the installed SDK was unavailable; a new CI job being added has not
+been triggered. Finite-profile/non-UTF-8 restrictions require explicit compatibility
+approval or implementation, not presumed approval from the demand for full migration.
+Full migration must precede merge; neither staging assets nor moving a runner counts.
 
 ## Migration coverage and next gates
 
 | Surface | Current implementation | Next gate |
 | --- | --- | --- |
-| Handoff schema, validate, historical inspect/list | Native Rust preview; Python still default | Close documented path gap before default parity |
-| Handoff collection/publication | Native bounded unverified capture; Python still default | Close profile limits/cross-platform validation before default parity |
-| Finite values, ordered extensions, records, snapshot task JSON listing | Native bounded preview; Python still default | Close stated acceptance limits before full legacy parity |
+| Handoff schema, validate, historical inspect/list | Native product CLI | Explicit encoding/profile disposition and platform validation |
+| Handoff collection/publication | Native bounded unverified capture | Close profile limits/cross-platform validation |
+| Finite values, ordered extensions, records, snapshot task human/JSON listing | Native bounded product CLI | Close stated acceptance limits before full legacy parity |
 | Persistent workspace flock, evidence/ledger immutable publication and mutable replacement | Native guarded primitives used by task/baseline pipelines | Integrate remaining writer families without changing their policies |
-| Existing-workspace refresh CLI | Native bounded generated-asset refresh; no runtime effects | Close custom-example/profile and cross-platform gaps |
-| Workspace init CLI | Complete native blank/embedded interactive-demo CLI; staged config-last exclusive bootstrap | Close custom-example/profile/cross-platform gaps; retain operation-scoped ancestry durability qualification |
+| Existing-workspace refresh CLI | Native bounded generated-asset refresh with custom context; no runtime effects | Close profile and cross-platform gaps |
+| Workspace init CLI | Complete native blank/embedded/custom-example CLI; staged config-last exclusive bootstrap | Close profile/cross-platform gaps; retain operation-scoped ancestry durability qualification |
 | Local goal/message/history/status | Native bounded goal/message writers, pretty/raw history and dashboard-publishing status | Close supported-profile/cross-platform gaps; preserve literal output, separate lock epochs and family-specific exit-1 failure policy |
 | Task-ledger read/replay, frozen receipt lookup, selected confirmation and projection diagnostics | Native bounded readers/primitives used by task/state commands | Close supported-profile and cross-platform limits |
 | Task-ledger baseline import, explicit resume and pending archival | Native bounded SDK and state CLI with pinned activation/known outcomes | Close remaining profile/cross-platform gates |
-| Task add/assign, commit projection, events and dashboard | Native snapshot/active-ledger commands with CAS/replay/delivery | Close documented profiles and list/runtime gap before default parity |
+| Task add/assign, commit projection, events and dashboard | Native snapshot/active-ledger commands with CAS/replay/delivery; task list defaults to human | Close documented profiles and original-obligation review before default parity |
 | Manual projection repair | Native raw-preserving SDK and explicit state CLI | Close stated raw-size/profile and cross-platform limits |
 | Execution v1/v2 historical replay, graph reviews and confirmed reservation checks | Native bounded SDK/read-only preview; cancellation/recovery integrated separately | Close profile/cross-platform limits; preserve independent writer confirmation |
-| Preparation cancellation and execution recover (confirm/archive) | Native complete bounded commands across v1/v2/legacy retry; source-free shared flock and known-result delivery | Close native-profile/cross-platform gaps; separately plan escape headroom before history-growth writers |
-| Execution enable/enroll, full preparation (intent + graph), upgrade and graph mutations | Python only; unsupported native routes parser-refuse | Scope review, guarded publication, approval/reserve/receipt ordering and mixed-writer faults, not dispatch |
+| Preparation cancellation and execution recover (confirm/archive) | Native complete bounded commands across v1/v2/legacy retry; source-free shared flock and known-result delivery | Preserve historical limits; arbitrary older control has no native escape guarantee |
+| Execution enable/enroll, full preparation (intent + graph), upgrade and graph mutations | All six native routes implemented and previously full-gate validated; receipt-first coordinator, exact backup and writer-only escape admission | Preserve acceptance; close profiles/cross-platform and retirement oracle gates, not dispatch |
 | Runtime-launch action inspection and pure checkpoint inspection | Native bounded read-only preview | Close profile/encoding limits before default parity |
 | Standalone checkpoint inspection and ordered workspace preflight | Native pretty-default/optional compact JSON; repeated flags and narrow Python lexical compatibility | Close TOML/path/resource and cross-platform restrictions before default parity |
 | Next checkpoint guidance | Native bounded read-only composition; stable request chronology and exact fallback statuses | Close supported-profile/cross-platform gaps; retain literal output and no authority grant |
 | Current-source execution/attempt/graph inspect and export CLI | All five native routes complete; pretty/compact JSON, existing-only coordinated assessment; export is source-independent full replay | Close documented profile/cross-platform gaps; preserve history/source/export boundaries and no grants |
-| Checkpoint approve/suggest/interactive review | Python only; deferred intact with real transport notifications | Later runtime scope: scoped approval, publication/uncertainty and actual notifier gates; no silent notification omission |
-| Action consumption/outcomes, repository authority | Python only | Existing receipt ordering, publication/recovery and uncertainty contracts |
-| Observers, groups, watch/publication | Python only | Private endpoint/artifact differential tests, expiry/no stale fallback |
-| Native probing/start/resume/prompt/legacy transports | Python only | Transport gates, target pins, cleanup and no retry after uncertainty |
-| Packaging/default executable/Python retirement | Unchanged | Whole-command parity, asset locations, install/upgrade testing |
+| Checkpoint approve/suggest/interactive review (3 routes) | Linux native workflow accepted within profile; exact scope/CAS, displayed-snapshot review, committed warnings and real unlocked legacy notices | Close finite-profile/macOS/oracle/packaging gates; approval is not automatic execution permission |
+| Repository inspect/verify/register (2 routes) | Native complete bounded CLI; raw immutable authority, source-free exact retries, independently hashed Git objects and pinned Git | Linux implementation workflow accepted after full gate; close profile/macOS/oracle gates |
+| Worker readiness (1 route) | Native human/Unicode JSON; eight help/version surfaces, eleven unknown capabilities, actual same-binary supervision | Linux implementation workflow accepted after full gate; disposition 65536-declaration profile and macOS/oracle gates |
+| Persisted observe djinn (1 of 3 Observe routes) | Native pretty/compact ASCII JSON; explicit pinned producer and fixed persisted-evidence call; full gate passed on Linux | Retain trust/profile/platform limits; persisted evidence is not live readiness |
+| Reviewed cold-launch action writers (5 routes) | Linux native workflow accepted within profile; enable/prepare/submit/acknowledge-unknown/stop, immutable plan, durable claim, no replay and frozen stop | Close writer-profile/macOS/oracle/packaging gates; preserve direct-child ownership, unknown effects and no automatic retry |
+| Kitsune/Djinn-live observers and all eight Group routes | Native bounded Linux workflow accepted after 79-case ten-route acceptance and full gate; original authority bytes, counters, expiry and uncertainty preserved | Close profile/macOS/oracle/packaging gates; observations/annotations never grant execution authority |
+| Legacy workspace/runtime/agent | All 16 previously missing paths represented; Linux native workflow accepted within profiles, including the final 12-route lifecycle batch | Close compatibility profiles/macOS/oracle/packaging gates; retain delayed-input non-fencing, foreground admission, attempt counts and no rollback/retry |
+| Session start/resume/list/inspect/watch/prompt-capabilities/prompt (7 routes; views are reader flags) | Implemented Linux workflow within profile with independent native fixtures | Exact original-obligation review, profile/macOS acceptance; pins/pure previews/correlated delivery/no retry retained |
+| Packaging/default executable/Python retirement | Native-only checkout launcher and installed binary; positive source-package allowlist; final split local validation passes; Python source retained only as development oracle | Local review, explicit profile disposition, macOS and external tap install/upgrade/promotion; source-oracle deletion is a separate gate in RUST_RETIREMENT.md |
 
-Next review candidates, **planned, not approved scope**: execution enable/enroll,
-complete preparation (intent and graph), upgrade/graph mutations versus repository
-inspection with bounded local Git verification. Native cancellation/recovery is
-complete within its stated profile; it does not approve history growth without a
-separate escape-headroom plan. Inspection cannot substitute for writer
+The audit baseline contains **78 Python command paths: 27 represented and 51
+absent**, plus one native-only history route. The six writers brought it to 33/45;
+process integrations brought it to 37/41. Reviewed runtime adds **12 routes**:
+five action writers + three checkpoint decisions + send/agent send/down/stop alias.
+That milestone reached 49/29. Legacy lifecycle added the final **12 legacy routes**,
+reaching 61/17. Group/Observe brought it to 71/7; Session now brings current coverage
+to **78 represented / 0 absent**, not full parity or an effort percentage.
+Counts include aliases; native-only history is extra. Counts alone do not certify
+flags/defaults/profiles. Native `task list` now defaults to human output (`--json`
+optional); `action inspect` has pretty
+default output and optional compact `--json`. Use the
+[retirement checklist](RUST_RETIREMENT.md) to close complete workflow families,
+not another reader/SDK micro-checkpoint. Inspection cannot substitute for writer
 receipt/publication/confirmation protocols. Current-source assessment remains
 separate under an **existing lock**,
-not a property inferred from historical replay. Checkpoint writers stay deferred
-as complete runtime-bound commands with real notifiers intact; do not ship partial
-notification-free ports. Runtime-bound lead/plan, observers/groups and remaining
-runtime families still need their own reviewed gates. Native execution readers,
+not a property inferred from historical replay. Checkpoint/action native Linux
+workflow acceptance retains actual transport effects, not notification-free substitutes.
+Next review the final split local evidence and obtain explicit profile disposition,
+macOS and external Homebrew install/upgrade/promotion results. The **941-ID original-obligation
+audit** remains a separate development-oracle removal gate.
+Group/Observe, Session and legacy
+lifecycle acceptance does not close compatibility or macOS. Native execution readers,
 checkpoint inspection/next guidance, local workspace
 commands, init, refresh and state import/recovery do not authorize runtime execution
-or default-entrypoint cutover. Do not invent task remove/complete port work: Python
+by themselves. Do not invent task remove/complete port work: Python
 has neither command. Remaining writers must preserve persistent flock inode/order,
 same-directory publication/modes/fsync, receipt-before-mutable-state lookup,
 corrupt-authority refusal, prepared-task guards and each family's uncertainty policy

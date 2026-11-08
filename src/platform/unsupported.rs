@@ -1,6 +1,49 @@
 use crate::{Error, Result};
 use std::{fs::File, path::Path};
 
+pub(crate) fn runtime_terminal_ttys() -> (bool, bool) {
+    (false, false)
+}
+
+pub(crate) fn runtime_foreground_run(
+    _: &crate::runtime_foreground::Request,
+) -> crate::runtime_command::Status {
+    crate::runtime_command::Status::SpawnError
+}
+
+pub(crate) fn open_transport_lock(_: &Path) -> Result<File> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn try_transport_lock(_: &File, _: bool) -> std::io::Result<bool> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+pub(crate) fn unlock_transport(_: &File) {}
+pub(crate) fn runtime_command_run(
+    _: &crate::runtime_command::Request,
+) -> crate::runtime_command::Output {
+    crate::runtime_command::Output {
+        status: crate::runtime_command::Status::SpawnError,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+    }
+}
+
+pub(crate) fn executable_metadata(_: &Path) -> Result<super::FileMetadata> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn descriptor_metadata(_: &File) -> Result<super::FileMetadata> {
+    Err(Error("unsupported_platform"))
+}
+pub(crate) fn process_run(
+    _: &crate::process::ProbeRequest,
+    _: &Path,
+) -> crate::process::ProbeResult {
+    crate::process::failed_result()
+}
+pub(crate) fn supervisor_entry() -> Option<u8> {
+    None
+}
+
 pub(crate) fn ensure_supported() -> Result<()> {
     Err(Error("unsupported_platform"))
 }
@@ -68,3 +111,5 @@ pub(crate) fn validate_init_identity(_: &Path, _: &File, _: bool) -> Result<()> 
 pub(crate) fn validate_init_temp(_: &Path, _: &File) -> Result<()> {
     Err(Error("unsupported_platform"))
 }
+pub(crate) mod live_artifact;
+pub(crate) mod observation_socket;

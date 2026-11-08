@@ -5,6 +5,33 @@ use crate::{Error, Result, error::require, values::Value};
 const MAX_PLAN_BYTES: usize = 8 * 1024 * 1024;
 const ENV_KEYS: [&str; 6] = ["PATH", "HOME", "SHELL", "LANG", "LC_ALL", "TERM"];
 
+/// Runtime entry points share the historical deterministic builder, not its caller's budget.
+pub(crate) fn build_plan(
+    root: &str,
+    namespace: &str,
+    multiplexer: &str,
+    agents: &Value,
+    environment: &Value,
+) -> Result<Value> {
+    let input = object([
+        ("root", string(root)),
+        ("namespace", string(namespace)),
+        ("multiplexer", string(multiplexer)),
+        ("agents", agents.clone()),
+        ("env", environment.clone()),
+    ])?;
+    let mut budget = Budget::default();
+    let plan = build(&input, &mut budget)?;
+    bounded_spaced(&plan, &mut budget)?;
+    Ok(plan)
+}
+
+pub(crate) fn validate_plan(plan: &Value) -> Result<Value> {
+    let mut budget = Budget::default();
+    validate(plan, &mut budget)?;
+    build(plan, &mut budget)
+}
+
 pub(super) fn validate(plan: &Value, budget: &mut Budget) -> Result<()> {
     let encoded = bounded_spaced(plan, budget)?;
     fields(

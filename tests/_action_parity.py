@@ -570,12 +570,14 @@ def main(binary=None, oracle_only=False):
         check("ignore-both-lock-fifos", fifo_locks.root, retained_claim=fifo_claim)
 
         if not oracle_only:
+            # Writers are native now. Keep these five parser/no-effect guards
+            # with an invalid flag instead of treating supported routes as gaps.
             for command in ("submit", "stop", "acknowledge-unknown", "prepare-runtime-launch", "enable-runtime-launch"):
                 before = snapshot(root)
-                result = subprocess.run([binary, "action", command, str(p.root), A, "--json"],
+                result = subprocess.run([binary, "action", command, "--invalid-action-option", str(p.root), A, "--json"],
                     capture_output=True, timeout=15)
                 assert result.returncode != 0 and result.stdout == b"", (command, result)
-                assert b"unrecognized subcommand" in result.stderr, (command, result.stderr)
+                assert b"unexpected argument" in result.stderr, (command, result.stderr)
                 assert snapshot(root) == before, command
                 counts["cli_refusals"] += 1
     print("action authority cases: " + json.dumps(counts, sort_keys=True))

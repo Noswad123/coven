@@ -899,6 +899,10 @@ class Suite:
         self.run("mixed-lock", "inspect bypasses held writer lock", inspect_without_lock)
         for action in ("refresh", "repair", "resume", "abort"):
             def case(action=action):
+                if action == "refresh" and (sys.platform != "linux" or
+                                            not Path("/proc/self/fd").exists()):
+                    print("refresh serialization: skipped (requires Linux /proc handshake)")
+                    return
                 w = self.fixture(active=action == "repair", pending=action in ("resume", "abort"))
                 args = ["refresh", w] if action == "refresh" else self.state_args(w, "recover-tasks", [
                     "--repair-projection" if action == "repair" else "--" + action + "-import",
@@ -906,12 +910,42 @@ class Suite:
                 with coven.workspace_mutation(w):
                     before = files(w)
                     child = spawn([self.binary, *args], w)
-                    time.sleep(0.08)
+                    if action == "refresh":
+                        lock = (w / "state/.workspace.lock").stat()
+                        deadline = time.monotonic() + 3
+                        while True:
+                            assert child.poll() is None, "refresh exited while Python held flock"
+                            opened = False
+                            for fd in Path(f"/proc/{child.pid}/fd").iterdir():
+                                try:
+                                    meta = fd.stat()
+                                    opened |= (meta.st_dev, meta.st_ino) == (lock.st_dev, lock.st_ino)
+                                except FileNotFoundError:
+                                    pass
+                            wait = Path(f"/proc/{child.pid}/wchan").read_text()
+                            if opened and ("sleep" in wait or "lock" in wait):
+                                break
+                            assert time.monotonic() < deadline, f"no blocked-flock handshake: {wait}"
+                            time.sleep(0.005)
+                    else:
+                        time.sleep(0.08)
                     assert child.poll() is None, "native command did not wait for Python lock"
                     assert files(w) == before, "native wrote before lock release"
+                    if action == "refresh":
+                        # The native unlocked draft is complete before its lock
+                        # descriptor opens. Commit new state under the parent lock.
+                        fresh = storage.encode_json([{
+                            "id": "after-lock", "title": "Task committed while refresh waited",
+                            "status": "pending"}])
+                        (w / "state/tasks.json").write_bytes(fresh)
                 result = finish(child)
                 assert result[0] == 0, result
                 assert files(w)["state/.workspace.lock"] == before["state/.workspace.lock"]
+                if action == "refresh":
+                    assert (w / "state/tasks.json").read_bytes() == fresh
+                    dashboard = (w / "dashboard.md").read_bytes()
+                    assert b"Task committed while refresh waited" in dashboard, "stale unlocked dashboard"
+                    assert dashboard == coven.render_dashboard(w).encode()
             self.run("mixed-lock", "Python holds/native " + action, case)
         # Native blocks on Python's inode; queued Python task blocks on that same
         # inode while native owns it. The parent owns and reaps every process group.
@@ -922,7 +956,7 @@ class Suite:
             with coven.workspace_mutation(w):
                 native = spawn([self.binary, "refresh", w], w)
                 time.sleep(0.05)
-                py = spawn([str(Path(sys.executable).resolve()), "-c", code,
+                py = spawn([str(Path(sys.executable).resolve()), "-B", "-c", code,
                             "task", "add", w, "Queued Python task", "--json"], ROOT)
                 assert select.select([py.stdout], [], [], 2)[0], "Python not ready"
                 assert py.stdout.readline() == b"ready\n"

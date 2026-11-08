@@ -6,7 +6,17 @@ use crate::{
 };
 use std::{path::PathBuf, time::Duration};
 
+mod capacity;
+mod commands;
 mod delivery;
+mod effects;
+mod graphs;
+mod lifecycle;
+mod upgrade;
+pub use commands::{
+    PreparationInput, WriteOptions, decide_arguments, enable_arguments, enroll_arguments,
+    prepare_arguments, propose_arguments, upgrade_arguments,
+};
 #[cfg(test)]
 mod tests;
 

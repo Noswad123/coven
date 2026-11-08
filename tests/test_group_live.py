@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -773,6 +774,7 @@ class GroupLiveTests(unittest.TestCase):
             self.assertGreaterEqual(len(ticks), boundary)
 
     def test_cli_requires_explicit_arguments_and_actual_wrapper_workflow_is_offline(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         base = self.argv()
         invalid = [["group", "attach-live"], ["group", "status"], ["group", "detach-live"]]
         for flag in ("--member", "--file", "--runtime", "--instance", "--session"):
@@ -790,7 +792,8 @@ class GroupLiveTests(unittest.TestCase):
                    KITSUNE_SOCKET_PATH="/never-use", KITSUNE_CLIENT_SOCKET_PATH="/never-use")
 
         def run(args, code=0):
-            response = subprocess.run([str(ROOT / "bin/coven"), *map(str, args)], cwd=self.workspace,
+            env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+            response = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), *map(str, args)], cwd=self.workspace,
                 env=env, capture_output=True, timeout=10)
             self.assertEqual(response.returncode, code, response.stderr.decode(errors="replace"))
             self.assertEqual(response.stderr, b"")

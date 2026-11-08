@@ -1,6 +1,7 @@
 //! No-effects historical action inspection. This snapshot is not linearizable,
 //! latest-state authority, runtime eligibility, or proof of a durable claim.
 pub(crate) mod authority;
+pub mod mutation;
 mod plans;
 
 use crate::{
@@ -230,6 +231,20 @@ pub fn inspect(workspace: &Path, action_id: &str) -> Result<Value> {
 /// Expand the CLI workspace argument and produce bounded ASCII JSON.
 pub fn inspect_json_argument(workspace: &Path, id: &str) -> Result<String> {
     inspect_json_with_budget(workspace, id, &mut Budget::default())
+}
+
+/// Legacy default presentation: bounded indented literal-Unicode JSON, without
+/// a terminal newline. Presentation does not turn this read into launch admission.
+pub fn inspect_cli_pretty(workspace: &Path, id: &str) -> Result<String> {
+    let mut budget = Budget::default();
+    let (value, _) =
+        inspect_with_budget(&platform::workspace_argument(workspace)?, id, &mut budget)?;
+    let mut bytes = value.storage()?;
+    if bytes.last() == Some(&b'\n') {
+        bytes.pop();
+    }
+    budget.charge(bytes.len())?;
+    String::from_utf8(bytes).map_err(|_| Error("report_encoding_failed"))
 }
 
 fn inspect_json_with_budget(workspace: &Path, id: &str, budget: &mut Budget) -> Result<String> {

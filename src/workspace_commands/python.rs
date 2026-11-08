@@ -19,14 +19,14 @@ pub(super) fn truthy(value: &Value) -> bool {
 }
 
 #[derive(Default)]
-pub(super) struct Output(String);
+pub(crate) struct Output(String);
 
 impl Output {
-    pub(super) fn finish(self) -> String {
+    pub(crate) fn finish(self) -> String {
         self.0
     }
 
-    pub(super) fn push(&mut self, text: &str) -> Result<()> {
+    pub(crate) fn push(&mut self, text: &str) -> Result<()> {
         require(
             text.len() <= values::MAX_OUTPUT.saturating_sub(self.0.len()),
             "unsupported_history_output_profile",
@@ -35,7 +35,7 @@ impl Output {
         Ok(())
     }
 
-    pub(super) fn value(&mut self, value: &Value) -> Result<()> {
+    pub(crate) fn value(&mut self, value: &Value) -> Result<()> {
         if let Value::String(text) = value {
             self.push(text)
         } else {

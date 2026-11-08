@@ -1,4 +1,7 @@
 //! Pure graph validation and refreezing from retained source and replay state.
+#[cfg(test)]
+mod retirement;
+
 use super::{
     Error, Number, Replay, Result, TaskRecords, Value, Work, exact_integer, fields, get,
     identifier, integer, intent, object, require, source, string, task_revision, text, timestamp,

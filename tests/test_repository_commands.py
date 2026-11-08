@@ -211,13 +211,15 @@ class RepositoryCommandTests(CovenTestCase):
         self.assertEqual((self.workspace / "state/repository.json").read_bytes(), b"false")
 
     def test_real_wrapper_register_and_inspect_are_standalone_compatible(self):
+        # Historical method ID retained: direct Python legacy oracle, not the native wrapper.
         env = {key: value for key, value in os.environ.items() if key not in {"COVEN_HOME", "COVEN_COMMAND"}}
         source_before = self.metadata()
-        registered = subprocess.run([str(ROOT / "bin/coven"), *self.register_args()], cwd=ROOT,
+        env.update(COVEN_HOME=str(ROOT), COVEN_COMMAND=str(ROOT / "bin/coven"))
+        registered = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), *self.register_args()], cwd=ROOT,
             env=env, text=True, capture_output=True, timeout=45)
         self.assertEqual(registered.returncode, 0, registered.stderr)
         result = json.loads(registered.stdout)
-        inspected = subprocess.run([str(ROOT / "bin/coven"), "repository", "inspect", "--json"], cwd=self.workspace,
+        inspected = subprocess.run([sys.executable, str(ROOT / "runner/coven.py"), "repository", "inspect", "--json"], cwd=self.workspace,
             env=env, text=True, capture_output=True, timeout=10)
         self.assertEqual(inspected.returncode, 0, inspected.stderr)
         self.assertEqual(json.loads(inspected.stdout)["revision"], result["revision"])

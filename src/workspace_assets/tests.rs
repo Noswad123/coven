@@ -1,6 +1,10 @@
 use super::*;
 use std::process::Command;
 
+#[cfg(unix)]
+#[path = "tests/bootstrap.rs"]
+mod bootstrap;
+
 // The oracle is test-only, with a deadline and file-backed output so neither
 // full pipes nor a failing Python import can hang the test harness.
 pub(super) fn run(command: &mut Command) -> Vec<u8> {
@@ -78,6 +82,18 @@ fn python_exact_asset_bytes_all_roles_examples_unicode_and_shell_commands() {
             tmux_manifest("A 'name' \"  café 😀", root, &[agent], command, &context).unwrap();
         assert_eq!(manifest, case["manifest"]);
         manifest.parse::<toml::Value>().unwrap();
+        for backend in ["tmux", "herdr"] {
+            let launch =
+                agent_launch_command("A 'name' \" \u{7f} café 😀", root, agent, command, backend)
+                    .unwrap();
+            assert_eq!(launch, case["launches"][backend]);
+            assert_eq!(
+                launch.matches("zsh -ic").count(),
+                usize::from(normalize_opencode_command(command).starts_with("zsh -ic"))
+            );
+            // Syntax checks only: no backend, provider, delayed shell, or runtime.
+            run(Command::new("/bin/sh").args(["-n", "-c", &launch]));
+        }
     }
 }
 
@@ -130,6 +146,16 @@ fn unsafe_root_labels_are_literal_shell_data_with_native_command_goldens() {
             r#"{label}; printf 'Auto-bootstrapping OpenCode with prompts/CUSTOM.start.txt...\n\n'; pane="$(tmux display-message -p '#{{pane_id}}')"; (sleep 5; tmux load-buffer -b "coven-test-CUSTOM-starter" "prompts/CUSTOM.start.txt"; tmux paste-buffer -b "coven-test-CUSTOM-starter" -t "$pane"; tmux send-keys -t "$pane" Enter) & opencode --flag 'x y'"#
         );
         assert_eq!(launch, expected);
+        let native = agent_launch_command("test", root, "CUSTOM", "oc", "herdr").unwrap();
+        assert!(native.starts_with(&format!("{label};")));
+        assert!(
+            native.contains("pane=\"${HERDR_PANE_ID:-}\"; herdr_bin=\"${HERDR_BIN_PATH:-herdr}\"")
+        );
+        assert!(native.contains(
+            "(sleep 5; if [ -n \"$pane\" ]; then prompt=\"$(cat prompts/CUSTOM.start.txt)\";"
+        ));
+        assert!(!native.contains("admission"));
+        run(Command::new("/bin/sh").args(["-n", "-c", &native]));
         run(Command::new("/bin/sh").args(["-n", "-c", launch]));
         let tokens: Vec<String> = serde_json::from_slice(&run(Command::new("python3").args([
             "-B",
@@ -157,5 +183,79 @@ print(json.dumps(first))
                 format!("Prompt: {root}/prompts/CUSTOM.md")
             ]
         );
+    }
+}
+
+#[test]
+fn shared_launch_generator_rejects_identifiers_and_path_bounds_without_io() {
+    for agent in ["", "../escape", "a/b", "a'b", "a\n", "a;echo", "😀"] {
+        for backend in ["tmux", "herdr"] {
+            assert_eq!(
+                agent_launch_command("test", "/nonexistent", agent, "oc", backend)
+                    .unwrap_err()
+                    .code(),
+                "invalid_record_identifier"
+            );
+        }
+    }
+    let max = "a".repeat(255 - ".start.txt".len());
+    assert!(agent_launch_command("test", "/nonexistent", &max, "oc", "herdr").is_ok());
+    for (root, agent) in [
+        ("/tmp/\0bad".to_owned(), "agent".to_owned()),
+        ("/tmp".to_owned(), format!("{max}a")),
+        ("x".repeat(1_048_577), "agent".to_owned()),
+    ] {
+        assert_eq!(
+            agent_launch_command("test", &root, &agent, "oc", "tmux")
+                .unwrap_err()
+                .code(),
+            "unsupported_refresh_template_profile"
+        );
+    }
+}
+
+#[test]
+fn launch_generators_reject_original_command_nul_before_normalization_without_io() {
+    let context = PureAssetContext {
+        cli_command: "coven".into(),
+        example_text: String::new(),
+    };
+    for command in ["opencode\0", "oc --flag\0", "\0oc", "oc\0 --flag"] {
+        for backend in ["tmux", "herdr"] {
+            assert_eq!(
+                agent_launch_command("test", "/nonexistent", "agent", command, backend)
+                    .unwrap_err()
+                    .code(),
+                "invalid_runtime_command"
+            );
+        }
+        // Manifest generation also normalizes once, so it must check raw input.
+        for agents in [&["agent"][..], &[][..]] {
+            assert_eq!(
+                tmux_manifest("test", "/nonexistent", agents, command, &context)
+                    .unwrap_err()
+                    .code(),
+                "invalid_runtime_command"
+            );
+        }
+    }
+}
+
+#[test]
+fn generated_launch_script_must_be_nul_free_without_io() {
+    for backend in ["tmux", "herdr"] {
+        // Exercise the final-script guard independently of the public raw-input
+        // check, including the internal normalized-command path used by manifests.
+        assert_eq!(
+            normalized_agent_launch_command(
+                "test", "/nonexistent", "agent", "opencode\0", backend,
+            )
+            .unwrap_err()
+            .code(),
+            "invalid_runtime_command"
+        );
+        let launch =
+            agent_launch_command("test", "/nonexistent", "agent", "oc --flag", backend).unwrap();
+        assert!(!launch.contains('\0'));
     }
 }

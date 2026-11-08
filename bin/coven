@@ -1,20 +1,28 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-if [[ -n "${COVEN_HOME:-}" ]]; then
-  coven_home="$COVEN_HOME"
-else
-  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-  coven_home="$(cd -- "$script_dir/.." && pwd)"
-fi
-
-runner="$coven_home/runner/coven.py"
-if [[ ! -x "$runner" ]]; then
-  printf '[ERROR] Missing coven runner: %s\n' "$runner" >&2
+fail() {
+  printf '[ERROR] %s\nBuild explicitly with cargo build --release --bin coven in the checkout, or set COVEN_NATIVE_BIN to an absolute prebuilt binary path.\n' "$1" >&2
   exit 1
+}
+
+if [ "${COVEN_NATIVE_BIN+x}" = x ]; then
+  native_bin=$COVEN_NATIVE_BIN
+  case "$native_bin" in
+    /*) ;;
+    *) fail 'COVEN_NATIVE_BIN must be an absolute path.' ;;
+  esac
+else
+  # Normal checkout resolution uses shell builtins only, even with an empty PATH.
+  case "$0" in
+    */*) script_dir=${0%/*} ;;
+    *) script_dir=. ;;
+  esac
+  checkout=$(CDPATH= cd -P -- "$script_dir/.." && pwd -P) || fail 'Cannot resolve checkout.'
+  native_bin=$checkout/target/release/coven
 fi
 
-export COVEN_HOME="$coven_home"
-export COVEN_COMMAND="$coven_home/bin/coven"
+[ -f "$native_bin" ] && [ -x "$native_bin" ] || fail "Missing or non-executable native coven: $native_bin"
+[ ! "$native_bin" -ef "$0" ] || fail 'Native coven selection resolves to this wrapper (recursive invocation).'
 
-exec "$runner" "$@"
+exec "$native_bin" "$@"
