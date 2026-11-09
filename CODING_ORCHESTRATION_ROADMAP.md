@@ -21,11 +21,13 @@ scoped parent validation and extraction blockers. Existing modes and Kitsune
 built-ins remain unchanged. Separate pure `session plan-resume` characterizes 16
 historical provider mappings against an independent source-pinned corpus without
 execution; see [the resume-planning contract](SESSION_RESUME_PLAN_CONTRACT.md).
-Next: generic process-selection and native-reference/restore characterization
-before optional compatibility delegation; no removal until per-runtime/cross-platform
-gates, and no scheduler prerequisite. Broader workspace annotations remain proposed.
-Resume-planning changes remain local/uncommitted; no new remote-CI or installed
-interoperability result is claimed.
+Independent process-selection and native-reference corpora now add 5,491
+source-backed cases; see [the extraction gates](KITSUNE_EXTRACTION_CHARACTERIZATION.md).
+Next: preserving Kitsune seams for injectable resolution/platform-neutral Windows
+selection, then executable restore/state characterization before optional delegation.
+No removal until per-runtime/cross-platform gates, and no scheduler prerequisite.
+Broader workspace annotations remain proposed. Characterization changes remain
+local/uncommitted; no new remote-CI or installed interoperability result is claimed.
 
 Historical initial observation validation: 31 focused offline tests passed, including private
 fake-socket protocol/framing/status tests, workspace preservation, and the real

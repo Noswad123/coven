@@ -8,6 +8,8 @@ mod reference {
 }
 use reference::{AgentSessionRef, AgentSessionRefKind};
 
+mod policy;
+
 const AGENTS: [&str; 16] = [
     "claude",
     "codex",
@@ -81,6 +83,10 @@ fn capture(
 }
 
 fn main() {
+    if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--native-policy")) {
+        policy::main();
+        return;
+    }
     let output = env::args_os()
         .nth(1)
         .expect("usage: kitsune-resume-reference OUTPUT.json");

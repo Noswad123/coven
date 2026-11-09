@@ -81,6 +81,13 @@ It neither widens Djinn-only interactive execution nor replaces Kitsune's restor
 reference ingestion, hooks, or built-in policy. Optional compatibility delegation
 and per-runtime/cross-platform gates still precede any removal.
 
+[Independent extraction characterization](KITSUNE_EXTRACTION_CHARACTERIZATION.md)
+now records process classification/Windows selection and native-reference policy
+from actual pinned source. Windows acquisition already filters by agent policy;
+the current payload cannot support moving that selection into Coven. Actual
+restore/state sequencing remains a separate executable gate. These development-only
+corpora add no live integration or replacement guarantees.
+
 The separate [session-target inspection contract](SESSION_INSPECTION_CONTRACT.md)
 adds bounded read-only list/inspect commands over generic Kitsune pane/process
 evidence, joined to existing Coven declarations by endpoint/terminal. No legacy

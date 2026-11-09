@@ -151,13 +151,15 @@ Kitsune's detector, bind a participant, resume a session or submit work.
 | Command submission | Generic pinned `pane.submit_command` exists; submission is not worker acceptance. |
 | Terminal annotations | Generic opt-in terminal-border annotations exist; broader workspace annotations remain a proposal. |
 | Status authority and attention | Blocked: process names cannot replace runtime status, seen/unseen or attention semantics. |
-| Native references and automatic restore | Blocked: persisted references, identity, readiness and restore behavior need separate characterization. |
+| Native references and automatic restore | Pure reference conversion is [separately characterized](KITSUNE_EXTRACTION_CHARACTERIZATION.md); state/ownership/sequence and actual restore/history/launch remain blocked. |
 | Provider resume and hook installers | Pure argv policy is separately characterized by [the resume planner](SESSION_RESUME_PLAN_CONTRACT.md); restore integration and hook installation effects remain blocked. |
-| Windows agent-aware process selection | Blocked: characterize platform-specific selection before claiming generic parity. |
+| Windows agent-aware process selection | Actual selector is characterized on synthetic data/Linux; current evidence is agent-selected and lacks a generic tree. OS acquisition/Windows execution and generic parity remain blocked. |
 
 No removal until behavior is characterized per runtime and across supported
-platforms. Next small step: characterize generic process selection and native-reference/
-restore integration before optional compatibility wrappers, preserving current behavior.
+platforms. Next small step: isolate injectable recognition resolution and
+platform-neutral Windows selection in Kitsune, then characterize actual restore/state
+integration before optional delegation, preserving current behavior. See
+[the extraction decision](KITSUNE_EXTRACTION_CHARACTERIZATION.md).
 This needs no scheduler and authorizes no removal, hook installation or UI change.
 
 ## Validation and provenance

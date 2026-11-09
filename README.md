@@ -32,6 +32,11 @@ and OMP accept path references. Existing execution-capable resume remains
 Djinn-only and unchanged. See [SESSION_RESUME_PLAN_CONTRACT.md](SESSION_RESUME_PLAN_CONTRACT.md)
 for validation, independent reference characterization, and extraction limits.
 
+Development-only [extraction characterization](KITSUNE_EXTRACTION_CHARACTERIZATION.md)
+adds source-backed process-selection and native-reference corpora. It identifies
+the Windows evidence and restore/state gates before optional delegation; it does
+not broaden recognition, resume execution, or remove Kitsune built-ins.
+
 Read-only `coven session list WORKSPACE --socket ABS_SOCKET` and `coven session
 inspect WORKSPACE --socket ABS_SOCKET --pane PANE` show generic pane/process-family
 evidence plus matching declared groups/roles. They do not depend on Kitsune's agent

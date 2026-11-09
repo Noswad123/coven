@@ -20,6 +20,7 @@ fn main() {
     );
     let git = |args: &[&str]| {
         let output = Command::new("git")
+            .arg("--no-replace-objects")
             .arg("-C")
             .arg(&root)
             .args(args)

@@ -19,11 +19,15 @@ Kitsune built-ins remain unchanged; extraction/replacement equivalence is not
 established. A separate pure `session plan-resume` now characterizes 16 historical
 provider mappings against an independently captured reference corpus; see
 [the resume-planning contract](SESSION_RESUME_PLAN_CONTRACT.md). It adds no
-execution or Kitsune dependency. Next: generic process-selection and native-reference/
-restore characterization before optional compatibility delegation, with
-per-runtime/cross-platform gates before removal. No scheduler is needed. Scoped
-validation and source provenance are in the contracts, not a new remote-CI or
-installed-provider result; resume-planning changes remain local/uncommitted.
+execution or Kitsune dependency. Independent source-backed process-selection and
+native-reference corpora now add 5,491 cases; see
+[the extraction gates](KITSUNE_EXTRACTION_CHARACTERIZATION.md). Windows evidence
+is already agent-selected, and restore consumes policy as ownership/history state,
+so neither is ready for deletion or transparent delegation. Next: isolate path
+resolution and Windows selection behind preserving Kitsune seams, then test actual
+restore/state sequencing. Per-runtime/cross-platform gates precede removal; no
+scheduler is needed. Characterization changes remain local/uncommitted and claim
+no new remote-CI or installed-provider interoperability result.
 
 Annotations target bounded badges/labels/group hints/progress on existing
 panes/workspaces, useful for build/test/export services as well as coordinators.

@@ -156,6 +156,12 @@ record does not certify the older remote-CI failures or an installed integration
 
 ## Next extraction boundary
 
+[The next characterization slice](KITSUNE_EXTRACTION_CHARACTERIZATION.md) now
+records actual process selection and pure native-reference conversion separately.
+It confirms that Windows acquisition is agent-aware and that planner support also
+feeds terminal ownership. Those facts prevent treating argv parity as permission
+to replace ingestion, restore or execution.
+
 Keep Kitsune's built-ins and existing restore/report ingestion unchanged. Before
 introducing optional delegation behind compatibility wrappers, characterize
 generic process selection (including Windows), native-reference persistence and
