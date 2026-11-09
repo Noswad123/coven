@@ -41,6 +41,7 @@ mod runtime_command;
 mod runtime_foreground;
 pub mod session_inspection;
 pub mod session_prompts;
+pub mod session_resume_plans;
 mod session_support;
 pub mod session_views;
 pub mod session_watch;

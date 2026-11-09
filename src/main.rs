@@ -359,6 +359,12 @@ impl SessionInteractive {
     }
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ResumeReferenceKind {
+    Id,
+    Path,
+}
+
 #[derive(Subcommand)]
 enum Session {
     #[command(infer_long_args = true, args_override_self = true)]
@@ -399,6 +405,22 @@ enum Session {
         options: SessionInteractive,
         #[arg(long, allow_negative_numbers = true)]
         session: String,
+    },
+    /// Inspect literal provider resume argv; never launches or submits input.
+    PlanResume {
+        #[arg(long, allow_negative_numbers = true)]
+        runtime: String,
+        #[arg(long, allow_negative_numbers = true)]
+        source: String,
+        #[arg(long, value_enum)]
+        session_kind: ResumeReferenceKind,
+        #[arg(long, allow_negative_numbers = true)]
+        session: String,
+        /// Unchecked absolute override for argv[0]; no executable lookup.
+        #[arg(long, allow_negative_numbers = true)]
+        executable: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
     #[command(infer_long_args = true, args_override_self = true)]
     PromptCapabilities {
@@ -1071,6 +1093,28 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                         Some(session),
                     ),
                     options.output.json,
+                ),
+                Session::PlanResume {
+                    runtime,
+                    source,
+                    session_kind,
+                    session,
+                    executable,
+                    json,
+                } => coven::session_resume_plans::arguments(
+                    &coven::session_resume_plans::Request {
+                        runtime,
+                        source,
+                        session_kind: match session_kind {
+                            ResumeReferenceKind::Id => coven::session_resume_plans::SessionKind::Id,
+                            ResumeReferenceKind::Path => {
+                                coven::session_resume_plans::SessionKind::Path
+                            }
+                        },
+                        session,
+                        executable,
+                    },
+                    json,
                 ),
                 Session::PromptCapabilities {
                     native_socket,

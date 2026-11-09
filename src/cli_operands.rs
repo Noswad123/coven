@@ -85,6 +85,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
             Some("watch") => (3, "workspace", &["session", "watch"]),
             Some("start") => (3, "workspace", &["session", "start"]),
             Some("resume") => (3, "workspace", &["session", "resume"]),
+            Some("plan-resume") => (3, "", &["session", "plan-resume"]),
             Some("prompt") => (3, "workspace", &["session", "prompt"]),
             Some("prompt-capabilities") => (3, "", &["session", "prompt-capabilities"]),
             _ => return (command, parsed),
@@ -121,6 +122,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         _ => return (command, parsed),
     };
     let string_fields: &[&str] = match route {
+        ["session", "plan-resume"] => &["runtime", "source", "session", "executable"],
         ["session", "list"] => &["socket", "group", "member"],
         ["session", "inspect" | "watch"] => {
             &["socket", "pane", "expected_terminal", "group", "member"]
@@ -228,6 +230,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
     let mut originals = HashMap::new();
     let mut serial = 0usize;
     let numeric_names: &[&str] = match route {
+        ["session", "plan-resume"] => &["session-kind"],
         ["session", "list" | "inspect"] => &["runtime", "timeout", "max-response-bytes"],
         ["session", "watch"] => &[
             "runtime",
@@ -259,7 +262,16 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         if !numeric_names.is_empty()
             && argument.to_str().is_some_and(|value| {
                 value.strip_prefix("--").is_some_and(|name| {
-                    !name.is_empty() && numeric_names.iter().any(|option| option.starts_with(name))
+                    !name.is_empty()
+                        && numeric_names.iter().any(|option| {
+                            // The new pure planner deliberately does not infer flags:
+                            // --session must not be mistaken for --session-kind.
+                            if route == ["session", "plan-resume"] {
+                                *option == name
+                            } else {
+                                option.starts_with(name)
+                            }
+                        })
                 })
             })
         {

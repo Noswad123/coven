@@ -16,10 +16,14 @@ Local progress: native opt-in `observe kitsune --compare-agents` now characteriz
 built-in hints against generic Djinn-family evidence; see the
 [comparison contract](KITSUNE_AGENT_COMPARISON_CONTRACT.md). Existing modes and
 Kitsune built-ins remain unchanged; extraction/replacement equivalence is not
-established. Next small step: generic process-selection characterization and pure
-provider policy behind compatibility wrappers, with per-runtime/cross-platform
-gates before removal. No scheduler is needed. Scoped parent validation and source
-provenance are in the contract, not a new full-CI result; changes remain local/uncommitted.
+established. A separate pure `session plan-resume` now characterizes 16 historical
+provider mappings against an independently captured reference corpus; see
+[the resume-planning contract](SESSION_RESUME_PLAN_CONTRACT.md). It adds no
+execution or Kitsune dependency. Next: generic process-selection and native-reference/
+restore characterization before optional compatibility delegation, with
+per-runtime/cross-platform gates before removal. No scheduler is needed. Scoped
+validation and source provenance are in the contracts, not a new remote-CI or
+installed-provider result; resume-planning changes remain local/uncommitted.
 
 Annotations target bounded badges/labels/group hints/progress on existing
 panes/workspaces, useful for build/test/export services as well as coordinators.

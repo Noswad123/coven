@@ -24,6 +24,14 @@ submission and the existing workspace transport gate. No worker readiness, promp
 scheduling, automatic following or native lifecycle acceptance is inferred. See
 [INTERACTIVE_SESSION_CONTRACT.md](INTERACTIVE_SESSION_CONTRACT.md) before using it.
 
+Separate read-only `coven session plan-resume --runtime claude --source
+kitsune:claude --session-kind id --session saved-session --json` inspects literal
+resume argv for 16 historical provider mappings. It never launches a provider,
+looks up executables, contacts a socket, or grants execution authority. Only Pi
+and OMP accept path references. Existing execution-capable resume remains
+Djinn-only and unchanged. See [SESSION_RESUME_PLAN_CONTRACT.md](SESSION_RESUME_PLAN_CONTRACT.md)
+for validation, independent reference characterization, and extraction limits.
+
 Read-only `coven session list WORKSPACE --socket ABS_SOCKET` and `coven session
 inspect WORKSPACE --socket ABS_SOCKET --pane PANE` show generic pane/process-family
 evidence plus matching declared groups/roles. They do not depend on Kitsune's agent

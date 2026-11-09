@@ -18,11 +18,14 @@ Local integration progress: native opt-in `observe kitsune --compare-agents` is
 implemented as extraction characterization, not completed extraction. See the
 [comparison contract](KITSUNE_AGENT_COMPARISON_CONTRACT.md) for schema, provenance,
 scoped parent validation and extraction blockers. Existing modes and Kitsune
-built-ins remain unchanged. Next small step: generic process-selection
-characterization and pure provider policy behind compatibility wrappers; no removal
-until per-runtime/cross-platform characterization, and no scheduler prerequisite.
-Broader workspace annotations remain proposed. Changes remain local/uncommitted;
-no new full-CI or installed interoperability result is claimed.
+built-ins remain unchanged. Separate pure `session plan-resume` characterizes 16
+historical provider mappings against an independent source-pinned corpus without
+execution; see [the resume-planning contract](SESSION_RESUME_PLAN_CONTRACT.md).
+Next: generic process-selection and native-reference/restore characterization
+before optional compatibility delegation; no removal until per-runtime/cross-platform
+gates, and no scheduler prerequisite. Broader workspace annotations remain proposed.
+Resume-planning changes remain local/uncommitted; no new remote-CI or installed
+interoperability result is claimed.
 
 Historical initial observation validation: 31 focused offline tests passed, including private
 fake-socket protocol/framing/status tests, workspace preservation, and the real

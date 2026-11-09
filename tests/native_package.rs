@@ -55,6 +55,7 @@ fn native_source_package_boundary() {
     for required in [
         "src/main.rs",
         "src/lib.rs",
+        "src/session_resume_plans.rs",
         // Cargo omits whole nested packages even with explicit include patterns.
         "src/group_publisher/engine.rs",
         "src/group_publisher/live.rs",

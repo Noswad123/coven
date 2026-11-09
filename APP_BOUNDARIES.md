@@ -74,6 +74,13 @@ gate. This is unrestricted interactive command input, not native worker admissio
 verified session identity, startup/readiness or task completion. Legacy commands
 remain available and approved-launch mode cannot be bypassed.
 
+The separate [pure resume planner](SESSION_RESUME_PLAN_CONTRACT.md) characterizes
+16 historical provider argv mappings in Coven from explicitly supplied unverified
+references. It performs no IO or execution and deliberately hardens validation.
+It neither widens Djinn-only interactive execution nor replaces Kitsune's restore,
+reference ingestion, hooks, or built-in policy. Optional compatibility delegation
+and per-runtime/cross-platform gates still precede any removal.
+
 The separate [session-target inspection contract](SESSION_INSPECTION_CONTRACT.md)
 adds bounded read-only list/inspect commands over generic Kitsune pane/process
 evidence, joined to existing Coven declarations by endpoint/terminal. No legacy
