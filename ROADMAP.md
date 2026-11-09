@@ -23,11 +23,13 @@ execution or Kitsune dependency. Independent source-backed process-selection and
 native-reference corpora now add 5,491 cases; see
 [the extraction gates](KITSUNE_EXTRACTION_CHARACTERIZATION.md). Windows evidence
 is already agent-selected, and restore consumes policy as ownership/history state,
-so neither is ready for deletion or transparent delegation. Next: isolate path
-resolution and Windows selection behind preserving Kitsune seams, then test actual
-restore/state sequencing. Per-runtime/cross-platform gates precede removal; no
-scheduler is needed. Characterization changes remain local/uncommitted and claim
-no new remote-CI or installed-provider interoperability result.
+so neither is ready for deletion or transparent delegation. A local preserving
+Kitsune resolver/neutral-selector candidate now matches all 209 baseline cases;
+full application validation is blocked by missing Zig and Windows validation is
+outstanding. Next: complete those gates, then test actual restore/state sequencing
+and design additive generic tree evidence. Per-runtime/cross-platform gates precede
+removal; no scheduler is needed. Candidate/replay changes remain local/uncommitted
+and claim no new remote-CI or installed-provider interoperability result.
 
 Annotations target bounded badges/labels/group hints/progress on existing
 panes/workspaces, useful for build/test/export services as well as coordinators.

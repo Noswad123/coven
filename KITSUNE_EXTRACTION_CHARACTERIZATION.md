@@ -168,11 +168,50 @@ remain **unexecuted gates**, not equivalent behavior established by this corpus.
 
 ## Next production seam and removal gates
 
-1. **Make recognition resolution injectable in Kitsune**, retaining today's
-   canonicalizing adapter behind compatibility wrappers. Preserve precedence,
-   wrapper interpretation, ranking and hint arbitration separately.
-2. **Separate Windows acquisition from selection** in a platform-neutral module
-   so the actual selector runs in normal cross-platform CI. Only then design an
+### Local candidate: preserving seams implemented
+
+The following local Kitsune candidate now implements the first two internal
+seams, without moving classification into Coven or changing its existing API:
+
+- `detect::identify_agent_in_job_with_resolver` threads one mutable path resolver
+  through the classifier. The original entry point retains filesystem
+  canonicalization and all fallback/ranking behavior.
+- Private `platform::process_selection` holds the actual descendant/tree policy
+  with an injected classification callback, compiled for Windows production and
+  host unit tests. Windows retains acquisition/cache and supplies its existing
+  classifier through a thin adapter.
+- Nine resolver tests and six additional selector tests were added; all ten
+  existing selector tests moved with the actual implementation. Duplicate-PID
+  behavior is additionally protected, without changing the unique-PID baseline
+  fixture schema or adding malformed-graph hardening.
+
+The separate [candidate replay tool](tools/harnesses/kitsune-process-candidate/README.md)
+compiles current source without rewriting policy and compares it against the
+unchanged independent baseline. **209/209 records match**, and **26 source-subset
+tests pass** (replay plus 25 actual source tests). Full-file/block hashes distinguish
+the candidate from the pinned reference. The original reference harness and corpus
+were not relaxed or regenerated to accept changed source.
+
+The 20 focused Coven frozen-reference/package tests also pass, as do Coven's
+strict all-target Clippy, candidate-subset Clippy and both repositories' formatting/
+diff checks. Candidate-subset lint allowances are documented in the replay tool;
+they are not evidence of a clean full Kitsune application lint.
+
+**This is not full-application or Windows validation.** Kitsune's normal test and
+lint recipes stop in its build script because Zig is missing; only the Linux Rust
+target is installed. Formatting, independent review and source-subset tests/lint
+pass, but the full `just check` and Windows compile/cache/acquisition gates remain
+open. See Kitsune's optional sibling note
+[`PROCESS_POLICY_EXTRACTION.md`](../kitsune/PROCESS_POLICY_EXTRACTION.md).
+Local changes in both repositories remain uncommitted. No live apps or user
+configuration were changed.
+
+### Remaining gates
+
+1. **Validate the preserving resolver/selection candidate in the full app** once
+   Zig is available. Retain canonicalizing adapter coverage and run the actual
+   relocated tests in normal cross-platform CI, not only source-subset tooling.
+2. **Validate Windows wiring/acquisition**, then design an
    additive generic process-tree evidence surface with parent relationships and
    explicit acquisition scope/completeness semantics; do not relabel the current
    agent-selected singleton as a complete tree.

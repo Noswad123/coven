@@ -88,6 +88,12 @@ the current payload cannot support moving that selection into Coven. Actual
 restore/state sequencing remains a separate executable gate. These development-only
 corpora add no live integration or replacement guarantees.
 
+A local preserving Kitsune refactor now separates injected path resolution and
+neutral Windows tree selection internally. Source-subset replay matches all 209
+baseline cases, but missing Zig blocks the full application gate and Windows
+validation is outstanding. No production API, evidence semantics, external
+delegation, configuration or dependency direction changes follow.
+
 The separate [session-target inspection contract](SESSION_INSPECTION_CONTRACT.md)
 adds bounded read-only list/inspect commands over generic Kitsune pane/process
 evidence, joined to existing Coven declarations by endpoint/terminal. No legacy

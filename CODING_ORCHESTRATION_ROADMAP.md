@@ -23,10 +23,12 @@ historical provider mappings against an independent source-pinned corpus without
 execution; see [the resume-planning contract](SESSION_RESUME_PLAN_CONTRACT.md).
 Independent process-selection and native-reference corpora now add 5,491
 source-backed cases; see [the extraction gates](KITSUNE_EXTRACTION_CHARACTERIZATION.md).
-Next: preserving Kitsune seams for injectable resolution/platform-neutral Windows
-selection, then executable restore/state characterization before optional delegation.
+Local Kitsune injectable-resolution/neutral-selector seams now match all 209
+baseline cases in source-subset replay. Full app validation is blocked by missing
+Zig; Windows validation remains open. Next: finish those gates, then additive
+generic tree evidence and executable restore/state characterization before delegation.
 No removal until per-runtime/cross-platform gates, and no scheduler prerequisite.
-Broader workspace annotations remain proposed. Characterization changes remain
+Broader workspace annotations remain proposed. Candidate/replay changes remain
 local/uncommitted; no new remote-CI or installed interoperability result is claimed.
 
 Historical initial observation validation: 31 focused offline tests passed, including private
