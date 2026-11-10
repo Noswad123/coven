@@ -169,6 +169,54 @@ pub(crate) fn read(
     })
 }
 
+/// Single-attempt ephemeral view transport; never expands the observer allowlist.
+pub(crate) fn view_call(
+    endpoint: &Endpoint,
+    method: &str,
+    params: &Value,
+    deadline: Instant,
+    cancel: &dyn Cancel,
+    validate: &dyn Fn(&[u8], &str) -> WireResult<Value>,
+) -> WireResult<Value> {
+    let mut sent = false;
+    let result = (|| {
+        check(deadline, cancel)?;
+        if !matches!(
+            method,
+            "integration.view.open"
+                | "integration.view.replace"
+                | "integration.view.poll"
+                | "integration.view.close"
+        ) {
+            return Err(Failure::new("invalid_view_method"));
+        }
+        if select(&endpoint.selected)? != *endpoint {
+            return Err(Failure::new("endpoint_replaced"));
+        }
+        let id = crate::platform::random_uuid_hex().map_err(|_| Failure::new("io_error"))?;
+        let request = frame(&id, method, params)?;
+        let socket =
+            crate::platform::observation_socket::Socket::connect(endpoint, deadline, cancel)?;
+        crate::platform::observation_socket::fence(endpoint)?;
+        check(deadline, cancel)?;
+        sent = true;
+        socket.send(&request, deadline, cancel)?;
+        crate::platform::observation_socket::fence(endpoint)?;
+        let payload = socket.receive(deadline, &mut ReadBudget::new(256 * 1024), cancel)?;
+        crate::platform::observation_socket::fence(endpoint)?;
+        check(deadline, cancel)?;
+        let value = validate(&payload, &id)?;
+        check(deadline, cancel)?;
+        Ok(value)
+    })();
+    result.map_err(|mut failure: Failure| {
+        if sent && failure.delivery != Delivery::Rejected {
+            failure.delivery = Delivery::Uncertain;
+        }
+        failure
+    })
+}
+
 pub(crate) fn annotate(
     path: &str,
     frozen_endpoint: &Value,

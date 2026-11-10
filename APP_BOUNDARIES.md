@@ -28,6 +28,41 @@ decision neither removes them immediately nor claims extraction is complete.
 
 ## API / Interfaces
 
+**Coven owns agent management; Kitsune exposes generic multiplexer controls,
+side-menu presentation and app messaging.** The functional
+[group presentation bridge](GROUP_PRESENTATION_CONTRACT.md) now supplies Coven's
+own participant/role rows within a multi-app Integrations block and consumes
+read-only selection intents. Kitsune's
+generic model contains only opaque IDs and plain label/detail text, not agent or
+job semantics. This is an optional ownership step, not completed removal of legacy
+Kitsune agent management.
+
+The desktop lower block defaults to `Integrations`, with `No integrations configured`
+for an empty list and never detected-agent fallback. Manual `[integrations]`
+`sources = ["coven", "build"]` configures up to eight ordered unique ASCII IDs.
+The user selects an app locally from a vertical list; only its generic label/detail
+rows are shown. Coven validates the whole `snapshot.integration_views` descriptor
+and finds its source anywhere, not only first. `integration.view.open/replace/poll/close`
+give each provider its own lease, frame, revision and queue. Successful replace/poll
+renews its five-second TTL; close/expiry/removal affects only that provider and
+reorder preserves retained state/selection/scroll. No source selection is auth;
+at-most-once intents grant no native execution or physical-pixel acknowledgement.
+
+### Legacy migration scope
+
+| Surface | Current scope / next owner |
+| --- | --- |
+| Desktop persistent lower menu | Generic multi-app block, not a built-in agent inventory. |
+| Agent APIs/detection, navigator/attention and mobile UI | Retained compatibility; move management model/interpretation into Coven and retire matching Kitsune surfaces. |
+| Native references, restore/resume and lifecycle hooks | Retained; need Coven/runtime adapters and subsystem-specific compatibility/removal gates. |
+| `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | Compatibility hook installers, not the generic provider registry; a heading rename does not retire logic. |
+
+The obsolete local singleton `[external_view]` is diagnosed/ignored in favor of
+`integrations.sources`, with no automatic config writes. Its unreleased `view.*`
+methods have no aliases; both repositories now use the new contract together.
+Build out Coven management and adapters, then retire legacy surfaces; do not turn
+characterization into the only product milestone or add a broker/plugin/script host.
+
 The separate [Djinn live observer](DJINN_LIVE_OBSERVATION_CONTRACT.md) reads one
 explicitly pinned private heartbeat from a new, startup-enabled legacy full-TUI
 worker build. Fresh evidence is busy-only runner ownership, never idle, health,
@@ -90,9 +125,11 @@ corpora add no live integration or replacement guarantees.
 
 A local preserving Kitsune refactor now separates injected path resolution and
 neutral Windows tree selection internally. Source-subset replay matches all 209
-baseline cases; compatible Zig/pinned Rust now also pass 136 focused real Linux
-application tests and strict lint. Initial handler-boundary ownership/release
-characterization preserves current quirks rather than creating new authority.
+baseline cases; compatible Zig/pinned Rust now also pass 145 focused real Linux
+application tests and strict lint. Logical-authority release, metadata-only restore
+and deferred-start guard characterization preserve current quirks rather than
+creating new authority. Runtime import/failure/rollback and global duplicate
+traversal remain separate gates.
 Full-suite and Windows/other-platform validation remain outstanding. No production
 API, evidence semantics, external
 delegation, configuration or dependency direction changes follow.
@@ -188,6 +225,7 @@ These are independent paths, not a required round trip:
 ```text
 observation: Kitsune -> Coven adapter -> sourced observations
 annotation: user-enabled producer -> pane.annotate -> Kitsune terminal border
+integration views: independent apps -> per-source frames -> local app selector/rows -> per-source intents
 group status: explicit participant/source declaration -> pinned local artifact -> Coven ephemeral busy/unknown rows
 ```
 

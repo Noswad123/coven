@@ -587,6 +587,20 @@ struct LiveSource {
 
 #[derive(Subcommand)]
 enum Group {
+    /// Present Coven-owned rows and consume read-only selection intents.
+    #[command(infer_long_args = true, args_override_self = true)]
+    Present {
+        #[command(flatten)]
+        target: GroupTarget,
+        #[arg(long, allow_negative_numbers = true)]
+        socket: String,
+        #[arg(long, allow_negative_numbers = true)]
+        source: String,
+        #[arg(long, default_value = "60", allow_hyphen_values = true)]
+        duration: i64,
+        #[arg(long)]
+        json: bool,
+    },
     #[command(infer_long_args = true, args_override_self = true)]
     Create {
         #[command(flatten)]
@@ -1249,6 +1263,26 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                     },
                     json,
                 ),
+                Group::Present {
+                    target,
+                    socket,
+                    source,
+                    duration,
+                    json,
+                } => {
+                    return coven::group_presenter::arguments(
+                        &coven::group_presenter::Request {
+                            workspace: target.workspace,
+                            group: target.group,
+                            socket,
+                            source,
+                            duration: duration
+                                .try_into()
+                                .map_err(|_| coven::Error::invalid_cli_arguments())?,
+                        },
+                        json,
+                    );
+                }
             }?;
             return Ok(command_output(result.body, result.exit_code));
         }

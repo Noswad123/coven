@@ -77,6 +77,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
             Some("detach-live") => (3, "workspace", &["group", "detach-live"]),
             Some("status") => (3, "workspace", &["group", "status"]),
             Some("publish") => (3, "workspace", &["group", "publish"]),
+            Some("present") => (3, "workspace", &["group", "present"]),
             _ => return (command, parsed),
         },
         Some("session") => match arguments.get(2).and_then(|value| value.to_str()) {
@@ -180,7 +181,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
             "session",
         ],
         ["group", "status"] => &["group", "member"],
-        ["group", "publish"] => &["group", "socket", "source"],
+        ["group", "publish" | "present"] => &["group", "socket", "source"],
         ["task", "attempt", "list"] => &["task"],
         ["task", "attempt", "cancel"] => &["reason", "expect_execution_revision", "request_id"],
         ["execution", "recover"] => &["expect_execution_revision"],
@@ -245,7 +246,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         ["worker", "readiness"] | ["observe", "djinn"] => &["timeout", "max-output-bytes"],
         ["observe", "kitsune"] => &["timeout", "max-response-bytes"],
         ["observe", "djinn-live"] | ["group", "attach-live" | "status"] => &["timeout"],
-        ["group", "publish"] => &["duration"],
+        ["group", "publish" | "present"] => &["duration"],
         _ => &[],
     };
     let mut numeric_value = false;

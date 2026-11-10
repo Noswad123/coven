@@ -2,6 +2,31 @@
 
 ## Priority rebaseline — 2026-10-22
 
+Current delivery direction: **Coven owns management; Kitsune exposes generic
+presentation, messaging and multiplexer controls.** The functional
+[`group present` bridge](GROUP_PRESENTATION_CONTRACT.md) now drives a persistent
+Integrations block and read-only selection roundtrip from Coven's own declarations.
+It is a generic multi-app UI, not a Coven-only agent panel: manual
+`[integrations] sources = ["coven", "build"]` enables up to eight independent
+providers, and a local vertical selector chooses whose label/detail rows to show.
+Coven finds its source anywhere in whole-list `snapshot.integration_views` discovery
+and opens only its own `integration.view.*` lease. Successful replace/poll renews
+its five-second TTL; close/expiry/removal affects only that source, and reorder
+preserves retained leases/queues/selection/scroll. Empty config shows
+`No integrations configured`, never native-agent fallback. Sources/local selection
+are routing, not auth; at-most-once row intents are not execution grants or pixel acks.
+Next: extend Coven-owned runtime/status/action capabilities through that generic
+boundary, then retire matching legacy Kitsune management. Characterization remains
+a compatibility/removal gate, not the sole forward milestone. Do not add another
+agent-specific registry, sidebar model or execution policy to Kitsune.
+
+This replaces default desktop lower-agent presentation only. Agent APIs/detection,
+mobile UI, native hooks, restore/resume and fixed-target legacy hook installers
+remain separate migration work; see the [scope matrix](APP_BOUNDARIES.md#legacy-migration-scope).
+The obsolete local singleton config is diagnosed/ignored, not auto-rewritten;
+there are no old-method aliases, broker, plugins or scripts. Keep the independent
+characterization records below as removal evidence, not the permanent forward queue.
+
 [APP_BOUNDARIES.md](APP_BOUNDARIES.md) is the accepted target boundary. Initial
 single-endpoint Kitsune observation is implemented in Coven only; see
 [the observation contract](KITSUNE_OBSERVATION_CONTRACT.md). Kitsune's built-ins
@@ -25,11 +50,12 @@ native-reference corpora now add 5,491 cases; see
 is already agent-selected, and restore consumes policy as ownership/history state,
 so neither is ready for deletion or transparent delegation. A local preserving
 Kitsune resolver/neutral-selector candidate matches all 209 baseline cases. With
-compatible Zig/pinned Rust selected, 136 focused real-application tests and strict
-lint pass, including new handler-boundary ownership/release characterization.
+compatible Zig/pinned Rust selected, 145 focused real-application tests and strict
+lint pass, including logical-authority release, metadata-only multi-workspace
+restore and deferred-start guard characterization.
 Full-suite approval and Windows/other-platform validation remain outstanding.
-Next: extend actual restore/state coverage before delegation and design additive
-generic tree evidence. Per-runtime/cross-platform gates precede
+Next: deterministic imported-runtime/rollback/spawn/send failure coverage and
+additive generic tree evidence design before delegation. Per-runtime/cross-platform gates precede
 removal; no scheduler is needed. Candidate/replay changes remain local/uncommitted
 and claim no new remote-CI or installed-provider interoperability result.
 
@@ -37,9 +63,10 @@ Annotations target bounded badges/labels/group hints/progress on existing
 panes/workspaces, useful for build/test/export services as well as coordinators.
 Kitsune/user own space, layout, rendering, clipping, and quotas; source-owned values
 need conflict policy/expiry and hidden/unknown failure handling, not stale active
-status. The current return path is generic terminal-border `pane.annotate`, not
-workspace annotations, arbitrary panels, embedded apps/scripts, or UI takeover;
-display conveys no execution authority.
+status. The border return path is generic `pane.annotate`; persistent application
+rows use the separate integration-view contract above. Neither provides workspace
+annotations, arbitrary panels, embedded apps/scripts or UI takeover; display
+conveys no execution authority.
 
 The worker/composer stories, numbered slices, and execution contracts below are
 deferred backlog, not invalidated or current implementation order. Djinn is the

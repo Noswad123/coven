@@ -2,6 +2,28 @@
 
 ## Priority rebaseline — 2026-10-22
 
+Functional ownership now takes precedence over further test-only slices:
+[`group present`](GROUP_PRESENTATION_CONTRACT.md) sends Coven-owned declarations
+to Kitsune's generic multi-app Integrations block and handles read-only selection
+messages. Manual `[integrations] sources = ["coven", "build"]` enables up to eight
+ordered unique ASCII sources. A local vertical selector chooses whose generic
+label/detail rows to show; empty config shows `No integrations configured`, never
+agent fallback. Coven validates the full `snapshot.integration_views` source list,
+finds its source anywhere and opens only its own `integration.view.*` lease.
+Independent frames/revisions/queues and five-second TTLs let producers coexist;
+successful replace/poll alone renews a lease. Close/expiry/removal affects only its
+source; reorder preserves retained state/selection/scroll. Source routing and
+at-most-once intents are not auth, native execution or physical-pixel acknowledgements.
+Extend management/adapters in Coven; keep Kitsune's interface agent-neutral and
+retire legacy management incrementally when replacement behavior is ready.
+
+Default desktop lower-menu replacement is not full removal of legacy agent
+APIs/detection, mobile UI, native hooks/installers or restore. Keep these explicit
+in the [migration matrix](APP_BOUNDARIES.md#legacy-migration-scope). The fixed legacy
+`IntegrationTarget` installer is not a generic provider registry. Both apps now
+use the new contract together, without old `view.*` aliases or automatic rewriting
+of obsolete `[external_view]` config. No broker/plugin/script layer is required.
+
 Follow [APP_BOUNDARIES.md](APP_BOUNDARIES.md) before advancing this backlog:
 initial single-endpoint Kitsune observation is implemented in Coven only
 ([contract](KITSUNE_OBSERVATION_CONTRACT.md)); Kitsune's built-ins remain. Explicit
@@ -25,10 +47,11 @@ Independent process-selection and native-reference corpora now add 5,491
 source-backed cases; see [the extraction gates](KITSUNE_EXTRACTION_CHARACTERIZATION.md).
 Local Kitsune injectable-resolution/neutral-selector seams now match all 209
 baseline cases in source-subset replay. Compatible Zig and pinned Rust now enable
-136 focused real-application tests and clean strict lint, including initial actual
-handler-boundary ownership/release characterization. Full-suite approval and
-Windows/other-platform gates remain open. Next: extend restore/state coverage and
-design additive generic tree evidence before delegation.
+145 focused real-application tests and clean strict lint, including installed
+logical-authority release, metadata-only restore and deferred-start guards.
+Full-suite approval and Windows/other-platform gates remain open. Next:
+deterministic runtime import/rollback/spawn/send coverage and additive generic
+tree evidence design before delegation.
 No removal until per-runtime/cross-platform gates, and no scheduler prerequisite.
 Broader workspace annotations remain proposed. Candidate/replay changes remain
 local/uncommitted; no new remote-CI or installed interoperability result is claimed.

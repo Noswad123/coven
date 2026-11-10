@@ -1,9 +1,32 @@
 # Kitsune policy extraction: characterization and gates
 
+The forward delivery path is now the functional
+[Coven-owned group presentation bridge](GROUP_PRESENTATION_CONTRACT.md), not more
+characterization alone. This document retains compatibility/removal evidence for
+legacy subsystems; it is not a prerequisite for every independent presentation or
+messaging increment.
+
+That bridge now uses Kitsune's generic multi-app Integrations block, not a single
+Coven-owned panel. Manual `integrations.sources` lists up to eight independent
+providers; local selection chooses generic label/detail rows. Coven finds its
+source anywhere in `snapshot.integration_views` and opens only its own
+`integration.view.*` lease. Frames/revisions/queues and five-second TTLs are per
+source; successful replace/poll renews them, close/expiry/removal affects only that
+source, and reorder preserves retained state/selection/scroll. Empty config shows
+`No integrations configured`, never agent fallback. Routing is not authentication;
+at-most-once intents neither authorize native execution nor acknowledge pixels.
+
+Only default desktop lower-agent presentation is replaced. Agent APIs/detection,
+mobile/native hooks, fixed-target hook installers and restore remain explicit
+[migration scope](APP_BOUNDARIES.md#legacy-migration-scope). Prioritize moving
+management model/runtime adapters into Coven and retiring matching legacy surfaces;
+the historical evidence below remains intact, not a test-only permanent roadmap.
+
 ## Decision
 
-Keep Kitsune's production behavior unchanged while establishing independent
-reference evidence in Coven. The next safe production seam is **separating
+For the characterization slice below, keep Kitsune's production behavior unchanged
+while establishing independent reference evidence in Coven. Its next safe internal
+production seam is **separating
 acquisition from interpretation inside Kitsune**, not routing more execution
 through Coven or deleting existing integrations.
 
@@ -206,13 +229,14 @@ was selected explicitly from a temporary directory. The shell's Homebrew Rust
 Rust/Clippy 1.96.1 for nested `just` commands. No global toolchain was replaced,
 and no unrelated newer-Clippy suggestions were applied.
 
-The real Kitsune application now builds, **136 focused application tests pass**,
+The real Kitsune application now builds, **145 focused application tests pass**,
 and **`just lint` passes strict all-target Clippy and formatting**. The application
 tests cover resolver/classifier/selector, pane probing, state/snapshot/restore
-planning and five API/action ownership-release tests. This is stronger than the
+planning/metadata restoration, eight API/action ownership-release tests and two
+no-runtime deferred-start guard tests. This is stronger than the
 standalone subset replay, but **not a full-suite, Windows or macOS result**.
 
-Three new tests call real pane handlers → event/actions → `TerminalState`, rather
+The initial three handler tests call real pane handlers → event/actions → `TerminalState`, rather
 than a copied lifecycle simulator. They record that:
 
 - A stale scoped release does not consume the sequence needed by matching release.
@@ -222,6 +246,26 @@ than a copied lifecycle simulator. They record that:
   confirmation; subsequent acceptance still needs a fresh sequence.
 - Clearing/replacing persisted identity leaves the pending resume plan unchanged
   at immediate handler return. Deferred scheduler behavior is not characterized.
+
+A further test-only slice adds **eight tests** against actual production paths:
+three handler tests for installed logical hook authority and unsupported-path
+conversion; a private planner-support owner-predicate test; startup validation/
+duplicate-history/identity policy; real metadata-only restore of eight unique
+sessions across two workspaces/four split tabs; and deferred theme/argv/geometry/
+deadline guards. The common inert `App` constructor is now shared test support.
+
+The release tests install hook authority through the real report handler; this is
+logical authority, not a live process. The private typed-path predicate test is
+distinct from API coverage, where conversion discards that unsupported path.
+Deferred guard tests enable save scheduling without running a save executor, use
+synthetic deadline times without sleeps, and retain intent through refusal. Owned
+temporary directories and explicit unusable shell paths harden the fixtures;
+these are not an isolated runtime/PTY-failure sandbox.
+
+The metadata test checks terminal survival, exact plans/references, labels,
+public numbering, layout/focus and empty runtime registry. Its **unique** sessions
+do not establish global duplicate precedence, and no-runtime restore does not
+prove history replay, successful native startup or imported-runtime rollback.
 
 These are direct handler tests, not wire/async-queue or live-runtime tests; workspace
 fixtures may read cwd/Git metadata. Existing behavior was preserved, not hardened
@@ -242,9 +286,12 @@ configuration were changed.
    explicit acquisition scope/completeness semantics; do not relabel the current
    agent-selected singleton as a complete tree.
 3. **Extend actual restore/state characterization before moving it.** Initial
-   handler-boundary sequencing/release/ownership tests now exist; still cover live
-   hook authority, unsupported-reference owner confirmation, imported runtimes,
-   duplicate history/identity suppression, immediate rollback and deferred failure.
+   handler-boundary ownership/release, private owner confirmation, startup policy,
+   metadata-only restore and deferred guards now have coverage. Still cover actual
+   graceful runtime release, global duplicate traversal, imported-runtime
+   precedence/accounting, reservation rollback and deterministic spawn/send failures.
+   Those need controlled runtime fixtures or a preserving injection seam, not
+   arbitrary descriptors, copied rollback logic or shell-exit races.
    Do not copy it into a second lifecycle simulator in Coven.
 4. Before optional delegation/removal, validate each affected runtime and platform,
    retain Kitsune's independent operation, and treat hooks/installers and status/

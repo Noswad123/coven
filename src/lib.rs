@@ -15,6 +15,7 @@ pub mod error;
 pub mod execution;
 pub mod group_commands;
 pub mod group_live;
+pub mod group_presenter;
 pub mod group_publisher;
 pub mod groups;
 pub mod handoff;

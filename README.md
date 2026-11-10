@@ -69,6 +69,23 @@ The source of truth for a coven workspace is local, inspectable files. The
 command creates those files, keeps lightweight state, and launches agent panes
 with Herdr by default. Tmux remains available as an opt-in runtime.
 
+For Coven-owned content in Kitsune's persistent desktop Integrations block, use the explicit
+[`coven group present`](GROUP_PRESENTATION_CONTRACT.md) foreground integration.
+Kitsune renders generic label/detail rows and returns opaque selection intents;
+Coven supplies participant/role content and read-only details. Manually configure
+`[integrations]` with `sources = ["coven", "build"]` in a compatible Kitsune server
+(up to eight ordered unique ASCII source IDs), then select the app locally from
+the vertical list. Coven discovers its source anywhere in `snapshot.integration_views`
+and opens only its own `integration.view.*` lease; other apps coexist independently.
+Empty config shows `No integrations configured`, absent/expired providers
+`Unavailable`, never detected-agent fallback. Successful replace/poll renews each
+five-second lease; close/expiry/removal is per source and reorder preserves retained
+state. Selections drain at most once, are not authentication or execution permission,
+and acknowledge no physical client pixels. This is separate from border annotations
+and their source priority. Legacy agent APIs/detection, mobile/native hooks,
+installers and restore remain; move management model/adapters into Coven and retire
+matching Kitsune surfaces incrementally, not through a permanent test-only gate.
+
 ## Install
 
 ### Native production cutover

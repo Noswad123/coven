@@ -2,6 +2,22 @@
 
 ## Overview
 
+The separate [group presentation command](GROUP_PRESENTATION_CONTRACT.md) now
+supplies Coven-owned rows and a read-only selection roundtrip within Kitsune's
+generic multi-app Integrations block. Manually configure `[integrations]` with
+`sources = ["coven", "build"]`, separately from `[annotations]`, and locally select
+an app from the vertical list to see its generic label/detail rows. Empty config
+shows `No integrations configured`, never native-agent fallback. Coven discovers
+its requested source anywhere in the full `snapshot.integration_views` list and
+uses only its own `integration.view.*` lease; other producers coexist. Successful
+replace/poll renews its five-second TTL, close/expiry/removal is per source, and
+reorder preserves retained state/selection/scroll. These are routing labels and
+at-most-once, non-authorizing messages, not auth or physical-pixel acknowledgements.
+The border publisher below remains unchanged: its source priority/watermarks are
+not integration-view selection/lease policy, and neither interface is a fallback
+for the other. Legacy Kitsune detection/APIs, mobile UI, native hooks/installers
+and restore remain separate migration work, not part of this block's model.
+
 Coven can group **already-running participants**, assign display roles, and explicitly
 publish `GROUP NAME · ROLE` through Kitsune's generic annotations. Explicit
 `publish --live` can append fresh pinned ` · legacy runner busy` evidence using
