@@ -197,26 +197,53 @@ strict all-target Clippy, candidate-subset Clippy and both repositories' formatt
 diff checks. Candidate-subset lint allowances are documented in the replay tool;
 they are not evidence of a clean full Kitsune application lint.
 
-**This is not full-application or Windows validation.** Kitsune's normal test and
-lint recipes stop in its build script because Zig is missing; only the Linux Rust
-target is installed. Formatting, independent review and source-subset tests/lint
-pass, but the full `just check` and Windows compile/cache/acquisition gates remain
-open. See Kitsune's optional sibling note
+### Real Linux application gate and handler characterization
+
+The earlier missing-Zig blocker is resolved: the installed default is 0.17.1,
+which the vendored engine rejects, so a checksum-verified official 0.15.2 compiler
+was selected explicitly from a temporary directory. The shell's Homebrew Rust
+1.99.1 also precedes rustup; an explicit toolchain-bin `PATH` selects the project's
+Rust/Clippy 1.96.1 for nested `just` commands. No global toolchain was replaced,
+and no unrelated newer-Clippy suggestions were applied.
+
+The real Kitsune application now builds, **136 focused application tests pass**,
+and **`just lint` passes strict all-target Clippy and formatting**. The application
+tests cover resolver/classifier/selector, pane probing, state/snapshot/restore
+planning and five API/action ownership-release tests. This is stronger than the
+standalone subset replay, but **not a full-suite, Windows or macOS result**.
+
+Three new tests call real pane handlers → event/actions → `TerminalState`, rather
+than a copied lifecycle simulator. They record that:
+
+- A stale scoped release does not consume the sequence needed by matching release.
+- Invalid/missing reference reports can be ignored without consuming sequence,
+  while an invalid/missing release selector follows the existing unscoped path.
+- A rejected foreign-owner identity update consumes sequence before foreground
+  confirmation; subsequent acceptance still needs a fresh sequence.
+- Clearing/replacing persisted identity leaves the pending resume plan unchanged
+  at immediate handler return. Deferred scheduler behavior is not characterized.
+
+These are direct handler tests, not wire/async-queue or live-runtime tests; workspace
+fixtures may read cwd/Git metadata. Existing behavior was preserved, not hardened
+or promoted into permission to delegate. The full resource-heavy `just check`
+was not run without explicit approval; Windows compile/cache/acquisition and other
+platform gates remain open. See Kitsune's optional sibling note
 [`PROCESS_POLICY_EXTRACTION.md`](../kitsune/PROCESS_POLICY_EXTRACTION.md).
 Local changes in both repositories remain uncommitted. No live apps or user
 configuration were changed.
 
 ### Remaining gates
 
-1. **Validate the preserving resolver/selection candidate in the full app** once
-   Zig is available. Retain canonicalizing adapter coverage and run the actual
-   relocated tests in normal cross-platform CI, not only source-subset tooling.
+1. **Complete full-suite/cross-platform validation** beyond the passing focused
+   Linux application tests and strict lint. Obtain approval for `just check` and
+   run the actual relocated tests in normal cross-platform CI.
 2. **Validate Windows wiring/acquisition**, then design an
    additive generic process-tree evidence surface with parent relationships and
    explicit acquisition scope/completeness semantics; do not relabel the current
    agent-selected singleton as a complete tree.
-3. **Characterize the actual restore/state machine before moving it.** Cover
-   sequencing, scoped/unscoped release, ownership takeover, imported runtimes,
+3. **Extend actual restore/state characterization before moving it.** Initial
+   handler-boundary sequencing/release/ownership tests now exist; still cover live
+   hook authority, unsupported-reference owner confirmation, imported runtimes,
    duplicate history/identity suppression, immediate rollback and deferred failure.
    Do not copy it into a second lifecycle simulator in Coven.
 4. Before optional delegation/removal, validate each affected runtime and platform,

@@ -81,9 +81,11 @@ This is not a security sandbox for arbitrary untrusted candidate Rust code.
 This is Linux execution of a source subset, **not a full Windows or application
 build**. It covers no PTYs, live process acquisition, WMI, providers, acquisition
 cache wiring, screen detection, or platform syscalls. It supplements rather than
-bypasses the application checks: baseline `just test-one` / `just lint` remain
-blocked by missing Zig, with only the Linux target available. No broader Coven
-classification equivalence is claimed.
+bypasses application checks. With explicitly selected Zig 0.15.2 and Rust 1.96.1,
+separate real-application focused tests and `just lint` now pass; this harness
+does not establish those results itself. Only the Linux target is available;
+Windows and full-suite gates remain open. No broader Coven classification
+equivalence is claimed.
 
 ## Validation Results
 

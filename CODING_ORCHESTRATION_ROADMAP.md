@@ -24,9 +24,11 @@ execution; see [the resume-planning contract](SESSION_RESUME_PLAN_CONTRACT.md).
 Independent process-selection and native-reference corpora now add 5,491
 source-backed cases; see [the extraction gates](KITSUNE_EXTRACTION_CHARACTERIZATION.md).
 Local Kitsune injectable-resolution/neutral-selector seams now match all 209
-baseline cases in source-subset replay. Full app validation is blocked by missing
-Zig; Windows validation remains open. Next: finish those gates, then additive
-generic tree evidence and executable restore/state characterization before delegation.
+baseline cases in source-subset replay. Compatible Zig and pinned Rust now enable
+136 focused real-application tests and clean strict lint, including initial actual
+handler-boundary ownership/release characterization. Full-suite approval and
+Windows/other-platform gates remain open. Next: extend restore/state coverage and
+design additive generic tree evidence before delegation.
 No removal until per-runtime/cross-platform gates, and no scheduler prerequisite.
 Broader workspace annotations remain proposed. Candidate/replay changes remain
 local/uncommitted; no new remote-CI or installed interoperability result is claimed.

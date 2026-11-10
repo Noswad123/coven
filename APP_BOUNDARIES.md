@@ -90,8 +90,11 @@ corpora add no live integration or replacement guarantees.
 
 A local preserving Kitsune refactor now separates injected path resolution and
 neutral Windows tree selection internally. Source-subset replay matches all 209
-baseline cases, but missing Zig blocks the full application gate and Windows
-validation is outstanding. No production API, evidence semantics, external
+baseline cases; compatible Zig/pinned Rust now also pass 136 focused real Linux
+application tests and strict lint. Initial handler-boundary ownership/release
+characterization preserves current quirks rather than creating new authority.
+Full-suite and Windows/other-platform validation remain outstanding. No production
+API, evidence semantics, external
 delegation, configuration or dependency direction changes follow.
 
 The separate [session-target inspection contract](SESSION_INSPECTION_CONTRACT.md)
