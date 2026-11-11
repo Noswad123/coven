@@ -9,19 +9,24 @@ implemented in Coven, including explicit process-evidence group binding independ
 of Kitsune's agent inventory; explicit Djinn live attachments and read-only
 busy/unknown group status and explicit expiry-bounded live publishing implemented;
 native opt-in agent comparison implemented as extraction characterization;
-native lifecycle/scheduling, automatic following, extraction, and workspace
+Coven-owned Claude and Codex hook/receipt cuts implemented with Linux-only Kitsune new-install retirement;
+native lifecycle/scheduling, automatic following, complete extraction, and workspace
 annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
-This decision rebaselines near-term priorities; it does not remove current features.
+The confirmed scope includes all agent management, including hooks and agent-aware
+restore, not only discovery/status/start/resume. The first targeted retirement is
+Kitsune's new Claude hook installer on Linux only, followed by Codex on Linux. The ultimate target covers all
+agent features/platforms, but matching non-Linux adapters are still pending. See the authoritative
+[ownership matrix and next transfers](AGENT_MANAGEMENT_MIGRATION.md).
 
 | App | Target responsibility |
 | --- | --- |
 | Kitsune | General multiplexer: PTY/process/terminal/session/pane operations and generic label/badge rendering. |
-| Coven | Cross-runtime agent discovery, observations/provenance, job/task-group membership, participant roles/assignments, orchestration, and job progress. |
+| Coven | Cross-runtime agent discovery/status, hooks, start/resume and agent restore policy; observations/provenance, groups/roles, orchestration and job progress. |
 | Djinn | Djinn-native agent/session execution, configuration, tools, policy, transcripts, and results. |
 
-Agent-specific discovery, status interpretation, start/resume, and job concepts
-should move out of Kitsune into optional Coven integration. Target: without
+Agent-specific discovery, status interpretation, hooks, start/resume, agent-aware
+restore and job concepts move out of Kitsune into optional Coven integration. Target: without
 Coven, Kitsune is a fully functional multiplexer with no agent-aware features.
 Kitsune **currently still has built-in agent detection and integrations**; this
 decision neither removes them immediately nor claims extraction is complete.
@@ -53,9 +58,31 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | Surface | Current scope / next owner |
 | --- | --- |
 | Desktop persistent lower menu | Generic multi-app block, not a built-in agent inventory. |
+| New Claude hook configuration | Linux: Coven-owned settings operations, Kit install/recommendations/updates retired. Non-Linux: Kit production installer/assets/result type and recommendation/update/bulk paths preserved until matching Coven adapters. See [hook contract](CLAUDE_HOOKS_CONTRACT.md). |
+| New Codex hook configuration | Linux: Coven-owned hooks.json + config.toml operations; Kit install/recommend/update/bulk paths retired before provider discovery. Non-Linux legacy installer/assets/result type preserved until matching Coven adapters. Shared global enablement is not native approval. See [Codex contract](CODEX_HOOKS_CONTRACT.md). |
+| Independent Codex receipts | Same private Unix receiver/store; SessionStart reference capture only, always unknown even fresh. No working/idle lifecycle or native operational certification. |
+| Independent Claude receipts | Coven Unix private receiver/inventory; Windows unsupported, macOS not validated. Not a non-Linux hook-configuration replacement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
 | Agent APIs/detection, navigator/attention and mobile UI | Retained compatibility; move management model/interpretation into Coven and retire matching Kitsune surfaces. |
-| Native references, restore/resume and lifecycle hooks | Retained; need Coven/runtime adapters and subsystem-specific compatibility/removal gates. |
-| `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | Compatibility hook installers, not the generic provider registry; a heading rename does not retire logic. |
+| Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
+| `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
+
+New Claude settings are explicitly selected and preview by default; Linux-only
+apply can migrate only exact verified legacy commands/script with consent. No
+automatic migration, live authority release or conversion of running sessions.
+Coven's private receipt inventory is last-reported, caller-supplied evidence, not
+native identity/current activity/readiness/job completion or resume permission.
+An optional independent worker presents only generic snapshot/`integration.view.*`
+rows after receiver readiness; failed Kitsune UI does not stop core capture. This
+creates no pane binding, launch, adoption, role or task authority.
+
+Codex's strict v1 two-file journal is separate from Claude's preserved v2 receipt.
+The shared private filesystem engine supplies provider-specific allowlists/recovery
+names, not common provider policy. Codex validates both files before any artifacts,
+rereads under lock and commits pending journal → hooks → TOML → final journal;
+there is no global atomicity claim. Normal uninstall leaves the shared global
+feature enabled, never revives Kit commands; explicit guarded rollback restores both
+original images/modes/absence. Native trust state stays user/native-controlled.
+Full discovery/start/resume/restore transfer remains pending for every provider.
 
 The obsolete local singleton `[external_view]` is diagnosed/ignored in favor of
 `integrations.sources`, with no automatic config writes. Its unreleased `view.*`
@@ -113,7 +140,8 @@ The separate [pure resume planner](SESSION_RESUME_PLAN_CONTRACT.md) characterize
 16 historical provider argv mappings in Coven from explicitly supplied unverified
 references. It performs no IO or execution and deliberately hardens validation.
 It neither widens Djinn-only interactive execution nor replaces Kitsune's restore,
-reference ingestion, hooks, or built-in policy. Optional compatibility delegation
+reference ingestion or built-in policy. The independent Claude hook cut above is
+not a consequence of planner equivalence. Optional compatibility delegation
 and per-runtime/cross-platform gates still precede any removal.
 
 [Independent extraction characterization](KITSUNE_EXTRACTION_CHARACTERIZATION.md)
@@ -213,7 +241,7 @@ See [the comparison contract](KITSUNE_AGENT_COMPARISON_CONTRACT.md) for exact
 categories, private legacy-change detection, provenance and the extraction matrix.
 Panes/process evidence, command submission and terminal annotations already have
 generic surfaces. Status/attention authority, native references/automatic restore,
-provider resume/hook installers and Windows agent-aware process selection remain
+provider resume/remaining hook installers and Windows agent-aware process selection remain
 extraction blockers. No removal until characterized per runtime and cross-platform.
 Next: generic process-selection characterization and pure provider policy behind
 compatibility wrappers, not a scheduler. Broader workspace annotations remain proposed.
@@ -226,6 +254,7 @@ These are independent paths, not a required round trip:
 observation: Kitsune -> Coven adapter -> sourced observations
 annotation: user-enabled producer -> pane.annotate -> Kitsune terminal border
 integration views: independent apps -> per-source frames -> local app selector/rows -> per-source intents
+Claude/Codex receipts: explicit native hooks -> Coven report -> private receiver/store -> redacted inventory -> optional generic view
 group status: explicit participant/source declaration -> pinned local artifact -> Coven ephemeral busy/unknown rows
 ```
 

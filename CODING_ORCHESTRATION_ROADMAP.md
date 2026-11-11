@@ -1,6 +1,56 @@
 # Coven coding orchestration roadmap
 
+## Confirmed agent-management implementation priority
+
+Follow [AGENT_MANAGEMENT_MIGRATION.md](AGENT_MANAGEMENT_MIGRATION.md), the
+authoritative all-provider ownership matrix and next-transfer queue. **All**
+discovery/status, hooks, start/resume and agent restore belong in Coven; generic
+multiplexing/presentation remain Kitsune and native execution facts remain runtime-owned.
+
+The first real cut is implemented: Coven's independent Claude receiver/store and
+redacted last-reported inventory, preview-first Claude hook settings operations,
+optional generic-view presentation, and retirement of Kitsune's new Claude
+installer **on Linux only**. Non-Linux production installer/assets/result type and
+recommendation/update/bulk paths remain until matching Coven platform adapters;
+all six target entries and status/uninstall/old ingress remain on all platforms.
+Receiver transport is Unix-only, Windows unsupported and macOS unvalidated.
+See [receiver](AGENT_MANAGEMENT_CONTRACT.md) and
+[hook](CLAUDE_HOOKS_CONTRACT.md) contracts for privacy, Unix transport, Linux-only
+apply, rollback/recovery and unverified-report limits. No automatic configuration
+migration or running-session conversion occurs. Claude process/screen fallback and
+agent restore remain Kitsune; the subsequent Codex hook transfer is recorded below,
+while Pi/OpenCode/Copilot hook ownership and remaining management transfers are pending.
+
+Next functional work adds matching non-Linux Claude adapters before retiring
+working Kit paths, then transfers remaining hook owners, management interpretation,
+provider start/resume and agent-aware restore with subsystem removal gates, not
+another permanent characterization-only milestone. Optional presentation is not
+authority for launch, pane binding, adoption, roles or task execution. Existing
+worker/composer backlog below remains deferred. Parent records final validation;
+this docs-only update asserts no fresh full-suite or all-platform result.
+
 ## Priority rebaseline — 2026-10-22
+
+### Subsequent Codex implementation cut
+
+[Codex hook management](CODEX_HOOKS_CONTRACT.md) now owns explicit hooks.json +
+config.toml operations and SessionStart-only reference capture in the existing Unix
+receiver/inventory. Fresh Codex records stay unknown, never working/idle. Optional
+generic view labels are provider-derived; unchanged `integration.view.*` gives
+Kitsune no provider model. Linux Kit new install/recommend/update/bulk paths are
+retired before provider discovery, with no automatic Coven execution. Non-Linux
+legacy installers remain until matching Coven adapters for both Claude and Codex.
+
+Shared filesystem extraction preserves Claude behavior, v2 receipts/errors/statuses;
+Codex has a separate bounded v1 two-file journal. Preview/apply explicitly covers
+shared global feature enablement, not native approval/operational certification.
+Normal uninstall leaves the shared flag enabled and never revives Kit commands;
+guarded rollback restores both original bytes/modes/absence. No global atomicity
+claim. Codex leaves the pending Pi/OpenCode/Copilot hook-owner group, but full
+discovery/status/start/resume/restore transfers remain pending for every provider.
+Owner-reported 16 workflows + 7 fault tests are review-pending scoped evidence;
+final counts are parent-owned, prior Claude counts historical. No fresh full-suite,
+native-provider or cross-platform acceptance is asserted by this docs update.
 
 Functional ownership now takes precedence over further test-only slices:
 [`group present`](GROUP_PRESENTATION_CONTRACT.md) sends Coven-owned declarations
@@ -18,8 +68,9 @@ Extend management/adapters in Coven; keep Kitsune's interface agent-neutral and
 retire legacy management incrementally when replacement behavior is ready.
 
 Default desktop lower-menu replacement is not full removal of legacy agent
-APIs/detection, mobile UI, native hooks/installers or restore. Keep these explicit
-in the [migration matrix](APP_BOUNDARIES.md#legacy-migration-scope). The fixed legacy
+APIs/detection, mobile UI, remaining native hooks/installers or restore. New Claude
+and Codex hook installations on Linux are the separate implemented retirements above. Keep these explicit
+in the [migration matrix](AGENT_MANAGEMENT_MIGRATION.md#api--interfaces). The fixed legacy
 `IntegrationTarget` installer is not a generic provider registry. Both apps now
 use the new contract together, without old `view.*` aliases or automatic rewriting
 of obsolete `[external_view]` config. No broker/plugin/script layer is required.
@@ -30,7 +81,7 @@ initial single-endpoint Kitsune observation is implemented in Coven only
 participant group declarations/roles and an explicit foreground publisher using
 Kitsune's generic opt-in annotations are initially implemented
 ([contract](GROUPS_CONTRACT.md)), with Kitsune/user-owned UI space. Native group
-status/lifecycle, scheduling, automatic following, and extraction are not shipped.
+status/lifecycle, scheduling, automatic following, and complete extraction are not shipped.
 Characterize generic surfaces before extraction. Further worker/worktree implementation,
 including remaining M1/M2 work below, is deferred, not invalidated. The priority
 table and milestone sequence describe the longer-term coding workflow, not the

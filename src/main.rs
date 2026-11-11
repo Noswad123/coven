@@ -242,6 +242,44 @@ enum Command {
 
 #[derive(Subcommand)]
 enum Agent {
+    /// Run Coven's foreground native-hook receiver; never starts a provider.
+    Serve {
+        #[arg(allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, allow_negative_numbers = true)]
+        socket: String,
+        #[arg(long, default_value = "60", allow_hyphen_values = true)]
+        duration: i64,
+        #[arg(long, requires = "source", allow_negative_numbers = true)]
+        kitsune_socket: Option<String>,
+        #[arg(long, requires = "kitsune_socket", allow_negative_numbers = true)]
+        source: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read supported native hook JSON and report once to Coven, not Kitsune.
+    Report {
+        #[arg(long, allow_negative_numbers = true)]
+        socket: String,
+        #[arg(long, value_parser = ["claude", "codex"])]
+        provider: String,
+        #[arg(long, value_parser = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd", "SubagentStop"])]
+        event: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Inspect captured unverified records from a selected Coven receiver.
+    Inventory {
+        #[arg(long, allow_negative_numbers = true)]
+        socket: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Explicit provider hook configuration; mutation requires --apply.
+    Hooks {
+        #[command(subcommand)]
+        command: AgentHooks,
+    },
     Status {
         #[arg(num_args = 0.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         items: Vec<PathBuf>,
@@ -262,6 +300,32 @@ enum Agent {
         #[arg(required = true, num_args = 1.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         items: Vec<PathBuf>,
     },
+}
+
+#[derive(clap::Args)]
+struct ProviderHookOptions {
+    #[arg(long, value_parser = ["claude", "codex"])]
+    provider: String,
+    #[arg(long, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+    config_root: PathBuf,
+    #[arg(long, allow_negative_numbers = true)]
+    executable: Option<String>,
+    #[arg(long, allow_negative_numbers = true)]
+    socket: Option<String>,
+    #[arg(long)]
+    migrate_kitsune: bool,
+    #[arg(long)]
+    apply: bool,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum AgentHooks {
+    Plan(ProviderHookOptions),
+    Install(ProviderHookOptions),
+    Uninstall(ProviderHookOptions),
+    Rollback(ProviderHookOptions),
 }
 
 #[derive(clap::Args)]
@@ -1381,13 +1445,113 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             let result = runtime::lifecycle(&workspace, action)?;
             return Ok(command_output(result.body, result.exit_code));
         }
+        Command::Agent {
+            command:
+                Agent::Serve {
+                    workspace,
+                    socket,
+                    duration,
+                    kitsune_socket,
+                    source,
+                    json,
+                },
+        } => {
+            let request = coven::agent_management::ServeRequest {
+                workspace,
+                socket,
+                duration: duration
+                    .try_into()
+                    .map_err(|_| coven::Error::invalid_cli_arguments())?,
+            };
+            return match (kitsune_socket, source) {
+                (Some(socket), Some(source)) => {
+                    coven::agent_management_presentation::serve_arguments(
+                        &request,
+                        &coven::agent_management_presentation::PresentationRequest {
+                            socket,
+                            source,
+                        },
+                        json,
+                    )
+                }
+                (None, None) => coven::agent_management::serve_arguments(&request, json),
+                _ => Err(coven::Error::invalid_cli_arguments()),
+            };
+        }
+        Command::Agent {
+            command:
+                Agent::Report {
+                    socket,
+                    provider,
+                    event,
+                    json,
+                },
+        } => {
+            return coven::agent_management::report_arguments(
+                &coven::agent_management::ReportRequest {
+                    socket,
+                    provider,
+                    event,
+                },
+                json,
+            );
+        }
+        Command::Agent {
+            command: Agent::Inventory { socket, json },
+        } => {
+            return coven::agent_management::inventory_arguments(
+                &coven::agent_management::InventoryRequest { socket },
+                json,
+            );
+        }
+        Command::Agent {
+            command: Agent::Hooks { command },
+        } => {
+            let (operation, options) = match command {
+                AgentHooks::Plan(options) => (coven::claude_hooks::Operation::Plan, options),
+                AgentHooks::Install(options) => (coven::claude_hooks::Operation::Install, options),
+                AgentHooks::Uninstall(options) => {
+                    (coven::claude_hooks::Operation::Uninstall, options)
+                }
+                AgentHooks::Rollback(options) => {
+                    (coven::claude_hooks::Operation::Rollback, options)
+                }
+            };
+            if options.provider == "codex" {
+                return coven::codex_hooks::arguments(
+                    &coven::codex_hooks::Request {
+                        config_root: options.config_root,
+                        executable: options.executable,
+                        socket: options.socket,
+                        migrate_kitsune: options.migrate_kitsune,
+                        apply: options.apply,
+                        operation,
+                    },
+                    options.json,
+                );
+            }
+            if options.provider != "claude" {
+                return Err(coven::Error::invalid_cli_arguments());
+            }
+            return coven::claude_hooks::arguments(
+                &coven::claude_hooks::Request {
+                    config_root: options.config_root,
+                    executable: options.executable,
+                    socket: options.socket,
+                    migrate_kitsune: options.migrate_kitsune,
+                    apply: options.apply,
+                    operation,
+                },
+                options.json,
+            );
+        }
         Command::Agent { command } if !matches!(command, Agent::Send { .. }) => {
             let (items, action) = match command {
                 Agent::Status { items } => (items, None),
                 Agent::Start { items } => (items, Some(runtime::AgentAction::Start)),
                 Agent::Stop { items } => (items, Some(runtime::AgentAction::Stop)),
                 Agent::Restart { items } => (items, Some(runtime::AgentAction::Restart)),
-                Agent::Send { .. } => unreachable!(),
+                _ => unreachable!("new management routes handled above"),
             };
             let (workspace, items) = workspace::split_optional_workspace(&items)?;
             if action.is_some() && items.is_empty() {

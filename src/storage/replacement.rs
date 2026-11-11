@@ -105,7 +105,8 @@ fn atomic_replace_with(
     require(
         name != ".workspace.lock"
             && name != ".runtime-transport.lock"
-            && name != ".group-publisher.lock",
+            && name != ".group-publisher.lock"
+            && name != ".agent-management.receiver.lock",
         "unsafe_replacement_lock",
     )?;
     let target = safe_target(guard, relative)?;
@@ -413,12 +414,15 @@ mod tests {
             ".workspace.lock",
             ".runtime-transport.lock",
             ".group-publisher.lock",
+            ".agent-management.receiver.lock",
             "state/.workspace.lock",
             "state/.runtime-transport.lock",
             "state/.group-publisher.lock",
+            "state/.agent-management.receiver.lock",
             "state/directory/.workspace.lock",
             "state/directory/.runtime-transport.lock",
             "state/directory/.group-publisher.lock",
+            "state/directory/.agent-management.receiver.lock",
         ] {
             let io = FaultIo::new("success", false);
             assert!(

@@ -45,6 +45,8 @@ sha2 = "0.10"
 ring = { version = "0.17.14", default-features = false }
 ryu = "1.0"
 toml = "0.8"
+# Use the already-locked codec directly for surgical provider TOML edits.
+toml_edit = "0.22"
 tempfile = "3.27"
 
 [target.'cfg(unix)'.dependencies]

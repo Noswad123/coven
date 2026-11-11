@@ -1,0 +1,177 @@
+# Agent receipt management contract
+
+## Overview
+
+Coven owns an independent, foreground Claude/Codex hook receiver and redacted inventory.
+Transport is Unix-only (Windows unsupported); macOS operation has not been validated.
+This is distinct from the Linux-only hook mutation/Kit installer retirement cut;
+Unix transport alone is not a matching non-Linux configuration adapter.
+Contract: `coven.agent-management.v1`. These are **caller-supplied, unverified
+receipts**, not an authenticated native-session registry or task authority. See
+[the migration matrix](AGENT_MANAGEMENT_MIGRATION.md) for the all-provider target
+and the still-pending discovery/start/resume/restore transfers.
+
+## API / Interfaces
+
+```text
+coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 [--kitsune-socket ABS_KITSUNE_SOCKET --source coven] [--json]
+coven agent report --provider claude --socket ABS_COVEN_SOCKET [--event EVENT] [--json]
+coven agent report --provider codex --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
+coven agent inventory --socket ABS_COVEN_SOCKET [--json]
+```
+
+- `serve`: duration defaults to 60 seconds; accepted range 1–3600. Explicit existing
+  workspace with a regular `coven.json` marker, not a complete task/configuration
+  authority check. Core startup never launches a provider or daemon.
+- `report`: native JSON on stdin, at most **1 MiB**, depth bounded and typed-decoded.
+  Requires `session_id` and `hook_event_name`. Session ID is nonblank, at most 512
+  UTF-8 bytes, with no controls or leading hyphen after leading whitespace.
+  Optional `--event` must match the payload event.
+- Claude main-session events (unchanged): `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+  `PostToolUse`, `Stop`, `SessionEnd`. `SubagentStop`, or a nonempty string
+  `agent_id`, is ignored without sending a report. Non-null, non-string `agent_id` is invalid.
+- Codex accepts **only `SessionStart`** in domain validation, even though the
+  shared CLI event parser also lists Claude events. It captures a reference, never
+  working/idle/ended lifecycle. No `thread_id`/`thread-id` session alias exists.
+  Native SessionStart has seven required fields; Coven intentionally requires only
+  session ID/event and ignores/drops the rest before RPC. See the pinned native
+  schema and complete native example in [the Codex contract](CODEX_HOOKS_CONTRACT.md#data-flow).
+- No implicit HOME/config roots, provider executable discovery, PATH lookup,
+  probes, native-store inspection or automatic adoption.
+
+Library entry points use `ServeRequest { workspace, socket, duration }`,
+`ReportRequest { socket, provider, event }`, `InventoryRequest { socket }` and
+`serve_arguments`, `report_arguments`/`report_payload`, `inventory_arguments`,
+returning `Result<TaskOutput>`. `TaskOutput` carries stdout, warnings and exit code.
+The optional presentation entry point additionally takes
+`PresentationRequest { socket, source }`.
+
+### Private wire and output
+
+The Unix stream uses bounded newline-delimited requests with exactly `id`,
+`contract`, `method`, `params`; correlation IDs are 32 hex characters. Methods are
+only `report` and `inventory`. Report params contain exactly `provider`, `event`,
+`session_id`; inventory params are empty. Requests are bounded to 8192 bytes;
+receiver socket reads/writes use a deadline of at most 200 ms within the serve
+deadline. Storage setup/synchronization is not a hard wall-clock bound. Client calls use a
+one-second deadline and at most 256 KiB reply budget, with endpoint fences and
+closed result validation before stdout.
+
+`report --json` returns `type: accepted`, a 64-hex `record_id`, and delivery
+`committed` or `durability_uncertain`; ignored subagents return `type: ignored`,
+`reason: subagent`. Human accepted output is `Accepted RECORD_ID`.
+Inventory returns `contract`, `server_epoch`, `authorization: none`, and `records`.
+Each record contains only:
+
+```text
+record_id, provider, last_event, reported_state, age_ms,
+reference_trust: caller_supplied_unverified,
+native_identity: unestablished, job_completion: unestablished
+```
+
+The record ID is SHA-256 of provider (`claude` or `codex`), NUL, then the exact
+session ID. Existing Claude hashes are unchanged; equal session IDs from different
+providers yield distinct records. It is a stable pseudonymous reference, not
+authentication or anonymization against guessing.
+Native IDs are omitted from inventory, acknowledgements and optional UI rows.
+Default inventory/serve output is pretty JSON; `--json` is compact. The CLI adds
+a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
+`type: stopped`; this route does not promise the watch command's exit-130 policy.
+
+## Data Flow
+
+1. Decode and validate the native root payload, then construct a **new** minimal
+   object. Prompt, transcript, cwd and all unknown fields are dropped **before
+   transport, storage or stdout**; subagent events never revive the main record.
+2. Validate the private endpoint and send one correlated request. No automatic retry.
+3. Receiver takes the ordinary workspace guard for each update, rereads and validates
+   the store, then atomically replaces it. It releases that guard between reports.
+4. Persist `state/agent-management.json` with unchanged `schema_version: 1` as private
+   **0600**, at most **128 records aggregate across providers** (not per provider)
+   and **256 KiB**. Private records retain full native IDs, last events, receipt
+   timestamps and receiver epochs. Capacity exhaustion refuses a new record; no eviction
+   or pruning API is supplied. Stored record fields remain `provider`, `session_id`,
+   `last_event`, `timestamp_ms`, `server_epoch`; no schema migration is required.
+5. Publish a redacted projection using receipt-local monotonic ages, not native
+   event timestamps. Receipt order wins; delayed/spoofed reports are possible.
+
+| Claude last event received in this receiver epoch | Reported state |
+| --- | --- |
+| `SessionStart` | `unknown` |
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `working` |
+| `Stop` | `idle` |
+| `SessionEnd` | `ended` |
+| Persisted record after restart, until a new receipt | `unknown`, `age_ms: null` |
+
+These states are **last reported**, not current jobs/readiness/identity/completion.
+There is no freshness threshold turning them into live guarantees.
+Codex records are always **unknown**, even when fresh with a known receipt age.
+After restart **all providers'** persisted records have unknown state and null age
+until another receipt; a new Codex receipt still does not establish activity.
+
+### Receiver lifetime and optional presentation
+
+Unix-only transport requires an existing owned socket parent with **exact 0700**
+mode and a private **0600** socket. Aliased/unsafe paths are refused. Bind never
+unlinks an existing leaf, even a stale socket. Parent/socket inode fences detect
+replacement; cleanup removes only the still-owned endpoint. A SIGINT guard is
+installed **before bind**, including startup error cleanup. SIGTERM/SIGKILL cleanup
+is not promised: verify no live owner before manually removing a stale socket.
+
+A separate persistent `state/.agent-management.receiver.lock` lease admits only
+one receiver per workspace, even on different sockets. Its 0600 inode stays after
+exit and is protected from generic replacement by its reserved basename; never
+remove/replace it to bypass a live receiver. Startup synchronizes `state/` and the
+workspace root before admitting report commits. State/workspace-lock/lease identity
+is fenced during service.
+
+Optional `--kitsune-socket` and `--source` must be supplied together. An independent
+worker waits for initialized receiver projection before UI IO. It reads only generic
+snapshot discovery and uses `integration.view.open/replace/poll/close`, not Kitsune
+agent APIs. It sends bounded last-reported label/detail rows with dynamic provider
+labels for both Claude and Codex; Kitsune gains no provider-specific knowledge. Selecting one adds
+read-only trust details. No pane binding, launch, resume, adoption or role follows.
+Unavailable/failed Kitsune presentation does not stop core capture; the final report
+adds a separate `presentation` outcome. Configure a dedicated generic source
+manually and avoid another publisher contending for its lease. Uncertain UI writes
+are not replayed; lease expiry is the fallback cleanup.
+
+## Edge Cases
+
+- From first send onward, missing/invalid acknowledgements can be
+  `agent_delivery_uncertain`: receipt may already be persisted. Do not retry
+  automatically. `durability_uncertain` also means replacement occurred, not
+  permission to retry or roll back. Peer error bodies are not echoed.
+- Local socket ownership is not native producer authentication. Anyone able to
+  call the selected endpoint can make unverified claims. Private IDs never grant
+  resume authority or terminal association.
+- The workspace marker admits storage, not task execution, readiness or approval.
+  Existing task/launch/checkpoint contracts remain independent.
+- Receiver availability is optional for installed best-effort hooks; offline
+  failure is suppressed by the generated shell command, not turned into native
+  provider failure. Bound socket existence alone is not receiver readiness.
+
+## Example usage
+
+Reference syntax; select inspected absolute paths and prepare the existing owned
+0700 socket parent separately. This starts only Coven's foreground receiver:
+
+```text
+coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 --json
+coven agent inventory --socket ABS_COVEN_SOCKET --json
+```
+
+In a separate invocation, `agent report --provider claude --socket ABS_COVEN_SOCKET
+--event Stop --json` accepts stdin such as
+`{"session_id":"example-unverified-id","hook_event_name":"Stop"}`. This writes
+receipt state, not native status. Add the paired Kitsune options to `serve` only
+for optional generic presentation; core inventory requires no Kitsune installation.
+
+## Related files
+
+- `src/agent_management.rs`, `src/agent_management/{store,unix}.rs`
+- `src/agent_management_presentation.rs`, `src/main.rs`
+- `src/{read_fs,strict_json,session_support,observation_socket}.rs`,
+  `src/storage/replacement.rs`, `src/group_presenter/wire.rs`
+- `tests/{agent_management_workflow,agent_management_presentation,claude_agent_migration_workflow}.rs`
+- [Claude hooks](CLAUDE_HOOKS_CONTRACT.md), [Codex hooks](CODEX_HOOKS_CONTRACT.md), [migration ownership](AGENT_MANAGEMENT_MIGRATION.md)

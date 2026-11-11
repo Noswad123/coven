@@ -1,12 +1,16 @@
 //! Incremental native Coven: explicit readers and guarded task, baseline and
 //! evidence operations. No automatic runtime execution or Python fallback.
 pub mod actions;
+pub mod agent_management;
+pub mod agent_management_presentation;
 pub mod archive;
 mod canonical;
 pub mod checkpoint_decisions;
 pub mod checkpoint_guidance;
 pub mod checkpoint_workspace;
 pub mod checkpoints;
+pub mod claude_hooks;
+pub mod codex_hooks;
 pub mod collection;
 pub mod console;
 pub mod djinn_live_observation;
@@ -19,6 +23,8 @@ pub mod group_presenter;
 pub mod group_publisher;
 pub mod groups;
 pub mod handoff;
+#[cfg(unix)]
+mod hook_files;
 pub mod init;
 pub mod interactive_sessions;
 pub mod kitsune_comparison;

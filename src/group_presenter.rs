@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod wire;
+pub(crate) mod wire;
 
 pub struct Request {
     pub workspace: PathBuf,

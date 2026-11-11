@@ -31,6 +31,16 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
             (3, "items", &["agent", "send"])
         }
         Some("agent") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("serve") => (3, "workspace", &["agent", "serve"]),
+            Some("report") => (3, "", &["agent", "report"]),
+            Some("inventory") => (3, "", &["agent", "inventory"]),
+            Some("hooks") => match arguments.get(3).and_then(|value| value.to_str()) {
+                Some("plan") => (4, "", &["agent", "hooks", "plan"]),
+                Some("install") => (4, "", &["agent", "hooks", "install"]),
+                Some("uninstall") => (4, "", &["agent", "hooks", "uninstall"]),
+                Some("rollback") => (4, "", &["agent", "hooks", "rollback"]),
+                _ => return (command, parsed),
+            },
             Some("status") => (3, "items", &["agent", "status"]),
             Some("start") => (3, "items", &["agent", "start"]),
             Some("stop") => (3, "items", &["agent", "stop"]),
@@ -123,6 +133,9 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         _ => return (command, parsed),
     };
     let string_fields: &[&str] = match route {
+        ["agent", "serve"] => &["socket", "kitsune_socket", "source"],
+        ["agent", "report" | "inventory"] => &["socket"],
+        ["agent", "hooks", _] => &["socket", "executable"],
         ["session", "plan-resume"] => &["runtime", "source", "session", "executable"],
         ["session", "list"] => &["socket", "group", "member"],
         ["session", "inspect" | "watch"] => {
@@ -212,6 +225,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         _ => &[],
     };
     let path_fields: &[&str] = match route {
+        ["agent", "hooks", _] => &["config_root"],
         ["repository", "register"] => &["path"],
         ["worker", "readiness"] => &["executable"],
         ["task", "attempt", "prepare"] => &["intent"],
@@ -231,6 +245,9 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
     let mut originals = HashMap::new();
     let mut serial = 0usize;
     let numeric_names: &[&str] = match route {
+        ["agent", "serve"] => &["duration"],
+        ["agent", "report"] => &["provider", "event"],
+        ["agent", "hooks", _] => &["provider"],
         ["session", "plan-resume"] => &["session-kind"],
         ["session", "list" | "inspect"] => &["runtime", "timeout", "max-response-bytes"],
         ["session", "watch"] => &[

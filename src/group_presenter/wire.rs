@@ -56,7 +56,7 @@ fn token(value: &Value) -> bool {
         !s.is_empty() && s.len() <= 128 && s.chars().all(|c| !c.is_control() && !c.is_whitespace())
     })
 }
-pub(super) fn snapshot(reply: &socket::Reply, source: &str) -> WireResult<()> {
+pub(crate) fn snapshot(reply: &socket::Reply, source: &str) -> WireResult<()> {
     let result = result(&reply.payload, &reply.request_id, "session_snapshot")?;
     let snapshot = field(&result, "snapshot")?;
     field(snapshot, "version")?.as_str().ok_or_else(schema)?;
@@ -97,7 +97,7 @@ pub(super) fn snapshot(reply: &socket::Reply, source: &str) -> WireResult<()> {
     }
     Ok(())
 }
-pub(super) fn opened(bytes: &[u8], id: &str) -> WireResult<Value> {
+pub(crate) fn opened(bytes: &[u8], id: &str) -> WireResult<Value> {
     let value = project(
         &result(bytes, id, "view_opened")?,
         &["lease", "epoch", "revision", "ttl_ms"],
@@ -111,14 +111,14 @@ pub(super) fn opened(bytes: &[u8], id: &str) -> WireResult<Value> {
     }
     Ok(value)
 }
-pub(super) fn replaced(bytes: &[u8], id: &str, epoch: &str, revision: u64) -> WireResult<Value> {
+pub(crate) fn replaced(bytes: &[u8], id: &str, epoch: &str, revision: u64) -> WireResult<Value> {
     let value = project(&result(bytes, id, "view_replaced")?, &["epoch", "revision"])?;
     if value["epoch"].as_str() != Some(epoch) || value["revision"].as_u64() != Some(revision) {
         return Err(schema());
     }
     Ok(value)
 }
-pub(super) fn polled(bytes: &[u8], id: &str, epoch: &str, revision: u64) -> WireResult<Value> {
+pub(crate) fn polled(bytes: &[u8], id: &str, epoch: &str, revision: u64) -> WireResult<Value> {
     let result = result(bytes, id, "view_intents")?;
     let mut value = project(&result, &["epoch", "revision", "ttl_ms"])?;
     if value["epoch"].as_str() != Some(epoch)
@@ -145,7 +145,7 @@ pub(super) fn polled(bytes: &[u8], id: &str, epoch: &str, revision: u64) -> Wire
     value["intents"] = json!(projected);
     Ok(value)
 }
-pub(super) fn closed(bytes: &[u8], id: &str) -> WireResult<Value> {
+pub(crate) fn closed(bytes: &[u8], id: &str) -> WireResult<Value> {
     result(bytes, id, "view_closed")?;
     Ok(json!({"type":"view_closed"}))
 }

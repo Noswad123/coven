@@ -5,7 +5,7 @@
 `coven` is a personal, magic-themed multi-agent workspace command for creating,
 tracking, and running local multi-agent workspaces.
 
-See [APP_BOUNDARIES.md](APP_BOUNDARIES.md) for the 2026-10-22 target decision:
+See [APP_BOUNDARIES.md](APP_BOUNDARIES.md) for the accepted target decision:
 independent apps, Coven-owned cross-runtime observation/grouping first, optional
 Kitsune annotations as a separate generic presentation path, and Djinn-owned native
 execution. Initial Kitsune observation, explicit participant groups/roles, and a
@@ -13,7 +13,7 @@ foreground generic-annotation publisher are implemented in Coven, including expl
 opt-in process-evidence binding independent of Kitsune's agent inventory. Explicit
 Djinn live attachments, revision-scoped busy/unknown group status and explicit
 expiry-bounded `publish --live` are implemented;
-native lifecycle, scheduling, extraction and automatic following
+native lifecycle, scheduling, complete extraction and automatic following
 are not shipped. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) and
 [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md).
 
@@ -82,9 +82,92 @@ Empty config shows `No integrations configured`, absent/expired providers
 five-second lease; close/expiry/removal is per source and reorder preserves retained
 state. Selections drain at most once, are not authentication or execution permission,
 and acknowledge no physical client pixels. This is separate from border annotations
-and their source priority. Legacy agent APIs/detection, mobile/native hooks,
-installers and restore remain; move management model/adapters into Coven and retire
-matching Kitsune surfaces incrementally, not through a permanent test-only gate.
+and their source priority. Legacy agent APIs/detection, mobile UI and agent restore
+remain. New Claude and Codex hook installation **on Linux** is now Coven-owned; non-Linux
+Kitsune installer/recommendation/update paths and other integrations remain pending.
+Move matching management surfaces incrementally,
+not through a permanent test-only gate.
+
+### Coven-owned agent receipts and Claude/Codex hooks
+
+The confirmed migration includes **all** discovery/status interpretation, hooks,
+start/resume and agent restore, not only Claude. The authoritative
+[ownership matrix and next transfers](AGENT_MANAGEMENT_MIGRATION.md) distinguish
+that target from the first functional cut: independent Coven Claude receipt
+capture/inventory, explicit settings management, optional generic presentation,
+and retirement of Kitsune's new Claude installer **on Linux only**. The subsequent
+Codex cut adds two-file hook configuration and SessionStart reference capture,
+with the same Linux-only retirement of new Kit install/recommend/update/bulk paths.
+Claude behavior and v2 receipts/errors/statuses are unchanged by extracting the
+shared private filesystem engine; Codex uses its own v1 journal/recovery namespace.
+
+Reference syntax (explicit inspected paths; `serve` runs foreground and writes
+local receipt state; hook plan/install below are previews):
+
+```text
+coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 --json
+coven agent inventory --socket ABS_COVEN_SOCKET --json
+coven agent hooks plan --provider claude --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
+coven agent hooks install --provider claude --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
+coven agent hooks plan --provider codex --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
+coven agent hooks install --provider codex --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
+```
+
+Use an existing workspace and owned socket parent with exact 0700 mode. No implicit
+HOME/config root, provider lookup/probe or daemon startup. Claude's six installed hooks invoke
+only the trusted selected Coven binary's `agent report`, silently best-effort when
+offline. Report input is bounded to 1 MiB; prompt/transcript/cwd/unknown fields are
+dropped before wire/store/output, and Claude subagents are ignored. Full session IDs stay
+in private 0600 state; inventory shows record hashes and last-reported state/age,
+not native identity, readiness, job completion or permission to resume. Restarted
+records are unknown with null age until a new receipt.
+
+The six-event lifecycle capture above is Claude-only. Codex accepts/generates only
+`SessionStart` and stays **unknown even when fresh**: it is reference capture, not
+working/idle detection. Native stdin has seven required fields; Coven deliberately
+requires only `session_id`/`hook_event_name`, dropping the rest before RPC. No
+`thread_id`/`thread-id` alias. Both providers share unchanged schema-v1 record fields
+and an **aggregate** 128-record cap; hashes are provider + NUL + SID, preserving
+Claude hashes while separating equal IDs across providers.
+
+Codex manages **`hooks.json` and `config.toml`**, surgically preserving TOML comments
+and unrelated semantics, setting global `[features].hooks = true` and removing only
+`features.codex_hooks`; inline/dotted features layouts refuse. Preview discloses
+absent/false → true and native approval **not granted**. Applying authorizes shared
+enablement, not native trust or operational capture. Normal uninstall leaves shared
+hooks enabled and never restores Kit references; rollback guards both original byte/
+mode/absence images. All validation precedes any apply artifact; locked reread,
+pending journal, hooks-first/TOML/final-journal sequencing is not global atomicity.
+Read [CODEX_HOOKS_CONTRACT.md](CODEX_HOOKS_CONTRACT.md) for the upstream release pin,
+exact version-6 legacy migration, legal-prefix resume and retained-race recovery.
+
+Optional paired `--kitsune-socket ABS_KITSUNE_SOCKET --source coven` on `serve`
+publishes read-only rows with dynamic provider labels through generic snapshot/
+`integration.view.*` only. Kitsune failure does not stop core capture; no agent API, pane binding, launch or adoption
+is involved. Core works without Kitsune or a native provider.
+
+All hook operations preview without `--apply`; `plan` always previews. Apply is
+Linux-only; other Unix platforms support preview, not an equivalent mutator.
+Kitsune preserves macOS/Windows production installation/assets/result type and
+recommendation/update/bulk paths until matching Coven adapters are ready. Coven's
+receiver is Unix-only (Windows unsupported); macOS has not been validated.
+All six Kit target entries, status/uninstall/old ingress and legacy UI settings
+remain; no working non-Linux path is dropped. Stop native providers/editors
+before apply. Explicit `--migrate-kitsune` accepts only exact verified legacy
+commands/script; normal uninstall never restores Kit references, while guarded
+rollback restores exact original bytes/mode or absence. Private receipts/backups
+can contain secrets. Conflicts/recovery require inspection, never blind retry or
+undo. No user configuration or running sessions are automatically migrated.
+Kitsune still owns legacy process/screen fallback and agent restore, including
+Claude; this is not full Claude/all-provider extraction. See
+[receiver safety/lifetime](AGENT_MANAGEMENT_CONTRACT.md) and
+[Claude hook mutation/recovery](CLAUDE_HOOKS_CONTRACT.md) and
+[Codex hook mutation/recovery](CODEX_HOOKS_CONTRACT.md) before use. Full discovery,
+start/resume and restore transfers remain pending for **all providers**; the
+hook cuts do not claim full agent management extraction. The Codex owner's current
+16 workflows + 7 fault tests are scoped, review-pending evidence, not a fresh
+full-suite/live-provider/platform pass. Parent final counts remain separate;
+the older Claude validation records are historical.
 
 ## Install
 
@@ -655,7 +738,9 @@ See [`CODING_ORCHESTRATION_ROADMAP.md`](./CODING_ORCHESTRATION_ROADMAP.md) for
 safety contracts and the deferred worker/composer coding backlog. The near-term
 priority is existing-session observation/grouping and generic presentation before
 further worker/worktree implementation; initial declarations/publishing are now
-implemented, while extraction and native lifecycle/scheduling remain open.
+implemented, and Claude plus Codex hook/receipt transfers are now implemented within their documented profiles; complete
+extraction and native lifecycle/scheduling remain open. Follow the authoritative
+[all-agent transfer queue](AGENT_MANAGEMENT_MIGRATION.md) for remaining ownership.
 
 ## Current Djinn persisted-evidence observation
 
