@@ -32,6 +32,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         }
         Some("agent") => match arguments.get(2).and_then(|value| value.to_str()) {
             Some("serve") => (3, "workspace", &["agent", "serve"]),
+            Some("discover") => (3, "", &["agent", "discover"]),
             Some("report") => (3, "", &["agent", "report"]),
             Some("report-extension") => (3, "", &["agent", "report-extension"]),
             Some("inventory") => (3, "", &["agent", "inventory"]),
@@ -142,6 +143,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
     };
     let string_fields: &[&str] = match route {
         ["agent", "serve"] => &["socket", "kitsune_socket", "source"],
+        ["agent", "discover"] => &["socket", "pane", "expected_terminal", "source"],
         ["agent", "report" | "report-extension" | "inventory"] => &["socket"],
         ["agent", "hooks" | "extensions", _] => &["socket", "executable"],
         ["session", "plan-resume"] => &["runtime", "source", "session", "executable"],
@@ -255,8 +257,9 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
     let mut serial = 0usize;
     let numeric_names: &[&str] = match route {
         ["agent", "serve"] => &["duration"],
-        ["agent", "report"] => &["provider", "event"],
-        ["agent", "hooks", _] => &["provider"],
+        ["agent", "discover"] => &["timeout", "max-response-bytes", "duration", "interval"],
+        ["agent", "report" | "report-extension"] => &["provider", "event"],
+        ["agent", "hooks" | "extensions", _] => &["provider"],
         ["session", "plan-resume"] => &["session-kind"],
         ["session", "list" | "inspect"] => &["runtime", "timeout", "max-response-bytes"],
         ["session", "watch"] => &[

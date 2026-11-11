@@ -89,6 +89,57 @@ Kitsune installer/recommendation/update paths and other integrations remain pend
 Move matching management surfaces incrementally,
 not through a permanent test-only gate.
 
+### Coven-owned agent discovery
+
+Production [`coven agent discover`](AGENT_DISCOVERY_CONTRACT.md) recognizes all
+22 literal provider families from generic Kit Linux foreground-cohort evidence,
+without a workspace/default lookup, storage, Kit agent APIs/hints or receipt/group
+joins. Only redacted locators and PID/provider/rule matches are exposed; every
+match is retained without leader selection/ranking. Activity/attention remain
+unknown and native identity/lifecycle/completion unestablished. Help, server and
+maintenance commands count as executable-family hints, not certified interactive
+agent behavior. No adoption, launch/input/stop/resume, roles or native-ID association.
+
+Reference syntax only, using an inspected absolute Kit socket:
+
+```text
+coven agent discover --socket ABS_KITSUNE_SOCKET --json
+coven agent discover --socket ABS_KITSUNE_SOCKET --pane PANE_ID --expected-terminal TERMINAL_ID --json
+coven agent discover --socket ABS_KITSUNE_SOCKET --watch --duration 60 --interval 2 --json
+coven agent discover --socket ABS_KITSUNE_SOCKET --watch --duration 60 --interval 2 --present --source coven-discovery --json
+```
+
+The optional generic view source must already be manually enabled in Kit.
+Discovery requires additive `snapshot.process_observation` version 1 with Linux,
+`pane_foreground_cohort`, `unclassified`; binary protocol 18 is unchanged.
+Windows `selected_process`/`legacy_agent_aware` and macOS are rejected in this first
+cut. Metadata is not authenticated platform/live-process attestation. Bounded
+bracket matching discards partial failures but is not atomic attribution/PID-ABA
+protection. Read requests can trigger Kit housekeeping/default-workspace/shell
+creation, so read-only is not zero server effects.
+
+Watch is serial and bounded (duration `0.1..3600`, interval `0.1..60` seconds).
+Presentation requires interval at most 2 and timeout at most 3 seconds, uses a
+five-second generic view TTL, and never renews stale positives while collection
+blocks. Fresh unavailable frames clear positives. Uncertain UI delivery stops all
+UI calls, including close, without retry/failover; core watch continues. At most
+128 rows show one summary and 127 matches with explicit omissions. Selection is
+read-only, without focus; publisher row IDs are not native/session/receipt identity.
+Watch exit 0 means completed duration even through outages; one-shot exit 0 means
+observed, 2 incompatible, 1 unavailable. Interrupt is 130; output failure is 1.
+
+**No matching Kit detector retirement yet.** `detected_agent` also supports
+hook-owner confirmation, start readiness, restore/restored-idle, mobile/navigation.
+Next separate foreground-owner confirmation, fallback publication and restored
+native identity before enabling external mode. No toggle/kill/hide controls ship.
+This is functional Coven-owned recognition with temporary duplicate legacy policy,
+not sole ownership/full status; the classifier intentionally diverges from the
+209-case legacy corpus. Five prior Linux hook/configuration retirements stand and
+non-Linux adapters remain pending. See the [201 focused Coven checks, 249 Kit API
+checks and build/package validation](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table);
+historical OpenCode 236 is not a new discovery total. No actual live installed Kit
+commands were used in this documentation session.
+
 ### Coven-owned agent receipts, hooks and extensions
 
 The confirmed migration includes **all** discovery/status interpretation, hooks,
@@ -178,7 +229,7 @@ Stop providers/watchers before mutation: no atomic activation, autoload or live
 authority release. File placement is not native activation proof. The pinned
 source declares 1.5.2 on main, not a release tag; hasUI includes TUI/RPC, not root/TUI
 proof, and headless capture is not supported. No approval/policy changes occur.
-Pi discovery/lifecycle/start/resume/restore remain pending. The historical
+Pi broader discovery/lifecycle/start/resume/restore remain pending. The historical
 [Pi validation record](AGENT_MANAGEMENT_MIGRATION.md#pi-validation-table)
 covers 212 focused Rust checks, generated-asset Node/Bun checks and Kit compatibility,
 with native activation unclaimed and the receipt timing limitation retained.
@@ -216,7 +267,7 @@ store fields/schema 1, so stored records limit downgrade. Linux apply/Kit instal
 retirement only; non-Linux full-v9 new-install paths and all-platform legacy
 CLI/status/uninstall/all six targets/old ingress remain. Unix preview/receiver is
 macOS-unvalidated, Windows-unsupported. No installed-native operational certification.
-The [current scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table)
+The [historical OpenCode scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table)
 records 236 focused Rust checks including 20 shared checks and 14 Pi/OpenCode
 workflows, plus 12 Node producer checks with
 Bun harness coverage, Kit 111 integration/10 OpenCode overlapping checks and six

@@ -54,6 +54,7 @@ fn native_source_package_boundary() {
                 || *file == "tests/fixtures/pi_extension/KITSUNE_LICENSE"
                 || *file == "tests/fixtures/opencode_extension/kitsune-agent-state.js"
                 || *file == "tests/fixtures/opencode_extension/KITSUNE_LICENSE"
+                || *file == "tests/fixtures/kitsune_process_policy/reference.json"
                 || *file == "tests/native_package.rs",
             "checkout-only regression harness shipped: {file}"
         );
@@ -90,6 +91,10 @@ fn native_source_package_boundary() {
         "src/pi_extension.rs",
         "src/pi_extension/template.js",
         "src/extension_assets.rs",
+        "src/agent_discovery.rs",
+        "src/agent_discovery_watch.rs",
+        "src/agent_processes.rs",
+        "tests/fixtures/kitsune_process_policy/reference.json",
         "src/opencode_extension.rs",
         "src/opencode_extension/template.js",
         "tests/fixtures/opencode_extension/kitsune-agent-state.js",

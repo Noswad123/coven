@@ -78,7 +78,8 @@ not full OpenCode management completion.
 | OpenCode receipts and inventory | Coven Unix strict extension envelope, session.created/updated root DTO references only, unknown even fresh. | Server exact-directory-instance scope, not selected TUI/pane/attach or whole project; no universal resume capture. |
 | Optional five-provider inventory presentation | Coven projects its own records with dynamic provider labels through generic Kitsune snapshot + `integration.view.*`. | Kitsune remains agent-neutral; no management authority comes from row selection. |
 | Legacy Claude surfaces on all platforms | Kitsune retains all six `IntegrationTarget::ALL` entries, installation status, uninstall and old hook ingress. Non-Linux new installation also remains. | Retire only after platform-matched compatibility/transition coverage; running sessions are not converted by editing settings. |
-| Process/screen fallback, classification, status/attention, navigation, agent APIs and mobile surfaces | Still Kitsune compatibility, including Claude. Coven also has bounded generic Djinn-family observations and explicit groups. | Move interpretation/model to Coven for every source/provider; retire matching agent-specific Kitsune surfaces. |
+| Generic Linux foreground-cohort recognition (all 22 literal families) | Coven production `agent discover`, bounded watch and optional generic presentation; ephemeral PID/provider/rule/locator evidence only, no receipt/group join. Kit adds optional version-1 `process_observation` metadata; binary protocol 18 unchanged. | Partial ownership scope, not detector retirement/full status: temporary duplicate legacy policy remains. Windows selected_process/legacy_agent_aware rejected; macOS unsupported first cut. See [discovery contract](AGENT_DISCOVERY_CONTRACT.md). |
+| Process/screen fallback, status/attention, navigation, agent APIs and mobile surfaces | Still Kitsune compatibility, including Claude; the independent Coven recognition path does not replace it. | Separate foreground-owner confirmation, fallback publication and restored native identity before enabling external mode or retiring matching surfaces. |
 | Interactive start/resume | Coven's explicit Djinn UI start/resume uses generic terminal-pinned submission. Kitsune's legacy provider paths remain. | Coven adapters for remaining supported providers; unsupported capabilities stay explicit. |
 | Resume policy | Coven pure planner characterizes 16 historical mappings; no new execution authority. | Coven owns provider policy; pure argv equivalence alone cannot replace restore ownership/history semantics. |
 | Agent-aware persistence/restore, native-reference ownership/deduplication and deferred launch | Still Kitsune. | Coven owns agent restore policy; Kitsune retains generic terminal/session persistence and transport. |
@@ -94,16 +95,34 @@ groups, not promises that each kind has hooks or resume support:
 | --- | --- |
 | Claude | New hook configuration transferred on Linux only; independent receipt inventory is Unix-only, not macOS-validated. Non-Linux installer/recommendation/update paths and all-platform process/screen fallback, start/resume and restore remain pending. |
 | Djinn | Coven observation and explicit interactive/prompt capabilities exist; Kitsune's built-in detection, reporting, start/resume and restore remain pending extraction. |
-| Codex | New two-file hook configuration transferred on Linux only; Unix receiver captures SessionStart references only. Non-Linux installer/recommendation/update paths and all-platform discovery/status/start/resume/restore remain pending. Legacy status/uninstall/old ingress remain. |
+| Codex | New two-file hook configuration transferred on Linux only; Unix receiver captures SessionStart references only. Independent Linux literal-family discovery now exists; non-Linux installer/recommendation/update paths and full discovery/status/start/resume/restore transfer remain pending. Legacy status/uninstall/old ingress remain. |
 | GitHub Copilot | New global hook configuration transferred on Linux only; Unix exact SessionStart references stay unknown. Non-Linux installer/recommend/update/bulk and all-platform detection/status/start/resume/restore/old ingress/uninstall remain. |
-| Pi | New Linux reference-extension placement transferred; strict Unix startup-reference capture only. Migration drops working/blocked/idle. Non-Linux paths and all-platform discovery/lifecycle/status/start/resume/restore/legacy ingress/status/uninstall remain. |
+| Pi | New Linux reference-extension placement transferred; strict Unix startup-reference capture only. Migration drops working/blocked/idle. Independent Linux literal-family discovery now exists; non-Linux paths and full discovery/lifecycle/status/start/resume/restore/legacy ingress/status/uninstall transfer remain. |
 | OpenCode | New Linux reference-plugin placement transferred; strict Unix created/updated root-reference capture only. Migration drops working/blocked/idle. Non-Linux new-install paths, full v9 asset and all-platform legacy CLI/status/uninstall/old ingress remain; broader discovery/status/start/resume/restore pending. |
-| Gemini, Cursor, Devin, Antigravity, Cline, OMP, Mastracode, Kimi, Kiro, Droid, Amp, Grok, Hermes, Kilo, QoderCLI, Maki | Remaining applicable discovery/status/start/resume/restore policy pending; no transfer claimed here. |
+| Gemini, Cursor, Devin, Antigravity, Cline, OMP, Mastracode, Kimi, Kiro, Droid, Amp, Grok, Hermes, Kilo, QoderCLI, Maki | Independent Linux literal-family discovery exists; broader discovery/status/start/resume/restore policy transfer pending, with no matching Kit detector retirement. |
 
 Provider labels, hook sources and native references are distinct. Remaining source
 owners include each legacy `kitsune:<provider>` producer and its configuration,
 not only providers with an external installer. Do not infer hook support from
 classifier membership or broad execution support from the resume-planner table.
+
+The provider rows above describe legacy management transfer, not absence of Coven
+recognition: [discovery v1](AGENT_DISCOVERY_CONTRACT.md) now recognizes all 22
+literal families independently. This is executable-family coverage, not native
+interactive/provider certification. Activity/attention remain unknown and native
+identity/lifecycle/completion unestablished. It consumes no Kit agent APIs/hints,
+stores nothing and joins neither receipts nor groups. Alias provenance is Kit
+`src/detect/mod.rs:180-205` at `01d7cef6e98e2ccab216cd669d569c0731abfbce`;
+the 209-case legacy process corpus comparison records intentional divergences,
+not parity, job-leader selection or ranking.
+
+**No matching detector retirement yet:** the audit found `detected_agent` also
+supports hook-owner confirmation, start readiness, restore/restored-idle,
+mobile UI and navigation. Simply enabling an external mode would break retained
+compatibility. No new toggle/kill/hide controls ship here. This functional
+Coven-owned recognition path temporarily duplicates legacy policy; it is not
+completed sole ownership or full status. The five Linux hook/configuration
+retirements and pending non-Linux adapters above remain unchanged.
 
 ## Data Flow
 
@@ -145,8 +164,11 @@ launch, adoption or role assignment is part of this flow.
    with independent receivers where supported and conservative legacy migration.
    Separate Djinn and other applicable sources remain. Record exact source ownership and
    retirement behavior for each provider.
-2. Move discovery/status interpretation, process/screen fallback, attention/navigation
-   and mobile agent model into Coven; supply missing generic evidence first,
+2. Build on production Linux `agent discover`, without calling recognition detector
+   retirement. Next separate foreground-owner confirmation from fallback publication
+   and restored native identity, with compatibility coverage before enabling external
+   mode. Then move remaining status interpretation, process/screen fallback,
+   attention/navigation and mobile agent model into Coven; supply missing generic evidence first,
    especially Windows tree scope/parent relationships. Do not mislabel today's
    agent-selected Windows singleton as neutral complete evidence.
 3. Extend explicit Coven start/resume capabilities per provider using generic
@@ -213,6 +235,27 @@ is needed; the generic view adds no native-effects ownership.
 
 ### Validation record
 
+#### Discovery validation table
+
+| Scope | Current record |
+| --- | --- |
+| Current Coven scope | **201 focused checks passed**: classifier 5, collector 8, watch/presentation unit 16, CLI 91, discovery workflow 15, presentation workflow 14, package boundary 2 and legacy compatibility 50. Not full classifier parity or a full-suite result. |
+| Kit generic capability | **249 API checks passed** plus strict all-target lint; optional metadata only, not detector retirement. |
+| Build/package compatibility | Coven strict all-target lint, Rust 1.85 all-target checking, optimized build, package verification and packaged test-target compilation passed. |
+| Live installed Kit / platforms | No live installed Kit/provider execution or configuration changes; macOS unsupported first cut, Windows acquisition/legacy selection rejected. Full `just check` remains unapproved/not run. |
+
+See [discovery bounds, versioning and failure semantics](AGENT_DISCOVERY_CONTRACT.md).
+Read requests may trigger Kit housekeeping/default-workspace/shell creation, so
+read-only is not zero server effects. Earlier OpenCode 236 below remains historical,
+unchanged and non-additive; it is not a discovery validation count.
+
+Review corrections include polling queued selections before a fresh observed-frame
+replacement (Kit replacement clears intents), clearing failed observations before
+polling, packaging the frozen 209-case classifier comparison fixture, exact
+protocol-18 admission, nullable native fields and numeric CLI lexer exclusions.
+Limits remain explicit: recognition does not establish activity or native ownership,
+and the coupled legacy detector has not been retired.
+
 #### OpenCode validation table
 
 | Scope | Current record |
@@ -221,7 +264,7 @@ is needed; the generic view adds no native-effects ownership.
 | Pi/OpenCode workflows | **14 checks passed**; frozen Pi `887451b` v1 completed/pending receipts and generated bytes have independent fixture coverage. |
 | Generated OpenCode producer | **12 Node harness checks passed**, with the harness also passed under Bun; fake native callbacks, not installed OpenCode activation. |
 | Kitsune retirement/retained compatibility | **111 integration checks** and **10 OpenCode checks** passed, overlapping filters, plus **6 legacy-asset harness checks**. Do not add overlapping counts. |
-| Focused Rust receiver/CLI/provider/workflow/package regressions | **236 checks passed** in the current scope; the shared 20 and workflow 14 above are subsets, not additive totals. Final integration-target run used one test thread; focused unit runs used four. |
+| Focused Rust receiver/CLI/provider/workflow/package regressions | **Historical OpenCode cut: 236 checks passed**; the shared 20 and workflow 14 above are subsets, not additive totals. Final integration-target run used one test thread; focused unit runs used four. |
 | Lint/MSRV/build/package | Strict all-target lint in both apps, Coven Rust 1.85 all-target checking, optimized build, source-package verification and packaged test-target compilation passed. |
 | Full suite | Full `just check` remains unapproved and was not run. |
 | Installed-native operational capture, macOS/Windows and full management | Not certified or claimed. |
@@ -349,6 +392,7 @@ references; guarded rollback restores both original files, modes or absence.
 
 ## Related files
 
+- [Agent discovery contract](AGENT_DISCOVERY_CONTRACT.md), `src/agent_discovery*`, `src/agent_processes*`, `src/main.rs`
 - [Agent management contract](AGENT_MANAGEMENT_CONTRACT.md)
 - [Pi extension contract](PI_EXTENSION_CONTRACT.md), `src/pi_extension.rs`, `src/pi_extension/`
 - [OpenCode extension contract](OPENCODE_EXTENSION_CONTRACT.md), `src/opencode_extension.rs`, `src/opencode_extension/`, `src/extension_assets.rs`, `src/extension_assets/`

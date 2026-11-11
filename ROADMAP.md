@@ -30,6 +30,42 @@ verified activity/readiness, completion, roles or execution permission. Final
 validation counts belong in the parent implementation record; no new full-suite,
 installed-provider or cross-platform acceptance is asserted here.
 
+## Production Agent Discovery
+
+Implemented: [workspace-free `agent discover`](AGENT_DISCOVERY_CONTRACT.md),
+bounded serial watch and optional generic view over Linux unclassified pane
+foreground cohorts. All 22 literal provider families/all matching processes are
+reported without job-leader/ranking; raw argv remains in memory, outputs are
+redacted PID/provider/rule/locators. No Kit agent APIs/hints, persistence,
+adoption, launch/input/stop/resume, roles, native-ID association or receipt/group
+join. Activity/attention remain unknown; native identity/lifecycle/completion
+unestablished. Help/server/maintenance matches are not interactive certification.
+
+Kit optional `snapshot.process_observation` v1 is additive with binary protocol
+18 unchanged. Only Linux `pane_foreground_cohort`/`unclassified` is accepted;
+Windows `selected_process`/`legacy_agent_aware` and macOS are rejected first cut.
+Metadata is not platform/live attestation, process tree/host catalog or native
+generation; bracket matching is not atomic attribution/PID-ABA protection.
+Partial-cohort failures discard all targets. Kit housekeeping on read requests
+can ensure a default workspace/shell, so no zero-server-effects claim is made.
+The classifier intentionally diverges from the 209-case legacy corpus, not parity.
+
+**No matched detector retirement yet.** Audit found `detected_agent` also supports
+hook-owner confirmation, start readiness, restore/restored-idle, mobile/navigation.
+Next decompose foreground-owner confirmation vs fallback publication vs restored
+native identity, preserving compatibility before enabling external mode. No new
+toggle/kill/hide controls. This is functional Coven recognition with temporary
+duplicate legacy policy, not completed sole ownership/full status. All five Linux
+hook/configuration retirements stay unchanged and non-Linux adapters stay pending.
+
+Watch/presentation TTL, uncertainty, omission and exit semantics are in the
+contract. The [new validation table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table)
+records 201 focused Coven checks and Kit 249 API checks, plus strict lint,
+MSRV/release/package checks. These are scoped results, not a full-suite or native
+operational certification. Earlier OpenCode 236 remains historical,
+unchanged and non-additive. No actual live installed Kit commands were used in
+this documentation session or native interactive/provider certification claimed.
+
 ## Priority rebaseline — 2026-10-22
 
 ### Subsequent Codex hook transfer
@@ -87,7 +123,7 @@ preview-first plan/install/uninstall/rollback and separate strict Coven-envelope
 **Migration drops working/blocked/idle to reference-only capture**, unknown even
 fresh. This is not full Pi management completion or native activation proof.
 Non-Linux Kit full-v7 paths and all-platform status/uninstall/old ingress/lifecycle
-remain until explicit migration; discovery/start/resume/restore remain pending.
+remain until explicit migration; full discovery/start/resume/restore transfer remains pending.
 
 Source pin is main `6e11a00a01a568ef0ae0df5074acf02fc107c34b` declaring 1.5.2,
 not a release pin. hasUI includes TUI/RPC, not root/TUI proof or headless capture.
@@ -108,7 +144,7 @@ strict three-string Coven envelope with matching required request/payload event,
 and Linux Kit new-install/recommend/update/bulk retirement. **Migration reduces
 working/blocked/idle to references only**, unknown even fresh, not full OpenCode
 management completion. Non-Linux full-v9 paths, legacy CLI/status/uninstall/all six
-targets/old ingress remain; discovery/status/start/resume/restore remain pending.
+targets/old ingress remain; full discovery/status/start/resume/restore transfer remains pending.
 Canonical anomalyco/opencode release v1.19.5 commit
 `810c0eba1a7348036f8bdf61e6632d0c36c6876c` is authoritative; changed dev `611cee9`
 unsupported. Exact server directory-instance scope is not whole project or selected
@@ -122,10 +158,10 @@ Shared private fixed-two-leaf v1 journaling has OpenCode namespaces and protects
 Exact-v9 consent, immutable originals and rollback after uninstall remain required.
 Stop servers/watchers before apply, restart native server after manual apply, not
 just TUI attach; no auto-restart or in-memory release. No across-root dedupe/authority:
-do not install in both plugin and plugins. The [current scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table)
+do not install in both plugin and plugins. The [historical OpenCode scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table)
 records shared 20, workflows 14, Node producer 12 with Bun harness coverage, Kit
 111 integration/10 OpenCode overlapping checks and six legacy-asset harness checks.
-The broader current scope passed 236 focused Rust checks plus lint/MSRV/build/
+The historical OpenCode scope passed 236 focused Rust checks plus lint/MSRV/build/
 package checks; those shared/workflow counts are subsets. Recorded receipt-timing
 limits remain. Earlier Pi totals are historical, not additive.
 No installed-native operational or cross-platform certification is claimed.

@@ -29,6 +29,45 @@ authority for launch, pane binding, adoption, roles or task execution. Existing
 worker/composer backlog below remains deferred. Parent records final validation;
 this docs-only update asserts no fresh full-suite or all-platform result.
 
+## Production Discovery And Next Seam
+
+[Discovery v1](AGENT_DISCOVERY_CONTRACT.md) is implemented in production:
+`coven agent discover --socket ABS_SOCKET [--pane PANE --expected-terminal ID]
+--json`, plus bounded `--watch --duration 60 --interval 2` and optional
+`--present --source coven-discovery`. No workspace/default lookup or storage.
+It uses only generic Kit snapshot/process reads, raw structured argv in memory
+and redacted PID/provider/rule/locator outputs; no Kit agent APIs/hints. All 22
+literal families/all matches are retained without job-leader selection/ranking.
+No adoption, launch/input/stop/resume, roles, native-ID association or receipt/group
+join. Activity/attention stay unknown and native identity/lifecycle/completion
+unestablished; help/server/maintenance family hints are not interactive certification.
+
+Kit adds optional `snapshot.process_observation` v1 without changing protocol 18.
+Coven accepts only Linux `pane_foreground_cohort`/`unclassified`, explicitly
+rejecting Windows `selected_process`/`legacy_agent_aware` and macOS first cut.
+Metadata is not authenticated platform/live attestation, process tree/host catalog
+or native generation. Bracket/endpoint checks discard partial failures, not make
+attribution atomic or eliminate PID ABA. Reads can trigger Kit housekeeping and
+default-workspace/shell creation. The 209-case legacy comparison is intentional
+divergence, not parity; no filesystem/PATH/native-store/env or execution-text
+resolution belongs in classifier v1.
+
+**No matching Kit detector retirement yet.** `detected_agent` also serves
+hook-owner confirmation, start readiness, restore/restored-idle, mobile/navigation.
+Next separate foreground-owner confirmation, fallback publication and restored
+native identity before enabling external mode with compatibility coverage.
+External mode now would break compatibility; no toggle/kill/hide controls ship.
+This is functional Coven-owned recognition with temporary duplicate legacy policy,
+not completed sole ownership/full status. Keep all five Linux hook/configuration
+retirements unchanged; non-Linux adapters and broader status remain pending.
+
+The [discovery validation table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table)
+records 201 focused Coven checks and Kit 249 API checks plus strict lint and
+MSRV/release/package checks. No full-suite/native certification is claimed; do not
+add historical OpenCode 236. No actual live installed Kit
+commands were used in this documentation session. See the contract for bounded
+collection, watch/TTL/uncertain UI stop, omission and distinct exit semantics.
+
 ## Priority rebaseline — 2026-10-22
 
 ### Subsequent Codex implementation cut
@@ -47,7 +86,7 @@ shared global feature enablement, not native approval/operational certification.
 Normal uninstall leaves the shared flag enabled and never revives Kit commands;
 guarded rollback restores both original bytes/modes/absence. No global atomicity
 claim. Codex leaves the wholly pending hook-owner group, but full
-discovery/status/start/resume/restore transfers remain pending for every provider.
+full discovery/status/start/resume/restore transfers remain pending for every provider.
 Earlier owner-reported 16 workflows + 7 fault tests are historical scoped evidence;
 see the migration record's historical 176 Coven/330 Kit validation. Final Copilot
 counts are parent-owned. No fresh full-suite,
@@ -87,7 +126,7 @@ envelopes via report-extension and Linux Kit install/recommend/update/bulk
 retirement. **Migration reduces working/blocked/idle reporting to references only**,
 always unknown; this is not full Pi management completion. Non-Linux Kit full-v7
 paths and all-platform status/uninstall/old ingress/lifecycle remain until explicit
-migration. Pi discovery/status/lifecycle/start/resume/restore remain pending.
+migration. Pi full discovery/status/lifecycle/start/resume/restore transfer remains pending.
 
 The source pin is main `6e11a00a01a568ef0ae0df5074acf02fc107c34b` declaring
 1.5.2, not a release tag. hasUI permits TUI/RPC, not root/TUI proof or headless
@@ -128,9 +167,9 @@ Exact-v9 opt-in migration preserves immutable originals and rollback after unins
 Stop native servers/watchers before apply; restart the native server after manual
 apply, not just TUI attach. No automatic restart/in-memory release or across-root
 dedupe/authority; do not double-install plugin and plugins. See the
-[current scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table):
+[historical OpenCode scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table):
 shared 20, workflows 14, Node producer 12 with Bun harness coverage, Kit overlapping
-111 integration/10 OpenCode and six legacy-asset checks. The broader current scope
+111 integration/10 OpenCode and six legacy-asset checks. The historical OpenCode scope
 passed 236 focused Rust checks plus lint/MSRV/build/package checks, retaining
 recorded receipt timing limits; historical Pi totals are not additive. No installed-native operational or
 cross-platform certification is claimed.

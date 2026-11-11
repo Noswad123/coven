@@ -10,6 +10,7 @@ of Kitsune's agent inventory; explicit Djinn live attachments and read-only
 busy/unknown group status and explicit expiry-bounded live publishing implemented;
 native opt-in agent comparison implemented as extraction characterization;
 Coven-owned Claude/Codex/Copilot hook and Pi/OpenCode reference-extension cuts implemented with Linux-only Kitsune new-install retirement;
+production Coven-owned Linux all-22-family discovery/watch implemented with temporary duplicate legacy recognition policy, not detector retirement;
 native lifecycle/scheduling, automatic following, complete extraction, and workspace
 annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
@@ -68,7 +69,8 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | New OpenCode reference plugin | Linux: Coven explicit existing plugin or plugins root placement and exact opt-in full-v9 migration; Kit new install/recommend/update/bulk retired. Non-Linux full legacy paths preserved. See [contract](OPENCODE_EXTENSION_CONTRACT.md). |
 | Independent OpenCode receipts | Separate strict Coven three-string envelope, session.created/updated root references only, unknown even fresh. Native server exact-directory-instance scope, not selected TUI/pane/attach or whole project; migration drops working/blocked/idle. |
 | Independent Claude receipts | Coven Unix private receiver/inventory; Windows unsupported, macOS not validated. Not a non-Linux hook-configuration replacement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
-| Agent APIs/detection, navigator/attention and mobile UI | Retained compatibility; move management model/interpretation into Coven and retire matching Kitsune surfaces. |
+| Generic Linux foreground-cohort recognition | Coven `agent discover` recognizes all 22 literal families without Kit agent APIs/hints, workspace/storage or receipt/group joins; optional bounded watch/generic view. Partial scope, not native identity/activity/full status or detector retirement. See [contract](AGENT_DISCOVERY_CONTRACT.md). |
+| Agent APIs/detection, navigator/attention and mobile UI | Retained compatibility; separate foreground-owner confirmation, fallback publication and restored native identity before external mode or matching retirement. |
 | Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
 | `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot/Pi/OpenCode new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
 
@@ -88,7 +90,8 @@ rereads under lock and commits pending journal → hooks → TOML → final jour
 there is no global atomicity claim. Normal uninstall leaves the shared global
 feature enabled, never revives Kit commands; explicit guarded rollback restores both
 original images/modes/absence. Native trust state stays user/native-controlled.
-Full discovery/start/resume/restore transfer remains pending for every provider.
+Full discovery/status/start/resume/restore transfer remains pending for every
+provider despite the independent literal-family discovery path.
 
 Copilot shares Claude's single-file v2 operation runner with independent receipt,
 lock, recovery and error namespaces, not Codex's separate two-file journal.
@@ -97,7 +100,7 @@ lock before validation. Copilot preserves native disable/approval/sandbox/trust
 policy. Exact opt-in legacy migration retains the script; normal uninstall never
 revives Kit, while guarded rollback restores bytes/mode/absence. The scoped Linux
 new hook transfer is complete; all-platform Copilot detection/status/start/resume/
-restore and legacy ingress/status/uninstall remain. Pi/OpenCode discovery/lifecycle/
+restore and legacy ingress/status/uninstall remain. Pi/OpenCode broader discovery/lifecycle/
 start/resume/restore remain pending; separate Djinn handling is not folded into them.
 Earlier generated three-provider real-Coven end-to-end checks pass; the
 [validation record](AGENT_MANAGEMENT_MIGRATION.md#validation-record) covers focused
@@ -128,9 +131,9 @@ and preserves [Pi API/receipt/generated-byte fixtures from 887451b](tests/pi_ext
 Stop native servers/watchers before mutation and restart the native server after
 manual apply, not just TUI attach; no automatic restart/in-memory release. Do not
 double-install plugin and plugins roots; no across-root dedupe/authority exists.
-The [current scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table)
+The [historical OpenCode scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table)
 records 20 shared checks, 14 workflows, 12 Node/Bun producer checks, Kit 111/10
-overlapping filters and six legacy-asset checks. The broader current scope passed
+overlapping filters and six legacy-asset checks. The historical OpenCode scope passed
 236 focused Rust checks plus lint/MSRV/build/package checks, with recorded receipt
 timing limits retained. Historical Pi totals are not additive. No installed-native
 certification is claimed.
@@ -162,6 +165,43 @@ Target dependency direction: Coven adapters consume supported runtime and
 multiplexer capabilities. Kitsune and Djinn have no core dependency on Coven or
 each other. Optional Djinn reporting and optional Kitsune external decoration
 are integration edges, not startup or installation prerequisites.
+
+### Production Agent Discovery
+
+[Discovery v1](AGENT_DISCOVERY_CONTRACT.md) adds a workspace-free production
+`coven agent discover --socket ABS_SOCKET`, optional pane/terminal pin, bounded
+watch and optional generic presentation. It uses only generic snapshot/process
+reads, raw argv in memory and redacted PID/provider/rule/locator outputs. All
+matching processes across 22 literal families are reported without leader/ranking;
+activity/attention stay unknown and native identity/lifecycle/completion unestablished.
+Help/server/maintenance family hints are not native interactive certification.
+No storage, adoption, launch/input/stop/resume, roles, native-ID association or
+receipt/group join is added. The classifier intentionally diverges from the
+209-case legacy process corpus; it is not parity.
+
+Kit's optional `snapshot.process_observation` version 1 advertises
+`platform: linux`, `scope: pane_foreground_cohort`, `selection: unclassified`.
+Protocol 18 is unchanged and capability discovery is additive. Coven rejects
+Windows `selected_process`/`legacy_agent_aware` and macOS in this first cut.
+Reported Linux metadata is not authenticated platform/live-process attestation,
+a process tree/host catalog or native generation. Matching inventory brackets and
+endpoint fences discard partial failures but do not make attribution atomic or
+eliminate PID ABA. Read requests can ensure a default workspace/shell through
+existing Kit housekeeping; they are not zero-effect operations.
+
+No matching Kit detector retirement has occurred. Audit found `detected_agent`
+also supports hook-owner confirmation, start readiness, restore/restored-idle,
+mobile UI and navigation. External mode would break compatibility without first
+separating foreground-owner confirmation, fallback publication and restored native
+identity. That decomposition is next, before external-mode enablement; no new
+toggle/kill/hide controls are introduced. This is functional Coven recognition
+with temporary duplicate legacy policy, not completed sole ownership/full status.
+The five Linux configuration retirements and pending non-Linux adapters stand.
+The 201 focused Coven checks, 249 Kit API checks and lint/MSRV/release/package
+validation are recorded in
+the [discovery table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table),
+not added to historical OpenCode 236. No actual live installed Kit commands were
+used in this documentation session.
 
 Use a small, versioned, capability-described external boundary. Kitsune now has
 additive `pane.annotate` and optional snapshot `annotations` capability/epoch

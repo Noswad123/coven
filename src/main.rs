@@ -242,6 +242,11 @@ enum Command {
 
 #[derive(Subcommand)]
 enum Agent {
+    /// Interpret generic reported foreground-process evidence; never authorizes input.
+    Discover {
+        #[command(flatten)]
+        options: DiscoveryOptions,
+    },
     /// Run Coven's foreground reference receiver; never starts a provider.
     Serve {
         #[arg(allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
@@ -332,6 +337,32 @@ struct ProviderHookOptions {
     migrate_kitsune: bool,
     #[arg(long)]
     apply: bool,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(clap::Args)]
+struct DiscoveryOptions {
+    #[arg(long, allow_negative_numbers = true)]
+    socket: String,
+    #[arg(long, allow_negative_numbers = true)]
+    pane: Option<String>,
+    #[arg(long, requires = "pane", allow_negative_numbers = true)]
+    expected_terminal: Option<String>,
+    #[arg(long, default_value = "3", allow_hyphen_values = true)]
+    timeout: f64,
+    #[arg(long, default_value = "1048576", allow_hyphen_values = true)]
+    max_response_bytes: i64,
+    #[arg(long)]
+    watch: bool,
+    #[arg(long, requires = "watch", allow_hyphen_values = true)]
+    duration: Option<f64>,
+    #[arg(long, requires = "watch", allow_hyphen_values = true)]
+    interval: Option<f64>,
+    #[arg(long, requires_all = ["watch", "source"])]
+    present: bool,
+    #[arg(long, requires = "present", allow_negative_numbers = true)]
+    source: Option<String>,
     #[arg(long)]
     json: bool,
 }
@@ -1545,6 +1576,33 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                 &coven::agent_management::InventoryRequest { socket },
                 json,
             );
+        }
+        Command::Agent {
+            command: Agent::Discover { options },
+        } => {
+            let request = coven::agent_discovery::Request {
+                socket: options.socket,
+                pane: options.pane,
+                expected_terminal: options.expected_terminal,
+                timeout: options.timeout,
+                max_response_bytes: options
+                    .max_response_bytes
+                    .try_into()
+                    .map_err(|_| coven::Error::invalid_cli_arguments())?,
+            };
+            return if options.watch {
+                coven::agent_discovery_watch::arguments(
+                    &coven::agent_discovery_watch::WatchRequest {
+                        discovery: request,
+                        duration: options.duration.unwrap_or(60.0),
+                        interval: options.interval.unwrap_or(2.0),
+                        source: options.source,
+                    },
+                    options.json,
+                )
+            } else {
+                coven::agent_discovery::arguments(&request, options.json)
+            };
         }
         Command::Agent {
             command:

@@ -36,6 +36,8 @@ include = [
     "/tests/fixtures/pi_extension/KITSUNE_LICENSE",
     "/tests/fixtures/opencode_extension/kitsune-agent-state.js",
     "/tests/fixtures/opencode_extension/KITSUNE_LICENSE",
+    # Frozen comparison data embedded by the literal classifier unit tests.
+    "/tests/fixtures/kitsune_process_policy/reference.json",
     "/tests/native_package.rs",
     # Never collect nested harness build outputs or interim source trees.
     "!/src/**/target/**",

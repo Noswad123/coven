@@ -1,8 +1,11 @@
 //! Incremental native Coven: explicit readers and guarded task, baseline and
 //! evidence operations. No automatic runtime execution or Python fallback.
 pub mod actions;
+pub mod agent_discovery;
+pub mod agent_discovery_watch;
 pub mod agent_management;
 pub mod agent_management_presentation;
+mod agent_processes;
 pub mod archive;
 mod canonical;
 pub mod checkpoint_decisions;
