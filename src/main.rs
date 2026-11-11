@@ -272,9 +272,9 @@ enum Agent {
     ReportExtension {
         #[arg(long, allow_negative_numbers = true)]
         socket: String,
-        #[arg(long, value_parser = ["pi"])]
+        #[arg(long, value_parser = ["pi", "opencode"])]
         provider: String,
-        #[arg(long, value_parser = ["session_start"])]
+        #[arg(long, value_parser = ["session_start", "session.created", "session.updated"])]
         event: String,
         #[arg(long)]
         json: bool,
@@ -346,7 +346,7 @@ enum AgentHooks {
 
 #[derive(clap::Args)]
 struct ExtensionOptions {
-    #[arg(long, value_parser = ["pi"])]
+    #[arg(long, value_parser = ["pi", "opencode"])]
     provider: String,
     #[arg(long, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
     extension_root: PathBuf,
@@ -1574,20 +1574,19 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                 AgentExtensions::Uninstall(o) => (Operation::Uninstall, o),
                 AgentExtensions::Rollback(o) => (Operation::Rollback, o),
             };
-            if options.provider != "pi" {
-                return Err(coven::Error::invalid_cli_arguments());
-            }
-            return coven::pi_extension::arguments(
-                &coven::pi_extension::Request {
-                    extension_root: options.extension_root,
-                    executable: options.executable,
-                    socket: options.socket,
-                    migrate_kitsune: options.migrate_kitsune,
-                    apply: options.apply,
-                    operation,
-                },
-                options.json,
-            );
+            let request = coven::pi_extension::Request {
+                extension_root: options.extension_root,
+                executable: options.executable,
+                socket: options.socket,
+                migrate_kitsune: options.migrate_kitsune,
+                apply: options.apply,
+                operation,
+            };
+            return match options.provider.as_str() {
+                "pi" => coven::pi_extension::arguments(&request, options.json),
+                "opencode" => coven::opencode_extension::arguments(&request, options.json),
+                _ => Err(coven::Error::invalid_cli_arguments()),
+            };
         }
         Command::Agent {
             command: Agent::Hooks { command },

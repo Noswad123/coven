@@ -5,11 +5,12 @@ use coven::{
     agent_management_presentation::{self, PresentationRequest},
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
     os::unix::{
-        fs::PermissionsExt,
+        fs::{MetadataExt, PermissionsExt},
         net::{UnixListener, UnixStream},
     },
     process::{Child, Command, Stdio},
@@ -262,14 +263,42 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
         } else {
             "working"
         };
-        let accepted = agent_management::report_payload(&ReportRequest {
+        let expected_id = format!(
+            "{:x}",
+            Sha256::digest([provider.as_bytes(), b"\0", b"PRIVATE-NATIVE-SID"].concat())
+        );
+        let report_started = Instant::now();
+        // Send exactly once. An uncertain receipt is not evidence of non-delivery.
+        let receipt = agent_management::report_payload(&ReportRequest {
             socket:socket.clone(), provider:provider.into(), event:Some(event.into()),
-        }, json!({"session_id":"PRIVATE-NATIVE-SID","hook_event_name":event,"source":"startup","model":"PRIVATE-MODEL","permission_mode":"default","transcript_path":"PRIVATE-TRANSCRIPT","cwd":"/PRIVATE/CWD","prompt":"PRIVATE-PROMPT","token":"PRIVATE-TOKEN"}).to_string().as_bytes(), true).unwrap();
-        let accepted: Value = serde_json::from_str(&accepted.stdout).unwrap();
-        assert_eq!(accepted["type"], "accepted");
-        assert_eq!(accepted["delivery"], "committed");
+        }, json!({"session_id":"PRIVATE-NATIVE-SID","hook_event_name":event,"source":"startup","model":"PRIVATE-MODEL","permission_mode":"default","transcript_path":"PRIVATE-TRANSCRIPT","cwd":"/PRIVATE/CWD","prompt":"PRIVATE-PROMPT","token":"PRIVATE-TOKEN"}).to_string().as_bytes(), true);
+        let report_elapsed = report_started.elapsed();
+        let receipt_status = match receipt {
+            Ok(accepted) => {
+                let accepted: Value = serde_json::from_str(&accepted.stdout).unwrap();
+                assert_eq!(accepted["type"], "accepted", "mode={mode}");
+                assert_eq!(accepted["delivery"], "committed", "mode={mode}");
+                assert_eq!(accepted["record_id"], expected_id, "mode={mode}");
+                "acknowledged"
+            }
+            Err(error) => {
+                assert_eq!(error.code(), "agent_delivery_uncertain", "mode={mode}");
+                "agent_delivery_uncertain"
+            }
+        };
+        eprintln!(
+            "mode={mode} report={receipt_status} report_ms={} elapsed_ms={}",
+            report_elapsed.as_millis(),
+            started.elapsed().as_millis()
+        );
         thread::sleep(Duration::from_millis(900));
-        let mut stream = UnixStream::connect(&socket).unwrap();
+        let inventory_started = Instant::now();
+        let context = format!(
+            "mode={mode} report={receipt_status} report_ms={} elapsed_ms={}",
+            report_elapsed.as_millis(),
+            started.elapsed().as_millis()
+        );
+        let mut stream = UnixStream::connect(&socket).expect(&context);
         stream
             .set_read_timeout(Some(Duration::from_secs(1)))
             .unwrap();
@@ -282,13 +311,73 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
         )
         .unwrap();
         let mut line = String::new();
-        BufReader::new(stream).read_line(&mut line).unwrap();
-        let reply: Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(reply["id"], id);
-        assert_eq!(reply["type"], "result");
+        BufReader::new(stream).read_line(&mut line).expect(&context);
+        let reply: Value = serde_json::from_str(&line).expect(&context);
+        assert_eq!(reply["id"], id, "{context}");
+        assert_eq!(reply["contract"], agent_management::CONTRACT, "{context}");
+        assert_eq!(reply["type"], "result", "{context}");
         let inventory = &reply["result"];
-        assert_eq!(inventory["records"][0]["record_id"], accepted["record_id"]);
-        assert_eq!(inventory["records"][0]["reported_state"], state);
+        assert_eq!(
+            inventory["contract"],
+            agent_management::CONTRACT,
+            "{context}"
+        );
+        assert_eq!(inventory["authorization"], "none", "{context}");
+        assert_eq!(
+            inventory["records"].as_array().unwrap().len(),
+            1,
+            "{context}"
+        );
+        let record = &inventory["records"][0];
+        assert_eq!(record["record_id"], expected_id, "{context}");
+        assert_eq!(record["provider"], provider, "{context}");
+        assert_eq!(record["last_event"], event, "{context}");
+        assert_eq!(record["reported_state"], state, "{context}");
+        assert!(record["age_ms"].as_u64().is_some(), "{context}");
+        assert_eq!(
+            record["reference_trust"], "caller_supplied_unverified",
+            "{context}"
+        );
+        assert_eq!(record["native_identity"], "unestablished", "{context}");
+        assert_eq!(record["job_completion"], "unestablished", "{context}");
+        // Require private on-disk proof as well, even when no ack was received.
+        // Never print the saved value: it contains the native session reference.
+        let store = root.path().join("state/agent-management.json");
+        let metadata = fs::symlink_metadata(&store).expect(&context);
+        assert!(metadata.is_file(), "{context}");
+        assert_eq!(metadata.mode() & 0o7777, 0o600, "{context}");
+        assert_eq!(metadata.uid(), unsafe { libc::geteuid() }, "{context}");
+        assert_eq!(metadata.nlink(), 1, "{context}");
+        let saved_bytes = fs::read(&store).expect(&context);
+        let saved: Value = serde_json::from_slice(&saved_bytes).expect(&context);
+        assert_eq!(saved["schema_version"], 1, "{context}");
+        assert_eq!(saved["records"].as_object().unwrap().len(), 1, "{context}");
+        let persisted = &saved["records"][&expected_id];
+        assert!(
+            persisted["session_id"] == "PRIVATE-NATIVE-SID",
+            "{context}: saved identity mismatch"
+        );
+        assert!(
+            persisted["provider"] == provider,
+            "{context}: saved provider mismatch"
+        );
+        assert!(
+            persisted["last_event"] == event,
+            "{context}: saved event mismatch"
+        );
+        assert!(
+            persisted["server_epoch"] == inventory["server_epoch"],
+            "{context}: saved epoch mismatch"
+        );
+        assert!(
+            persisted["timestamp_ms"].as_u64().is_some_and(|ms| ms > 0),
+            "{context}: missing saved timestamp"
+        );
+        eprintln!(
+            "mode={mode} report={receipt_status} raw_inventory=original_report persisted=original_report inventory_ms={} elapsed_ms={}",
+            inventory_started.elapsed().as_millis(),
+            started.elapsed().as_millis()
+        );
         let interrupted_at = (mode == "ctrl_c").then(|| {
             assert_eq!(
                 unsafe { libc::kill(receiver.0.id() as i32, libc::SIGINT) },
@@ -297,6 +386,10 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
             Instant::now()
         });
         receiver.finish();
+        assert!(
+            fs::read(&store).expect(&context) == saved_bytes,
+            "{context}: read-only presentation changed persisted report"
+        );
         if let Some(at) = interrupted_at {
             assert!(
                 at.elapsed() < Duration::from_secs(1),
@@ -312,6 +405,10 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
         assert_eq!(report["type"], "stopped");
         assert_eq!(report["authorization"], "none");
         let ui = &report["presentation"];
+        eprintln!(
+            "mode={mode} completed elapsed_ms={}",
+            started.elapsed().as_millis()
+        );
         if let Some(kit) = &kit {
             let calls = kit.calls.lock().unwrap();
             assert_eq!(

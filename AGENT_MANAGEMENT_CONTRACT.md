@@ -2,7 +2,7 @@
 
 ## Overview
 
-Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi
+Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi/OpenCode
 extension-envelope receiver and redacted inventory.
 Transport is Unix-only (Windows unsupported); macOS operation has not been validated.
 This is distinct from the Linux-only hook mutation/Kit installer retirement cut;
@@ -20,6 +20,7 @@ coven agent report --provider claude --socket ABS_COVEN_SOCKET [--event EVENT] [
 coven agent report --provider codex --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
 coven agent report --provider copilot --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
 coven agent report-extension --provider pi --socket ABS_COVEN_SOCKET --event session_start [--json]
+coven agent report-extension --provider opencode --socket ABS_COVEN_SOCKET --event session.created [--json]
 coven agent inventory --socket ABS_COVEN_SOCKET [--json]
 ```
 
@@ -66,6 +67,18 @@ Coven-owned envelope, not Pi-native hook JSON. Provider `pi` and event
 `session_start` map the `getSessionId` interpretation, not authentication. See
 [Pi extension contract](PI_EXTENSION_CONTRACT.md) for producer and placement limits.
 
+OpenCode uses the same separate `extension_report_arguments`/`extension_report_payload`
+entry points but requires exactly three string fields
+`{"contract":"coven.opencode-extension.v1","event":"session.created","session_id":"ID"}`,
+with exact event `session.created` or `session.updated`. Required request `--event`
+must equal the payload event and cannot supply a missing one. Unknown fields,
+aliases and wrong types refuse. Provider/event maps contract interpretation, not
+authenticated origin. The [OpenCode contract](OPENCODE_EXTENSION_CONTRACT.md) pins
+release v1.19.5 and documents server-instance scope, conservative full-DTO producer
+validation, 32-pending-plus-one-active FIFO, and placement/restart limits. Native
+`agent report` still accepts only Claude/Codex/Copilot; extension contracts remain
+separate from native hook JSON and from each other.
+
 ### Private wire and output
 
 The Unix stream uses bounded newline-delimited requests with exactly `id`,
@@ -89,7 +102,7 @@ reference_trust: caller_supplied_unverified,
 native_identity: unestablished, job_completion: unestablished
 ```
 
-The record ID is SHA-256 of provider (`claude`, `codex`, `copilot` or `pi`), NUL, then the exact
+The record ID is SHA-256 of provider (`claude`, `codex`, `copilot`, `pi` or `opencode`), NUL, then the exact
 session ID. Existing Claude hashes are unchanged; equal session IDs from different
 providers yield distinct records. It is a stable pseudonymous reference, not
 authentication or anonymization against guessing.
@@ -100,14 +113,14 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
 
 ## Data Flow
 
-1. Decode and validate the native root payload or strict Pi envelope, then construct a **new** minimal
+1. Decode and validate the native root payload or strict Pi/OpenCode envelope, then construct a **new** minimal
    object. Prompt, transcript, cwd and all unknown fields are dropped **before
    transport, storage or stdout**; Claude subagent events never revive the main record.
 2. Validate the private endpoint and send one correlated request. No automatic retry.
 3. Receiver takes the ordinary workspace guard for each update, rereads and validates
    the store, then atomically replaces it. It releases that guard between reports.
 4. Persist `state/agent-management.json` with unchanged `schema_version: 1` as private
-   **0600**, at most **128 records aggregate across four providers** (not per provider)
+   **0600**, at most **128 records aggregate across five providers** (not per provider)
    and **256 KiB**. Private records retain full native IDs, last events, receipt
    timestamps and receiver epochs. Capacity exhaustion refuses a new record; no eviction
    or pruning API is supplied. Stored record fields remain `provider`, `session_id`,
@@ -125,12 +138,13 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
 
 These states are **last reported**, not current jobs/readiness/identity/completion.
 There is no freshness threshold turning them into live guarantees.
-Codex, Copilot and Pi records are always **unknown**, even when fresh with a known receipt age.
+Codex, Copilot, Pi and OpenCode records are always **unknown**, even when fresh with a known receipt age.
 After restart **all providers'** persisted records have unknown state and null age
-until another receipt; a new Codex/Copilot/Pi receipt still does not establish activity.
+until another receipt; a new Codex/Copilot/Pi/OpenCode receipt still does not establish activity.
 
-Upgrade receivers before Pi producers. Older binaries reject Pi wire/store records
-despite unchanged schema-v1 fields; once Pi records are stored, downgrade to those
+Upgrade receivers before new Pi/OpenCode producers. Older binaries reject newly
+supported providers' wire/store records despite unchanged schema-v1 fields; once
+those records are stored, downgrade to those
 readers is unsupported without separately preserving/removing incompatible state.
 There is no automatic downgrade conversion or reset.
 
@@ -154,7 +168,7 @@ Optional `--kitsune-socket` and `--source` must be supplied together. An indepen
 worker waits for initialized receiver projection before UI IO. It reads only generic
 snapshot discovery and uses `integration.view.open/replace/poll/close`, not Kitsune
 agent APIs. It sends bounded last-reported label/detail rows with dynamic provider
-labels for Claude, Codex, Copilot and Pi; Kitsune gains no provider-specific knowledge. Selecting one adds
+labels for Claude, Codex, Copilot, Pi and OpenCode; Kitsune gains no provider-specific knowledge. Selecting one adds
 read-only trust details. No pane binding, launch, resume, adoption or role follows.
 Unavailable/failed Kitsune presentation does not stop core capture; the final report
 adds a separate `presentation` outcome. Configure a dedicated generic source
@@ -177,6 +191,9 @@ are not replayed; lease expiry is the fallback cleanup.
   provider failure. Bound socket existence alone is not receiver readiness.
 - Pi instead uses a best-effort Node child with a two-second kill request, no shell,
   queue or retry; overlaps drop and the slot remains held until child close.
+- OpenCode uses a best-effort FIFO of 32 pending plus one active Node child, drops
+  incoming events when full, and never deduplicates or retries. Capacity precedes
+  DTO work; dispose clears pending work and requests kill without guaranteeing exit.
 
 ## Example usage
 
@@ -203,3 +220,4 @@ for optional generic presentation; core inventory requires no Kitsune installati
 - `tests/{agent_management_workflow,agent_management_presentation,claude_agent_migration_workflow}.rs`
 - [Claude hooks](CLAUDE_HOOKS_CONTRACT.md), [Codex hooks](CODEX_HOOKS_CONTRACT.md), [migration ownership](AGENT_MANAGEMENT_MIGRATION.md)
 - [Copilot hooks](COPILOT_HOOKS_CONTRACT.md), `tests/copilot_agent_migration_workflow.rs`
+- [OpenCode extension](OPENCODE_EXTENSION_CONTRACT.md), [Pi extension](PI_EXTENSION_CONTRACT.md)

@@ -39,12 +39,24 @@ fn provider_ids_restart_and_shared_capacity() {
     for other in [&claude, &codex, &copilot] {
         assert_ne!(&pi, other);
     }
+    let opencode_params =
+        json!({"provider":"opencode","event":"session.created","session_id":"same"});
+    let opencode = store.report(&opencode_params).unwrap()["record_id"].clone();
+    assert_eq!(opencode, format!("{:x}", Sha256::digest(b"opencode\0same")));
+    for other in [&claude, &codex, &copilot, &pi] {
+        assert_ne!(&opencode, other);
+    }
     let projection = store.projection();
     for fresh in projection["records"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|r| matches!(r["provider"].as_str(), Some("copilot" | "pi")))
+        .filter(|r| {
+            matches!(
+                r["provider"].as_str(),
+                Some("codex" | "copilot" | "pi" | "opencode")
+            )
+        })
     {
         assert_eq!(fresh["reported_state"], "unknown");
         assert!(fresh["age_ms"].is_u64());
@@ -62,12 +74,16 @@ fn provider_ids_restart_and_shared_capacity() {
     assert_eq!(store.report(&codex_params).unwrap()["record_id"], codex);
     assert_eq!(store.report(&copilot_params).unwrap()["record_id"], copilot);
     assert_eq!(store.report(&pi_params).unwrap()["record_id"], pi);
-    for n in 4..MAX_RECORDS {
-        let provider = ["claude", "codex", "copilot", "pi"][n % 4];
-        let event = if provider == "pi" {
-            "session_start"
-        } else {
-            "SessionStart"
+    assert_eq!(
+        store.report(&opencode_params).unwrap()["record_id"],
+        opencode
+    );
+    for n in 5..MAX_RECORDS {
+        let provider = ["claude", "codex", "copilot", "pi", "opencode"][n % 5];
+        let event = match provider {
+            "pi" => "session_start",
+            "opencode" => "session.updated",
+            _ => "SessionStart",
         };
         store
             .report(&json!({"provider":provider,"event":event,"session_id":format!("s-{n}")}))
@@ -78,11 +94,12 @@ fn provider_ids_restart_and_shared_capacity() {
         serde_json::from_slice::<Value>(&before).unwrap()["schema_version"],
         1
     );
-    for provider in ["claude", "codex", "copilot", "pi"] {
-        let event = if provider == "pi" {
-            "session_start"
-        } else {
-            "SessionStart"
+    assert_eq!(store.projection()["records"].as_array().unwrap().len(), 128);
+    for provider in ["claude", "codex", "copilot", "pi", "opencode"] {
+        let event = match provider {
+            "pi" => "session_start",
+            "opencode" => "session.created",
+            _ => "SessionStart",
         };
         assert_eq!(
             store
@@ -99,204 +116,300 @@ fn provider_ids_restart_and_shared_capacity() {
 }
 
 #[test]
-fn pi_extension_contract_is_separate_strict_bounded_and_never_connects_on_refusal() {
+fn extension_contracts_are_separate_strict_bounded_and_never_connect_on_refusal() {
     let probe = crate::platform::observation_socket::SocketConstructionGuard::new(true);
-    let request = ReportRequest {
-        socket: "not-a-socket".into(),
-        provider: "pi".into(),
-        event: Some("session_start".into()),
-    };
-    let valid =
-        json!({"contract":"coven.pi-extension.v1","event":"session_start","session_id":"s"});
-    for (field, invalid) in [
-        ("contract", json!("SECRET")),
-        ("contract", Value::Null),
-        ("contract", json!(1)),
-        ("event", json!("SessionStart")),
-        ("event", json!("Stop")),
-        ("event", Value::Null),
-        ("event", json!({"SECRET":true})),
-        ("session_id", Value::Null),
-        ("session_id", json!(1)),
-        ("session_id", json!("")),
-        ("session_id", json!("   ")),
-        ("session_id", json!("  -option")),
-        ("session_id", json!("bad\nvalue")),
-        ("session_id", json!("s".repeat(513))),
-        ("prompt", json!("SECRET")),
-        ("origin", json!("SECRET")),
-        ("hook_event_name", json!("SessionStart")),
+    for (provider, contract, name, other_contract, other_event) in [
+        (
+            "pi",
+            "coven.pi-extension.v1",
+            "session_start",
+            "coven.opencode-extension.v1",
+            "session.created",
+        ),
+        (
+            "opencode",
+            "coven.opencode-extension.v1",
+            "session.created",
+            "coven.pi-extension.v1",
+            "session_start",
+        ),
+        (
+            "opencode",
+            "coven.opencode-extension.v1",
+            "session.updated",
+            "coven.pi-extension.v1",
+            "session_start",
+        ),
     ] {
-        let mut bad = valid.clone();
-        bad[field] = invalid;
-        let error = extension_report_payload(&request, bad.to_string().as_bytes(), true)
-            .err()
-            .unwrap();
-        assert!(!error.to_string().contains("SECRET"));
-    }
-    for field in ["contract", "event", "session_id"] {
-        let mut bad = valid.clone();
-        bad.as_object_mut().unwrap().remove(field);
-        assert!(extension_report_payload(&request, bad.to_string().as_bytes(), true).is_err());
-        let duplicate = format!(
-            "{},{}:{} }}",
-            valid.to_string().trim_end_matches('}'),
-            json!(field),
-            valid[field]
-        );
-        assert!(extension_report_payload(&request, duplicate.as_bytes(), true).is_err());
-    }
-    for payload in [
-        b"SECRET".as_slice(),
-        &[0xff],
-        b"[]",
-        b"null",
-        br#"{"session_id":"s","hook_event_name":"SessionStart"}"#,
-    ] {
-        let error = extension_report_payload(&request, payload, true)
-            .err()
-            .unwrap();
-        assert!(!error.to_string().contains("SECRET"));
-    }
-    assert!(extension_report_payload(&request, &vec![b' '; MAX_PAYLOAD + 1], true).is_err());
-    let deep = format!("{}0{}", "[".repeat(33), "]".repeat(33));
-    assert!(extension_report_payload(&request, deep.as_bytes(), true).is_err());
-    for event in [None, Some("SessionStart"), Some("Stop"), Some("")] {
-        let mut bad = request.clone();
-        bad.event = event.map(str::to_owned);
-        assert!(extension_report_payload(&bad, valid.to_string().as_bytes(), true).is_err());
-        // Invalid arguments must also fail before attempting to read stdin.
-        assert!(extension_report_arguments(&bad, true).is_err());
-    }
-    for provider in ["claude", "codex", "copilot", "unknown", ""] {
-        let mut bad = request.clone();
-        bad.provider = provider.into();
-        assert!(extension_report_payload(&bad, valid.to_string().as_bytes(), true).is_err());
-        assert!(extension_report_arguments(&bad, true).is_err());
-    }
-    for payload in [
-        valid,
-        json!({"session_id":"s","hook_event_name":"SessionStart"}),
-        json!({"session_id":"s","hook_event_name":"session_start"}),
-    ] {
+        let request = ReportRequest {
+            socket: "not-a-socket".into(),
+            provider: provider.into(),
+            event: Some(name.into()),
+        };
+        let valid = json!({"contract":contract,"event":name,"session_id":"s"});
+        for (field, invalid) in [
+            ("contract", json!("SECRET")),
+            ("contract", json!(other_contract)),
+            ("contract", Value::Null),
+            ("contract", json!(1)),
+            ("event", json!("SessionStart")),
+            ("event", json!("Stop")),
+            ("event", json!(other_event)),
+            ("event", json!("other")),
+            ("event", json!(1)),
+            ("event", Value::Null),
+            ("event", json!({"SECRET":true})),
+            ("session_id", Value::Null),
+            ("session_id", json!(1)),
+            ("session_id", json!("")),
+            ("session_id", json!("   ")),
+            ("session_id", json!("  -option")),
+            ("session_id", json!("bad\nvalue")),
+            ("session_id", json!("s".repeat(513))),
+            ("prompt", json!("SECRET")),
+            ("origin", json!("SECRET")),
+            ("hook_event_name", json!("SessionStart")),
+            ("directory", json!("SECRET")),
+            ("project", json!("SECRET")),
+            ("title", json!("SECRET")),
+            ("parentID", json!("SECRET")),
+        ] {
+            let mut bad = valid.clone();
+            bad[field] = invalid;
+            let error = extension_report_payload(&request, bad.to_string().as_bytes(), true)
+                .err()
+                .unwrap();
+            assert!(!error.to_string().contains("SECRET"));
+        }
+        for field in ["contract", "event", "session_id"] {
+            let mut bad = valid.clone();
+            bad.as_object_mut().unwrap().remove(field);
+            assert!(extension_report_payload(&request, bad.to_string().as_bytes(), true).is_err());
+            let duplicate = format!(
+                "{},{}:{} }}",
+                valid.to_string().trim_end_matches('}'),
+                json!(field),
+                valid[field]
+            );
+            assert!(extension_report_payload(&request, duplicate.as_bytes(), true).is_err());
+        }
+        for payload in [
+            b"SECRET".as_slice(),
+            &[0xff],
+            b"[]",
+            b"null",
+            b"true",
+            b"42",
+            b"\"string\"",
+            b"{} {}",
+            br#"{"session_id":"s","hook_event_name":"SessionStart"}"#,
+        ] {
+            let error = extension_report_payload(&request, payload, true)
+                .err()
+                .unwrap();
+            assert!(!error.to_string().contains("SECRET"));
+        }
+        assert!(extension_report_payload(&request, &vec![b' '; MAX_PAYLOAD + 1], true).is_err());
+        let deep = format!("{}0{}", "[".repeat(33), "]".repeat(33));
+        assert!(extension_report_payload(&request, deep.as_bytes(), true).is_err());
+        for event in [None, Some("SessionStart"), Some("Stop"), Some("")] {
+            let mut bad = request.clone();
+            bad.event = event.map(str::to_owned);
+            assert!(extension_report_payload(&bad, valid.to_string().as_bytes(), true).is_err());
+            // Invalid arguments must also fail before attempting to read stdin.
+            assert!(extension_report_arguments(&bad, true).is_err());
+        }
+        for provider in ["claude", "codex", "copilot", "unknown", ""] {
+            let mut bad = request.clone();
+            bad.provider = provider.into();
+            assert!(extension_report_payload(&bad, valid.to_string().as_bytes(), true).is_err());
+            assert!(extension_report_arguments(&bad, true).is_err());
+        }
+        // Both OpenCode names are valid, but the required CLI event must match exactly.
+        if provider == "opencode" {
+            let mut mismatch = request.clone();
+            mismatch.event = Some(if name == "session.created" {
+                "session.updated".into()
+            } else {
+                "session.created".into()
+            });
+            assert_eq!(
+                extension_report_payload(&mismatch, valid.to_string().as_bytes(), true)
+                    .err()
+                    .unwrap()
+                    .code(),
+                "agent_event_mismatch"
+            );
+        }
+        let cross = json!({"contract":other_contract,"event":other_event,"session_id":"s"});
         assert_eq!(
-            report_payload(&request, payload.to_string().as_bytes(), true)
+            extension_report_payload(&request, cross.to_string().as_bytes(), true)
                 .err()
                 .unwrap()
                 .code(),
-            "agent_unsupported_provider"
+            "agent_contract_mismatch"
         );
+        for payload in [
+            valid,
+            json!({"session_id":"s","hook_event_name":"SessionStart"}),
+            json!({"session_id":"s","hook_event_name":"session_start"}),
+        ] {
+            assert_eq!(
+                report_payload(&request, payload.to_string().as_bytes(), true)
+                    .err()
+                    .unwrap()
+                    .code(),
+                "agent_unsupported_provider"
+            );
+        }
     }
     assert_eq!(probe.count(), 0);
 }
 
 #[test]
-fn pi_extension_capture_projects_only_reference_fields_and_keeps_store_v1() {
+fn extension_capture_projects_only_reference_fields_and_keeps_store_v1() {
     use std::io::{BufRead, BufReader, Write};
-    let root = workspace();
-    let socket_root = tempfile::tempdir().unwrap();
-    fs::set_permissions(socket_root.path(), fs::Permissions::from_mode(0o700)).unwrap();
-    let path = socket_root.path().join("receiver.sock");
-    let listener = UnixListener::bind(&path).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-    let workspace_path = root.path().to_owned();
-    let peer = std::thread::spawn(move || {
-        let mut store = store::Store::open(&workspace_path).unwrap();
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut frame = String::new();
-        BufReader::new(&mut stream).read_line(&mut frame).unwrap();
-        let request: Value = serde_json::from_str(&frame).unwrap();
+    for (provider, contract, event) in [
+        ("pi", "coven.pi-extension.v1", "session_start"),
+        ("opencode", "coven.opencode-extension.v1", "session.created"),
+        ("opencode", "coven.opencode-extension.v1", "session.updated"),
+    ] {
+        let root = workspace();
+        let socket_root = tempfile::tempdir().unwrap();
+        fs::set_permissions(socket_root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let path = socket_root.path().join("receiver.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let workspace_path = root.path().to_owned();
+        let peer = std::thread::spawn(move || {
+            let mut store = store::Store::open(&workspace_path).unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut frame = String::new();
+            BufReader::new(&mut stream).read_line(&mut frame).unwrap();
+            let request: Value = serde_json::from_str(&frame).unwrap();
+            assert_eq!(
+                request["params"],
+                json!({"provider":provider,"event":event,"session_id":"reference-only"})
+            );
+            assert!(!frame.contains(contract));
+            let result = store.report(&request["params"]).unwrap();
+            let reply =
+                json!({"id":request["id"],"contract":CONTRACT,"type":"result","result":result});
+            writeln!(stream, "{reply}").unwrap();
+            let projection = store.projection();
+            assert_eq!(projection["records"][0]["reported_state"], "unknown");
+            assert!(projection["records"][0]["age_ms"].is_u64());
+            assert!(!projection.to_string().contains("reference-only"));
+        });
+        let request = ReportRequest {
+            socket: path.to_str().unwrap().into(),
+            provider: provider.into(),
+            event: Some(event.into()),
+        };
+        // earendil-works/pi at 6e11a00a01a568ef0ae0df5074acf02fc107c34b:
+        // session_start callback ctx.sessionManager.getSessionId() supplies this ID.
+        // Coven emits this envelope; hasUI === true is UI eligibility, not root
+        // identity proof or headless certification.
+        // OpenCode source pin: v1.19.5, 810c0eba1a7348036f8bdf61e6632d0c36c6876c.
+        // session.created/session.updated are Coven's semantic capture claims here;
+        // this is a Coven envelope, not fabricated native JSON or root identity proof.
+        let payload = json!({"contract":contract,"event":event,"session_id":"reference-only"});
+        let output =
+            extension_report_payload(&request, payload.to_string().as_bytes(), true).unwrap();
         assert_eq!(
-            request["params"],
-            json!({"provider":"pi","event":"session_start","session_id":"reference-only"})
+            serde_json::from_str::<Value>(&output.stdout).unwrap()["type"],
+            "accepted"
         );
-        assert!(!frame.contains("coven.pi-extension.v1"));
-        let result = store.report(&request["params"]).unwrap();
-        let reply = json!({"id":request["id"],"contract":CONTRACT,"type":"result","result":result});
-        writeln!(stream, "{reply}").unwrap();
-        let projection = store.projection();
-        assert_eq!(projection["records"][0]["reported_state"], "unknown");
-        assert!(projection["records"][0]["age_ms"].is_u64());
-        assert!(!projection.to_string().contains("reference-only"));
-    });
-    let request = ReportRequest {
-        socket: path.to_str().unwrap().into(),
-        provider: "pi".into(),
-        event: Some("session_start".into()),
-    };
-    // earendil-works/pi at 6e11a00a01a568ef0ae0df5074acf02fc107c34b:
-    // session_start callback ctx.sessionManager.getSessionId() supplies this ID.
-    // Coven emits this envelope; hasUI === true is UI eligibility, not root
-    // identity proof or headless certification.
-    let payload = br#"{"contract":"coven.pi-extension.v1","event":"session_start","session_id":"reference-only"}"#;
-    let output = extension_report_payload(&request, payload, true).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Value>(&output.stdout).unwrap()["type"],
-        "accepted"
-    );
-    assert!(!output.stdout.contains("reference-only"));
-    peer.join().unwrap();
-    let saved: Value =
-        serde_json::from_slice(&fs::read(root.path().join("state/agent-management.json")).unwrap())
-            .unwrap();
-    assert_eq!(saved["schema_version"], 1);
-    let record = saved["records"]
-        .as_object()
-        .unwrap()
-        .values()
-        .next()
+        assert!(!output.stdout.contains("reference-only"));
+        peer.join().unwrap();
+        let saved: Value = serde_json::from_slice(
+            &fs::read(root.path().join("state/agent-management.json")).unwrap(),
+        )
         .unwrap();
-    assert_eq!(record.as_object().unwrap().len(), 5);
-    assert_eq!(record["provider"], "pi");
-    assert_eq!(record["last_event"], "session_start");
-    assert_eq!(record["session_id"], "reference-only");
-    let restarted = store::Store::open(root.path()).unwrap().projection();
-    assert_eq!(restarted["records"][0]["reported_state"], "unknown");
-    assert!(restarted["records"][0]["age_ms"].is_null());
+        assert_eq!(saved["schema_version"], 1);
+        let record = saved["records"]
+            .as_object()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(record.as_object().unwrap().len(), 5);
+        assert_eq!(record["provider"], provider);
+        assert_eq!(record["last_event"], event);
+        assert_eq!(record["session_id"], "reference-only");
+        let restarted = store::Store::open(root.path()).unwrap().projection();
+        assert_eq!(restarted["records"][0]["reported_state"], "unknown");
+        assert!(restarted["records"][0]["age_ms"].is_null());
+    }
 }
 
 #[test]
-fn pi_store_rejects_other_events_and_extra_rpc_or_persisted_fields() {
-    let root = workspace();
-    let mut store = store::Store::open(root.path()).unwrap();
-    let valid = json!({"provider":"pi","event":"session_start","session_id":"s"});
-    store.report(&valid).unwrap();
-    let path = root.path().join("state/agent-management.json");
-    let before = fs::read(&path).unwrap();
-    for (field, invalid) in [
-        ("event", json!("SessionStart")),
-        ("event", json!("Stop")),
-        ("event", json!("PreToolUse")),
-        ("event", Value::Null),
-        ("contract", json!("coven.pi-extension.v1")),
-        ("origin", json!("SECRET")),
-        ("reported_state", json!("working")),
+fn extension_store_rejects_other_events_and_extra_rpc_or_persisted_fields() {
+    for (provider, event) in [
+        ("pi", "session_start"),
+        ("opencode", "session.created"),
+        ("opencode", "session.updated"),
     ] {
-        let mut bad = valid.clone();
-        bad[field] = invalid;
-        assert!(store.report(&bad).is_err());
-        assert_eq!(fs::read(&path).unwrap(), before);
+        let root = workspace();
+        let mut store = store::Store::open(root.path()).unwrap();
+        let valid = json!({"provider":provider,"event":event,"session_id":"s"});
+        let other_event = if provider == "pi" {
+            "session.created"
+        } else {
+            "session_start"
+        };
+        store.report(&valid).unwrap();
+        let path = root.path().join("state/agent-management.json");
+        let before = fs::read(&path).unwrap();
+        for (field, invalid) in [
+            ("event", json!("SessionStart")),
+            ("event", json!("Stop")),
+            ("event", json!("PreToolUse")),
+            ("event", json!("other")),
+            ("event", json!(other_event)),
+            ("event", Value::Null),
+            ("contract", json!("coven.pi-extension.v1")),
+            ("origin", json!("SECRET")),
+            ("reported_state", json!("working")),
+            ("directory", json!("SECRET")),
+            ("project", json!("SECRET")),
+            ("title", json!("SECRET")),
+            ("prompt", json!("SECRET")),
+            ("parentID", json!("SECRET")),
+        ] {
+            let mut bad = valid.clone();
+            bad[field] = invalid;
+            assert!(store.report(&bad).is_err());
+            assert_eq!(fs::read(&path).unwrap(), before);
+        }
+        drop(store);
+        let saved: Value = serde_json::from_slice(&before).unwrap();
+        for (field, invalid) in [
+            ("last_event", json!("SessionStart")),
+            ("last_event", json!("Stop")),
+            ("last_event", json!("PreToolUse")),
+            ("last_event", json!("other")),
+            ("last_event", json!(other_event)),
+            ("origin", json!("SECRET")),
+            ("directory", json!("SECRET")),
+            ("project", json!("SECRET")),
+            ("title", json!("SECRET")),
+            ("prompt", json!("SECRET")),
+            ("parentID", json!("SECRET")),
+        ] {
+            let mut bad = saved.clone();
+            bad["records"]
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .next()
+                .unwrap()[field] = invalid;
+            fs::write(&path, bad.to_string()).unwrap();
+            assert!(store::Store::open(root.path()).is_err());
+        }
+        fs::write(&path, &before).unwrap();
+        assert!(store::Store::open(root.path()).is_ok());
     }
-    drop(store);
-    let saved: Value = serde_json::from_slice(&before).unwrap();
-    for (field, invalid) in [
-        ("last_event", json!("SessionStart")),
-        ("last_event", json!("Stop")),
-        ("last_event", json!("PreToolUse")),
-        ("origin", json!("SECRET")),
-    ] {
-        let mut bad = saved.clone();
-        bad["records"]
-            .as_object_mut()
-            .unwrap()
-            .values_mut()
-            .next()
-            .unwrap()[field] = invalid;
-        fs::write(&path, bad.to_string()).unwrap();
-        assert!(store::Store::open(root.path()).is_err());
-    }
-    fs::write(&path, &before).unwrap();
-    assert!(store::Store::open(root.path()).is_ok());
 }
 
 #[test]

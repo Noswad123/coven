@@ -52,6 +52,8 @@ fn native_source_package_boundary() {
                 || *file == "tests/fixtures/copilot_hooks/KITSUNE_LICENSE"
                 || *file == "tests/fixtures/pi_extension/kitsune-agent-state.ts"
                 || *file == "tests/fixtures/pi_extension/KITSUNE_LICENSE"
+                || *file == "tests/fixtures/opencode_extension/kitsune-agent-state.js"
+                || *file == "tests/fixtures/opencode_extension/KITSUNE_LICENSE"
                 || *file == "tests/native_package.rs",
             "checkout-only regression harness shipped: {file}"
         );
@@ -87,6 +89,11 @@ fn native_source_package_boundary() {
         "src/copilot_hooks.rs",
         "src/pi_extension.rs",
         "src/pi_extension/template.js",
+        "src/extension_assets.rs",
+        "src/opencode_extension.rs",
+        "src/opencode_extension/template.js",
+        "tests/fixtures/opencode_extension/kitsune-agent-state.js",
+        "tests/fixtures/opencode_extension/KITSUNE_LICENSE",
         "tests/fixtures/pi_extension/kitsune-agent-state.ts",
         "tests/fixtures/pi_extension/KITSUNE_LICENSE",
         "tests/fixtures/copilot_hooks/kitsune-agent-state.sh",

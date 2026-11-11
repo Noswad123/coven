@@ -447,8 +447,10 @@ fn validate_result(method: &str, value: &Value) -> Result<()> {
                         .bytes()
                         .all(|b| b.is_ascii_hexdigit())
                     && event(text(record, "provider")?, text(record, "last_event")?).is_ok()
-                    && (!matches!(text(record, "provider")?, "codex" | "copilot" | "pi")
-                        || text(record, "reported_state")? == "unknown")
+                    && (!matches!(
+                        text(record, "provider")?,
+                        "codex" | "copilot" | "pi" | "opencode"
+                    ) || text(record, "reported_state")? == "unknown")
                     && matches!(
                         text(record, "reported_state")?,
                         "unknown" | "working" | "idle" | "ended"
@@ -587,24 +589,31 @@ mod tests {
     }
 
     #[test]
-    fn inventory_validates_pi_extension_event_and_unknown_state_only() {
-        let value = json!({"contract":CONTRACT,"server_epoch":"a".repeat(32),"authorization":"none","records":[{
-            "record_id":"b".repeat(64),"provider":"pi","last_event":"session_start","reported_state":"unknown","age_ms":0,
-            "reference_trust":"caller_supplied_unverified","native_identity":"unestablished","job_completion":"unestablished"}]});
-        assert!(validate_result("inventory", &value).is_ok());
-        for (field, invalid) in [
-            ("reported_state", json!("working")),
-            ("reported_state", json!("idle")),
-            ("reported_state", json!("ended")),
-            ("last_event", json!("SessionStart")),
-            ("last_event", json!("Stop")),
-            ("last_event", json!("SubagentStop")),
-            ("last_event", json!("other")),
-            ("origin", json!("SECRET")),
+    fn inventory_validates_extension_events_and_unknown_state_only() {
+        for (provider, event, other_event) in [
+            ("pi", "session_start", "session.created"),
+            ("opencode", "session.created", "session_start"),
+            ("opencode", "session.updated", "session_start"),
         ] {
-            let mut bad = value.clone();
-            bad["records"][0][field] = invalid;
-            assert!(validate_result("inventory", &bad).is_err());
+            let value = json!({"contract":CONTRACT,"server_epoch":"a".repeat(32),"authorization":"none","records":[{
+            "record_id":"b".repeat(64),"provider":provider,"last_event":event,"reported_state":"unknown","age_ms":0,
+            "reference_trust":"caller_supplied_unverified","native_identity":"unestablished","job_completion":"unestablished"}]});
+            assert!(validate_result("inventory", &value).is_ok());
+            for (field, invalid) in [
+                ("reported_state", json!("working")),
+                ("reported_state", json!("idle")),
+                ("reported_state", json!("ended")),
+                ("last_event", json!("SessionStart")),
+                ("last_event", json!("Stop")),
+                ("last_event", json!("SubagentStop")),
+                ("last_event", json!("other")),
+                ("last_event", json!(other_event)),
+                ("origin", json!("SECRET")),
+            ] {
+                let mut bad = value.clone();
+                bad["records"][0][field] = invalid;
+                assert!(validate_result("inventory", &bad).is_err());
+            }
         }
     }
 }

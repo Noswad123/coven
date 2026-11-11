@@ -1,6 +1,76 @@
 use super::*;
 
 #[test]
+fn opencode_extension_provider_and_both_event_choices_preserve_literal_operands() {
+    for event in ["session.created", "session.updated"] {
+        let (_, matches) = parse(&args(&[
+            "coven",
+            "agent",
+            "report-extension",
+            "--provider",
+            "opencode",
+            "--event",
+            event,
+            "--socket",
+            "-1socket",
+            "--json",
+        ]))
+        .unwrap();
+        let leaf = matches
+            .subcommand_matches("agent")
+            .unwrap()
+            .subcommand_matches("report-extension")
+            .unwrap();
+        assert_eq!(leaf.get_one::<String>("provider").unwrap(), "opencode");
+        assert_eq!(leaf.get_one::<String>("event").unwrap(), event);
+        assert_eq!(leaf.get_one::<String>("socket").unwrap(), "-1socket");
+    }
+    for operation in ["plan", "install", "uninstall", "rollback"] {
+        let (_, matches) = parse(&args(&[
+            "coven",
+            "agent",
+            "extensions",
+            operation,
+            "--provider",
+            "opencode",
+            "--extension-root",
+            "-1root",
+            "--executable",
+            "-2binary",
+            "--socket",
+            "-3socket",
+        ]))
+        .unwrap();
+        let leaf = matches
+            .subcommand_matches("agent")
+            .unwrap()
+            .subcommand_matches("extensions")
+            .unwrap()
+            .subcommand_matches(operation)
+            .unwrap();
+        assert_eq!(
+            leaf.get_one::<PathBuf>("extension_root").unwrap(),
+            &PathBuf::from("-1root")
+        );
+        assert_eq!(leaf.get_one::<String>("executable").unwrap(), "-2binary");
+        assert_eq!(leaf.get_one::<String>("socket").unwrap(), "-3socket");
+        assert!(!leaf.get_flag("apply"));
+    }
+    assert!(
+        parse(&args(&[
+            "coven",
+            "agent",
+            "report",
+            "--provider",
+            "opencode",
+            "--socket",
+            "/abs"
+        ]))
+        .is_err()
+    );
+}
+
+#[test]
 fn pi_extension_routes_restore_literal_paths_and_keep_effects_explicit() {
     for operation in ["plan", "install", "uninstall", "rollback"] {
         let (_, matches) = parse(&args(&[

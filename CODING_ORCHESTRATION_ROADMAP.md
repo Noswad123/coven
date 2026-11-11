@@ -19,10 +19,9 @@ See [receiver](AGENT_MANAGEMENT_CONTRACT.md) and
 apply, rollback/recovery and unverified-report limits. No automatic configuration
 migration or running-session conversion occurs. Claude process/screen fallback and
 agent restore remain Kitsune; subsequent Codex/Copilot hook transfers are recorded below,
-while the Pi reference-extension cut below leaves OpenCode as the remaining legacy
-hook owner alongside remaining management transfers.
+with Pi/OpenCode reference-extension transfers below, not full management completion.
 
-Next functional work adds matching non-Linux Claude/Codex/Copilot/Pi adapters before retiring
+Next functional work adds matching non-Linux Claude/Codex/Copilot/Pi/OpenCode adapters before retiring
 working Kit paths, then transfers remaining hook owners, management interpretation,
 provider start/resume and agent-aware restore with subsystem removal gates, not
 another permanent characterization-only milestone. Optional presentation is not
@@ -40,7 +39,7 @@ receiver/inventory. Fresh Codex records stay unknown, never working/idle. Option
 generic view labels are provider-derived; unchanged `integration.view.*` gives
 Kitsune no provider model. Linux Kit new install/recommend/update/bulk paths are
 retired before provider discovery, with no automatic Coven execution. Non-Linux
-legacy installers remain until matching Coven adapters for Claude, Codex, Copilot and Pi.
+legacy installers remain until matching Coven adapters for Claude, Codex, Copilot, Pi and OpenCode.
 
 Shared filesystem extraction preserves Claude behavior, v2 receipts/errors/statuses;
 Codex has a separate bounded v1 two-file journal. Preview/apply explicitly covers
@@ -61,7 +60,7 @@ global `settings.json` ownership, direct `hooks.SessionStart[]` command/bash ent
 with `timeoutSec: 10`, shared receiver reference capture and Linux Kit install/
 recommend/update/bulk retirement. Non-Linux Kit paths remain until matching
 adapters; all-platform detection/status/start/resume/restore/old ingress/uninstall
-remain compatibility. **OpenCode is the remaining legacy hook owner** after Pi below.
+remain compatibility. OpenCode's subsequent reference-plugin transfer is recorded below.
 
 The shared Claude single-file `Policy` runner preserves v2 receipt behavior with
 independent Copilot namespaces; Codex retains its separate v1 two-file journal.
@@ -95,12 +94,46 @@ The source pin is main `6e11a00a01a568ef0ae0df5074acf02fc107c34b` declaring
 capture. Placement is not activation. Exact legacy bytes/consent and a private
 two-leaf v1 journal preserve originals across reinstall and rollback after
 uninstall; normal uninstall never revives Kit. No approval changes, atomic
-activation, autoload or live authority release. Four providers retain store-v1
-fields/aggregate 128 cap, but older binaries reject Pi records: receiver first,
-with downgrade limits. The [Pi validation record](AGENT_MANAGEMENT_MIGRATION.md#pi-validation-table)
+activation, autoload or live authority release. Five providers now retain store-v1
+fields/aggregate 128 cap, but older binaries reject new providers: receiver first,
+with downgrade limits. The historical [Pi validation record](AGENT_MANAGEMENT_MIGRATION.md#pi-validation-table)
 covers 212 focused Rust checks, generated-asset Node/Bun checks, Kit compatibility,
 lint/MSRV/build/package checks and the retained receipt timing limitation. Earlier
 Copilot scopes above remain historical, not additive Pi results.
+
+### Subsequent OpenCode reference-plugin cut
+
+[OpenCode ownership](OPENCODE_EXTENSION_CONTRACT.md) covers new Linux explicit
+existing plugin/plugins root placement and strict separate three-string extension
+envelopes, not native `agent report` or full management. Request event must match
+payload session.created/updated; provider/event means interpretation, not origin
+authentication. **Migration drops working/blocked/idle to reference-only**, unknown
+even fresh. Linux Kit install/recommend/update/bulk retires; non-Linux full-v9
+new-install paths and all-platform legacy CLI/status/uninstall/all six targets/old
+ingress remain. Discovery/status/start/resume/restore are still pending.
+
+Canonical anomalyco/opencode release v1.19.5 commit
+`810c0eba1a7348036f8bdf61e6632d0c36c6876c` is authoritative, changed dev `611cee9`
+unsupported. The named async factory's event/dispose hooks run in the native server's
+exact directory instance, not whole project or selected TUI/pane/attach scope.
+Remote servers need executable/socket there. Conservative full-root DTO validation
+requires info.id/sessionID equality and undefined/omitted parentID, without cache,
+SDK reads or enumeration; quiet resumed sessions need not emit events. Both
+summary.diffs and permission cap at 256. Capacity precedes DTO work; FIFO 32 pending
+plus one active, incoming-full drop, no persistent queue/deduplication/retry.
+
+Shared private fixed-two-leaf v1 journaling uses separate OpenCode namespaces and
+preserves [Pi's frozen 887451b API/receipt/generated-byte compatibility](tests/pi_extension_frozen_compatibility.rs).
+Exact-v9 opt-in migration preserves immutable originals and rollback after uninstall.
+Stop native servers/watchers before apply; restart the native server after manual
+apply, not just TUI attach. No automatic restart/in-memory release or across-root
+dedupe/authority; do not double-install plugin and plugins. See the
+[current scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table):
+shared 20, workflows 14, Node producer 12 with Bun harness coverage, Kit overlapping
+111 integration/10 OpenCode and six legacy-asset checks. The broader current scope
+passed 236 focused Rust checks plus lint/MSRV/build/package checks, retaining
+recorded receipt timing limits; historical Pi totals are not additive. No installed-native operational or
+cross-platform certification is claimed.
 
 Functional ownership now takes precedence over further test-only slices:
 [`group present`](GROUP_PRESENTATION_CONTRACT.md) sends Coven-owned declarations
@@ -119,7 +152,7 @@ retire legacy management incrementally when replacement behavior is ready.
 
 Default desktop lower-menu replacement is not full removal of legacy agent
 APIs/detection, mobile UI, remaining native hooks/installers or restore. New Claude
-Codex/Copilot hook and Pi extension installations on Linux are the separate implemented retirements above. Keep these explicit
+Codex/Copilot hook and Pi/OpenCode extension installations on Linux are the separate implemented retirements above. Keep these explicit
 in the [migration matrix](AGENT_MANAGEMENT_MIGRATION.md#api--interfaces). The fixed legacy
 `IntegrationTarget` installer is not a generic provider registry. Both apps now
 use the new contract together, without old `view.*` aliases or automatic rewriting

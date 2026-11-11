@@ -62,6 +62,25 @@ macro_rules! errors {
 }
 
 impl Spec {
+    pub(crate) const fn opencode() -> Self {
+        Self {
+            recovery: ".coven-opencode-extension-recovery",
+            leaves: &[
+                "coven-agent-reference.js",
+                "kitsune-agent-state.js",
+                "coven-opencode-extension.json",
+                ".coven-opencode-extension.lock",
+            ],
+            private: &[
+                "coven-opencode-extension.json",
+                ".coven-opencode-extension.lock",
+            ],
+            directories: &[],
+            read_limit: 8 * 1024 * 1024,
+            errors: errors!("opencode_extension"),
+        }
+    }
+
     pub(crate) const fn pi() -> Self {
         Self {
             recovery: ".coven-pi-extension-recovery",

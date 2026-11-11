@@ -18,6 +18,7 @@ include = [
     "/src/**/*.rs",
     "/src/**/*.py",
     "/src/pi_extension/template.js",
+    "/src/opencode_extension/template.js",
     "/src/workspace_assets/*.txt",
     "/src/execution/inspection/projection/vectors.json",
     "/examples/**/*.json",
@@ -33,6 +34,8 @@ include = [
     # Exact legacy bytes and attribution used to validate explicit Pi migration.
     "/tests/fixtures/pi_extension/kitsune-agent-state.ts",
     "/tests/fixtures/pi_extension/KITSUNE_LICENSE",
+    "/tests/fixtures/opencode_extension/kitsune-agent-state.js",
+    "/tests/fixtures/opencode_extension/KITSUNE_LICENSE",
     "/tests/native_package.rs",
     # Never collect nested harness build outputs or interim source trees.
     "!/src/**/target/**",

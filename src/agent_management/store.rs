@@ -184,7 +184,7 @@ impl Store {
     pub fn projection(&self) -> Value {
         let records: Vec<Value> = self.saved.records.iter().map(|(id, record)| {
             let age = if record.server_epoch == self.epoch { self.receipts.get(id).map(|at| at.elapsed().as_millis().min(u64::MAX as u128) as u64) } else { None };
-            let state = if age.is_none() || matches!(record.provider.as_str(), "codex" | "copilot" | "pi") { "unknown" } else { match record.last_event.as_str() {
+            let state = if age.is_none() || matches!(record.provider.as_str(), "codex" | "copilot" | "pi" | "opencode") { "unknown" } else { match record.last_event.as_str() {
                 "UserPromptSubmit" | "PreToolUse" | "PostToolUse" => "working",
                 "Stop" => "idle",
                 "SessionEnd" => "ended",

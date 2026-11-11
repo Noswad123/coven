@@ -45,12 +45,13 @@ fn decode(bytes: &[u8], limit: usize) -> Result<Value> {
 
 pub(crate) fn event<'a>(provider: &str, value: &'a str) -> Result<&'a str> {
     require(
-        matches!(provider, "claude" | "codex" | "copilot" | "pi"),
+        matches!(provider, "claude" | "codex" | "copilot" | "pi" | "opencode"),
         "agent_unsupported_provider",
     )?;
     require(
         (matches!(provider, "codex" | "copilot") && value == "SessionStart")
             || (provider == "pi" && value == "session_start")
+            || (provider == "opencode" && matches!(value, "session.created" | "session.updated"))
             || (provider == "claude"
                 && matches!(
                     value,
@@ -177,14 +178,10 @@ pub fn inventory_arguments(request: &InventoryRequest, json: bool) -> Result<Tas
     output(call(&request.socket, "inventory", json!({}))?, json)
 }
 
-/// Capture Coven's Pi extension envelope, not a native provider hook payload.
+/// Capture Coven's extension envelope, not a native provider hook payload.
 pub fn extension_report_arguments(request: &ReportRequest, json: bool) -> Result<TaskOutput> {
     require(cfg!(unix), "agent_unsupported_platform")?;
-    require(request.provider == "pi", "agent_unsupported_provider")?;
-    require(
-        request.event.as_deref() == Some("session_start"),
-        "agent_invalid_event",
-    )?;
+    extension_event(request)?;
     let mut payload = Vec::new();
     std::io::stdin()
         .lock()
@@ -199,26 +196,42 @@ pub fn extension_report_payload(
     json: bool,
 ) -> Result<TaskOutput> {
     require(cfg!(unix), "agent_unsupported_platform")?;
-    require(request.provider == "pi", "agent_unsupported_provider")?;
-    require(
-        request.event.as_deref() == Some("session_start"),
-        "agent_invalid_event",
-    )?;
+    let expected = extension_event(request)?;
     let value = decode(payload, MAX_PAYLOAD)?;
     require(
         value.as_object().is_some_and(|o| o.len() == 3),
         "agent_invalid_schema",
     )?;
     require(
-        text(&value, "contract")? == "coven.pi-extension.v1",
+        text(&value, "contract")?
+            == if request.provider == "pi" {
+                "coven.pi-extension.v1"
+            } else {
+                "coven.opencode-extension.v1"
+            },
         "agent_contract_mismatch",
     )?;
     let name = event(&request.provider, text(&value, "event")?)?;
+    require(expected == name, "agent_event_mismatch")?;
     let sid = session(text(&value, "session_id")?)?;
-    // Pi/session_start identifies the extension contract and getSessionId source,
-    // not authenticated provenance. Keep the persisted v1 record unchanged.
+    // Provider/event identifies extension interpretation, not authenticated native
+    // origin. Keep the persisted v1 record unchanged.
     let params = json!({"provider":request.provider,"event":name,"session_id":sid});
     output(call(&request.socket, "report", params)?, json)
+}
+
+fn extension_event(request: &ReportRequest) -> Result<&str> {
+    require(
+        matches!(request.provider.as_str(), "pi" | "opencode"),
+        "agent_unsupported_provider",
+    )?;
+    event(
+        &request.provider,
+        request
+            .event
+            .as_deref()
+            .ok_or(Error("agent_invalid_event"))?,
+    )
 }
 
 fn call(socket: &str, method: &str, params: Value) -> Result<Value> {

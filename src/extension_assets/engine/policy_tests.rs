@@ -1,4 +1,4 @@
-use super::*;
+use super::super::*;
 use std::{fs, os::unix::fs::PermissionsExt};
 
 fn request(root: &Path, operation: Operation) -> Request {
@@ -14,9 +14,9 @@ fn request(root: &Path, operation: Operation) -> Request {
 fn seed(legacy: bool) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     if legacy {
-        fs::write(dir.path().join(LEAVES[1]), KIT).unwrap();
+        fs::write(dir.path().join(POLICY.leaves[1]), POLICY.kit).unwrap();
         fs::set_permissions(
-            dir.path().join(LEAVES[1]),
+            dir.path().join(POLICY.leaves[1]),
             fs::Permissions::from_mode(0o750),
         )
         .unwrap();
@@ -24,10 +24,14 @@ fn seed(legacy: bool) -> tempfile::TempDir {
     dir
 }
 fn receipt(root: &Path) -> Receipt {
-    serde_json::from_slice(&fs::read(root.join(RECEIPT)).unwrap()).unwrap()
+    serde_json::from_slice(&fs::read(root.join(POLICY.receipt)).unwrap()).unwrap()
 }
 fn save(root: &Path, r: &Receipt) {
-    fs::write(root.join(RECEIPT), journal_bytes(r).unwrap()).unwrap();
+    fs::write(
+        root.join(POLICY.receipt),
+        journal_bytes(&POLICY, r).unwrap(),
+    )
+    .unwrap();
 }
 fn snapshot(root: &Path) -> Vec<(String, Vec<u8>, u32)> {
     let mut files: Vec<_> = fs::read_dir(root)
@@ -50,7 +54,7 @@ fn snapshot(root: &Path) -> Vec<(String, Vec<u8>, u32)> {
 }
 fn crash(r: &Request, stop: usize) {
     assert_eq!(
-        run_inner(r, true, &mut |i| if i == stop {
+        run_inner(&POLICY, r, true, &mut |i| if i == stop {
             Err(Error("injected"))
         } else {
             Ok(())
@@ -62,7 +66,7 @@ fn crash(r: &Request, stop: usize) {
     );
 }
 fn set(root: &Path, i: usize, value: &Option<Stored>) {
-    let path = root.join(LEAVES[i]);
+    let path = root.join(POLICY.leaves[i]);
     if let Some(v) = value {
         fs::write(&path, &v.text).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(v.mode)).unwrap();
@@ -91,29 +95,32 @@ fn every_boundary_install_uninstall_rollback_reinstall_resumes() {
                     _ => Operation::Install,
                 };
                 if scenario != "install" {
-                    run(&request(dir.path(), Operation::Install), true).unwrap();
+                    run(&POLICY, &request(dir.path(), Operation::Install), true).unwrap();
                 }
                 if matches!(scenario, "rollback_uninstalled" | "reinstall") {
-                    run(&request(dir.path(), Operation::Uninstall), true).unwrap();
+                    run(&POLICY, &request(dir.path(), Operation::Uninstall), true).unwrap();
                 }
                 if scenario == "reinstall_rollback" {
-                    run(&request(dir.path(), Operation::Rollback), true).unwrap();
+                    run(&POLICY, &request(dir.path(), Operation::Rollback), true).unwrap();
                 }
                 let r = request(dir.path(), operation);
                 crash(&r, stop);
                 let journal = receipt(dir.path());
                 assert_eq!(journal.pending, stop != 3);
-                let root = Root::open(dir.path(), Spec::pi()).unwrap();
-                let current = stored(&[
-                    root.read(LEAVES[0], LIMIT).unwrap(),
-                    root.read(LEAVES[1], LIMIT).unwrap(),
-                ])
+                let root = Root::open(dir.path(), POLICY.spec).unwrap();
+                let current = stored(
+                    &POLICY,
+                    &[
+                        root.read(POLICY.leaves[0], LIMIT).unwrap(),
+                        root.read(POLICY.leaves[1], LIMIT).unwrap(),
+                    ],
+                )
                 .unwrap();
                 assert!(prefix(&current, &journal));
                 let before = snapshot(dir.path());
                 let mut plan = request(dir.path(), Operation::Plan);
                 plan.apply = true;
-                run(&plan, true).unwrap();
+                run(&POLICY, &plan, true).unwrap();
                 assert_eq!(before, snapshot(dir.path()));
                 if journal.pending {
                     let wrong = if operation == Operation::Install {
@@ -122,14 +129,17 @@ fn every_boundary_install_uninstall_rollback_reinstall_resumes() {
                         Operation::Install
                     };
                     assert_eq!(
-                        run(&request(dir.path(), wrong), true).err().unwrap().code(),
-                        "pi_extension_receipt_stage_conflict"
+                        run(&POLICY, &request(dir.path(), wrong), true)
+                            .err()
+                            .unwrap()
+                            .code(),
+                        POLICY.errors.receipt_stage_conflict
                     );
                     assert_eq!(before, snapshot(dir.path()));
                 }
-                run(&r, true).unwrap();
+                run(&POLICY, &r, true).unwrap();
                 assert!(!receipt(dir.path()).pending);
-                assert!(run(&r, true).unwrap().stdout.contains("unchanged"));
+                assert!(run(&POLICY, &r, true).unwrap().stdout.contains("unchanged"));
                 assert_eq!(receipt(dir.path()).original[1].is_some(), legacy);
             }
         }
@@ -142,7 +152,7 @@ fn only_operation_order_prefixes_are_legal() {
     for op in [Operation::Install, Operation::Rollback] {
         let dir = seed(true);
         if op == Operation::Rollback {
-            run(&request(dir.path(), Operation::Install), true).unwrap();
+            run(&POLICY, &request(dir.path(), Operation::Install), true).unwrap();
         }
         let r = request(dir.path(), op);
         crash(&r, 0);
@@ -150,7 +160,10 @@ fn only_operation_order_prefixes_are_legal() {
         let second = journal.operation.order()[1];
         set(dir.path(), second, &journal.target[second]);
         let before = snapshot(dir.path());
-        assert_eq!(run(&r, true).err().unwrap().code(), "pi_extension_conflict");
+        assert_eq!(
+            run(&POLICY, &r, true).err().unwrap().code(),
+            POLICY.errors.conflict
+        );
         assert_eq!(before, snapshot(dir.path()));
     }
 }
@@ -162,14 +175,14 @@ fn races_fence_active_invocation_and_retries_accept_only_legal_prefixes() {
         for change in ["mode", "bytes", "absence", "receipt"] {
             let dir = seed(true);
             let r = request(dir.path(), Operation::Install);
-            let result = run_inner(&r, true, &mut |i| {
+            let result = run_inner(&POLICY, &r, true, &mut |i| {
                 if i == stop {
                     let name = if change == "receipt" {
-                        RECEIPT
+                        POLICY.receipt
                     } else if stop < 2 {
-                        LEAVES[1]
+                        POLICY.leaves[1]
                     } else {
-                        LEAVES[0]
+                        POLICY.leaves[0]
                     };
                     let path = dir.path().join(name);
                     match change {
@@ -187,24 +200,27 @@ fn races_fence_active_invocation_and_retries_accept_only_legal_prefixes() {
             if stop == 1 && change == "absence" {
                 // External legacy deletion after creating the new file is
                 // indistinguishable on retry from the legal completed prefix.
-                assert_eq!(result.err().unwrap().code(), "pi_extension_conflict");
+                assert_eq!(result.err().unwrap().code(), POLICY.errors.conflict);
                 assert!(receipt(dir.path()).pending);
-                let new_bytes = fs::read(dir.path().join(LEAVES[0])).unwrap();
-                assert!(!dir.path().join(LEAVES[1]).exists());
-                assert!(run(&r, true).unwrap().stdout.contains("installed"));
+                let new_bytes = fs::read(dir.path().join(POLICY.leaves[0])).unwrap();
+                assert!(!dir.path().join(POLICY.leaves[1]).exists());
+                assert!(run(&POLICY, &r, true).unwrap().stdout.contains("installed"));
                 assert!(!receipt(dir.path()).pending);
-                assert_eq!(fs::read(dir.path().join(LEAVES[0])).unwrap(), new_bytes);
-                assert!(!dir.path().join(LEAVES[1]).exists());
+                assert_eq!(
+                    fs::read(dir.path().join(POLICY.leaves[0])).unwrap(),
+                    new_bytes
+                );
+                assert!(!dir.path().join(POLICY.leaves[1]).exists());
                 assert_eq!(
                     receipt(dir.path()).original[1]
                         .as_ref()
                         .unwrap()
                         .text
                         .as_bytes(),
-                    KIT
+                    POLICY.kit
                 );
             } else {
-                assert!(run(&r, true).is_err(), "{stop} {change}");
+                assert!(run(&POLICY, &r, true).is_err(), "{stop} {change}");
                 assert_eq!(before, snapshot(dir.path()), "{stop} {change}");
             }
         }
@@ -228,7 +244,7 @@ fn journal_images_rebuilt_not_merely_digest_checked() {
         let r = request(dir.path(), Operation::Install);
         crash(&r, 0);
         let mut journal = receipt(dir.path());
-        let invented = Some(Stored::new(b"attacker controlled", 0o600).unwrap());
+        let invented = Some(Stored::new(&POLICY, b"attacker controlled", 0o600).unwrap());
         match field {
             "original_new" => journal.original[0] = invented,
             "original_legacy" => journal.original[1] = invented,
@@ -243,28 +259,28 @@ fn journal_images_rebuilt_not_merely_digest_checked() {
             let mut value = serde_json::to_value(&journal).unwrap();
             value["path"] = json!("/elsewhere");
             fs::write(
-                dir.path().join(RECEIPT),
+                dir.path().join(POLICY.receipt),
                 serde_json::to_vec(&value).unwrap(),
             )
             .unwrap();
         }
         if field == "duplicate" {
-            let raw = String::from_utf8(journal_bytes(&journal).unwrap()).unwrap();
+            let raw = String::from_utf8(journal_bytes(&POLICY, &journal).unwrap()).unwrap();
             fs::write(
-                dir.path().join(RECEIPT),
+                dir.path().join(POLICY.receipt),
                 raw.replacen('{', "{\"version\":1,", 1),
             )
             .unwrap();
         }
-        fs::remove_file(dir.path().join(LOCK)).unwrap();
+        fs::remove_file(dir.path().join(POLICY.lock)).unwrap();
         let before = snapshot(dir.path());
         assert_eq!(
-            run(&r, true).err().unwrap().code(),
-            "pi_extension_invalid_receipt",
+            run(&POLICY, &r, true).err().unwrap().code(),
+            POLICY.errors.invalid_receipt,
             "{field}"
         );
         assert_eq!(before, snapshot(dir.path()));
-        assert!(!dir.path().join(LOCK).exists());
+        assert!(!dir.path().join(POLICY.lock).exists());
     }
 }
 
@@ -272,7 +288,9 @@ fn journal_images_rebuilt_not_merely_digest_checked() {
 #[test]
 fn recovery_is_retained_and_blocks_even_previews() {
     let dir = seed(false);
-    let recovery = dir.path().join(".coven-pi-extension-recovery");
+    let recovery = dir
+        .path()
+        .join(format!(".coven-{}-extension-recovery", POLICY.provider));
     fs::create_dir(&recovery).unwrap();
     fs::write(recovery.join("displaced"), b"manual recovery evidence").unwrap();
     for op in [
@@ -282,14 +300,17 @@ fn recovery_is_retained_and_blocks_even_previews() {
         Operation::Rollback,
     ] {
         assert_eq!(
-            run(&request(dir.path(), op), true).err().unwrap().code(),
-            "pi_extension_recovery_required"
+            run(&POLICY, &request(dir.path(), op), true)
+                .err()
+                .unwrap()
+                .code(),
+            format!("{}_extension_recovery_required", POLICY.provider)
         );
         assert_eq!(
             fs::read(recovery.join("displaced")).unwrap(),
             b"manual recovery evidence"
         );
-        assert!(!dir.path().join(LOCK).exists());
+        assert!(!dir.path().join(POLICY.lock).exists());
     }
 }
 
@@ -299,37 +320,51 @@ fn migration_coexists_only_in_install_and_reverse_rollback_windows() {
     let dir = seed(true);
     let r = request(dir.path(), Operation::Install);
     crash(&r, 1);
-    assert!(LEAVES.iter().all(|name| dir.path().join(name).exists()));
-    run(&r, true).unwrap();
-    assert!(!dir.path().join(LEAVES[1]).exists());
+    assert!(
+        POLICY
+            .leaves
+            .iter()
+            .all(|name| dir.path().join(name).exists())
+    );
+    run(&POLICY, &r, true).unwrap();
+    assert!(!dir.path().join(POLICY.leaves[1]).exists());
     let rollback = request(dir.path(), Operation::Rollback);
     crash(&rollback, 1);
-    assert!(LEAVES.iter().all(|name| dir.path().join(name).exists()));
+    assert!(
+        POLICY
+            .leaves
+            .iter()
+            .all(|name| dir.path().join(name).exists())
+    );
     assert_eq!(
-        fs::metadata(dir.path().join(LEAVES[1]))
+        fs::metadata(dir.path().join(POLICY.leaves[1]))
             .unwrap()
             .permissions()
             .mode()
             & 0o7777,
         0o750
     );
-    run(&rollback, true).unwrap();
+    run(&POLICY, &rollback, true).unwrap();
     let mut no_consent = r;
     no_consent.migrate_kitsune = false;
     assert_eq!(
-        run(&no_consent, true).err().unwrap().code(),
-        "pi_extension_migration_consent_required"
+        run(&POLICY, &no_consent, true).err().unwrap().code(),
+        POLICY.errors.migration_consent_required
     );
 }
 
 #[test]
 fn fixture_pin_and_license_are_exact() {
-    assert_eq!(digest(KIT), KIT_SHA);
-    let license = include_str!("../../tests/fixtures/pi_extension/KITSUNE_LICENSE");
-    assert_eq!(
-        digest(license.as_bytes()),
-        "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
-    );
+    assert_eq!(digest(POLICY.kit), POLICY.kit_sha);
+    for license in [
+        include_bytes!("../../../tests/fixtures/pi_extension/KITSUNE_LICENSE").as_slice(),
+        include_bytes!("../../../tests/fixtures/opencode_extension/KITSUNE_LICENSE").as_slice(),
+    ] {
+        assert_eq!(
+            digest(license),
+            "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        );
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -337,13 +372,98 @@ fn fixture_pin_and_license_are_exact() {
 fn generated_bytes_without_receipt_are_not_ownership() {
     let dir = seed(false);
     let r = request(dir.path(), Operation::Install);
-    run(&r, true).unwrap();
-    fs::remove_file(dir.path().join(RECEIPT)).unwrap();
-    fs::remove_file(dir.path().join(LOCK)).unwrap();
+    run(&POLICY, &r, true).unwrap();
+    fs::remove_file(dir.path().join(POLICY.receipt)).unwrap();
+    fs::remove_file(dir.path().join(POLICY.lock)).unwrap();
     let before = snapshot(dir.path());
     assert_eq!(
-        run(&r, true).err().unwrap().code(),
-        "pi_extension_unreceipted_ownership"
+        run(&POLICY, &r, true).err().unwrap().code(),
+        POLICY.errors.unreceipted_ownership
     );
     assert_eq!(before, snapshot(dir.path()));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn reprepare_under_lock_rejects_edits_before_any_journal() {
+    for stop in [4, 5] {
+        let dir = seed(true);
+        let r = request(dir.path(), Operation::Install);
+        let result = run_inner(&POLICY, &r, true, &mut |i| {
+            if i == stop {
+                fs::write(dir.path().join(POLICY.leaves[0]), b"external owner").unwrap();
+            }
+            Ok(())
+        });
+        assert_eq!(
+            result.err().unwrap().code(),
+            POLICY.errors.unreceipted_ownership
+        );
+        assert_eq!(
+            fs::read(dir.path().join(POLICY.leaves[0])).unwrap(),
+            b"external owner"
+        );
+        assert!(!dir.path().join(POLICY.receipt).exists());
+        assert_eq!(
+            fs::read(dir.path().join(POLICY.leaves[1])).unwrap(),
+            POLICY.kit
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn every_leaf_and_receipt_is_fenced_at_every_boundary() {
+    for operation in [
+        Operation::Install,
+        Operation::Uninstall,
+        Operation::Rollback,
+    ] {
+        for stop in 0..=3 {
+            for name in [POLICY.leaves[0], POLICY.leaves[1], POLICY.receipt] {
+                for change in ["bytes", "inode", "mode", "absence"] {
+                    let dir = seed(true);
+                    if operation != Operation::Install {
+                        run(&POLICY, &request(dir.path(), Operation::Install), true).unwrap();
+                    }
+                    let path = dir.path().join(name);
+                    let mut changed = false;
+                    let result =
+                        run_inner(&POLICY, &request(dir.path(), operation), true, &mut |i| {
+                            if i == stop {
+                                changed = true;
+                                if path.exists() {
+                                    match change {
+                                        "inode" => {
+                                            let bytes = fs::read(&path).unwrap();
+                                            let mode = fs::metadata(&path).unwrap().permissions();
+                                            // Retain the original inode so reuse cannot hide replacement.
+                                            fs::rename(
+                                                &path,
+                                                dir.path().join("external-displaced"),
+                                            )
+                                            .unwrap();
+                                            fs::write(&path, bytes).unwrap();
+                                            fs::set_permissions(&path, mode).unwrap();
+                                        }
+                                        "mode" => fs::set_permissions(
+                                            &path,
+                                            fs::Permissions::from_mode(0o400),
+                                        )
+                                        .unwrap(),
+                                        "absence" => fs::remove_file(&path).unwrap(),
+                                        _ => fs::write(&path, b"external bytes").unwrap(),
+                                    }
+                                } else {
+                                    fs::write(&path, b"external creation").unwrap();
+                                }
+                            }
+                            Ok(())
+                        });
+                    assert!(changed);
+                    assert!(result.is_err(), "{operation:?} {stop} {name} {change}");
+                }
+            }
+        }
+    }
 }
