@@ -447,7 +447,7 @@ fn validate_result(method: &str, value: &Value) -> Result<()> {
                         .bytes()
                         .all(|b| b.is_ascii_hexdigit())
                     && event(text(record, "provider")?, text(record, "last_event")?).is_ok()
-                    && (text(record, "provider")? != "codex"
+                    && (!matches!(text(record, "provider")?, "codex" | "copilot")
                         || text(record, "reported_state")? == "unknown")
                     && matches!(
                         text(record, "reported_state")?,
@@ -562,5 +562,27 @@ mod tests {
         value["records"][0]["last_event"] = json!("SessionStart");
         value["records"][0]["provider"] = json!("unknown");
         assert!(validate_result("inventory", &value).is_err());
+    }
+
+    #[test]
+    fn inventory_validates_copilot_closed_schema_and_unknown_state_only() {
+        let value = json!({"contract":CONTRACT,"server_epoch":"a".repeat(32),"authorization":"none","records":[{
+            "record_id":"b".repeat(64),"provider":"copilot","last_event":"SessionStart","reported_state":"unknown","age_ms":0,
+            "reference_trust":"caller_supplied_unverified","native_identity":"unestablished","job_completion":"unestablished"}]});
+        assert!(validate_result("inventory", &value).is_ok());
+        for (field, invalid) in [
+            ("reported_state", json!("working")),
+            ("reported_state", json!("idle")),
+            ("reported_state", json!("ended")),
+            ("last_event", json!("sessionStart")),
+            ("last_event", json!("SubagentStop")),
+            ("last_event", json!("Stop")),
+            ("session_id", json!("SECRET")),
+            ("cwd", json!("SECRET")),
+        ] {
+            let mut bad = value.clone();
+            bad["records"][0][field] = invalid;
+            assert!(validate_result("inventory", &bad).is_err());
+        }
     }
 }

@@ -13,6 +13,7 @@ pub mod claude_hooks;
 pub mod codex_hooks;
 pub mod collection;
 pub mod console;
+pub mod copilot_hooks;
 pub mod djinn_live_observation;
 pub mod djinn_observation;
 pub mod error;

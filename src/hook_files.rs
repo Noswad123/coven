@@ -62,6 +62,22 @@ macro_rules! errors {
 }
 
 impl Spec {
+    pub(crate) const fn copilot() -> Self {
+        Self {
+            recovery: ".coven-copilot-hooks-recovery",
+            leaves: &[
+                "settings.json",
+                "coven-copilot-hooks.json",
+                ".coven-copilot-hooks.lock",
+                "kitsune-agent-state.sh",
+            ],
+            private: &["coven-copilot-hooks.json", ".coven-copilot-hooks.lock"],
+            directories: &["hooks"],
+            read_limit: 8 * 1024 * 1024,
+            errors: errors!("copilot_hooks"),
+        }
+    }
+
     pub(crate) const fn claude() -> Self {
         Self {
             recovery: ".coven-claude-hooks-recovery",

@@ -38,7 +38,7 @@ pub struct Request {
 pub fn arguments(request: &Request, json: bool) -> Result<TaskOutput> {
     #[cfg(unix)]
     {
-        unix::run(request, json)
+        single_file::run(request, json, single_file::CLAUDE)
     }
     #[cfg(not(unix))]
     {
@@ -48,7 +48,7 @@ pub fn arguments(request: &Request, json: bool) -> Result<TaskOutput> {
 }
 
 #[cfg(unix)]
-mod unix {
+pub(crate) mod single_file {
     use super::*;
     use crate::error::require;
     use crate::hook_files::{Root, Spec};
@@ -71,6 +71,36 @@ mod unix {
         "Stop",
         "SessionEnd",
     ];
+
+    // One operation runner for single-settings-file providers. The original
+    // Claude receipt schema/stages and internal errors remain wire-compatible.
+    // Policy supplies only native images, fixed storage names and presentation.
+    type InstallImage = fn(Option<&[u8]>, &Path, &str, &str, bool) -> Result<(Vec<u8>, bool)>;
+    type Output = fn(bool, &str, Option<&[u8]>, Option<&[u8]>, bool) -> Result<TaskOutput>;
+
+    pub(crate) struct Policy {
+        pub(crate) spec: Spec,
+        pub(crate) receipt: &'static str,
+        pub(crate) lock: &'static str,
+        pub(crate) parse: fn(&[u8]) -> Result<Value>,
+        pub(crate) install: InstallImage,
+        pub(crate) uninstall: fn(&[u8], &str, &str) -> Result<Vec<u8>>,
+        pub(crate) verify_kit: fn(&Root) -> Result<()>,
+        pub(crate) output: Output,
+        pub(crate) error: fn(Error) -> Error,
+    }
+
+    pub(crate) const CLAUDE: Policy = Policy {
+        spec: Spec::claude(),
+        receipt: RECEIPT,
+        lock: LOCK,
+        parse,
+        install: install_image,
+        uninstall: uninstalled,
+        verify_kit,
+        output,
+        error: |e| e,
+    };
 
     // The receipt contains data only. No path or command from it is executed.
     #[derive(Serialize, Deserialize)]
@@ -269,8 +299,18 @@ mod unix {
         })
     }
 
-    pub(super) fn run(request: &Request, json_output: bool) -> Result<TaskOutput> {
-        let root = Root::open(&request.config_root, Spec::claude())?;
+    pub(crate) fn run(request: &Request, json_output: bool, policy: Policy) -> Result<TaskOutput> {
+        run_inner(request, json_output, &policy).map_err(policy.error)
+    }
+
+    fn run_inner(request: &Request, json_output: bool, policy: &Policy) -> Result<TaskOutput> {
+        let parse = policy.parse;
+        let install_image = policy.install;
+        let uninstalled = policy.uninstall;
+        let verify_kit = policy.verify_kit;
+        let output = policy.output;
+        let receipt_name = policy.receipt;
+        let root = Root::open(&request.config_root, policy.spec)?;
         if let Some(exe) = &request.executable {
             absolute(Path::new(exe))?;
         }
@@ -292,7 +332,7 @@ mod unix {
         root.recovery_absent()?;
         // Read-only paths never create/open a lock for writing.
         let _lock = if writing {
-            Some(root.lock(LOCK)?)
+            Some(root.lock(policy.lock)?)
         } else {
             None
         };
@@ -301,7 +341,7 @@ mod unix {
             parse(&image.bytes)?;
             require(image.mode & 0o7000 == 0, "claude_hooks_unsafe_leaf")?;
         }
-        let receipt_image = root.read(RECEIPT, LIMIT * 8)?;
+        let receipt_image = root.read(receipt_name, LIMIT * 8)?;
         let before = current.as_ref().map(|i| i.bytes.as_slice());
         let before_mode = current.as_ref().map(|i| i.mode & 0o7777);
         let matches =
@@ -562,13 +602,13 @@ mod unix {
             );
         }
         root.fence(SETTINGS, &current)?;
-        root.fence(RECEIPT, &receipt_image)?;
+        root.fence(receipt_name, &receipt_image)?;
         let migrated = receipt.migrated;
         receipt.stage = pending.into();
         let pending_bytes = serde_json::to_vec_pretty(&receipt)?;
-        root.replace(RECEIPT, &receipt_image, Some(&pending_bytes), 0o600)?;
+        root.replace(receipt_name, &receipt_image, Some(&pending_bytes), 0o600)?;
         let pending_image = root
-            .read(RECEIPT, LIMIT * 8)
+            .read(receipt_name, LIMIT * 8)
             .map_err(|_| Error("claude_hooks_pending_recovery_required"))?;
         require(
             pending_image
@@ -581,7 +621,8 @@ mod unix {
                 .map_err(|e| {
                     if matches!(
                         e.code(),
-                        "claude_hooks_durability_uncertain" | "claude_hooks_recovery_required"
+                        code if code == (policy.error)(Error("claude_hooks_durability_uncertain")).code()
+                            || code == (policy.error)(Error("claude_hooks_recovery_required")).code()
                     ) {
                         e
                     } else {
@@ -591,7 +632,7 @@ mod unix {
         }
         receipt.stage = done.into();
         root.replace(
-            RECEIPT,
+            receipt_name,
             &pending_image,
             Some(&serde_json::to_vec_pretty(&receipt)?),
             0o600,
@@ -599,7 +640,8 @@ mod unix {
         .map_err(|error| {
             if matches!(
                 error.code(),
-                "claude_hooks_durability_uncertain" | "claude_hooks_recovery_required"
+                code if code == (policy.error)(Error("claude_hooks_durability_uncertain")).code()
+                    || code == (policy.error)(Error("claude_hooks_recovery_required")).code()
             ) {
                 error
             } else {

@@ -19,11 +19,11 @@ unsupported and macOS unvalidated. See [receiver](AGENT_MANAGEMENT_CONTRACT.md) 
 [hooks](CLAUDE_HOOKS_CONTRACT.md) contracts. No native provider/daemon starts,
 automatic user migration or live-session conversion follows.
 
-Next: add matching non-Linux Claude adapters before retiring working Kit paths;
+Next: add matching non-Linux Claude/Codex/Copilot adapters before retiring working Kit paths;
 transfer remaining provider/source hook owners, discovery/status and
 process/screen fallback, provider start/resume, then agent-aware restore/reference
 ownership with actual runtime failure/dedupe gates. Claude fallback and restore
-are **still Kitsune**. Codex's subsequent hook cut is recorded below; other providers remain pending applicable transfers;
+are **still Kitsune**. Codex/Copilot subsequent hook cuts are recorded below; other providers remain pending applicable transfers;
 native runtime facts/execution remain native. Do not equate receipt rows with
 verified activity/readiness, completion, roles or execution permission. Final
 validation counts belong in the parent implementation record; no new full-suite,
@@ -37,7 +37,7 @@ Implemented within the [Codex contract](CODEX_HOOKS_CONTRACT.md): offline two-fi
 hooks.json/config.toml management, reference-only SessionStart capture in the
 existing Unix receiver/inventory, optional dynamic-provider generic view, and Linux
 Kit new-install/recommend/update/bulk retirement before provider paths. Codex is no
-longer in the wholly pending Pi/OpenCode/Copilot hook-owner group. Claude behavior,
+longer in the wholly pending hook-owner group. Claude behavior,
 v2 receipts/errors/statuses remain unchanged after shared filesystem extraction;
 Codex uses separate v1 journaling and recovery names. Native release format is
 pinned, not earliest-version/all-modes/operational certification.
@@ -46,11 +46,37 @@ Preview discloses absent/false → true global hooks and native approval not gra
 apply authorizes shared enablement, not trust. Uninstall removes Coven commands but
 leaves that shared flag enabled; guarded rollback restores both original images.
 Ordered journaling is not global atomicity. Next non-Linux adapter work covers
-**both Claude and Codex** before retiring preserved Kit paths. Full discovery/status,
+**Claude, Codex and Copilot** before retiring preserved Kit paths. Full discovery/status,
 start/resume/restore and legacy ingress/API/UI transfer remain pending for all
-providers. Owner-reported 16 Codex workflows + 7 fault tests are review-pending,
-not a fresh full-suite/platform result; final counts are parent-owned. Earlier
-Claude-cut counts are historical.
+providers. Earlier owner-reported 16 Codex workflows + 7 fault tests are historical
+scoped evidence, not a fresh Copilot/full-suite/platform result; see the migration
+record's historical 176 Coven/330 Kit validation. Final Copilot counts are parent-owned.
+
+### Subsequent Copilot hook transfer
+
+Implemented: [Copilot global settings.json management](COPILOT_HOOKS_CONTRACT.md),
+direct `hooks.SessionStart[]` command/bash/timeoutSec-10 handlers, exact startup
+reference capture in the shared Unix receiver and Linux Kit new-install/recommend/
+update/bulk retirement. Scoped Linux new hook ownership is complete; non-Linux Kit
+paths and all-platform detection/status/start/resume/restore/old ingress/uninstall
+remain. **Pi/OpenCode hook ownership is next pending.**
+
+Copilot uses the shared Claude single-file v2 runner with per-provider namespaces;
+Codex's v1 two-file journal stays separate. Native JSONC is deliberately refused in
+favor of strict duplicate-free JSON. Exact opt-in legacy migration retains the
+script; normal uninstall never revives Kit, guarded rollback restores bytes/mode/
+absence. Previews create no files/lock; actual apply may create the persistent
+lock before validation. Native disable/approval/sandbox/trust remain unchanged.
+Only `session_id` and exact `hook_event_name: SessionStart` are required, without
+aliases/inference or Claude subagent suppression. Fresh Copilot records stay
+unknown; schema 1 and aggregate 128-record capacity remain.
+
+The `github/docs` pin is documentation evidence, not native implementation/binary
+certification. Generated three-provider commands reach real Coven end to end;
+188 focused Coven checks pass, with strict lint in both apps, MSRV 1.85,
+release and package checks. Kitsune's 103 integration and 8 Copilot checks are
+overlapping filters. See the [validation record](AGENT_MANAGEMENT_MIGRATION.md#validation-record),
+including an intermittent receipt-deadline test failure and successful fresh-fixture reruns.
 
 Current delivery direction: **Coven owns management; Kitsune exposes generic
 presentation, messaging and multiplexer controls.** The functional
@@ -72,7 +98,7 @@ agent-specific registry, sidebar model or execution policy to Kitsune.
 
 The generic-view step replaces default desktop lower-agent presentation only. Agent APIs/detection,
 mobile UI, native hooks, restore/resume and fixed-target legacy hook installers
-remain separate migration work except the Linux new Claude/Codex hook installers retired above;
+remain separate migration work except the Linux new Claude/Codex/Copilot hook installers retired above;
 see the [scope matrix](AGENT_MANAGEMENT_MIGRATION.md#api--interfaces).
 The obsolete local singleton config is diagnosed/ignored, not auto-rewritten;
 there are no old-method aliases, broker, plugins or scripts. Keep the independent

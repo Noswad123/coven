@@ -9,13 +9,13 @@ implemented in Coven, including explicit process-evidence group binding independ
 of Kitsune's agent inventory; explicit Djinn live attachments and read-only
 busy/unknown group status and explicit expiry-bounded live publishing implemented;
 native opt-in agent comparison implemented as extraction characterization;
-Coven-owned Claude and Codex hook/receipt cuts implemented with Linux-only Kitsune new-install retirement;
+Coven-owned Claude, Codex and Copilot hook/receipt cuts implemented with Linux-only Kitsune new-install retirement;
 native lifecycle/scheduling, automatic following, complete extraction, and workspace
 annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
 The confirmed scope includes all agent management, including hooks and agent-aware
 restore, not only discovery/status/start/resume. The first targeted retirement is
-Kitsune's new Claude hook installer on Linux only, followed by Codex on Linux. The ultimate target covers all
+Kitsune's new Claude hook installer on Linux only, followed by Codex and Copilot on Linux. The ultimate target covers all
 agent features/platforms, but matching non-Linux adapters are still pending. See the authoritative
 [ownership matrix and next transfers](AGENT_MANAGEMENT_MIGRATION.md).
 
@@ -61,10 +61,12 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | New Claude hook configuration | Linux: Coven-owned settings operations, Kit install/recommendations/updates retired. Non-Linux: Kit production installer/assets/result type and recommendation/update/bulk paths preserved until matching Coven adapters. See [hook contract](CLAUDE_HOOKS_CONTRACT.md). |
 | New Codex hook configuration | Linux: Coven-owned hooks.json + config.toml operations; Kit install/recommend/update/bulk paths retired before provider discovery. Non-Linux legacy installer/assets/result type preserved until matching Coven adapters. Shared global enablement is not native approval. See [Codex contract](CODEX_HOOKS_CONTRACT.md). |
 | Independent Codex receipts | Same private Unix receiver/store; SessionStart reference capture only, always unknown even fresh. No working/idle lifecycle or native operational certification. |
+| New Copilot hook configuration | Linux: Coven owns explicit global settings.json direct SessionStart handlers; Kit install/recommend/update/bulk paths retired. Non-Linux Kit installer/assets/result type and recommendation/update/bulk paths remain. Strict duplicate-free JSON only; native JSONC refused. See [Copilot contract](COPILOT_HOOKS_CONTRACT.md). |
+| Independent Copilot receipts | Same Unix receiver/store; exact SessionStart reference capture only, unknown even fresh; no camelCase/inferred events or Claude subagent suppression. Documentation pin, not native implementation/binary certification. |
 | Independent Claude receipts | Coven Unix private receiver/inventory; Windows unsupported, macOS not validated. Not a non-Linux hook-configuration replacement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
 | Agent APIs/detection, navigator/attention and mobile UI | Retained compatibility; move management model/interpretation into Coven and retire matching Kitsune surfaces. |
 | Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
-| `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
+| `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
 
 New Claude settings are explicitly selected and preview by default; Linux-only
 apply can migrate only exact verified legacy commands/script with consent. No
@@ -83,6 +85,18 @@ there is no global atomicity claim. Normal uninstall leaves the shared global
 feature enabled, never revives Kit commands; explicit guarded rollback restores both
 original images/modes/absence. Native trust state stays user/native-controlled.
 Full discovery/start/resume/restore transfer remains pending for every provider.
+
+Copilot shares Claude's single-file v2 operation runner with independent receipt,
+lock, recovery and error namespaces, not Codex's separate two-file journal.
+Previews create no lock/files; actual single-file apply may create a persistent
+lock before validation. Copilot preserves native disable/approval/sandbox/trust
+policy. Exact opt-in legacy migration retains the script; normal uninstall never
+revives Kit, while guarded rollback restores bytes/mode/absence. The scoped Linux
+new hook transfer is complete; all-platform Copilot detection/status/start/resume/
+restore and legacy ingress/status/uninstall remain. Pi/OpenCode hook ownership is
+next pending. Generated three-provider real-Coven end-to-end checks pass; the
+[validation record](AGENT_MANAGEMENT_MIGRATION.md#validation-record) covers focused
+checks and an intermittent receipt-deadline test failure, not native certification.
 
 The obsolete local singleton `[external_view]` is diagnosed/ignored in favor of
 `integrations.sources`, with no automatic config writes. Its unreleased `view.*`
@@ -254,7 +268,7 @@ These are independent paths, not a required round trip:
 observation: Kitsune -> Coven adapter -> sourced observations
 annotation: user-enabled producer -> pane.annotate -> Kitsune terminal border
 integration views: independent apps -> per-source frames -> local app selector/rows -> per-source intents
-Claude/Codex receipts: explicit native hooks -> Coven report -> private receiver/store -> redacted inventory -> optional generic view
+Claude/Codex/Copilot receipts: explicit native hooks -> Coven report -> private receiver/store -> redacted inventory -> optional generic view
 group status: explicit participant/source declaration -> pinned local artifact -> Coven ephemeral busy/unknown rows
 ```
 

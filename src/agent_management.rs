@@ -45,11 +45,11 @@ fn decode(bytes: &[u8], limit: usize) -> Result<Value> {
 
 pub(crate) fn event<'a>(provider: &str, value: &'a str) -> Result<&'a str> {
     require(
-        matches!(provider, "claude" | "codex"),
+        matches!(provider, "claude" | "codex" | "copilot"),
         "agent_unsupported_provider",
     )?;
     require(
-        (provider == "codex" && value == "SessionStart")
+        (matches!(provider, "codex" | "copilot") && value == "SessionStart")
             || (provider == "claude"
                 && matches!(
                     value,
@@ -137,7 +137,7 @@ pub fn report_arguments(request: &ReportRequest, json: bool) -> Result<TaskOutpu
 pub fn report_payload(request: &ReportRequest, payload: &[u8], json: bool) -> Result<TaskOutput> {
     require(cfg!(unix), "agent_unsupported_platform")?;
     require(
-        matches!(request.provider.as_str(), "claude" | "codex"),
+        matches!(request.provider.as_str(), "claude" | "codex" | "copilot"),
         "agent_unsupported_provider",
     )?;
     let value = decode(payload, MAX_PAYLOAD)?;

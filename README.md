@@ -83,12 +83,12 @@ five-second lease; close/expiry/removal is per source and reorder preserves reta
 state. Selections drain at most once, are not authentication or execution permission,
 and acknowledge no physical client pixels. This is separate from border annotations
 and their source priority. Legacy agent APIs/detection, mobile UI and agent restore
-remain. New Claude and Codex hook installation **on Linux** is now Coven-owned; non-Linux
+remain. New Claude, Codex and Copilot hook installation **on Linux** is now Coven-owned; non-Linux
 Kitsune installer/recommendation/update paths and other integrations remain pending.
 Move matching management surfaces incrementally,
 not through a permanent test-only gate.
 
-### Coven-owned agent receipts and Claude/Codex hooks
+### Coven-owned agent receipts and Claude/Codex/Copilot hooks
 
 The confirmed migration includes **all** discovery/status interpretation, hooks,
 start/resume and agent restore, not only Claude. The authoritative
@@ -100,6 +100,9 @@ Codex cut adds two-file hook configuration and SessionStart reference capture,
 with the same Linux-only retirement of new Kit install/recommend/update/bulk paths.
 Claude behavior and v2 receipts/errors/statuses are unchanged by extracting the
 shared private filesystem engine; Codex uses its own v1 journal/recovery namespace.
+Copilot adds explicit global `settings.json` management and reference-only
+`SessionStart` capture, with matching Linux-only retirement. It shares Claude's
+single-file v2 runner but has independent receipt/lock/recovery namespaces.
 
 Reference syntax (explicit inspected paths; `serve` runs foreground and writes
 local receipt state; hook plan/install below are previews):
@@ -111,6 +114,7 @@ coven agent hooks plan --provider claude --config-root ABS_CONFIG_ROOT --executa
 coven agent hooks install --provider claude --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
 coven agent hooks plan --provider codex --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
 coven agent hooks install --provider codex --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
+coven agent hooks plan --provider copilot --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
 ```
 
 Use an existing workspace and owned socket parent with exact 0700 mode. No implicit
@@ -126,7 +130,7 @@ The six-event lifecycle capture above is Claude-only. Codex accepts/generates on
 `SessionStart` and stays **unknown even when fresh**: it is reference capture, not
 working/idle detection. Native stdin has seven required fields; Coven deliberately
 requires only `session_id`/`hook_event_name`, dropping the rest before RPC. No
-`thread_id`/`thread-id` alias. Both providers share unchanged schema-v1 record fields
+`thread_id`/`thread-id` alias. All three providers share unchanged schema-v1 record fields
 and an **aggregate** 128-record cap; hashes are provider + NUL + SID, preserving
 Claude hashes while separating equal IDs across providers.
 
@@ -140,6 +144,16 @@ mode/absence images. All validation precedes any apply artifact; locked reread,
 pending journal, hooks-first/TOML/final-journal sequencing is not global atomicity.
 Read [CODEX_HOOKS_CONTRACT.md](CODEX_HOOKS_CONTRACT.md) for the upstream release pin,
 exact version-6 legacy migration, legal-prefix resume and retained-race recovery.
+
+Copilot manages direct `hooks.SessionStart[]` command handlers, not nested matcher
+groups. It accepts strict duplicate-free JSON only (native JSONC is safely refused),
+preserves disable/sandbox/trust/approval policy and never claims native delivery.
+Only snake_case `session_id` and exact `hook_event_name: SessionStart` are captured;
+no camelCase aliases or inferred events. Records stay unknown even when fresh.
+Exact v2 legacy migration requires explicit consent and verified asset bytes;
+normal uninstall never revives Kit, while guarded rollback restores exact bytes,
+mode or absence. See [COPILOT_HOOKS_CONTRACT.md](COPILOT_HOOKS_CONTRACT.md) for the
+documentation-only native pin, supported subset and recovery limits.
 
 Optional paired `--kitsune-socket ABS_KITSUNE_SOCKET --source coven` on `serve`
 publishes read-only rows with dynamic provider labels through generic snapshot/

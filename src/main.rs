@@ -261,7 +261,7 @@ enum Agent {
     Report {
         #[arg(long, allow_negative_numbers = true)]
         socket: String,
-        #[arg(long, value_parser = ["claude", "codex"])]
+        #[arg(long, value_parser = ["claude", "codex", "copilot"])]
         provider: String,
         #[arg(long, value_parser = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd", "SubagentStop"])]
         event: Option<String>,
@@ -304,7 +304,7 @@ enum Agent {
 
 #[derive(clap::Args)]
 struct ProviderHookOptions {
-    #[arg(long, value_parser = ["claude", "codex"])]
+    #[arg(long, value_parser = ["claude", "codex", "copilot"])]
     provider: String,
     #[arg(long, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
     config_root: PathBuf,
@@ -1530,20 +1530,19 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                     options.json,
                 );
             }
-            if options.provider != "claude" {
-                return Err(coven::Error::invalid_cli_arguments());
-            }
-            return coven::claude_hooks::arguments(
-                &coven::claude_hooks::Request {
-                    config_root: options.config_root,
-                    executable: options.executable,
-                    socket: options.socket,
-                    migrate_kitsune: options.migrate_kitsune,
-                    apply: options.apply,
-                    operation,
-                },
-                options.json,
-            );
+            let request = coven::claude_hooks::Request {
+                config_root: options.config_root,
+                executable: options.executable,
+                socket: options.socket,
+                migrate_kitsune: options.migrate_kitsune,
+                apply: options.apply,
+                operation,
+            };
+            return match options.provider.as_str() {
+                "claude" => coven::claude_hooks::arguments(&request, options.json),
+                "copilot" => coven::copilot_hooks::arguments(&request, options.json),
+                _ => Err(coven::Error::invalid_cli_arguments()),
+            };
         }
         Command::Agent { command } if !matches!(command, Agent::Send { .. }) => {
             let (items, action) = match command {

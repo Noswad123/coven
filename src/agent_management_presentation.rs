@@ -144,7 +144,7 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
         }
         let state = record["reported_state"].as_str().ok_or_else(invalid)?;
         if !matches!(state, "unknown" | "working" | "idle" | "ended")
-            || (provider == "codex" && state != "unknown")
+            || (matches!(provider, "codex" | "copilot") && state != "unknown")
         {
             return Err(invalid());
         }
@@ -411,6 +411,42 @@ mod tests {
         model.lock().unwrap()["records"][0]["reported_state"] = json!("unknown");
         model.lock().unwrap()["records"][0]["last_event"] = json!("Stop");
         assert!(snapshot(&model, None).is_err());
+    }
+
+    #[test]
+    fn copilot_rows_are_labeled_reference_only_even_when_fresh() {
+        let mut value = projection();
+        value["records"][0]["provider"] = json!("copilot");
+        value["records"][0]["last_event"] = json!("SessionStart");
+        value["records"][0]["reported_state"] = json!("unknown");
+        let model = Mutex::new(value);
+        let view = snapshot(&model, Some(&format!("agent:{}", "a".repeat(64))))
+            .unwrap()
+            .unwrap();
+        assert_eq!(view.rows[0]["label"], "copilot \u{b7} aaaaaaaaaaaa");
+        let detail = view.rows[0]["detail"].as_str().unwrap();
+        assert!(detail.starts_with("Last report: UNKNOWN \u{b7} age 1s"));
+        assert!(detail.contains("reference: caller supplied, unverified"));
+        assert!(detail.contains("native identity and job completion: unestablished"));
+        let serialized = serde_json::to_string(&view.rows).unwrap();
+        assert!(!serialized.contains("DO-NOT-COPY"));
+        assert!(!serialized.contains("PRIVATE"));
+        model.lock().unwrap()["records"][0]["age_ms"] = Value::Null;
+        assert!(
+            snapshot(&model, None).unwrap().unwrap().rows[0]["detail"]
+                .as_str()
+                .unwrap()
+                .contains("unavailable/unknown")
+        );
+        for state in ["working", "idle", "ended"] {
+            model.lock().unwrap()["records"][0]["reported_state"] = json!(state);
+            assert!(snapshot(&model, None).is_err());
+        }
+        model.lock().unwrap()["records"][0]["reported_state"] = json!("unknown");
+        for event in ["sessionStart", "Stop", "SubagentStop", "PreToolUse"] {
+            model.lock().unwrap()["records"][0]["last_event"] = json!(event);
+            assert!(snapshot(&model, None).is_err());
+        }
     }
 
     #[test]

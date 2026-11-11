@@ -2,7 +2,7 @@
 
 ## Overview
 
-Coven owns an independent, foreground Claude/Codex hook receiver and redacted inventory.
+Coven owns an independent, foreground Claude/Codex/Copilot hook receiver and redacted inventory.
 Transport is Unix-only (Windows unsupported); macOS operation has not been validated.
 This is distinct from the Linux-only hook mutation/Kit installer retirement cut;
 Unix transport alone is not a matching non-Linux configuration adapter.
@@ -17,6 +17,7 @@ and the still-pending discovery/start/resume/restore transfers.
 coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 [--kitsune-socket ABS_KITSUNE_SOCKET --source coven] [--json]
 coven agent report --provider claude --socket ABS_COVEN_SOCKET [--event EVENT] [--json]
 coven agent report --provider codex --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
+coven agent report --provider copilot --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
 coven agent inventory --socket ABS_COVEN_SOCKET [--json]
 ```
 
@@ -38,6 +39,14 @@ coven agent inventory --socket ABS_COVEN_SOCKET [--json]
   schema and complete native example in [the Codex contract](CODEX_HOOKS_CONTRACT.md#data-flow).
 - No implicit HOME/config roots, provider executable discovery, PATH lookup,
   probes, native-store inspection or automatic adoption.
+
+Copilot also accepts **only exact `SessionStart`**, requiring `session_id` and
+`hook_event_name`; no `sessionId`, camelCase aliases or inferred events. `--event`
+cannot supply a missing event. Unknown fields including `initial_prompt`, `cwd`,
+native `timestamp`/`source` and agent metadata are dropped before RPC. Claude's
+subagent suppression does **not** apply to Copilot; `agent_id` is ignored regardless
+of type. The [Copilot contract](COPILOT_HOOKS_CONTRACT.md) pins native documentation,
+not an implementation/binary or operational certification.
 
 Library entry points use `ServeRequest { workspace, socket, duration }`,
 `ReportRequest { socket, provider, event }`, `InventoryRequest { socket }` and
@@ -69,7 +78,7 @@ reference_trust: caller_supplied_unverified,
 native_identity: unestablished, job_completion: unestablished
 ```
 
-The record ID is SHA-256 of provider (`claude` or `codex`), NUL, then the exact
+The record ID is SHA-256 of provider (`claude`, `codex` or `copilot`), NUL, then the exact
 session ID. Existing Claude hashes are unchanged; equal session IDs from different
 providers yield distinct records. It is a stable pseudonymous reference, not
 authentication or anonymization against guessing.
@@ -82,7 +91,7 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
 
 1. Decode and validate the native root payload, then construct a **new** minimal
    object. Prompt, transcript, cwd and all unknown fields are dropped **before
-   transport, storage or stdout**; subagent events never revive the main record.
+   transport, storage or stdout**; Claude subagent events never revive the main record.
 2. Validate the private endpoint and send one correlated request. No automatic retry.
 3. Receiver takes the ordinary workspace guard for each update, rereads and validates
    the store, then atomically replaces it. It releases that guard between reports.
@@ -105,9 +114,9 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
 
 These states are **last reported**, not current jobs/readiness/identity/completion.
 There is no freshness threshold turning them into live guarantees.
-Codex records are always **unknown**, even when fresh with a known receipt age.
+Codex and Copilot records are always **unknown**, even when fresh with a known receipt age.
 After restart **all providers'** persisted records have unknown state and null age
-until another receipt; a new Codex receipt still does not establish activity.
+until another receipt; a new Codex/Copilot receipt still does not establish activity.
 
 ### Receiver lifetime and optional presentation
 
@@ -129,7 +138,7 @@ Optional `--kitsune-socket` and `--source` must be supplied together. An indepen
 worker waits for initialized receiver projection before UI IO. It reads only generic
 snapshot discovery and uses `integration.view.open/replace/poll/close`, not Kitsune
 agent APIs. It sends bounded last-reported label/detail rows with dynamic provider
-labels for both Claude and Codex; Kitsune gains no provider-specific knowledge. Selecting one adds
+labels for Claude, Codex and Copilot; Kitsune gains no provider-specific knowledge. Selecting one adds
 read-only trust details. No pane binding, launch, resume, adoption or role follows.
 Unavailable/failed Kitsune presentation does not stop core capture; the final report
 adds a separate `presentation` outcome. Configure a dedicated generic source
@@ -175,3 +184,4 @@ for optional generic presentation; core inventory requires no Kitsune installati
   `src/storage/replacement.rs`, `src/group_presenter/wire.rs`
 - `tests/{agent_management_workflow,agent_management_presentation,claude_agent_migration_workflow}.rs`
 - [Claude hooks](CLAUDE_HOOKS_CONTRACT.md), [Codex hooks](CODEX_HOOKS_CONTRACT.md), [migration ownership](AGENT_MANAGEMENT_MIGRATION.md)
+- [Copilot hooks](COPILOT_HOOKS_CONTRACT.md), `tests/copilot_agent_migration_workflow.rs`

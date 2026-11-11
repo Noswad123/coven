@@ -26,6 +26,9 @@ include = [
     # Rust unit-test modules import these fixtures at compile time.
     "/tests/support/interactive_session_server.rs",
     "/tests/support/session_prompt_fixture.rs",
+    # Inert compatibility/license inputs of the Copilot Rust unit tests.
+    "/tests/fixtures/copilot_hooks/kitsune-agent-state.sh",
+    "/tests/fixtures/copilot_hooks/KITSUNE_LICENSE",
     "/tests/native_package.rs",
     # Never collect nested harness build outputs or interim source trees.
     "!/src/**/target/**",

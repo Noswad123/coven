@@ -130,7 +130,9 @@ fn registered_codex_hooks_reach_private_receiver_and_rollback_both_native_files(
         .output()
         .unwrap();
     assert!(help.status.success());
-    assert!(String::from_utf8_lossy(&help.stdout).contains("[possible values: claude, codex]"));
+    assert!(
+        String::from_utf8_lossy(&help.stdout).contains("[possible values: claude, codex, copilot]")
+    );
     let installed = cli(root.path())
         .args([
             "agent",

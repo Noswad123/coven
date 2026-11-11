@@ -48,6 +48,8 @@ fn native_source_package_boundary() {
                 || file.starts_with("tests/retirement/reviews/")
                 || *file == "tests/support/interactive_session_server.rs"
                 || *file == "tests/support/session_prompt_fixture.rs"
+                || *file == "tests/fixtures/copilot_hooks/kitsune-agent-state.sh"
+                || *file == "tests/fixtures/copilot_hooks/KITSUNE_LICENSE"
                 || *file == "tests/native_package.rs",
             "checkout-only regression harness shipped: {file}"
         );
@@ -80,6 +82,9 @@ fn native_source_package_boundary() {
         "tests/retirement/reviews/task_graphs.json",
         "tests/support/interactive_session_server.rs",
         "tests/support/session_prompt_fixture.rs",
+        "src/copilot_hooks.rs",
+        "tests/fixtures/copilot_hooks/kitsune-agent-state.sh",
+        "tests/fixtures/copilot_hooks/KITSUNE_LICENSE",
     ] {
         assert!(
             files.contains(required),

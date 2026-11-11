@@ -26,7 +26,22 @@ fn provider_ids_restart_and_shared_capacity() {
     assert_eq!(claude, format!("{:x}", Sha256::digest(b"claude\0same")));
     let codex_params = json!({"provider":"codex","event":"SessionStart","session_id":"same"});
     let codex = store.report(&codex_params).unwrap()["record_id"].clone();
+    assert_eq!(codex, format!("{:x}", Sha256::digest(b"codex\0same")));
     assert_ne!(claude, codex);
+    let copilot_params = json!({"provider":"copilot","event":"SessionStart","session_id":"same"});
+    let copilot = store.report(&copilot_params).unwrap()["record_id"].clone();
+    assert_eq!(copilot, format!("{:x}", Sha256::digest(b"copilot\0same")));
+    assert_ne!(copilot, claude);
+    assert_ne!(copilot, codex);
+    let projection = store.projection();
+    let fresh = projection["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["provider"] == "copilot")
+        .unwrap();
+    assert_eq!(fresh["reported_state"], "unknown");
+    assert!(fresh["age_ms"].is_u64());
     drop(store);
     let mut store = store::Store::open(root.path()).unwrap();
     for record in store.projection()["records"].as_array().unwrap() {
@@ -38,11 +53,16 @@ fn provider_ids_restart_and_shared_capacity() {
         claude
     );
     assert_eq!(store.report(&codex_params).unwrap()["record_id"], codex);
-    for n in 2..MAX_RECORDS {
-        store.report(&json!({"provider":if n % 2 == 0 {"claude"} else {"codex"},"event":"SessionStart","session_id":format!("s-{n}")})).unwrap();
+    assert_eq!(store.report(&copilot_params).unwrap()["record_id"], copilot);
+    for n in 3..MAX_RECORDS {
+        store.report(&json!({"provider":(["claude", "codex", "copilot"][n % 3]),"event":"SessionStart","session_id":format!("s-{n}")})).unwrap();
     }
     let before = fs::read(root.path().join("state/agent-management.json")).unwrap();
-    for provider in ["claude", "codex"] {
+    assert_eq!(
+        serde_json::from_slice::<Value>(&before).unwrap()["schema_version"],
+        1
+    );
+    for provider in ["claude", "codex", "copilot"] {
         assert_eq!(
             store
                 .report(
@@ -57,6 +77,144 @@ fn provider_ids_restart_and_shared_capacity() {
         before,
         fs::read(root.path().join("state/agent-management.json")).unwrap()
     );
+}
+
+#[test]
+fn copilot_strict_pascalcase_payloads_never_infer_or_connect() {
+    let probe = crate::platform::observation_socket::SocketConstructionGuard::new(true);
+    let mut request = ReportRequest {
+        socket: "not-a-socket".into(),
+        provider: "copilot".into(),
+        event: Some("SessionStart".into()),
+    };
+    for payload in [
+        br#"{"session_id":"s"}"#.as_slice(),
+        br#"{"sessionId":"s","hook_event_name":"SessionStart"}"#,
+        br#"{"sessionId":"s"}"#,
+        br#"{"session_id":"s","hook_event_name":"sessionStart"}"#,
+        br#"{"session_id":"s","hook_event_name":"SubagentStop","agent_id":"sub"}"#,
+        br#"{"session_id":"s","hook_event_name":"Stop"}"#,
+        br#"{"session_id":"s","hook_event_name":"PreToolUse"}"#,
+        br#"{"session_id":null,"hook_event_name":"SessionStart"}"#,
+        br#"{"session_id":"","hook_event_name":"SessionStart"}"#,
+        br#"{"session_id":"s","hook_event_name":null}"#,
+        br#"{"session_id":"s","session_id":"other","hook_event_name":"SessionStart"}"#,
+    ] {
+        assert!(report_payload(&request, payload, true).is_err());
+    }
+    request.event = None;
+    assert!(report_payload(&request, br#"{"session_id":"s"}"#, true).is_err());
+    assert_eq!(probe.count(), 0);
+}
+
+#[test]
+fn copilot_capture_strips_native_fields_before_rpc_store_and_stdout() {
+    use std::io::{BufRead, BufReader, Write};
+    let root = workspace();
+    let socket_root = tempfile::tempdir().unwrap();
+    fs::set_permissions(socket_root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    let path = socket_root.path().join("receiver.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let workspace_path = root.path().to_owned();
+    let peer = std::thread::spawn(move || {
+        let mut store = store::Store::open(&workspace_path).unwrap();
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut frame = String::new();
+        BufReader::new(&mut stream).read_line(&mut frame).unwrap();
+        let request: Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(
+            request["params"],
+            json!({"provider":"copilot","event":"SessionStart","session_id":"reference-only"})
+        );
+        assert!(!frame.contains("SECRET"));
+        let result = store.report(&request["params"]).unwrap();
+        let reply = json!({"id":request["id"],"contract":CONTRACT,"type":"result","result":result});
+        writeln!(stream, "{reply}").unwrap();
+        let projection = store.projection();
+        assert_eq!(projection["records"][0]["reported_state"], "unknown");
+        assert!(projection["records"][0]["age_ms"].is_u64());
+        assert!(!projection.to_string().contains("reference-only"));
+    });
+    let request = ReportRequest {
+        socket: path.to_str().unwrap().into(),
+        provider: "copilot".into(),
+        event: Some("SessionStart".into()),
+    };
+    // Documentation-only evidence: github/docs at 7c3387d3b513ed43ea26c9b2e4c0e1b12234c010,
+    // content/copilot/reference/hooks-reference.md, PascalCase SessionStart payload.
+    let payload = json!({"session_id":"reference-only","hook_event_name":"SessionStart",
+        "cwd":"SECRET-CWD","transcript_path":"SECRET-TRANSCRIPT","prompt":"SECRET-PROMPT",
+        "initial_prompt":"SECRET-INITIAL","native_identity":"SECRET-NATIVE",
+        "agent_id":{"arbitrary":"SECRET-AGENT"},"sessionId":"SECRET-ALIAS",
+        "timestamp":"SECRET-TIME","source":"SECRET-SOURCE"});
+    let output = report_payload(&request, payload.to_string().as_bytes(), true).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&output.stdout).unwrap()["type"],
+        "accepted"
+    );
+    assert!(!output.stdout.contains("SECRET"));
+    assert!(!output.stdout.contains("reference-only"));
+    peer.join().unwrap();
+    let saved = fs::read(root.path().join("state/agent-management.json")).unwrap();
+    assert!(!String::from_utf8(saved.clone()).unwrap().contains("SECRET"));
+    let saved: Value = serde_json::from_slice(&saved).unwrap();
+    assert_eq!(saved["schema_version"], 1);
+    let record = saved["records"]
+        .as_object()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap();
+    assert_eq!(record.as_object().unwrap().len(), 5);
+    assert_eq!(record["session_id"], "reference-only");
+    let restarted = store::Store::open(root.path()).unwrap().projection();
+    assert_eq!(restarted["records"][0]["reported_state"], "unknown");
+    assert!(restarted["records"][0]["age_ms"].is_null());
+}
+
+#[test]
+fn copilot_store_refuses_invalid_pairs_and_extra_rpc_or_persisted_fields() {
+    let root = workspace();
+    let mut store = store::Store::open(root.path()).unwrap();
+    let valid = json!({"provider":"copilot","event":"SessionStart","session_id":"s"});
+    store.report(&valid).unwrap();
+    let path = root.path().join("state/agent-management.json");
+    let before = fs::read(&path).unwrap();
+    for (field, value) in [
+        ("event", json!("sessionStart")),
+        ("event", json!("SubagentStop")),
+        ("event", json!("Stop")),
+        ("event", Value::Null),
+        ("session_id", Value::Null),
+        ("cwd", json!("SECRET")),
+        ("reported_state", json!("working")),
+    ] {
+        let mut bad = valid.clone();
+        bad[field] = value;
+        assert!(store.report(&bad).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+    drop(store);
+    let saved: Value = serde_json::from_slice(&before).unwrap();
+    for (field, value) in [
+        ("last_event", json!("Stop")),
+        ("last_event", json!("sessionStart")),
+        ("last_event", json!("SubagentStop")),
+        ("native_identity", json!("SECRET")),
+    ] {
+        let mut bad = saved.clone();
+        bad["records"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap()[field] = value;
+        fs::write(&path, bad.to_string()).unwrap();
+        assert!(store::Store::open(root.path()).is_err());
+    }
+    fs::write(&path, &before).unwrap();
+    assert!(store::Store::open(root.path()).is_ok());
 }
 
 #[test]
