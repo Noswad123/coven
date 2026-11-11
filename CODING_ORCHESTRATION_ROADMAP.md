@@ -52,17 +52,25 @@ default-workspace/shell creation. The 209-case legacy comparison is intentional
 divergence, not parity; no filesystem/PATH/native-store/env or execution-text
 resolution belongs in classifier v1.
 
-**No matching Kit detector retirement yet.** `detected_agent` also serves
-hook-owner confirmation, start readiness, restore/restored-idle, mobile/navigation.
-Next separate foreground-owner confirmation, fallback publication and restored
-native identity before enabling external mode with compatibility coverage.
-External mode now would break compatibility; no toggle/kill/hide controls ship.
+**No matching Kit detector retirement yet.** The internal typed
+[foreground/fallback/history seam](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
+implemented. Historical/screen-only data cannot mint native ownership, takeover or
+effectiveness. Restored metadata/Idle remain; readiness needs a matching probe or
+accepted fallback, not foreground-only proof. Native input's independent fresh
+process check remains. This deliberately narrows public semantics, not blanket
+compatibility. No external mode, new Config, wire/API/snapshot fields or
+toggle/kill/hide controls ship. Scoped validation is complete: **1,318 distinct Kit
+checks**, separate **50 Coven cross-compatibility checks** and strict all-target
+Kit lint. The [state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
+record final confirmation reruns, ENOSPC-aborted workspace CLI selection, zero-match
+tab filter and reproduced stale golden/test-only corrections. No full-suite or new
+production UI behavior is claimed beyond intended evidence hardening.
 This is functional Coven-owned recognition with temporary duplicate legacy policy,
 not completed sole ownership/full status. Keep all five Linux hook/configuration
 retirements unchanged; non-Linux adapters and broader status remain pending.
 
 The [discovery validation table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table)
-records 201 focused Coven checks and Kit 249 API checks plus strict lint and
+records historical discovery 201 focused Coven checks and Kit 249 API checks plus strict lint and
 MSRV/release/package checks. No full-suite/native certification is claimed; do not
 add historical OpenCode 236. No actual live installed Kit
 commands were used in this documentation session. See the contract for bounded
@@ -88,8 +96,8 @@ guarded rollback restores both original bytes/modes/absence. No global atomicity
 claim. Codex leaves the wholly pending hook-owner group, but full
 full discovery/status/start/resume/restore transfers remain pending for every provider.
 Earlier owner-reported 16 workflows + 7 fault tests are historical scoped evidence;
-see the migration record's historical 176 Coven/330 Kit validation. Final Copilot
-counts are parent-owned. No fresh full-suite,
+see the migration record's historical 176 Coven/330 Kit and separately recorded
+Copilot validation, not new seam totals. No fresh full-suite,
 native-provider or cross-platform acceptance is asserted by this docs update.
 
 ### Subsequent Copilot implementation cut

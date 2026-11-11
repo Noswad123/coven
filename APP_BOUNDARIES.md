@@ -70,7 +70,7 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | Independent OpenCode receipts | Separate strict Coven three-string envelope, session.created/updated root references only, unknown even fresh. Native server exact-directory-instance scope, not selected TUI/pane/attach or whole project; migration drops working/blocked/idle. |
 | Independent Claude receipts | Coven Unix private receiver/inventory; Windows unsupported, macOS not validated. Not a non-Linux hook-configuration replacement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
 | Generic Linux foreground-cohort recognition | Coven `agent discover` recognizes all 22 literal families without Kit agent APIs/hints, workspace/storage or receipt/group joins; optional bounded watch/generic view. Partial scope, not native identity/activity/full status or detector retirement. See [contract](AGENT_DISCOVERY_CONTRACT.md). |
-| Agent APIs/detection, navigator/attention and mobile UI | Retained compatibility; separate foreground-owner confirmation, fallback publication and restored native identity before external mode or matching retirement. |
+| Agent APIs/detection, navigator/attention and mobile UI | Retained with typed foreground/fallback/history separation and deliberate readiness/authority hardening; scoped validation complete with limits below, no external mode or matching retirement. |
 | Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
 | `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot/Pi/OpenCode new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
 
@@ -189,19 +189,27 @@ endpoint fences discard partial failures but do not make attribution atomic or
 eliminate PID ABA. Read requests can ensure a default workspace/shell through
 existing Kit housekeeping; they are not zero-effect operations.
 
-No matching Kit detector retirement has occurred. Audit found `detected_agent`
-also supports hook-owner confirmation, start readiness, restore/restored-idle,
-mobile UI and navigation. External mode would break compatibility without first
-separating foreground-owner confirmation, fallback publication and restored native
-identity. That decomposition is next, before external-mode enablement; no new
-toggle/kill/hide controls are introduced. This is functional Coven recognition
+No matching Kit detector retirement has occurred. The internal typed
+[foreground/fallback/history seam](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
+implemented. Historical/screen-only data cannot mint native ownership, takeover
+or effectiveness. Restored Idle/name/reference/pending resume/managed Active remain;
+readiness needs a matching probe or accepted fallback, not foreground-only proof.
+Native input's independent fresh process check remains. This deliberately narrows
+public semantics, not blanket compatibility. No external mode, new Config,
+wire/API/snapshot fields or toggle/kill/hide controls ship. This is functional Coven recognition
 with temporary duplicate legacy policy, not completed sole ownership/full status.
 The five Linux configuration retirements and pending non-Linux adapters stand.
 The 201 focused Coven checks, 249 Kit API checks and lint/MSRV/release/package
 validation are recorded in
 the [discovery table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table),
 not added to historical OpenCode 236. No actual live installed Kit commands were
-used in this documentation session.
+used in this documentation session. Discovery results are historical, not added to
+**1,318 distinct Kit seam checks** or separate **50 Coven cross-compatibility checks**.
+The [state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
+record completed scoped validation, strict all-target lint, final confirmation
+reruns, ENOSPC-aborted workspace CLI selection, zero-match tab filter and reproduced
+stale golden/test-only corrections. No full-suite or new production UI behavior
+is claimed beyond intended evidence hardening.
 
 Use a small, versioned, capability-described external boundary. Kitsune now has
 additive `pane.annotate` and optional snapshot `annotations` capability/epoch

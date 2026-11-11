@@ -27,7 +27,7 @@ are **still Kitsune**. Subsequent Codex/Copilot hook and Pi/OpenCode extension c
 recorded below; other providers remain pending applicable transfers;
 native runtime facts/execution remain native. Do not equate receipt rows with
 verified activity/readiness, completion, roles or execution permission. Final
-validation counts belong in the parent implementation record; no new full-suite,
+scoped seam validation and limits are recorded below; no new full-suite,
 installed-provider or cross-platform acceptance is asserted here.
 
 ## Production Agent Discovery
@@ -50,11 +50,14 @@ Partial-cohort failures discard all targets. Kit housekeeping on read requests
 can ensure a default workspace/shell, so no zero-server-effects claim is made.
 The classifier intentionally diverges from the 209-case legacy corpus, not parity.
 
-**No matched detector retirement yet.** Audit found `detected_agent` also supports
-hook-owner confirmation, start readiness, restore/restored-idle, mobile/navigation.
-Next decompose foreground-owner confirmation vs fallback publication vs restored
-native identity, preserving compatibility before enabling external mode. No new
-toggle/kill/hide controls. This is functional Coven recognition with temporary
+**No matched detector retirement yet.** Kit's internal typed
+[foreground/fallback/history seam](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
+implemented. Historical/screen-only data cannot mint native ownership/takeover/
+effectiveness. Restored metadata/Idle remain; readiness needs a matching probe or
+accepted fallback, not foreground-only proof. Native input still checks fresh
+process state independently. This deliberately hardens public semantics, not blanket
+compatibility. No external mode, new Config, wire/API/snapshot fields or
+toggle/kill/hide controls ship. This is functional Coven recognition with temporary
 duplicate legacy policy, not completed sole ownership/full status. All five Linux
 hook/configuration retirements stay unchanged and non-Linux adapters stay pending.
 
@@ -65,6 +68,13 @@ MSRV/release/package checks. These are scoped results, not a full-suite or nativ
 operational certification. Earlier OpenCode 236 remains historical,
 unchanged and non-additive. No actual live installed Kit commands were used in
 this documentation session or native interactive/provider certification claimed.
+Discovery results are historical, not added to **1,318 distinct Kit seam checks**
+or separate **50 Coven cross-compatibility checks**. The
+[state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
+record completed scoped API/UI/input/workspace validation and strict all-target
+lint, final confirmation reruns, ENOSPC-aborted workspace CLI selection, zero-match
+tab filter and reproduced stale golden/test-only corrections. No full-suite or new
+production UI behavior is claimed beyond intended evidence hardening.
 
 ## Priority rebaseline — 2026-10-22
 
@@ -87,7 +97,7 @@ Ordered journaling is not global atomicity. Next non-Linux adapter work covers
 start/resume/restore and legacy ingress/API/UI transfer remain pending for all
 providers. Earlier owner-reported 16 Codex workflows + 7 fault tests are historical
 scoped evidence, not a fresh Copilot/full-suite/platform result; see the migration
-record's historical 176 Coven/330 Kit validation. Final Copilot counts are parent-owned.
+record's historical 176 Coven/330 Kit and separately recorded Copilot validation.
 
 ### Subsequent Copilot hook transfer
 

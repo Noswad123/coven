@@ -128,14 +128,23 @@ read-only, without focus; publisher row IDs are not native/session/receipt ident
 Watch exit 0 means completed duration even through outages; one-shot exit 0 means
 observed, 2 incompatible, 1 unavailable. Interrupt is 130; output failure is 1.
 
-**No matching Kit detector retirement yet.** `detected_agent` also supports
-hook-owner confirmation, start readiness, restore/restored-idle, mobile/navigation.
-Next separate foreground-owner confirmation, fallback publication and restored
-native identity before enabling external mode. No toggle/kill/hide controls ship.
+**No matching Kit detector retirement yet.** The internal typed
+[foreground/fallback/history seam](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
+implemented. Historical/screen-only data cannot mint native ownership/takeover/
+effectiveness. Restored metadata/Idle remain; readiness needs a matching probe or
+accepted fallback, not foreground-only proof. Native input's independent fresh
+process check remains. This deliberately hardens public semantics, not blanket
+compatibility. No external mode, new Config, wire/API/snapshot fields or
+toggle/kill/hide controls ship. Scoped validation is complete: **1,318 distinct Kit
+checks**, separate **50 Coven cross-compatibility checks** and strict all-target
+Kit lint. The [state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
+record final confirmation reruns, ENOSPC-aborted workspace CLI selection, zero-match
+tab filter and reproduced stale golden/test-only corrections. No full-suite or new
+production UI behavior is claimed beyond intended evidence hardening.
 This is functional Coven-owned recognition with temporary duplicate legacy policy,
 not sole ownership/full status; the classifier intentionally diverges from the
 209-case legacy corpus. Five prior Linux hook/configuration retirements stand and
-non-Linux adapters remain pending. See the [201 focused Coven checks, 249 Kit API
+non-Linux adapters remain pending. See the [historical discovery 201 focused Coven checks, 249 Kit API
 checks and build/package validation](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table);
 historical OpenCode 236 is not a new discovery total. No actual live installed Kit
 commands were used in this documentation session.
@@ -300,7 +309,7 @@ Claude; this is not full Claude/all-provider extraction. See
 start/resume and restore transfers remain pending for **all providers**; the
 hook/extension cuts do not claim full agent management extraction. The Codex owner's earlier
 16 workflows + 7 fault tests are historical scoped evidence, not a fresh
-full-suite/live-provider/platform pass. Parent final counts remain separate;
+full-suite/live-provider/platform pass. Scoped seam results remain separate;
 the older Claude validation records are historical.
 
 ## Install

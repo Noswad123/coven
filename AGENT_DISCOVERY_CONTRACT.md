@@ -227,16 +227,30 @@ receive the final summary. Stats describe observations/delivery, not native work
 ## Ownership And Next Seam
 
 **No matching Kit detector retirement has happened yet.** The source audit found
-`detected_agent` also participates in hook-owner confirmation, start readiness,
-restore/restored-idle behavior, mobile UI and navigation. An external-mode switch
-that simply disables detection would break retained compatibility. This cut adds
+legacy detection coupled to hook-owner confirmation, start readiness,
+restore/restored-idle behavior, mobile UI and navigation. The internal seam below
+separates evidence, not the remaining management ownership. This work adds
 no toggle, kill switch or hide controls. It is a functional Coven-owned recognition
 path with temporary duplicate legacy policy, not completed sole ownership/full status.
 
-Next decompose **foreground-owner confirmation**, **fallback publication**, and
-**restored native identity** into separate responsibilities, with compatibility
-coverage before enabling any external mode or retiring fallback. Do not use an
-ephemeral family hint as owner confirmation or restored identity. Status/attention,
+The internal typed **foreground-owner evidence**, **fallback publication**, and
+**historical identity** seam is now implemented in Kit; see the optional sibling
+[evidence guide](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md). Historical/screen-only
+data cannot mint ownership, takeover or native effectiveness. Restored Idle/name/
+reference/pending resume/managed Active remain, but `interactive_ready` needs a
+matching probe or accepted fallback, not foreground-only readiness or native proof.
+Native input's independent fresh process check remains. This is deliberate public
+semantic hardening, not blanket compatibility. No new Config, wire/API/snapshot
+fields or external mode ship; Coven's reader/accepted capabilities are unchanged.
+Scoped validation is complete: **1,318 distinct Kit checks**, separate **50 Coven
+cross-compatibility checks**, and strict Kit all-target lint passed. Final
+state/API/headless/lint confirmation reruns are in progress after the latest private
+suspension flag; state 142 already agent-passed. The
+[state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
+record ENOSPC-aborted workspace CLI selection, a zero-match tab filter and
+independently reproduced stale golden/test-only corrections, not full-suite or
+production UI behavior changes beyond intended evidence hardening.
+Do not use an ephemeral family hint as owner confirmation. Status/attention,
 mobile/navigation, start/resume and agent-aware restore remain separate transfers.
 All five prior Linux hook/configuration retirements stay unchanged; matching
 non-Linux adapters remain pending. See the authoritative
@@ -244,7 +258,7 @@ non-Linux adapters remain pending. See the authoritative
 
 ## Validation And Files
 
-The current scope passed **201 focused Coven checks**: 5 classifier, 8 collector,
+Historical discovery scope passed **201 focused Coven checks**: 5 classifier, 8 collector,
 16 watch/presentation unit, 91 CLI, 15 discovery workflow, 14 presentation workflow,
 2 package-boundary and 50 legacy observation/inspection/watch/presenter checks.
 Kit passed **249 API checks**, including capability/schema freshness coverage.

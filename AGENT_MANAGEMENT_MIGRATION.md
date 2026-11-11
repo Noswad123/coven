@@ -79,7 +79,7 @@ not full OpenCode management completion.
 | Optional five-provider inventory presentation | Coven projects its own records with dynamic provider labels through generic Kitsune snapshot + `integration.view.*`. | Kitsune remains agent-neutral; no management authority comes from row selection. |
 | Legacy Claude surfaces on all platforms | Kitsune retains all six `IntegrationTarget::ALL` entries, installation status, uninstall and old hook ingress. Non-Linux new installation also remains. | Retire only after platform-matched compatibility/transition coverage; running sessions are not converted by editing settings. |
 | Generic Linux foreground-cohort recognition (all 22 literal families) | Coven production `agent discover`, bounded watch and optional generic presentation; ephemeral PID/provider/rule/locator evidence only, no receipt/group join. Kit adds optional version-1 `process_observation` metadata; binary protocol 18 unchanged. | Partial ownership scope, not detector retirement/full status: temporary duplicate legacy policy remains. Windows selected_process/legacy_agent_aware rejected; macOS unsupported first cut. See [discovery contract](AGENT_DISCOVERY_CONTRACT.md). |
-| Process/screen fallback, status/attention, navigation, agent APIs and mobile surfaces | Still Kitsune compatibility, including Claude; the independent Coven recognition path does not replace it. | Separate foreground-owner confirmation, fallback publication and restored native identity before enabling external mode or retiring matching surfaces. |
+| Process/screen fallback, status/attention, navigation, agent APIs and mobile surfaces | Still Kitsune; internal typed foreground/fallback/history separation is implemented with deliberate readiness/authority hardening. | Validate the seam before future external mode or matching retirement; neither ships now. |
 | Interactive start/resume | Coven's explicit Djinn UI start/resume uses generic terminal-pinned submission. Kitsune's legacy provider paths remain. | Coven adapters for remaining supported providers; unsupported capabilities stay explicit. |
 | Resume policy | Coven pure planner characterizes 16 historical mappings; no new execution authority. | Coven owns provider policy; pure argv equivalence alone cannot replace restore ownership/history semantics. |
 | Agent-aware persistence/restore, native-reference ownership/deduplication and deferred launch | Still Kitsune. | Coven owns agent restore policy; Kitsune retains generic terminal/session persistence and transport. |
@@ -116,10 +116,15 @@ stores nothing and joins neither receipts nor groups. Alias provenance is Kit
 the 209-case legacy process corpus comparison records intentional divergences,
 not parity, job-leader selection or ranking.
 
-**No matching detector retirement yet:** the audit found `detected_agent` also
-supports hook-owner confirmation, start readiness, restore/restored-idle,
-mobile UI and navigation. Simply enabling an external mode would break retained
-compatibility. No new toggle/kill/hide controls ship here. This functional
+**No matching detector retirement yet:** the internal typed foreground/fallback/history
+seam is implemented in Kit. See the optional sibling
+[evidence guide](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md). Historical/screen-only
+data cannot mint ownership, hook takeover or effective native authority. Restored
+Idle/name/reference/pending resume/managed Active remain; `interactive_ready` needs
+a matching probe or accepted fallback, not foreground-only readiness or native proof.
+Native input retains its independent fresh process check. This deliberately narrows
+public semantics beyond a neutral refactor. No external mode, new Config,
+wire/API/snapshot-format fields or toggle/kill/hide controls ship. This functional
 Coven-owned recognition path temporarily duplicates legacy policy; it is not
 completed sole ownership or full status. The five Linux hook/configuration
 retirements and pending non-Linux adapters above remain unchanged.
@@ -165,9 +170,10 @@ launch, adoption or role assignment is part of this flow.
    Separate Djinn and other applicable sources remain. Record exact source ownership and
    retirement behavior for each provider.
 2. Build on production Linux `agent discover`, without calling recognition detector
-   retirement. Next separate foreground-owner confirmation from fallback publication
-   and restored native identity, with compatibility coverage before enabling external
-   mode. Then move remaining status interpretation, process/screen fallback,
+   retirement. Build on the implemented typed foreground/fallback/history seam
+   and completed scoped API/UI/compatibility checks, retaining the limits below
+   before any future external mode.
+   Then move remaining status interpretation, process/screen fallback,
    attention/navigation and mobile agent model into Coven; supply missing generic evidence first,
    especially Windows tree scope/parent relationships. Do not mislabel today's
    agent-selected Windows singleton as neutral complete evidence.
@@ -235,7 +241,90 @@ is needed; the generic view adds no native-effects ownership.
 
 ### Validation record
 
+#### State-seam validation table
+
+Current uncommitted Kit source includes `src/terminal/evidence.rs`,
+`src/terminal/state/evidence.rs`, pane producer/helpers, App API/actions/headless
+gates and both restore branches. These verified scoped agent/parent results were
+not rerun by this docs-only update. Listed Kit module filters are disjoint.
+
+| Scope | Reported record |
+| --- | --- |
+| Kit terminal state | 142 checks passed, including latest private suspension dirty flag |
+| Kit pane | 108 checks passed, including 13 producer checks |
+| Kit persistence | 58 checks passed |
+| Kit App resume guards | 3 checks passed |
+| Kit App actions | 95 checks passed |
+| Kit `api::` | 264 checks passed, including App API 182 and 15 detector checks |
+| Kit headless | 130 checks passed |
+| Kit UI | 171 checks passed |
+| Kit workspace pure unit | `workspace::tests` 12 plus aggregate 6 passed |
+| Kit App input | 329 checks passed |
+| Distinct Kit total | **1,318 checks passed** across the disjoint module filters above |
+| Coven cross-compatibility | **50 checks passed**: discovery 15, presentation 14, legacy observer 21; separate from Kit total |
+| Kit strict `just lint` | Passed across all targets, including final confirmation |
+| Final confirmation | State 142, API 264, headless 130 and strict all-target lint reruns passed after the final suspension-history fix |
+
+App API 182, detector subsets (including earlier 13), and producer 13 are included,
+not extra checks. No new Coven production code: changes from root `9b36f6c` are
+docs-only. Historical Coven 201/Kit 249 discovery results are not added to this cut.
+
+Epochs contain a nonserialized value plus creation Instant. App admission uses the
+actual bound runtime token and birth floor, never delivery time. Old queued events
+cannot adopt a new runtime. Every actual positive probe publishes; screen/skipped
+ticks and legacy `StateChanged` fallback cannot create/refresh proof. Retained
+positive time/PGID/epoch are legacy-selected evidence (including env hints and
+Windows selection), not native identity, continuous liveness or a new TTL.
+Existing six-miss/hook scheduling remains. Reset preserves absence-policy context,
+not proof; authoritative wake is separate. Clear is explicit without duplicate Idle.
+Reset/sync suspend native authority to Unknown, preserving session/reference/sequence
+barriers; admissible reports/replacement intent await fresh appropriate proof
+without resend. Unchanged Idle reconfirmation cannot create Done/unseen/SFX;
+genuine buffered completion and real PaneDied still complete once. Release uses
+pre-release proof for fallback display then invalidates eligibility. Explicit
+acceptance drives Idle-to-Idle runtime suppression without fake API events;
+rejection plus epoch change does not count as release acceptance.
+
+Latest P1 guard: admitted policy clear/conflicting foreground retires a full-lifecycle
+native owner despite a newer unverified hook timestamp. Actual newer foreground
+still blocks an older clear; the custom-authority timestamp exception remains.
+Private pending-replacement `observed_at` preserves a recognized start received
+after the old clear sample for the proper generation, without resend.
+The private suspension dirty flag permits reconfirmation only with unchanged
+source/reference/state and no accepted native state changes during that window.
+Idle -> Reset -> Working -> Idle -> confirmation is genuine completion once;
+repeated Idle stays quiet. Stale/foreign/rejected reports do not touch that flag.
+
+Both restore branches seed history, not fabricated process observations. Runtime
+import/resume submission is not proof; actor proof is never persisted. Snapshot
+schema/capture bytes and Coven's reader/accepted capabilities remain unchanged.
+Five Linux retirements and earlier generic metadata are preserved. No fresh
+full-suite/live-provider/cross-platform result is claimed. Discovery Coven 201/Kit
+249 below are historical, not new seam totals or additive evidence.
+
+#### State-seam validation limits
+
+Broader `just test-one workspace::` selected CLI cases whose harness hardcodes
+`/tmp`: seven failed ENOSPC with shared temporary storage full, before semantic
+validation. Fail-fast left the rest unrun. Refined workspace pure unit checks
+passed 18 (included above), not those CLI cases. `workspace::tab::tests` selected
+zero tests, not a pass. No full `just check` result is claimed.
+
+The desktop frame golden failure was reproduced in an owned detached temporary
+worktree at unchanged Kit HEAD `fabc9f265e3a8faec86b17a0102e4dd649768902`: exact
+actual digest `101b79bcc66557ea1049cd77cc79db9746be6ff236360e32e085e40e9c1159c4`
+versus old expected `22dc5c...`. This proves the preexisting stale golden. Only the
+test was updated, with neutral `No integrations configur...`/not-Agents assertions;
+geometry/hyperlinks/cursor/mobile golden coverage remains. The clean worktree was
+removed without force/staging/commits; ignored scratch target/build output remains.
+Earlier headless title stale native-Agent expectations were corrected to the
+existing neutral Integrations contract, preserving API title/no-event-flood checks.
+No production UI behavior changed beyond intended evidence hardening. No native
+provider, full readiness or cross-platform certification follows from these checks.
+
 #### Discovery validation table
+
+Historical discovery results, unchanged by the state seam; not current parent totals.
 
 | Scope | Current record |
 | --- | --- |
