@@ -17,6 +17,7 @@ include = [
     "/LICENSE",
     "/src/**/*.rs",
     "/src/**/*.py",
+    "/src/pi_extension/template.js",
     "/src/workspace_assets/*.txt",
     "/src/execution/inspection/projection/vectors.json",
     "/examples/**/*.json",
@@ -29,6 +30,9 @@ include = [
     # Inert compatibility/license inputs of the Copilot Rust unit tests.
     "/tests/fixtures/copilot_hooks/kitsune-agent-state.sh",
     "/tests/fixtures/copilot_hooks/KITSUNE_LICENSE",
+    # Exact legacy bytes and attribution used to validate explicit Pi migration.
+    "/tests/fixtures/pi_extension/kitsune-agent-state.ts",
+    "/tests/fixtures/pi_extension/KITSUNE_LICENSE",
     "/tests/native_package.rs",
     # Never collect nested harness build outputs or interim source trees.
     "!/src/**/target/**",

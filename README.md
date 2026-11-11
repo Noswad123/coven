@@ -83,12 +83,13 @@ five-second lease; close/expiry/removal is per source and reorder preserves reta
 state. Selections drain at most once, are not authentication or execution permission,
 and acknowledge no physical client pixels. This is separate from border annotations
 and their source priority. Legacy agent APIs/detection, mobile UI and agent restore
-remain. New Claude, Codex and Copilot hook installation **on Linux** is now Coven-owned; non-Linux
+remain. New Claude/Codex/Copilot hook and Pi reference-extension installation
+**on Linux** is now Coven-owned; non-Linux
 Kitsune installer/recommendation/update paths and other integrations remain pending.
 Move matching management surfaces incrementally,
 not through a permanent test-only gate.
 
-### Coven-owned agent receipts and Claude/Codex/Copilot hooks
+### Coven-owned agent receipts, hooks and Pi extension
 
 The confirmed migration includes **all** discovery/status interpretation, hooks,
 start/resume and agent restore, not only Claude. The authoritative
@@ -115,6 +116,7 @@ coven agent hooks install --provider claude --config-root ABS_CONFIG_ROOT --exec
 coven agent hooks plan --provider codex --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
 coven agent hooks install --provider codex --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
 coven agent hooks plan --provider copilot --config-root ABS_CONFIG_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --json
+coven agent extensions plan --provider pi --extension-root EXISTING_ABS_ROOT --executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET --migrate-kitsune --json
 ```
 
 Use an existing workspace and owned socket parent with exact 0700 mode. No implicit
@@ -130,7 +132,7 @@ The six-event lifecycle capture above is Claude-only. Codex accepts/generates on
 `SessionStart` and stays **unknown even when fresh**: it is reference capture, not
 working/idle detection. Native stdin has seven required fields; Coven deliberately
 requires only `session_id`/`hook_event_name`, dropping the rest before RPC. No
-`thread_id`/`thread-id` alias. All three providers share unchanged schema-v1 record fields
+`thread_id`/`thread-id` alias. All four providers share unchanged schema-v1 record fields
 and an **aggregate** 128-record cap; hashes are provider + NUL + SID, preserving
 Claude hashes while separating equal IDs across providers.
 
@@ -155,6 +157,32 @@ normal uninstall never revives Kit, while guarded rollback restores exact bytes,
 mode or absence. See [COPILOT_HOOKS_CONTRACT.md](COPILOT_HOOKS_CONTRACT.md) for the
 documentation-only native pin, supported subset and recovery limits.
 
+Pi uses [explicit existing-root extension placement](PI_EXTENSION_CONTRACT.md),
+not native hook JSON. `agent extensions plan/install/uninstall/rollback --provider
+pi --extension-root EXISTING_ABS_ROOT` previews unless `--apply` is explicit;
+`plan` always previews. First install requires `--executable ABS_COVEN_BINARY
+--socket ABS_COVEN_SOCKET`; no automatic directories or root discovery.
+`report-extension --provider pi --socket ABS_COVEN_SOCKET --event session_start`
+requires exactly `{"contract":"coven.pi-extension.v1","event":"session_start","session_id":"ID"}`.
+`agent report` stays native-three-provider only. Pi references remain unknown even
+fresh; provider/event encode getSessionId interpretation, not authentication.
+Upgrade receivers first: older binaries reject Pi wire/store records despite
+schema 1, and storing Pi records limits downgrade.
+
+**Pi migration drops legacy working/blocked/idle reporting to reference-only**,
+not full Pi management completion. Exact v7 bytes and `--migrate-kitsune` consent
+are required; `coven-agent-reference.ts` is distinct from `kitsune-agent-state.ts`.
+The private two-leaf journal preserves originals across reinstall; normal uninstall
+never revives Kit, while explicit guarded rollback can restore it after uninstall.
+Stop providers/watchers before mutation: no atomic activation, autoload or live
+authority release. File placement is not native activation proof. The pinned
+source declares 1.5.2 on main, not a release tag; hasUI includes TUI/RPC, not root/TUI
+proof, and headless capture is not supported. No approval/policy changes occur.
+Pi discovery/lifecycle/start/resume/restore remain pending; OpenCode is the remaining
+legacy hook owner. The [Pi validation record](AGENT_MANAGEMENT_MIGRATION.md#pi-validation-table)
+covers 212 focused Rust checks, generated-asset Node/Bun checks and Kit compatibility,
+with native activation unclaimed and the receipt timing limitation retained.
+
 Optional paired `--kitsune-socket ABS_KITSUNE_SOCKET --source coven` on `serve`
 publishes read-only rows with dynamic provider labels through generic snapshot/
 `integration.view.*` only. Kitsune failure does not stop core capture; no agent API, pane binding, launch or adoption
@@ -178,8 +206,8 @@ Claude; this is not full Claude/all-provider extraction. See
 [Claude hook mutation/recovery](CLAUDE_HOOKS_CONTRACT.md) and
 [Codex hook mutation/recovery](CODEX_HOOKS_CONTRACT.md) before use. Full discovery,
 start/resume and restore transfers remain pending for **all providers**; the
-hook cuts do not claim full agent management extraction. The Codex owner's current
-16 workflows + 7 fault tests are scoped, review-pending evidence, not a fresh
+hook/extension cuts do not claim full agent management extraction. The Codex owner's earlier
+16 workflows + 7 fault tests are historical scoped evidence, not a fresh
 full-suite/live-provider/platform pass. Parent final counts remain separate;
 the older Claude validation records are historical.
 

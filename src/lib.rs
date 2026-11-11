@@ -38,6 +38,7 @@ mod observation_socket;
 mod observation_time;
 mod observation_wire;
 mod output;
+pub mod pi_extension;
 mod platform;
 mod process;
 mod read_fs;

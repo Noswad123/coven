@@ -5,6 +5,8 @@ use super::super::{
 use super::*;
 use clap::{FromArgMatches, error::ErrorKind};
 
+#[path = "tests/extensions.rs"]
+mod extensions;
 #[path = "tests/group_family.rs"]
 mod group_family;
 #[cfg(unix)]

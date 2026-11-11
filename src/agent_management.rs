@@ -45,11 +45,12 @@ fn decode(bytes: &[u8], limit: usize) -> Result<Value> {
 
 pub(crate) fn event<'a>(provider: &str, value: &'a str) -> Result<&'a str> {
     require(
-        matches!(provider, "claude" | "codex" | "copilot"),
+        matches!(provider, "claude" | "codex" | "copilot" | "pi"),
         "agent_unsupported_provider",
     )?;
     require(
         (matches!(provider, "codex" | "copilot") && value == "SessionStart")
+            || (provider == "pi" && value == "session_start")
             || (provider == "claude"
                 && matches!(
                     value,
@@ -174,6 +175,50 @@ pub fn report_payload(request: &ReportRequest, payload: &[u8], json: bool) -> Re
 
 pub fn inventory_arguments(request: &InventoryRequest, json: bool) -> Result<TaskOutput> {
     output(call(&request.socket, "inventory", json!({}))?, json)
+}
+
+/// Capture Coven's Pi extension envelope, not a native provider hook payload.
+pub fn extension_report_arguments(request: &ReportRequest, json: bool) -> Result<TaskOutput> {
+    require(cfg!(unix), "agent_unsupported_platform")?;
+    require(request.provider == "pi", "agent_unsupported_provider")?;
+    require(
+        request.event.as_deref() == Some("session_start"),
+        "agent_invalid_event",
+    )?;
+    let mut payload = Vec::new();
+    std::io::stdin()
+        .lock()
+        .take((MAX_PAYLOAD + 1) as u64)
+        .read_to_end(&mut payload)?;
+    extension_report_payload(request, &payload, json)
+}
+
+pub fn extension_report_payload(
+    request: &ReportRequest,
+    payload: &[u8],
+    json: bool,
+) -> Result<TaskOutput> {
+    require(cfg!(unix), "agent_unsupported_platform")?;
+    require(request.provider == "pi", "agent_unsupported_provider")?;
+    require(
+        request.event.as_deref() == Some("session_start"),
+        "agent_invalid_event",
+    )?;
+    let value = decode(payload, MAX_PAYLOAD)?;
+    require(
+        value.as_object().is_some_and(|o| o.len() == 3),
+        "agent_invalid_schema",
+    )?;
+    require(
+        text(&value, "contract")? == "coven.pi-extension.v1",
+        "agent_contract_mismatch",
+    )?;
+    let name = event(&request.provider, text(&value, "event")?)?;
+    let sid = session(text(&value, "session_id")?)?;
+    // Pi/session_start identifies the extension contract and getSessionId source,
+    // not authenticated provenance. Keep the persisted v1 record unchanged.
+    let params = json!({"provider":request.provider,"event":name,"session_id":sid});
+    output(call(&request.socket, "report", params)?, json)
 }
 
 fn call(socket: &str, method: &str, params: Value) -> Result<Value> {

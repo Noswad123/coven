@@ -2,7 +2,8 @@
 
 ## Overview
 
-Coven owns an independent, foreground Claude/Codex/Copilot hook receiver and redacted inventory.
+Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi
+extension-envelope receiver and redacted inventory.
 Transport is Unix-only (Windows unsupported); macOS operation has not been validated.
 This is distinct from the Linux-only hook mutation/Kit installer retirement cut;
 Unix transport alone is not a matching non-Linux configuration adapter.
@@ -18,6 +19,7 @@ coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 [--kitsune-s
 coven agent report --provider claude --socket ABS_COVEN_SOCKET [--event EVENT] [--json]
 coven agent report --provider codex --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
 coven agent report --provider copilot --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
+coven agent report-extension --provider pi --socket ABS_COVEN_SOCKET --event session_start [--json]
 coven agent inventory --socket ABS_COVEN_SOCKET [--json]
 ```
 
@@ -55,6 +57,15 @@ returning `Result<TaskOutput>`. `TaskOutput` carries stdout, warnings and exit c
 The optional presentation entry point additionally takes
 `PresentationRequest { socket, source }`.
 
+Pi uses separate `extension_report_arguments`/`extension_report_payload`, not
+`report` (which still accepts only the three native-hook providers). Stdin must
+contain exactly `{"contract":"coven.pi-extension.v1","event":"session_start","session_id":"ID"}`.
+All three fields and required `--event session_start` must match; unknown fields
+refuse rather than being dropped. The same payload/ID bounds apply. This is a
+Coven-owned envelope, not Pi-native hook JSON. Provider `pi` and event
+`session_start` map the `getSessionId` interpretation, not authentication. See
+[Pi extension contract](PI_EXTENSION_CONTRACT.md) for producer and placement limits.
+
 ### Private wire and output
 
 The Unix stream uses bounded newline-delimited requests with exactly `id`,
@@ -78,7 +89,7 @@ reference_trust: caller_supplied_unverified,
 native_identity: unestablished, job_completion: unestablished
 ```
 
-The record ID is SHA-256 of provider (`claude`, `codex` or `copilot`), NUL, then the exact
+The record ID is SHA-256 of provider (`claude`, `codex`, `copilot` or `pi`), NUL, then the exact
 session ID. Existing Claude hashes are unchanged; equal session IDs from different
 providers yield distinct records. It is a stable pseudonymous reference, not
 authentication or anonymization against guessing.
@@ -89,14 +100,14 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
 
 ## Data Flow
 
-1. Decode and validate the native root payload, then construct a **new** minimal
+1. Decode and validate the native root payload or strict Pi envelope, then construct a **new** minimal
    object. Prompt, transcript, cwd and all unknown fields are dropped **before
    transport, storage or stdout**; Claude subagent events never revive the main record.
 2. Validate the private endpoint and send one correlated request. No automatic retry.
 3. Receiver takes the ordinary workspace guard for each update, rereads and validates
    the store, then atomically replaces it. It releases that guard between reports.
 4. Persist `state/agent-management.json` with unchanged `schema_version: 1` as private
-   **0600**, at most **128 records aggregate across providers** (not per provider)
+   **0600**, at most **128 records aggregate across four providers** (not per provider)
    and **256 KiB**. Private records retain full native IDs, last events, receipt
    timestamps and receiver epochs. Capacity exhaustion refuses a new record; no eviction
    or pruning API is supplied. Stored record fields remain `provider`, `session_id`,
@@ -114,9 +125,14 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
 
 These states are **last reported**, not current jobs/readiness/identity/completion.
 There is no freshness threshold turning them into live guarantees.
-Codex and Copilot records are always **unknown**, even when fresh with a known receipt age.
+Codex, Copilot and Pi records are always **unknown**, even when fresh with a known receipt age.
 After restart **all providers'** persisted records have unknown state and null age
-until another receipt; a new Codex/Copilot receipt still does not establish activity.
+until another receipt; a new Codex/Copilot/Pi receipt still does not establish activity.
+
+Upgrade receivers before Pi producers. Older binaries reject Pi wire/store records
+despite unchanged schema-v1 fields; once Pi records are stored, downgrade to those
+readers is unsupported without separately preserving/removing incompatible state.
+There is no automatic downgrade conversion or reset.
 
 ### Receiver lifetime and optional presentation
 
@@ -138,7 +154,7 @@ Optional `--kitsune-socket` and `--source` must be supplied together. An indepen
 worker waits for initialized receiver projection before UI IO. It reads only generic
 snapshot discovery and uses `integration.view.open/replace/poll/close`, not Kitsune
 agent APIs. It sends bounded last-reported label/detail rows with dynamic provider
-labels for Claude, Codex and Copilot; Kitsune gains no provider-specific knowledge. Selecting one adds
+labels for Claude, Codex, Copilot and Pi; Kitsune gains no provider-specific knowledge. Selecting one adds
 read-only trust details. No pane binding, launch, resume, adoption or role follows.
 Unavailable/failed Kitsune presentation does not stop core capture; the final report
 adds a separate `presentation` outcome. Configure a dedicated generic source
@@ -159,6 +175,8 @@ are not replayed; lease expiry is the fallback cleanup.
 - Receiver availability is optional for installed best-effort hooks; offline
   failure is suppressed by the generated shell command, not turned into native
   provider failure. Bound socket existence alone is not receiver readiness.
+- Pi instead uses a best-effort Node child with a two-second kill request, no shell,
+  queue or retry; overlaps drop and the slot remains held until child close.
 
 ## Example usage
 

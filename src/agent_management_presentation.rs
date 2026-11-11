@@ -144,7 +144,7 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
         }
         let state = record["reported_state"].as_str().ok_or_else(invalid)?;
         if !matches!(state, "unknown" | "working" | "idle" | "ended")
-            || (matches!(provider, "codex" | "copilot") && state != "unknown")
+            || (matches!(provider, "codex" | "copilot" | "pi") && state != "unknown")
         {
             return Err(invalid());
         }
@@ -159,8 +159,9 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
         if selected == Some(item_id.as_str()) {
             detail.push_str(" \u{b7} Selected (read-only); reference: caller supplied, unverified; native identity and job completion: unestablished");
         }
+        let label = if provider == "pi" { "Pi" } else { provider };
         rows.push(
-            json!({"id":item_id,"label":format!("{provider} \u{b7} {}", &id[..12]),"detail":detail}),
+            json!({"id":item_id,"label":format!("{label} \u{b7} {}", &id[..12]),"detail":detail}),
         );
     }
     rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
@@ -466,5 +467,47 @@ mod tests {
         thread::sleep(Duration::from_millis(40));
         stop.0.store(true, Ordering::Release);
         assert_eq!(worker.join().unwrap()["outcome"], "completed");
+    }
+
+    #[test]
+    fn pi_rows_are_labeled_unverified_references_and_never_activity() {
+        let mut value = projection();
+        value["records"][0]["provider"] = json!("pi");
+        value["records"][0]["last_event"] = json!("session_start");
+        value["records"][0]["reported_state"] = json!("unknown");
+        let model = Mutex::new(value);
+        let view = snapshot(&model, Some(&format!("agent:{}", "a".repeat(64))))
+            .unwrap()
+            .unwrap();
+        assert_eq!(view.rows[0]["label"], "Pi \u{b7} aaaaaaaaaaaa");
+        let detail = view.rows[0]["detail"].as_str().unwrap();
+        assert!(detail.starts_with("Last report: UNKNOWN \u{b7} age 1s"));
+        assert!(detail.contains("reference: caller supplied, unverified"));
+        assert!(detail.contains("native identity and job completion: unestablished"));
+        let serialized = serde_json::to_string(&view.rows).unwrap();
+        assert!(!serialized.contains("DO-NOT-COPY"));
+        assert!(!serialized.contains("PRIVATE"));
+        for state in ["working", "idle", "ended"] {
+            model.lock().unwrap()["records"][0]["reported_state"] = json!(state);
+            assert!(snapshot(&model, None).is_err());
+        }
+        model.lock().unwrap()["records"][0]["reported_state"] = json!("unknown");
+        model.lock().unwrap()["records"][0]["age_ms"] = Value::Null;
+        assert!(
+            snapshot(&model, None).unwrap().unwrap().rows[0]["detail"]
+                .as_str()
+                .unwrap()
+                .contains("unavailable/unknown")
+        );
+        for event in [
+            "SessionStart",
+            "Stop",
+            "SubagentStop",
+            "PreToolUse",
+            "other",
+        ] {
+            model.lock().unwrap()["records"][0]["last_event"] = json!(event);
+            assert!(snapshot(&model, None).is_err());
+        }
     }
 }

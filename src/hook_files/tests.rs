@@ -164,7 +164,7 @@ fn creation_after_absent_fence_never_clobbers() {
 #[test]
 fn static_names_and_provider_errors_are_enforced() {
     let temp = tempfile::tempdir().unwrap();
-    for spec in [Spec::claude(), Spec::codex(), Spec::copilot()] {
+    for spec in [Spec::claude(), Spec::codex(), Spec::copilot(), Spec::pi()] {
         let root = Root::open(temp.path(), spec).unwrap();
         for name in [
             "../settings.json",

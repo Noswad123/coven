@@ -242,7 +242,7 @@ enum Command {
 
 #[derive(Subcommand)]
 enum Agent {
-    /// Run Coven's foreground native-hook receiver; never starts a provider.
+    /// Run Coven's foreground reference receiver; never starts a provider.
     Serve {
         #[arg(allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         workspace: PathBuf,
@@ -268,6 +268,17 @@ enum Agent {
         #[arg(long)]
         json: bool,
     },
+    /// Read a Coven extension envelope, not native hook JSON, and report once.
+    ReportExtension {
+        #[arg(long, allow_negative_numbers = true)]
+        socket: String,
+        #[arg(long, value_parser = ["pi"])]
+        provider: String,
+        #[arg(long, value_parser = ["session_start"])]
+        event: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Inspect captured unverified records from a selected Coven receiver.
     Inventory {
         #[arg(long, allow_negative_numbers = true)]
@@ -279,6 +290,11 @@ enum Agent {
     Hooks {
         #[command(subcommand)]
         command: AgentHooks,
+    },
+    /// Explicit reference-extension placement; mutation requires --apply.
+    Extensions {
+        #[command(subcommand)]
+        command: AgentExtensions,
     },
     Status {
         #[arg(num_args = 0.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
@@ -326,6 +342,32 @@ enum AgentHooks {
     Install(ProviderHookOptions),
     Uninstall(ProviderHookOptions),
     Rollback(ProviderHookOptions),
+}
+
+#[derive(clap::Args)]
+struct ExtensionOptions {
+    #[arg(long, value_parser = ["pi"])]
+    provider: String,
+    #[arg(long, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+    extension_root: PathBuf,
+    #[arg(long, allow_negative_numbers = true)]
+    executable: Option<String>,
+    #[arg(long, allow_negative_numbers = true)]
+    socket: Option<String>,
+    #[arg(long)]
+    migrate_kitsune: bool,
+    #[arg(long)]
+    apply: bool,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum AgentExtensions {
+    Plan(ExtensionOptions),
+    Install(ExtensionOptions),
+    Uninstall(ExtensionOptions),
+    Rollback(ExtensionOptions),
 }
 
 #[derive(clap::Args)]
@@ -1502,6 +1544,49 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             return coven::agent_management::inventory_arguments(
                 &coven::agent_management::InventoryRequest { socket },
                 json,
+            );
+        }
+        Command::Agent {
+            command:
+                Agent::ReportExtension {
+                    socket,
+                    provider,
+                    event,
+                    json,
+                },
+        } => {
+            return coven::agent_management::extension_report_arguments(
+                &coven::agent_management::ReportRequest {
+                    socket,
+                    provider,
+                    event: Some(event),
+                },
+                json,
+            );
+        }
+        Command::Agent {
+            command: Agent::Extensions { command },
+        } => {
+            use coven::pi_extension::Operation;
+            let (operation, options) = match command {
+                AgentExtensions::Plan(o) => (Operation::Plan, o),
+                AgentExtensions::Install(o) => (Operation::Install, o),
+                AgentExtensions::Uninstall(o) => (Operation::Uninstall, o),
+                AgentExtensions::Rollback(o) => (Operation::Rollback, o),
+            };
+            if options.provider != "pi" {
+                return Err(coven::Error::invalid_cli_arguments());
+            }
+            return coven::pi_extension::arguments(
+                &coven::pi_extension::Request {
+                    extension_root: options.extension_root,
+                    executable: options.executable,
+                    socket: options.socket,
+                    migrate_kitsune: options.migrate_kitsune,
+                    apply: options.apply,
+                    operation,
+                },
+                options.json,
             );
         }
         Command::Agent {

@@ -9,13 +9,13 @@ implemented in Coven, including explicit process-evidence group binding independ
 of Kitsune's agent inventory; explicit Djinn live attachments and read-only
 busy/unknown group status and explicit expiry-bounded live publishing implemented;
 native opt-in agent comparison implemented as extraction characterization;
-Coven-owned Claude, Codex and Copilot hook/receipt cuts implemented with Linux-only Kitsune new-install retirement;
+Coven-owned Claude/Codex/Copilot hook and Pi reference-extension cuts implemented with Linux-only Kitsune new-install retirement;
 native lifecycle/scheduling, automatic following, complete extraction, and workspace
 annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
 The confirmed scope includes all agent management, including hooks and agent-aware
 restore, not only discovery/status/start/resume. The first targeted retirement is
-Kitsune's new Claude hook installer on Linux only, followed by Codex and Copilot on Linux. The ultimate target covers all
+Kitsune's new Claude hook installer on Linux only, followed by Codex, Copilot and Pi on Linux. The ultimate target covers all
 agent features/platforms, but matching non-Linux adapters are still pending. See the authoritative
 [ownership matrix and next transfers](AGENT_MANAGEMENT_MIGRATION.md).
 
@@ -63,10 +63,12 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | Independent Codex receipts | Same private Unix receiver/store; SessionStart reference capture only, always unknown even fresh. No working/idle lifecycle or native operational certification. |
 | New Copilot hook configuration | Linux: Coven owns explicit global settings.json direct SessionStart handlers; Kit install/recommend/update/bulk paths retired. Non-Linux Kit installer/assets/result type and recommendation/update/bulk paths remain. Strict duplicate-free JSON only; native JSONC refused. See [Copilot contract](COPILOT_HOOKS_CONTRACT.md). |
 | Independent Copilot receipts | Same Unix receiver/store; exact SessionStart reference capture only, unknown even fresh; no camelCase/inferred events or Claude subagent suppression. Documentation pin, not native implementation/binary certification. |
+| New Pi reference extension | Linux: Coven explicit existing-root placement and exact opt-in v7 migration; Kit new install/recommend/update/bulk retired. Non-Linux Kit full asset/installer/result and recommendation/update/bulk remain. File placement is not activation; see [Pi contract](PI_EXTENSION_CONTRACT.md). |
+| Independent Pi receipts | Separate report-extension with strict Coven three-field envelope; session_start/getSessionId references only, always unknown. Migration drops Kit working/blocked/idle; no full Pi management transfer. |
 | Independent Claude receipts | Coven Unix private receiver/inventory; Windows unsupported, macOS not validated. Not a non-Linux hook-configuration replacement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
 | Agent APIs/detection, navigator/attention and mobile UI | Retained compatibility; move management model/interpretation into Coven and retire matching Kitsune surfaces. |
 | Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
-| `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
+| `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot/Pi new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
 
 New Claude settings are explicitly selected and preview by default; Linux-only
 apply can migrate only exact verified legacy commands/script with consent. No
@@ -93,10 +95,22 @@ lock before validation. Copilot preserves native disable/approval/sandbox/trust
 policy. Exact opt-in legacy migration retains the script; normal uninstall never
 revives Kit, while guarded rollback restores bytes/mode/absence. The scoped Linux
 new hook transfer is complete; all-platform Copilot detection/status/start/resume/
-restore and legacy ingress/status/uninstall remain. Pi/OpenCode hook ownership is
-next pending. Generated three-provider real-Coven end-to-end checks pass; the
+restore and legacy ingress/status/uninstall remain. OpenCode is the remaining
+legacy hook owner; Pi discovery/lifecycle/start/resume/restore remain pending.
+Earlier generated three-provider real-Coven end-to-end checks pass; the
 [validation record](AGENT_MANAGEMENT_MIGRATION.md#validation-record) covers focused
 checks and an intermittent receipt-deadline test failure, not native certification.
+
+Pi's source pin is earendil-works/pi `6e11a00a01a568ef0ae0df5074acf02fc107c34b`,
+declaring 1.5.2 on main, not a release pin. `hasUI` includes TUI/RPC, not root/TUI
+proof or headless capture. Its separate two-leaf journal preserves immutable
+preimages and explicit rollback after uninstall; normal uninstall never revives
+Kit. Stop providers/watchers before mutation: no atomic activation, autoload or
+in-memory authority release follows. Four providers share schema-v1 fields and
+the aggregate 128 cap; older readers reject Pi records, so upgrade receivers first
+and respect downgrade limits. The [Pi validation table](AGENT_MANAGEMENT_MIGRATION.md#pi-validation-table)
+records 212 focused Rust checks plus generated-asset and Kit checks, including
+the retained receipt timing limitation; it is not native activation certification.
 
 The obsolete local singleton `[external_view]` is diagnosed/ignored in favor of
 `integrations.sources`, with no automatic config writes. Its unreleased `view.*`
@@ -269,6 +283,7 @@ observation: Kitsune -> Coven adapter -> sourced observations
 annotation: user-enabled producer -> pane.annotate -> Kitsune terminal border
 integration views: independent apps -> per-source frames -> local app selector/rows -> per-source intents
 Claude/Codex/Copilot receipts: explicit native hooks -> Coven report -> private receiver/store -> redacted inventory -> optional generic view
+Pi references: explicit extension -> Coven report-extension -> same receiver/store/inventory -> optional generic view
 group status: explicit participant/source declaration -> pinned local artifact -> Coven ephemeral busy/unknown rows
 ```
 

@@ -62,6 +62,22 @@ macro_rules! errors {
 }
 
 impl Spec {
+    pub(crate) const fn pi() -> Self {
+        Self {
+            recovery: ".coven-pi-extension-recovery",
+            leaves: &[
+                "coven-agent-reference.ts",
+                "kitsune-agent-state.ts",
+                "coven-pi-extension.json",
+                ".coven-pi-extension.lock",
+            ],
+            private: &["coven-pi-extension.json", ".coven-pi-extension.lock"],
+            directories: &[],
+            read_limit: 8 * 1024 * 1024,
+            errors: errors!("pi_extension"),
+        }
+    }
+
     pub(crate) const fn copilot() -> Self {
         Self {
             recovery: ".coven-copilot-hooks-recovery",
