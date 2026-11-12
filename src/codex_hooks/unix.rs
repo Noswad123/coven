@@ -353,7 +353,7 @@ fn run_inner(
     }
     let writing = request.apply && request.operation != Operation::Plan;
     require(
-        !writing || cfg!(target_os = "linux"),
+        !writing || crate::hook_files::supports_apply(),
         "codex_hooks_apply_unsupported_platform",
     )?;
     // Invalid second files, receipts and preimages must not even create a lock.

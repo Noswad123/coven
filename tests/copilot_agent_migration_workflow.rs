@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Executes a generated Coven client via sh, not native Copilot or native approval.
 //! Contract evidence is documentation only: github/docs at
 //! 7c3387d3b513ed43ea26c9b2e4c0e1b12234c010, content/copilot/reference/
@@ -6,6 +6,9 @@
 //! No native providers, Kitsune assets, or user settings participate.
 
 use coven::agent_management::{self, InventoryRequest, ReportRequest};
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -108,7 +111,7 @@ fn run_hook(command: &str, payload: &Value, home: &Path) {
 
 #[test]
 fn registered_copilot_hook_reaches_private_receiver_and_rolls_back_exact_settings() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let workspace = private_dir(root.path());
     fs::write(workspace.path().join("coven.json"), b"marker").unwrap();

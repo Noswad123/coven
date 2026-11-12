@@ -1,6 +1,9 @@
 #![cfg(unix)]
 //! Frozen inputs reconstructed from committed 887451b, not the extracted generator.
 use coven::pi_extension::{Operation, Request, arguments};
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
+use physical_temp::tempdir;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{fs, os::unix::fs::PermissionsExt};
@@ -12,7 +15,55 @@ const NEW: &str = "coven-agent-reference.ts";
 const OLD: &str = "kitsune-agent-state.ts";
 const RECEIPT: &str = "coven-pi-extension.json";
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn future_receipt_versions_are_refused_without_changing_frozen_images() {
+    for frozen in [COMPLETED, PENDING] {
+        let dir = tempdir();
+        let mut receipt: Value = serde_json::from_slice(frozen).unwrap();
+        receipt["version"] = 2.into();
+        let bytes = serde_json::to_vec(&receipt).unwrap();
+        fs::write(dir.path().join(RECEIPT), &bytes).unwrap();
+        fs::write(dir.path().join(NEW), GENERATED).unwrap();
+        for name in [RECEIPT, NEW] {
+            fs::set_permissions(dir.path().join(name), fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        for operation in [
+            Operation::Plan,
+            Operation::Install,
+            Operation::Uninstall,
+            Operation::Rollback,
+        ] {
+            let r = Request {
+                extension_root: dir.path().into(),
+                executable: None,
+                socket: None,
+                migrate_kitsune: false,
+                apply: true,
+                operation,
+            };
+            assert_eq!(
+                arguments(&r, true).err().unwrap().code(),
+                "pi_extension_invalid_receipt"
+            );
+            assert_eq!(fs::read(dir.path().join(RECEIPT)).unwrap(), bytes);
+            assert_eq!(fs::read(dir.path().join(NEW)).unwrap(), GENERATED);
+            for name in [RECEIPT, NEW] {
+                assert_eq!(
+                    fs::metadata(dir.path().join(name))
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o7777,
+                    0o600
+                );
+            }
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn frozen_v1_completed_and_pending_migration_survive_uninstall_and_rollback() {
     for frozen in [COMPLETED, PENDING] {
@@ -21,7 +72,7 @@ fn frozen_v1_completed_and_pending_migration_survive_uninstall_and_rollback() {
             if frozen == COMPLETED && prefix != 2 {
                 continue;
             }
-            let dir = tempfile::tempdir().unwrap();
+            let dir = tempdir();
             if prefix > 0 {
                 fs::write(dir.path().join(NEW), GENERATED).unwrap();
             }

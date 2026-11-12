@@ -3,6 +3,9 @@
 ## Overview
 
 Coven owns new Codex hook configuration on **Linux**, independently of Kitsune.
+The [shared backend matrix](HOOK_FILE_BACKEND_CONTRACT.md) also enables explicit
+macOS file apply provisionally on eligible local APFS, not native qualification
+or retirement of Kitsune's non-Linux paths.
 This offline, preview-first manager handles **both `hooks.json` and `config.toml`**
 under one explicit existing root. It generates only reference capture at
 `SessionStart`, not working/idle lifecycle reporting. Discovery, start/resume and
@@ -82,7 +85,7 @@ does not promise that the native provider will run this command.
    'ABS_COVEN_BINARY' agent report --provider codex --socket 'ABS_COVEN_SOCKET' --event SessionStart >/dev/null 2>&1 || true # coven-managed:codex-hooks:v1
    ```
 
-3. Linux apply takes `.coven-codex-hooks.lock`, rereads/revalidates under lock, and
+3. Supported apply takes `.coven-codex-hooks.lock`, rereads/revalidates under lock, and
    fences both files/receipt/required legacy asset. Persist private 0600
    `coven-codex-hooks.json` pending journal with schema `coven-codex-hooks`, version
    1, paths, migration result, original/installed/source/target pairs, operation
@@ -150,17 +153,18 @@ released and no running session/user config is automatically converted.
   at a legal committed prefix: source/source, target/source, target/target in
   hooks-then-TOML order. Plan may inspect; changing stages or unknown combinations
   refuses. Durability uncertainty is not proof of no effects or rollback permission.
-- Shared Linux `RENAME_EXCHANGE` / `RENAME_NOREPLACE` replacement retains displaced
+- Shared semantic exchange/no-replace replacement retains displaced
   entries until verification. Detected races may already have changed a live leaf.
   `.coven-codex-hooks-recovery/` (0700) holds applicable `expected`, `replacement`,
   `displaced`, `transaction.json` artifacts. All operations, even preview, refuse
   while it exists. Preserve/inspect evidence with writers stopped; **never blindly
   undo** over newer edits. There is no automatic recovery command. Receipts and
   recovery artifacts can contain secrets; do not publish them.
-- Mutation is **Linux-only**. Other Unix platforms preview but refuse apply;
+- Mutation uses the Linux/macOS shared backend; macOS is source-enabled,
+  provisional local APFS only, not natively qualified. Other Unix platforms preview but refuse apply;
   non-Unix manager/receiver support is absent and macOS capture is unvalidated.
-  Kitsune preserves its non-Linux legacy installer until matching Coven adapters
-  are ready. Linux retires new install/recommend/update/bulk paths only;
+  Kitsune preserves its non-Linux legacy installer until matching Coven native
+  qualification is complete. Linux retires new install/recommend/update/bulk paths only;
   legacy status/uninstall/old ingress remain compatible. No platform-wide
   retirement, native trust approval or operational capture certification follows.
 
@@ -181,7 +185,8 @@ coven agent inventory --socket ABS_COVEN_SOCKET --json
 0700 socket parent separately. A plan for an absent/false flag discloses
 `features.hooks_before: null/false` to `hooks_after: true`, alias removal if present,
 and `native_hook_approval: "user-managed; may be required; not granted by this operation"`.
-Review this **shared enablement consent** before adding `--apply` on Linux; writing
+Review this **shared enablement consent** before adding `--apply` on Linux or
+provisionally on eligible macOS local APFS; writing
 config alone cannot promise operational capture. Add `--migrate-kitsune` explicitly
 to plan/install only for verified legacy migration. Installation starts no receiver.
 

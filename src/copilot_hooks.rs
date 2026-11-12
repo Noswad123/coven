@@ -1,6 +1,7 @@
 //! Offline management of one explicit Copilot global settings.json.
 //! Native disablement, sandbox and approval remain user/native policy. Apply is
-//! Linux-only and inherits the single-file runner's retained-displacement safety,
+//! routed through the shared Linux/macOS backend (macOS provisionally), with
+//! the single-file runner's retained-displacement safety,
 //! v2 pending receipt protocol and conservative byte/mode conflicts, not global CAS.
 //! Executable paths are explicit and lexical, not authenticated or executed here.
 pub use crate::claude_hooks::{Operation, Request};

@@ -37,6 +37,24 @@ sandbox, trust and disable settings are preserved, never granted or changed.
 
 ## API / Interfaces
 
+### Shared Linux/macOS File Backend
+
+The [private hook-file guide and platform matrix](HOOK_FILE_BACKEND_CONTRACT.md)
+supersedes earlier Linux-only mutation/adapter-absent descriptions, not the
+Linux-only Kitsune retirement boundary. All five providers now share source-enabled
+Linux/macOS apply through three runners. macOS explicit `--apply` is provisional,
+eligible local APFS only and **not natively qualified**. Linux admission and all
+receipt versions/native pins/template postimages stay unchanged. Linux and macOS
+shared behavior is the current target, not a deferred port.
+
+Every provider ledger row below describing a Linux ownership transfer is a
+retirement statement, not denial of provisional macOS file mutation. All Kit
+non-Linux installers/assets/status/uninstall/recommendation/update/bulk paths remain
+until native qualification. Full status/start/resume/restore transfer remains
+pending on both OSes, and macOS discovery is still explicitly rejected. Receiver,
+store and socket authorization/privacy are separate, untested macOS gates: their
+Unix mode checks do not inherit the hook-file Darwin ACL adapter.
+
 The subsequent [Pi extension cut](PI_EXTENSION_CONTRACT.md) transfers new Linux
 reference-extension placement, not full Pi management. `agent extensions`
 plan/install/uninstall/rollback uses an explicit existing absolute root and a
@@ -62,19 +80,19 @@ not full OpenCode management completion.
 | Surface | Implemented ownership now | Remaining transfer / target owner |
 | --- | --- | --- |
 | New Claude hook configuration — Linux | Coven plans/installs/uninstalls/rolls back explicit settings roots; Linux Kitsune refuses new installs with Coven guidance. | Coven is sole owner of new Linux hook configuration; existing roots require explicit opt-in migration. |
-| New Claude hook configuration — non-Linux | Kitsune preserves production `legacy_install_claude`, assets/result type and recommendation/update/bulk paths on macOS/Windows. Coven apply refuses unsupported platforms; Unix preview is not equivalent replacement. | Transfer to Coven only when matching platform adapters are ready; do not drop a working path. |
+| New Claude hook configuration — non-Linux | macOS file apply is source-enabled, provisional eligible local APFS only; Windows unsupported, other Unix preview only. Kitsune preserves production `legacy_install_claude`, assets/result type and recommendation/update/bulk paths. | Native macOS qualification before retirement; do not drop a working path. |
 | Claude hook receipts and inventory | Coven private Unix receiver/store and redacted last-reported inventory, independent of Kitsune; Windows unsupported, macOS not validated. | Broader discovery, native association and status capabilities belong in Coven; receipts are not native truth. |
 | New Codex hook configuration — Linux | Coven two-file preview/install/uninstall/rollback; Linux Kit refuses new install and excludes recommendation/update/bulk paths. | Explicit legacy migration only; global hooks enablement is not native approval. |
-| New Codex hook configuration — non-Linux | Kitsune preserves legacy installer/assets/result type and recommendation/update/bulk paths until matching Coven adapters. | Unix preview is not replacement mutation support. |
+| New Codex hook configuration — non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit legacy installer/assets/result type and recommendation/update/bulk remain. Windows unsupported; other Unix preview only. | Native qualification before retirement, not backend existence alone. |
 | Codex receipts and inventory | Coven Unix reference-only SessionStart capture; always unknown, even fresh. | No working/idle lifecycle or native association is inferred. |
 | New Copilot hook configuration - Linux | Coven explicit global settings.json plan/install/uninstall/rollback and exact opt-in legacy migration; Kit install/recommend/update/bulk paths retired. | Scoped new hook ownership complete, not broader management or native certification. |
-| New Copilot hook configuration - non-Linux | Kit legacy installer/assets/result type and recommendation/update/bulk paths remain. | Matching Coven platform adapters before retirement; Unix preview is not replacement mutation support. |
+| New Copilot hook configuration - non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit legacy installer/assets/result type and recommendation/update/bulk remain. Windows unsupported; other Unix preview only. | Native qualification before retirement. |
 | Copilot receipts and inventory | Coven Unix exact SessionStart reference capture; unknown even fresh, no Claude subagent suppression. | No inferred events, camelCase aliases or native lifecycle/association. |
 | New Pi extension placement - Linux | Coven explicit existing-root plan/install/uninstall/rollback; Kit new install/recommend/update/bulk paths retired. | File placement only, not native activation or lifecycle parity. |
-| New Pi extension placement - non-Linux | Kit preserves full v7 asset/installer/result type and recommendation/update/bulk paths. | Matching Coven adapters before retirement; Unix preview is not replacement mutation support. |
+| New Pi extension placement - non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit preserves full v7 asset/installer/result type and recommendation/update/bulk paths. Windows unsupported; other Unix preview only. | Native qualification before retirement; placement is not activation. |
 | Pi receipts and inventory | Coven Unix strict `coven.pi-extension.v1` envelope via separate report-extension; `session_start` reference only, always unknown. | Discovery/status/lifecycle/start/resume/restore remain pending; upgrade receiver first. |
 | New OpenCode reference plugin - Linux | Coven explicit existing-root plan/install/uninstall/rollback; Kit new install/recommend/update/bulk retired. | Placement only; exact v9 opt-in migration, no native activation/lifecycle parity. |
-| New OpenCode reference plugin - non-Linux | Kit preserves full v9 asset/legacy installer/result and recommendation/update/bulk paths. | Matching Coven adapters before retirement; Unix preview is not mutation support. |
+| New OpenCode reference plugin - non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit preserves full v9 asset/legacy installer/result and recommendation/update/bulk paths. Windows unsupported; other Unix preview only. | Native qualification before retirement; placement is not activation. |
 | OpenCode receipts and inventory | Coven Unix strict extension envelope, session.created/updated root DTO references only, unknown even fresh. | Server exact-directory-instance scope, not selected TUI/pane/attach or whole project; no universal resume capture. |
 | Optional five-provider inventory presentation | Coven projects its own records with dynamic provider labels through generic Kitsune snapshot + `integration.view.*`. | Kitsune remains agent-neutral; no management authority comes from row selection. |
 | Legacy Claude surfaces on all platforms | Kitsune retains all six `IntegrationTarget::ALL` entries, installation status, uninstall and old hook ingress. Non-Linux new installation also remains. | Retire only after platform-matched compatibility/transition coverage; running sessions are not converted by editing settings. |
@@ -127,7 +145,8 @@ public semantics beyond a neutral refactor. No external mode, new Config,
 wire/API/snapshot-format fields or toggle/kill/hide controls ship. This functional
 Coven-owned recognition path temporarily duplicates legacy policy; it is not
 completed sole ownership or full status. The five Linux hook/configuration
-retirements and pending non-Linux adapters above remain unchanged.
+retirements remain unchanged; macOS native qualification and remaining non-Linux
+capabilities, rather than the shared macOS file backend itself, remain pending.
 
 ## Data Flow
 
@@ -163,8 +182,9 @@ launch, adoption or role assignment is part of this flow.
 
 ### Next transfers
 
-1. Add matching Coven non-Linux Claude/Codex/Copilot/Pi/OpenCode platform adapters before retiring Kitsune's
-   preserved macOS/Windows installer/recommendation/update paths. Move remaining
+1. Natively qualify the shared macOS local-APFS backend for Claude/Codex/Copilot/Pi/OpenCode,
+   separately validate receiver/privacy/provider behavior, and supply remaining
+   non-Linux capabilities before retiring Kitsune's preserved macOS/Windows paths. Move remaining
    provider hook/configuration ownership to explicit Coven adapters,
    with independent receivers where supported and conservative legacy migration.
    Separate Djinn and other applicable sources remain. Record exact source ownership and
@@ -234,12 +254,55 @@ is needed; the generic view adds no native-effects ownership.
   uninstall never revives Kit. Previews create no lock/files; actual single-file
   apply may create a persistent lock before validation. Do not generalize Codex's
   artifact-free prevalidation to Claude/Copilot apply.
-- Hook apply/Kit installer retirement are Linux-only; receiver transport is Unix-only,
-  Windows unsupported and macOS unvalidated. Non-Linux preview/refusal is not a
-  working replacement for the preserved Kit installer. No all-platform completion,
+- Hook apply is source-enabled on Linux and provisionally on eligible macOS local
+  APFS; Kit installer retirement remains Linux-only. Receiver transport is Unix-only,
+  Windows unsupported and macOS authorization/runtime unvalidated. The provisional
+  backend is not native qualification or grounds to remove preserved Kit paths. No all-platform completion,
   full Claude transfer or all-provider certification is claimed.
 
 ### Validation record
+
+#### Hook-file backend validation table
+
+The [new backend validation table](HOOK_FILE_BACKEND_CONTRACT.md#validation-gates)
+records completed parent validation, not tests rerun by this documentation update:
+
+| Focused Linux Rust Scope | Distinct Passed Checks |
+| --- | --- |
+| Root/backend | 14, including one C-mock test with 33 scenarios |
+| Codex / Copilot units | 7 / 6 |
+| Shared extension-engine units | 20 |
+| All five provider integrations | 64, including 2 frozen-Pi checks |
+| `native_package` / CLI | 2 / 91 |
+| **Total** | **204** |
+
+Strict all-target lint on Linux, Rust 1.85 all-target checking, Linux optimized
+build, locked package verification and packaged test-target compilation all passed.
+The C-mock scenarios include source-backed early noowners rejection with zero
+capability/ACL queries, not a native two-UID test; do not add 33 to the Rust total.
+
+Both Apple Rust std targets are installed for 1.96.1. The development harness
+imports actual Root/platform Rust and tests with locked libc 0.2.186; `--tests`
+typechecks passed warning-free for Apple Silicon and Intel. It does not compile
+Apple SDK C, link or run. Both full application target attempts failed on default
+cc's Apple flags; an ARM retry with correct Clang targeting confirmed missing SDK
+`TargetConditionals.h` in ring. Neither application builds nor native backend C
+compilation passed. Native SDK ABI/linking, APFS and minimum-OS qualification,
+and separate receiver/store/socket privacy remain pending.
+
+| Incidental Broader Full-Library Run | Result |
+| --- | --- |
+| Aggregate | **1,144 passed, 2 failed, 5 ignored; not a pass** |
+| Copilot capture projection | `agent_management::tests::copilot_capture_strips_native_fields_before_rpc_store_and_stdout`, `tests.rs:484`, unwrap of `agent_delivery_uncertain`; isolated exact rerun passed. |
+| Extension capture projection | `agent_management::tests::extension_capture_projects_only_reference_fields_and_keeps_store_v1`, `tests.rs:318`, unwrap of `agent_delivery_uncertain`; isolated exact rerun passed. |
+| Limits | No established root cause or proof the failures are unrelated; no production timeout relaxation or resends added. |
+
+Parent review is ready without blockers within the provisional source scope,
+not native certification or a full-suite-green claim. Exact physical-root admission
+can safely refuse legacy commands using logical aliases; neither commands nor
+user paths are automatically canonicalized. Kit macOS paths remain unretired.
+Historical tables below, including 1,318 Kit seam checks, are not new Coven backend
+results and are not added to this cut, nor are historical Coven 201/236 totals.
 
 #### State-seam validation table
 

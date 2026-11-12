@@ -1,5 +1,8 @@
 #![cfg(unix)]
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
 use coven::claude_hooks::{Operation, Request, arguments};
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -18,7 +21,7 @@ fn request(root: &Path, operation: Operation, apply: bool) -> Request {
     }
 }
 fn fixture() -> (tempfile::TempDir, Vec<u8>) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let pre = br#"{ "credential": "PRIVATE-SECRET", "hooks": {"Stop": [{"matcher":"custom","hooks":[{"type":"command","command":"custom-secret-command"}]}]}, "other": [1,true] }"#.to_vec();
     fs::write(dir.path().join("settings.json"), &pre).unwrap();
     (dir, pre)
@@ -51,7 +54,27 @@ fn dry_runs_are_read_only_and_redacted() {
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+#[test]
+fn other_unix_is_preview_only() {
+    let (dir, pre) = fixture();
+    succeeds(&request(dir.path(), Operation::Plan, true));
+    succeeds(&request(dir.path(), Operation::Install, false));
+    for operation in [
+        Operation::Install,
+        Operation::Uninstall,
+        Operation::Rollback,
+    ] {
+        refuses(
+            &request(dir.path(), operation, true),
+            "claude_hooks_apply_unsupported_platform",
+        );
+        assert_eq!(fs::read(dir.path().join("settings.json")).unwrap(), pre);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn setgid_root_does_not_leave_an_empty_recovery_blocker() {
     let (dir, preimage) = fixture();
@@ -112,6 +135,7 @@ fn registered_cli_plan_is_required_and_read_only() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn install_repeat_uninstall_and_rollback() {
     for rollback in [false, true] {
         let (dir, pre) = fixture();
@@ -180,6 +204,7 @@ fn install_repeat_uninstall_and_rollback() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn conflicts_do_not_overwrite_user_edits() {
     let (dir, _) = fixture();
     succeeds(&request(dir.path(), Operation::Install, true));
@@ -206,7 +231,7 @@ fn unsafe_files_and_corrupt_json_are_refused_without_side_effects() {
         br#"{"hooks":null}"#,
         b"[]",
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         fs::write(dir.path().join("settings.json"), raw).unwrap();
         assert!(arguments(&request(dir.path(), Operation::Plan, false), true).is_err());
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -235,7 +260,7 @@ fn unsafe_files_and_corrupt_json_are_refused_without_side_effects() {
 
 #[test]
 fn missing_root_symlink_root_directory_leaf_and_oversized_settings_are_refused() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let missing = dir.path().join("missing");
     assert!(arguments(&request(&missing, Operation::Plan, false), true).is_err());
     assert!(!missing.exists());
@@ -268,7 +293,7 @@ fn suspicious_custom_commands_are_conflicts_never_ownership_evidence() {
         "echo coven-managed:claude-hooks:v1",
         "echo kitsune-agent-state.sh",
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         let raw = serde_json::to_vec(
             &json!({"hooks":{"Stop":[{"hooks":[{"type":"command","command":command}]}]}}),
         )
@@ -283,6 +308,7 @@ fn suspicious_custom_commands_are_conflicts_never_ownership_evidence() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn receipts_are_strict_private_data_not_path_or_command_authority() {
     let (dir, _) = fixture();
     succeeds(&request(dir.path(), Operation::Install, true));
@@ -304,8 +330,9 @@ fn receipts_are_strict_private_data_not_path_or_command_authority() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn missing_settings_rollback_restores_absence_and_pending_can_resume() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     succeeds(&request(dir.path(), Operation::Install, true));
     let path = dir.path().join("coven-claude-hooks.json");
     let mut receipt: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -318,6 +345,7 @@ fn missing_settings_rollback_restores_absence_and_pending_can_resume() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn pending_before_image_resumes_and_existing_lock_is_respected() {
     use std::os::fd::AsRawFd;
     let (dir, pre) = fixture();
@@ -352,6 +380,7 @@ fn pending_before_image_resumes_and_existing_lock_is_respected() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn original_modes_are_restored_and_chmod_only_edits_conflict() {
     for mode in [0o400, 0o640] {
         let (dir, pre) = fixture();
@@ -402,11 +431,12 @@ fn original_modes_are_restored_and_chmod_only_edits_conflict() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn pending_uninstall_and_rollback_resume_at_source_or_target_including_absence() {
     for op in [Operation::Uninstall, Operation::Rollback] {
         for at_target in [false, true] {
             for originally_present in [false, true] {
-                let dir = tempfile::tempdir().unwrap();
+                let dir = tempdir();
                 let path = dir.path().join("settings.json");
                 if originally_present {
                     fs::write(&path, b"{ \"original\": true }\n").unwrap();
@@ -464,10 +494,19 @@ fn recovery_artifact_blocks_cli_and_api_without_exposing_its_data() {
         Operation::Uninstall,
         Operation::Rollback,
     ] {
-        refuses(
-            &request(dir.path(), op, true),
-            "claude_hooks_recovery_required",
-        );
+        for apply in [false, true] {
+            refuses(
+                &request(dir.path(), op, apply),
+                if apply
+                    && op != Operation::Plan
+                    && !cfg!(any(target_os = "linux", target_os = "macos"))
+                {
+                    "claude_hooks_apply_unsupported_platform"
+                } else {
+                    "claude_hooks_recovery_required"
+                },
+            );
+        }
     }
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_coven"))
         .args([
@@ -497,7 +536,7 @@ fn recovery_artifact_blocks_cli_and_api_without_exposing_its_data() {
 #[test]
 fn unknown_legacy_and_modified_assets_never_migrate() {
     for action in ["session", "unknown-historical-action"] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         let script = dir.path().join("hooks/kitsune-agent-state.sh");
         fs::create_dir(dir.path().join("hooks")).unwrap();
         fs::write(&script, "modified script").unwrap();
@@ -514,12 +553,13 @@ fn unknown_legacy_and_modified_assets_never_migrate() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn generated_command_passes_native_stdin_and_is_best_effort_offline() {
     use std::{
         io::Write,
         process::{Command, Stdio},
     };
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let exe = dir.path().join("coven's executable");
     fs::write(&exe, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE\"\nIFS= read -r payload\nprintf '%s' \"$payload\" > \"$PAYLOAD\"\nexit 42\n").unwrap();
     fs::set_permissions(&exe, fs::Permissions::from_mode(0o700)).unwrap();
@@ -663,6 +703,7 @@ PY
 "##;
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn pending_migration_revalidates_asset_only_at_uncommitted_source() {
     for changed in ["modified", "missing", "symlink", "directory_symlink"] {
         for at_target in [false, true] {
@@ -719,6 +760,7 @@ fn pending_migration_revalidates_asset_only_at_uncommitted_source() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn verified_current_kit_migration_preserves_asset_and_uninstall_never_restores_kit() {
     for rollback in [false, true] {
         let (dir, _) = fixture();

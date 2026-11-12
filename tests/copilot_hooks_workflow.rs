@@ -1,5 +1,8 @@
 #![cfg(unix)]
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
 use coven::copilot_hooks::{Operation, Request, arguments};
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -39,7 +42,7 @@ fn stage(root: &Path, stage: &str) {
     .unwrap();
 }
 fn fixture() -> (tempfile::TempDir, Vec<u8>) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let pre = br#"{ "secret":"PRIVATE-SECRET", "disableAllHooks":true, "sandbox":{"enabled":true}, "trust":{"custom":true}, "hooks":{"sessionStart":[{"bash":"custom-secret-command"}]}, "unknown":[1,true] }"#.to_vec();
     fs::write(dir.path().join("settings.json"), &pre).unwrap();
     fs::set_permissions(
@@ -74,7 +77,27 @@ fn previews_are_effect_free_redacted_and_do_not_grant_native_approval() {
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+#[test]
+fn other_unix_is_preview_only() {
+    let (dir, pre) = fixture();
+    succeeds(&request(dir.path(), Operation::Plan, true));
+    succeeds(&request(dir.path(), Operation::Install, false));
+    for operation in [
+        Operation::Install,
+        Operation::Uninstall,
+        Operation::Rollback,
+    ] {
+        refuses(
+            &request(dir.path(), operation, true),
+            "copilot_hooks_apply_unsupported_platform",
+        );
+        assert_eq!(fs::read(dir.path().join("settings.json")).unwrap(), pre);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn install_repeat_uninstall_rollback_and_reinstall_preserve_native_policy() {
     for rollback in [false, true] {
@@ -150,7 +173,7 @@ fn install_repeat_uninstall_rollback_and_reinstall_preserve_native_policy() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn edits_and_chmod_only_changes_conflict_for_every_operation() {
     for chmod in [false, true] {
@@ -252,7 +275,7 @@ fn unsafe_inputs_and_recovery_entries_refuse_without_preview_effects() {
 #[test]
 fn invalid_http_environment_expansion_refuses_before_configuration_effects() {
     for allowed in [json!([]), json!(["TOKEN"])] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         let path = dir.path().join("settings.json");
         let pre = serde_json::to_vec(&json!({"hooks":{"SessionStart":[{
             "type":"http", "url":"http://localhost:8080", "allowedEnvVars":allowed
@@ -266,7 +289,10 @@ fn invalid_http_environment_expansion_refuses_before_configuration_effects() {
         ] {
             refuses(
                 &request(dir.path(), op, apply),
-                if apply && op != Operation::Plan && !cfg!(target_os = "linux") {
+                if apply
+                    && op != Operation::Plan
+                    && !cfg!(any(target_os = "linux", target_os = "macos"))
+                {
                     "copilot_hooks_apply_unsupported_platform"
                 } else {
                     "copilot_hooks_invalid_settings"
@@ -278,7 +304,10 @@ fn invalid_http_environment_expansion_refuses_before_configuration_effects() {
             // validating settings; previews must remain entirely effect-free.
             assert_eq!(
                 fs::read_dir(dir.path()).unwrap().count(),
-                if apply && op != Operation::Plan && cfg!(target_os = "linux") {
+                if apply
+                    && op != Operation::Plan
+                    && cfg!(any(target_os = "linux", target_os = "macos"))
+                {
                     2
                 } else {
                     1
@@ -288,7 +317,7 @@ fn invalid_http_environment_expansion_refuses_before_configuration_effects() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn pending_operations_resume_only_at_source_or_target_and_same_stage() {
     for op in [
@@ -298,7 +327,7 @@ fn pending_operations_resume_only_at_source_or_target_and_same_stage() {
     ] {
         for at_target in [false, true] {
             for present in [false, true] {
-                let dir = tempfile::tempdir().unwrap();
+                let dir = tempdir();
                 let path = dir.path().join("settings.json");
                 let pre = b"{ \"original\":true }\n";
                 if present {
@@ -389,11 +418,11 @@ fn legacy(root: &Path) -> Vec<u8> {
     .unwrap()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn verified_migration_leaves_script_and_custom_hooks_uninstall_never_revives_kit() {
     for rollback in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         let pre = legacy(dir.path());
         fs::write(dir.path().join("settings.json"), &pre).unwrap();
         let mut r = request(dir.path(), Operation::Install, false);
@@ -431,12 +460,12 @@ fn verified_migration_leaves_script_and_custom_hooks_uninstall_never_revives_kit
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn pending_migration_revalidates_script_only_at_uncommitted_source() {
     for changed in ["modified", "missing", "symlink", "directory_symlink"] {
         for at_target in [false, true] {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = tempdir();
             let pre = legacy(dir.path());
             let path = dir.path().join("settings.json");
             fs::write(&path, &pre).unwrap();
@@ -483,7 +512,7 @@ fn pending_migration_revalidates_script_only_at_uncommitted_source() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn strict_receipts_and_resupplied_paths_are_data_not_authority() {
     let (dir, _) = fixture();
@@ -504,14 +533,14 @@ fn strict_receipts_and_resupplied_paths_are_data_not_authority() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn generated_command_forwards_stdin_quotes_paths_and_tolerates_failure_silently() {
     use std::{
         io::Write,
         process::{Command, Stdio},
     };
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let exe = dir.path().join("coven's executable");
     fs::write(&exe, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE\"\nIFS= read -r payload\nprintf '%s' \"$payload\" > \"$PAYLOAD\"\nexit 42\n").unwrap();
     fs::set_permissions(&exe, fs::Permissions::from_mode(0o700)).unwrap();

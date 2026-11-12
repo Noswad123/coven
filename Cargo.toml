@@ -14,11 +14,14 @@ license = "MIT"
 include = [
     "/Cargo.toml",
     "/Cargo.lock",
+    "/build.rs",
     "/LICENSE",
     "/src/**/*.rs",
     "/src/**/*.py",
     "/src/pi_extension/template.js",
     "/src/opencode_extension/template.js",
+    "/src/hook_files/platform/*.c",
+    "/src/hook_files/platform/*.h",
     "/src/workspace_assets/*.txt",
     "/src/execution/inspection/projection/vectors.json",
     "/examples/**/*.json",
@@ -63,3 +66,7 @@ tempfile = "3.27"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[build-dependencies]
+# Already locked through ring; Darwin's ACL types are compiled from the real SDK.
+cc = "1.2"

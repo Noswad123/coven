@@ -6,7 +6,8 @@
 //! The private receipt is a bounded two-file journal, not an atomic transaction.
 //! Pending operations resume only across known source/target committed prefixes.
 //! Detected filesystem races retain the shared engine's recovery directory for
-//! manual resolution; even previews refuse while it exists. Linux applies only.
+//! manual resolution; even previews refuse while it exists. Linux and macOS have
+//! apply backends; macOS is provisional and requires eligible local APFS objects.
 use crate::{Result, task_mutation::TaskOutput};
 use std::path::PathBuf;
 

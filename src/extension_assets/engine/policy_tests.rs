@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::hook_files::test_support::tempdir;
 use std::{fs, os::unix::fs::PermissionsExt};
 
 fn request(root: &Path, operation: Operation) -> Request {
@@ -12,7 +13,7 @@ fn request(root: &Path, operation: Operation) -> Request {
     }
 }
 fn seed(legacy: bool) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     if legacy {
         fs::write(dir.path().join(POLICY.leaves[1]), POLICY.kit).unwrap();
         fs::set_permissions(
@@ -75,7 +76,7 @@ fn set(root: &Path, i: usize, value: &Option<Stored>) {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn every_boundary_install_uninstall_rollback_reinstall_resumes() {
     for legacy in [false, true] {
@@ -146,7 +147,7 @@ fn every_boundary_install_uninstall_rollback_reinstall_resumes() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn only_operation_order_prefixes_are_legal() {
     for op in [Operation::Install, Operation::Rollback] {
@@ -168,7 +169,7 @@ fn only_operation_order_prefixes_are_legal() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn races_fence_active_invocation_and_retries_accept_only_legal_prefixes() {
     for stop in 0..=3 {
@@ -227,7 +228,7 @@ fn races_fence_active_invocation_and_retries_accept_only_legal_prefixes() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn journal_images_rebuilt_not_merely_digest_checked() {
     for field in [
@@ -284,7 +285,7 @@ fn journal_images_rebuilt_not_merely_digest_checked() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn recovery_is_retained_and_blocks_even_previews() {
     let dir = seed(false);
@@ -314,7 +315,7 @@ fn recovery_is_retained_and_blocks_even_previews() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn migration_coexists_only_in_install_and_reverse_rollback_windows() {
     let dir = seed(true);
@@ -367,7 +368,7 @@ fn fixture_pin_and_license_are_exact() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn generated_bytes_without_receipt_are_not_ownership() {
     let dir = seed(false);
@@ -383,7 +384,7 @@ fn generated_bytes_without_receipt_are_not_ownership() {
     assert_eq!(before, snapshot(dir.path()));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn reprepare_under_lock_rejects_edits_before_any_journal() {
     for stop in [4, 5] {
@@ -411,7 +412,7 @@ fn reprepare_under_lock_rejects_edits_before_any_journal() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn every_leaf_and_receipt_is_fenced_at_every_boundary() {
     for operation in [

@@ -1,4 +1,5 @@
 use super::*;
+use crate::hook_files::test_support::tempdir;
 use std::{fs, os::unix::fs::PermissionsExt};
 
 fn request(root: &Path, operation: Operation) -> Request {
@@ -12,7 +13,7 @@ fn request(root: &Path, operation: Operation) -> Request {
     }
 }
 fn seed() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     fs::write(dir.path().join(LEAVES[0]), b"{\"description\":\"private\"}").unwrap();
     fs::write(
         dir.path().join(LEAVES[1]),
@@ -40,7 +41,7 @@ fn snapshot(root: &Path) -> Vec<(String, Vec<u8>, u32)> {
     files
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn interrupted_each_operation_at_every_boundary_resumes_only_known_prefixes() {
     for operation in [
@@ -50,11 +51,7 @@ fn interrupted_each_operation_at_every_boundary_resumes_only_known_prefixes() {
     ] {
         for stop in 0..=2 {
             for populated in [false, true] {
-                let dir = if populated {
-                    seed()
-                } else {
-                    tempfile::tempdir().unwrap()
-                };
+                let dir = if populated { seed() } else { tempdir() };
                 if operation != Operation::Install {
                     run(&request(dir.path(), Operation::Install), true).unwrap();
                 }
@@ -108,7 +105,7 @@ fn interrupted_each_operation_at_every_boundary_resumes_only_known_prefixes() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn pending_unknown_bytes_modes_and_nonprefixes_never_change_any_leaf() {
     for operation in [
@@ -173,7 +170,7 @@ fn pending_unknown_bytes_modes_and_nonprefixes_never_change_any_leaf() {
     assert_eq!(snapshot(dir.path()), before);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn post_write_race_is_not_finalized_or_globally_undone() {
     let dir = seed();
@@ -199,7 +196,7 @@ fn post_write_race_is_not_finalized_or_globally_undone() {
     assert_eq!(snapshot(dir.path()), before);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn edit_to_second_leaf_after_journaling_fences_before_first_leaf() {
     for operation in [
@@ -239,7 +236,7 @@ fn malformed_receipt_cannot_authorize_paths_or_unrelated_targets() {
     for mutation in ["path", "target", "version", "duplicate"] {
         let dir = seed();
         let r = request(dir.path(), Operation::Install);
-        if !cfg!(target_os = "linux") {
+        if !cfg!(any(target_os = "linux", target_os = "macos")) {
             return;
         }
         run(&r, true).unwrap();
@@ -266,7 +263,7 @@ fn malformed_receipt_cannot_authorize_paths_or_unrelated_targets() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn invalid_native_receipt_images_are_refused_before_any_new_lock_or_journal() {
     for field in ["original", "installed", "source", "target"] {

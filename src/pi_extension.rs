@@ -1,5 +1,6 @@
 //! Offline Pi extension placement, not native activation or approval proof.
-//! Linux mutations use a bounded two-leaf journal and descriptor-relative storage.
+//! Linux/macOS mutations use a bounded two-leaf journal and descriptor-relative
+//! storage. The macOS backend is provisional pending native qualification.
 //! Detected races retain recovery artifacts, not a global filesystem CAS.
 use crate::{Result, task_mutation::TaskOutput};
 

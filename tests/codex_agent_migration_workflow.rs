@@ -1,8 +1,11 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Executes a generated Coven client via sh, not native Codex or native approval.
 //! No native providers, Kit assets, or user configuration participate in this test.
 
 use coven::agent_management::{self, InventoryRequest, ReportRequest};
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -105,7 +108,7 @@ fn run_hook(command: &str, payload: &Value, home: &Path) {
 
 #[test]
 fn registered_codex_hooks_reach_private_receiver_and_rollback_both_native_files() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let workspace = private_dir(root.path());
     fs::write(workspace.path().join("coven.json"), b"marker").unwrap();

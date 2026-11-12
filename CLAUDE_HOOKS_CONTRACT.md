@@ -4,8 +4,10 @@
 
 Coven owns new Claude hook configuration on **Linux**, with explicit, offline
 settings management. Kitsune preserves its non-Linux legacy installer, assets,
-result type and recommendation/update/bulk paths until matching Coven adapters
-are ready; this is transitional, not permanent ownership. Coven does not discover or
+result type and recommendation/update/bulk paths until native platform qualification
+is complete; macOS file apply is now source-enabled but provisional. See the
+[shared backend guide and support matrix](HOOK_FILE_BACKEND_CONTRACT.md).
+This is transitional, not permanent ownership. Coven does not discover or
 launch Claude, install a provider, select a user's HOME, or require Kitsune. This
 is the first [all-agent migration](AGENT_MANAGEMENT_MIGRATION.md) cut, not complete
 Claude detection/start/resume/restore extraction.
@@ -29,9 +31,10 @@ or authenticated. Plan can inspect without them and report
 `planned_requires_executable_and_socket`. No implicit roots, PATH lookup,
 provider probes or native execution occur.
 
-Mutation is **Linux-only** (`renameat2` exchange/no-replace); other Unix platforms
-can preview but refuse writes before effects. Non-Unix is unsupported.
-Unix preview is not a functioning replacement for the macOS/Windows installer.
+Mutation uses the shared Linux/macOS backend: explicit macOS `--apply` is
+source-enabled on eligible local APFS, provisional and not natively qualified.
+Other Unix platforms preview but refuse apply; non-Unix is unsupported.
+This does not retire Kitsune's macOS/Windows installer.
 Coven's receiver is Unix-only, Windows unsupported, and macOS not validated.
 Library: `claude_hooks::{Operation, Request, arguments}`; successful plans,
 mutations and unchanged results return `TaskOutput` exit 0. Refusals expose fixed
@@ -91,7 +94,7 @@ This changes selected configuration only: no legacy in-memory pane authority is
 released and no old running native session is converted. Kitsune retains legacy
 status/uninstall/ingress on all platforms. It is not a second new installer on
 Linux; on non-Linux its production `legacy_install_claude` path remains until
-Coven has matching platform support.
+Coven has natively qualified matching platform support.
 
 ## Edge Cases
 
@@ -134,7 +137,8 @@ coven agent hooks rollback --provider claude --config-root ABS_CONFIG_ROOT --jso
 
 These examples are all previews. For verified legacy migration, add
 `--migrate-kitsune` to plan/install. Only after stopping writers and reviewing the
-plan, explicitly add `--apply` to the chosen install/uninstall/rollback on Linux.
+plan, explicitly add `--apply` to the chosen install/uninstall/rollback on Linux,
+or provisionally on macOS subject to the shared backend's local-APFS restrictions.
 Prepare and run the [private receiver](AGENT_MANAGEMENT_CONTRACT.md) separately;
 installation does not start it or verify native provider compatibility.
 

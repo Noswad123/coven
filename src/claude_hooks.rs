@@ -1,7 +1,7 @@
 //! Explicit, offline Claude settings ownership. No provider discovery or execution.
 //! Pending receipts are resumed only by applying the same operation. Uninstall is
 //! intentionally conservative: edits after installation require manual resolution.
-//! Linux applies retain displaced entries until verified, not strict filesystem
+//! Supported applies retain displaced entries until verified, not strict filesystem
 //! CAS. Writers holding old file descriptors can still mutate an inode after
 //! verification. Detected races/crashes leave `.coven-claude-hooks-recovery/`
 //! (0700; fixed `expected`, `replacement`, `displaced`, `transaction.json` names)
@@ -9,7 +9,8 @@
 //! retained without assuming its type or size. The manifest is never code authority;
 //! never blindly exchange back over a potentially newer edit. No further apply
 //! proceeds until that directory is resolved. Installed settings use 0600;
-//! rollback restores the original mode. Other Unix platforms support preview only.
+//! rollback restores the original mode. Linux and macOS support explicit apply
+//! (macOS is provisional pending native validation); other Unix is preview only.
 use crate::{Error, Result, task_mutation::TaskOutput};
 use std::path::PathBuf;
 
@@ -326,7 +327,7 @@ pub(crate) mod single_file {
         }
         let writing = request.apply && request.operation != Operation::Plan;
         require(
-            !writing || cfg!(target_os = "linux"),
+            !writing || crate::hook_files::supports_apply(),
             "claude_hooks_apply_unsupported_platform",
         )?;
         root.recovery_absent()?;

@@ -5,8 +5,12 @@
 Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi/OpenCode
 extension-envelope receiver and redacted inventory.
 Transport is Unix-only (Windows unsupported); macOS operation has not been validated.
-This is distinct from the Linux-only hook mutation/Kit installer retirement cut;
-Unix transport alone is not a matching non-Linux configuration adapter.
+This is distinct from [private hook-file mutation](HOOK_FILE_BACKEND_CONTRACT.md):
+Linux and provisional local-APFS macOS apply are source-enabled, but Kit installer
+retirement remains Linux-only. `agent_management::{store,unix}` still uses separate
+Unix owner/mode checks and does not use the hook-file Darwin ACL adapter. macOS
+receiver/store/socket authorization and privacy remain separately untested;
+configuration-backend support does not qualify them or broader management.
 Contract: `coven.agent-management.v1`. These are **caller-supplied, unverified
 receipts**, not an authenticated native-session registry or task authority. See
 [the migration matrix](AGENT_MANAGEMENT_MIGRATION.md) for the all-provider target

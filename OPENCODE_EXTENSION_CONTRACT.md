@@ -9,8 +9,11 @@ working/blocked/idle lifecycle reporting to references only**, always `unknown`,
 even fresh. Discovery/status interpretation/start/resume/restore remain pending.
 References establish no activity, identity, readiness, completion or resume authority.
 
-Apply is Linux-only; Unix preview/receiver support is not a non-Linux mutator.
-macOS is unvalidated and Windows unsupported. Kit Linux new-install/recommend/
+Apply uses the [shared Linux/macOS backend](HOOK_FILE_BACKEND_CONTRACT.md).
+Explicit macOS `--apply` is source-enabled, provisional local APFS only, not
+natively qualified; receiver/privacy and native activation remain unvalidated.
+Other Unix platforms preview but refuse apply; Windows is unsupported.
+Kit Linux new-install/recommend/
 update/bulk paths retire without running Coven. Non-Linux legacy new-install paths,
 the full v9 asset, legacy CLI/status/uninstall, all six `IntegrationTarget::ALL`
 entries and old ingress/lifecycle remain compatibility until explicit migration.

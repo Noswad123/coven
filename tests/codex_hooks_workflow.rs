@@ -1,5 +1,8 @@
 #![cfg(unix)]
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
 use coven::codex_hooks::{Operation, Request, arguments};
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -31,7 +34,7 @@ fn mode(path: &Path) -> u32 {
     fs::metadata(path).unwrap().permissions().mode() & 0o7777
 }
 fn fixture() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     fs::write(dir.path().join(HOOKS), br#"{ "description":"PRIVATE-SECRET", "hooks":{"Stop":[{"matcher":"custom","hooks":[{"type":"command","command":"custom-secret-command"}]}]}}"#).unwrap();
     fs::write(dir.path().join(CONFIG), CONFIG_PRE).unwrap();
     dir
@@ -41,11 +44,7 @@ const CONFIG_PRE: &str = "# top comment\nmodel = 'PRIVATE-MODEL'\ncodex_hooks = 
 #[test]
 fn previews_are_redacted_zero_effects_with_or_without_files() {
     for populated in [false, true] {
-        let dir = if populated {
-            fixture()
-        } else {
-            tempfile::tempdir().unwrap()
-        };
+        let dir = if populated { fixture() } else { tempdir() };
         let count = fs::read_dir(dir.path()).unwrap().count();
         for (operation, apply) in [
             (Operation::Plan, false),
@@ -122,7 +121,30 @@ fn registered_codex_cli_plan_is_required_and_read_only() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+#[test]
+fn other_unix_is_preview_only() {
+    let dir = fixture();
+    let hooks = fs::read(dir.path().join(HOOKS)).unwrap();
+    let config = fs::read(dir.path().join(CONFIG)).unwrap();
+    succeeds(&request(dir.path(), Operation::Plan, true));
+    succeeds(&request(dir.path(), Operation::Install, false));
+    for operation in [
+        Operation::Install,
+        Operation::Uninstall,
+        Operation::Rollback,
+    ] {
+        refuses(
+            &request(dir.path(), operation, true),
+            "codex_hooks_apply_unsupported_platform",
+        );
+        assert_eq!(fs::read(dir.path().join(HOOKS)).unwrap(), hooks);
+        assert_eq!(fs::read(dir.path().join(CONFIG)).unwrap(), config);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn native_session_start_only_surgical_features_and_exact_rollback_modes_absence() {
     for hooks_present in [false, true] {
@@ -203,7 +225,7 @@ fn global_feature_variants_and_unsupported_layouts_are_explicit() {
         "[features]\ncodex_hooks=false\n",
         "[features]\nhooks=false\ncodex_hooks=true\n",
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         fs::write(dir.path().join(CONFIG), config).unwrap();
         let value = succeeds(&request(dir.path(), Operation::Install, false));
         assert_eq!(value["features"]["hooks_after"], true);
@@ -211,10 +233,14 @@ fn global_feature_variants_and_unsupported_layouts_are_explicit() {
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
     for config in ["features.hooks = false\n", "features = { hooks = false }\n"] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         fs::write(dir.path().join(CONFIG), config).unwrap();
         refuses(
-            &request(dir.path(), Operation::Install, true),
+            &request(
+                dir.path(),
+                Operation::Install,
+                cfg!(any(target_os = "linux", target_os = "macos")),
+            ),
             "codex_hooks_unsupported_feature_layout",
         );
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
@@ -244,14 +270,14 @@ fn invalid_second_file_or_duplicate_keys_have_no_apply_artifacts() {
         r#"{"hooks":{"SessionStart":"wrong"}}"#,
         r#"{"hooks":{"SessionStart":[{"hooks":[{"command":false}]}]}}"#,
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         fs::write(dir.path().join(HOOKS), hooks).unwrap();
         assert!(arguments(&request(dir.path(), Operation::Install, true), true).is_err());
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn uninstall_preserves_feature_and_custom_hooks_rollback_restores_original() {
     let dir = fixture();
@@ -275,7 +301,7 @@ fn uninstall_preserves_feature_and_custom_hooks_rollback_restores_original() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn edits_chmod_and_absence_of_either_postimage_fence_before_first_change() {
     for leaf in [HOOKS, CONFIG] {
@@ -324,7 +350,14 @@ fn retained_recovery_and_unsafe_leaves_refuse_all_operations_even_preview() {
             fs::create_dir(dir.path().join(".coven-codex-hooks-recovery")).unwrap();
             refuses(
                 &request(dir.path(), operation, apply),
-                "codex_hooks_recovery_required",
+                if apply
+                    && operation != Operation::Plan
+                    && !cfg!(any(target_os = "linux", target_os = "macos"))
+                {
+                    "codex_hooks_apply_unsupported_platform"
+                } else {
+                    "codex_hooks_recovery_required"
+                },
             );
             assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
         }
@@ -333,7 +366,11 @@ fn retained_recovery_and_unsafe_leaves_refuse_all_operations_even_preview() {
     fs::remove_file(dir.path().join(CONFIG)).unwrap();
     symlink(dir.path().join(HOOKS), dir.path().join(CONFIG)).unwrap();
     refuses(
-        &request(dir.path(), Operation::Install, true),
+        &request(
+            dir.path(),
+            Operation::Install,
+            cfg!(any(target_os = "linux", target_os = "macos")),
+        ),
         "codex_hooks_unsafe_leaf",
     );
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
@@ -353,7 +390,7 @@ fn suspicious_kitsune_wrong_event_root_and_modified_asset_refuse_before_lock() {
             "bash 'ROOT/kitsune-agent-state.sh' session".into(),
         ),
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         let cmd = command.replace("ROOT", dir.path().to_str().unwrap());
         fs::write(
             dir.path().join(HOOKS),
@@ -364,7 +401,11 @@ fn suspicious_kitsune_wrong_event_root_and_modified_asset_refuse_before_lock() {
         )
         .unwrap();
         fs::write(dir.path().join("kitsune-agent-state.sh"), b"# modified").unwrap();
-        let mut r = request(dir.path(), Operation::Install, true);
+        let mut r = request(
+            dir.path(),
+            Operation::Install,
+            cfg!(any(target_os = "linux", target_os = "macos")),
+        );
         r.migrate_kitsune = true;
         refuses(&r, "codex_hooks_ambiguous_kitsune");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
@@ -469,7 +510,7 @@ except Exception:
 PY
 "##;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn verified_migration_both_files_preserves_custom_trust_and_never_resurrects_on_uninstall() {
     use sha2::{Digest, Sha256};
@@ -477,7 +518,7 @@ fn verified_migration_both_files_preserves_custom_trust_and_never_resurrects_on_
         format!("{:x}", Sha256::digest(KIT_SCRIPT.as_bytes())),
         "2343713ae8e665baa22968e155ced9fdc1269f43b490af230316754a18caaf9a"
     );
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     fs::write(dir.path().join("kitsune-agent-state.sh"), KIT_SCRIPT).unwrap();
     let mut hooks = json!({"hooks":{}});
     for (event, action) in [
@@ -530,12 +571,12 @@ fn verified_migration_both_files_preserves_custom_trust_and_never_resurrects_on_
     assert_eq!(restored, hooks);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn pending_migration_reverifies_only_source_leaves_not_committed_targets() {
     for config_has_kit in [false, true] {
         for committed in 0..=2 {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = tempdir();
             fs::write(dir.path().join("kitsune-agent-state.sh"), KIT_SCRIPT).unwrap();
             let command = format!(
                 "bash '{}/kitsune-agent-state.sh' session",
@@ -592,10 +633,10 @@ fn pending_migration_reverifies_only_source_leaves_not_committed_targets() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn array_of_tables_legacy_toml_and_unrelated_layout_are_preserved() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     fs::write(dir.path().join("kitsune-agent-state.sh"), KIT_SCRIPT).unwrap();
     let original = format!(
         "# preamble\n[features]\n'hooks'    =    false   # exact decoration\nother = [ 1,  2 ]\n[hooks.state.\"local-hook\"]\nenabled = false # disposition\ntrusted_hash = 'UNCHANGED' # trust\ntrusted_content_hash = 'UNCHANGED-CONTENT'\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = 'command'\ncommand = \"bash '{}/kitsune-agent-state.sh' session\"\n[[hooks.SessionStart.hooks]]\ntype = 'command'\ncommand = 'custom' # custom decoration\n",
@@ -621,11 +662,11 @@ fn array_of_tables_legacy_toml_and_unrelated_layout_are_preserved() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn migration_only_visits_direct_handlers_never_mcp_input_metadata_or_state() {
     for arrays_of_tables in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         fs::write(dir.path().join("kitsune-agent-state.sh"), KIT_SCRIPT).unwrap();
         let cmd = format!(
             "bash '{}/kitsune-agent-state.sh' session",
@@ -783,7 +824,11 @@ fn native_json_schema_rejects_bad_types_before_any_lock_or_journal() {
             Operation::Rollback,
         ] {
             refuses(
-                &request(dir.path(), operation, true),
+                &request(
+                    dir.path(),
+                    operation,
+                    cfg!(any(target_os = "linux", target_os = "macos")),
+                ),
                 "codex_hooks_invalid_hooks",
             );
             assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2, "{value}");
@@ -813,7 +858,11 @@ fn native_toml_schema_rejects_bad_handlers_groups_and_real_state_without_artifac
         fs::write(dir.path().join(CONFIG), config).unwrap();
         let hooks = fs::read(dir.path().join(HOOKS)).unwrap();
         refuses(
-            &request(dir.path(), Operation::Install, true),
+            &request(
+                dir.path(),
+                Operation::Install,
+                cfg!(any(target_os = "linux", target_os = "macos")),
+            ),
             "codex_hooks_invalid_hooks",
         );
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
@@ -822,10 +871,10 @@ fn native_toml_schema_rejects_bad_handlers_groups_and_real_state_without_artifac
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn native_optional_fields_defaults_variants_and_ignored_metadata_are_preserved() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let custom = json!([
         {}, {"matcher":null},
         {"matcher":"custom", "metadata":{"keep":true}, "hooks":[

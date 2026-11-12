@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Executes generated Coven hooks, not native Claude or a provider certification.
 //! Legacy Kit asset migration is covered separately by claude_hooks_workflow.
 
@@ -6,6 +6,9 @@ use coven::{
     agent_management::{self, InventoryRequest},
     claude_hooks::{self, Operation, Request},
 };
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -98,7 +101,7 @@ fn run_hook(command: &str, payload: &Value, home: &Path) {
 
 #[test]
 fn installed_native_commands_reach_private_receiver_and_rollback_exactly() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let workspace = private_dir(root.path());
     fs::write(workspace.path().join("coven.json"), b"marker").unwrap();

@@ -17,7 +17,9 @@ Keep three independently useful apps, not one tightly coupled agent stack.
 The confirmed scope includes all agent management, including hooks and agent-aware
 restore, not only discovery/status/start/resume. The first targeted retirement is
 Kitsune's new Claude hook installer on Linux only, followed by Codex, Copilot, Pi and OpenCode on Linux. The ultimate target covers all
-agent features/platforms, but matching non-Linux adapters are still pending. See the authoritative
+agent features/platforms. The shared private file backend now source-enables
+explicit macOS apply provisionally on eligible local APFS, not native qualification;
+remaining non-Linux capabilities and qualification are pending. See the authoritative
 [ownership matrix and next transfers](AGENT_MANAGEMENT_MIGRATION.md).
 
 | App | Target responsibility |
@@ -33,6 +35,16 @@ Kitsune **currently still has built-in agent detection and integrations**; this
 decision neither removes them immediately nor claims extraction is complete.
 
 ## API / Interfaces
+
+The [hook-file backend matrix](HOOK_FILE_BACKEND_CONTRACT.md) separates Linux/macOS
+shared mutation from platform retirement. All five managers use one capability
+through three runners; macOS file apply is provisional, not a late-port backlog.
+All existing Kit non-Linux installers/assets/status/uninstall/recommend/update/bulk
+paths stay until native qualification. Receiver/store/socket privacy is separate:
+its Unix mode checks do not use the hook-file Darwin ACL admission. macOS discovery
+is explicitly rejected; full status/start/resume/restore transfer remains pending
+on Linux and macOS. The per-provider rows below retain the Linux retirement scope,
+not an assertion that macOS file mutation is absent.
 
 **Coven owns agent management; Kitsune exposes generic multiplexer controls,
 side-menu presentation and app messaging.** The functional
@@ -74,8 +86,9 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
 | `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot/Pi/OpenCode new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
 
-New Claude settings are explicitly selected and preview by default; Linux-only
-apply can migrate only exact verified legacy commands/script with consent. No
+New Claude settings are explicitly selected and preview by default; Linux and
+provisional eligible-local-APFS macOS apply can migrate only exact verified legacy
+commands/script with consent. No
 automatic migration, live authority release or conversion of running sessions.
 Coven's private receipt inventory is last-reported, caller-supplied evidence, not
 native identity/current activity/readiness/job completion or resume permission.
@@ -198,7 +211,8 @@ Native input's independent fresh process check remains. This deliberately narrow
 public semantics, not blanket compatibility. No external mode, new Config,
 wire/API/snapshot fields or toggle/kill/hide controls ship. This is functional Coven recognition
 with temporary duplicate legacy policy, not completed sole ownership/full status.
-The five Linux configuration retirements and pending non-Linux adapters stand.
+The five Linux configuration retirements stand; macOS native qualification and
+remaining non-Linux capabilities stay pending, not the shared file backend itself.
 The 201 focused Coven checks, 249 Kit API checks and lint/MSRV/release/package
 validation are recorded in
 the [discovery table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table),

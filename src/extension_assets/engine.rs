@@ -364,7 +364,7 @@ fn run_inner(
     }
     let writing = request.apply && request.operation != Operation::Plan;
     require(
-        !writing || cfg!(target_os = "linux"),
+        !writing || crate::hook_files::supports_apply(),
         policy.errors.apply_unsupported_platform,
     )?;
     // Validate both leaves and every reconstructed journal image before artifacts.

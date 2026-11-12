@@ -19,7 +19,22 @@ unsupported and macOS unvalidated. See [receiver](AGENT_MANAGEMENT_CONTRACT.md) 
 [hooks](CLAUDE_HOOKS_CONTRACT.md) contracts. No native provider/daemon starts,
 automatic user migration or live-session conversion follows.
 
-Next: add matching non-Linux Claude/Codex/Copilot/Pi/OpenCode adapters before retiring working Kit paths;
+Current shared backend: Linux/macOS private hook-file mutation is source-complete;
+macOS explicit `--apply` is provisional eligible local APFS only, **not natively
+qualified**. See the [guide/matrix](HOOK_FILE_BACKEND_CONTRACT.md): parent validation
+passed 204 distinct focused Linux Rust checks, strict all-target lint, Rust 1.85
+all-target checking, Linux optimized build, locked package verification and
+packaged test-target compilation. Both Apple Rust `--tests` target typechecks
+passed warning-free; both full application cross-build attempts failed, including
+confirmed missing Apple SDK on the correctly targeted ARM Clang retry. The
+incidental full-library run was not green (1,144 passed, 2 failed, 5 ignored);
+isolated exact reruns passed without an established root cause. Review is ready
+within provisional source scope, not native certification or full-suite success.
+This is shared behavior now, not a late port. Receiver/store/
+socket authorization/privacy does not inherit the Darwin ACL checks and remains
+untested separately. No full status/start/resume/restore completion on either OS.
+
+Next: natively qualify macOS and supply remaining non-Linux capabilities for these five providers before retiring working Kit paths;
 transfer remaining provider/source hook owners, discovery/status and
 process/screen fallback, provider start/resume, then agent-aware restore/reference
 ownership with actual runtime failure/dedupe gates. Claude fallback and restore
@@ -59,7 +74,8 @@ process state independently. This deliberately hardens public semantics, not bla
 compatibility. No external mode, new Config, wire/API/snapshot fields or
 toggle/kill/hide controls ship. This is functional Coven recognition with temporary
 duplicate legacy policy, not completed sole ownership/full status. All five Linux
-hook/configuration retirements stay unchanged and non-Linux adapters stay pending.
+hook/configuration retirements stay unchanged; macOS native qualification and
+remaining non-Linux capabilities stay pending, not the file backend itself.
 
 Watch/presentation TTL, uncertainty, omission and exit semantics are in the
 contract. The [new validation table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table)
@@ -92,7 +108,7 @@ pinned, not earliest-version/all-modes/operational certification.
 Preview discloses absent/false → true global hooks and native approval not granted;
 apply authorizes shared enablement, not trust. Uninstall removes Coven commands but
 leaves that shared flag enabled; guarded rollback restores both original images.
-Ordered journaling is not global atomicity. Next non-Linux adapter work covers
+Ordered journaling is not global atomicity. Next native qualification/remaining non-Linux capability work covers
 **Claude, Codex, Copilot, Pi and OpenCode** before retiring preserved Kit paths. Full discovery/status,
 start/resume/restore and legacy ingress/API/UI transfer remain pending for all
 providers. Earlier owner-reported 16 Codex workflows + 7 fault tests are historical

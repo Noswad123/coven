@@ -1,8 +1,11 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Runs the actual generated TypeScript under Node, not native Pi activation.
 //! No native providers, Kitsune process, or user settings participate.
 
 use coven::agent_management::{self, InventoryRequest, ReportRequest};
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -242,7 +245,7 @@ fn run_generated(node: &Path, home: &Path, wrapper: &Path, generated: &Path) {
 #[test]
 fn generated_pi_migration_reaches_receiver_rejects_native_reports_and_rolls_back_after_uninstall() {
     let node = node_runtime();
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     assert_private(root.path(), 0o700);
     let workspace = private_dir(root.path());

@@ -253,7 +253,11 @@ production UI behavior changes beyond intended evidence hardening.
 Do not use an ephemeral family hint as owner confirmation. Status/attention,
 mobile/navigation, start/resume and agent-aware restore remain separate transfers.
 All five prior Linux hook/configuration retirements stay unchanged; matching
-non-Linux adapters remain pending. See the authoritative
+non-Linux discovery and broader management capabilities remain pending. The
+[private hook-file backend](HOOK_FILE_BACKEND_CONTRACT.md) now source-enables
+provisional eligible-local-APFS macOS apply for all five file managers; this does
+not change discovery's explicit macOS rejection or qualify receiver privacy,
+full status/start/resume/restore, or any non-Linux Kit retirement. See the authoritative
 [migration ledger and validation](AGENT_MANAGEMENT_MIGRATION.md).
 
 ## Validation And Files

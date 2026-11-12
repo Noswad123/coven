@@ -144,12 +144,31 @@ production UI behavior is claimed beyond intended evidence hardening.
 This is functional Coven-owned recognition with temporary duplicate legacy policy,
 not sole ownership/full status; the classifier intentionally diverges from the
 209-case legacy corpus. Five prior Linux hook/configuration retirements stand and
-non-Linux adapters remain pending. See the [historical discovery 201 focused Coven checks, 249 Kit API
+macOS native qualification and remaining non-Linux capabilities remain pending,
+not the shared file backend itself. See the [historical discovery 201 focused Coven checks, 249 Kit API
 checks and build/package validation](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table);
 historical OpenCode 236 is not a new discovery total. No actual live installed Kit
 commands were used in this documentation session.
 
 ### Coven-owned agent receipts, hooks and extensions
+
+The [private hook-file backend guide and support matrix](HOOK_FILE_BACKEND_CONTRACT.md)
+documents shared Linux/macOS mutation now, not a late macOS port. All five file
+managers source-enable explicit macOS `--apply` through one shared capability,
+provisionally on eligible local APFS with ownership enabled and no ACL entries.
+This is **not native macOS qualification** or all-agent-management support.
+Kit's non-Linux installers/assets/status/uninstall/recommend/update/bulk paths stay.
+Receiver/store/socket authorization and privacy do not inherit this backend's
+Darwin ACL checks and remain separately untested. Discovery still rejects macOS;
+full status/start/resume/restore transfer remains pending on both OSes. The guide
+separates Apple Rust-target typechecks from failed full application cross-builds
+and pending native SDK/APFS gates. Parent validation passed 204 distinct focused
+Linux Rust checks plus strict all-target lint, Rust 1.85 all-target checking,
+Linux optimized build, locked package verification and packaged test-target
+compilation. The incidental full-library run did not pass (1,144 passed, 2 failed,
+5 ignored); both exact isolated reruns passed, with no established root cause.
+Review is ready within provisional source scope, not native certification or
+full-suite success. The guide records the breakdown and failure details.
 
 The confirmed migration includes **all** discovery/status interpretation, hooks,
 start/resume and agent restore, not only Claude. The authoritative
@@ -272,8 +291,9 @@ namespaces, preserves immutable originals and rollback after uninstall, and prot
 Stop native servers/watchers before apply and restart the native server after
 manual apply, not just TUI attach; no automatic restart or in-memory release.
 Upgrade receiver first; older binaries reject new providers despite unchanged five
-store fields/schema 1, so stored records limit downgrade. Linux apply/Kit installer
-retirement only; non-Linux full-v9 new-install paths and all-platform legacy
+store fields/schema 1, so stored records limit downgrade. Kit installer retirement
+is Linux-only; file apply also source-enables provisional eligible-local-APFS macOS.
+Non-Linux full-v9 new-install paths and all-platform legacy
 CLI/status/uninstall/all six targets/old ingress remain. Unix preview/receiver is
 macOS-unvalidated, Windows-unsupported. No installed-native operational certification.
 The [historical OpenCode scoped table](AGENT_MANAGEMENT_MIGRATION.md#opencode-validation-table)
@@ -290,9 +310,10 @@ publishes read-only rows with dynamic provider labels through generic snapshot/
 is involved. Core works without Kitsune or a native provider.
 
 All hook operations preview without `--apply`; `plan` always previews. Apply is
-Linux-only; other Unix platforms support preview, not an equivalent mutator.
+source-enabled on Linux and provisionally on eligible macOS local APFS, not
+natively qualified. Other Unix platforms preview but refuse apply.
 Kitsune preserves macOS/Windows production installation/assets/result type and
-recommendation/update/bulk paths until matching Coven adapters are ready. Coven's
+recommendation/update/bulk paths until matching native qualification is complete. Coven's
 receiver is Unix-only (Windows unsupported); macOS has not been validated.
 All six Kit target entries, status/uninstall/old ingress and legacy UI settings
 remain; no working non-Linux path is dropped. Stop native providers/editors

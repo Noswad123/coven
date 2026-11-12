@@ -1,8 +1,11 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Generated JavaScript -> real reporter -> real receiver, not native activation.
 //! No OpenCode, Pi, Kitsune, SDK queries, or user configuration participates.
 
 use coven::agent_management::{self, InventoryRequest};
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
+use physical_temp::tempdir;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -246,7 +249,7 @@ fn record_id(provider: &str, sid: &str) -> String {
 #[test]
 fn generated_opencode_migration_reaches_receiver_and_rolls_back_after_uninstall() {
     let node = node_runtime();
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     assert_private(root.path(), 0o700);
     let workspace = private_dir(root.path());

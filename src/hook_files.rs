@@ -1,5 +1,5 @@
 //! Private, descriptor-relative hook file storage. Provider policy and receipts
-//! stay with callers. Linux replacement retains displaced entries until verified;
+//! stay with callers. Supported replacement retains displaced entries until verified;
 //! this is not global CAS or protection from later writes through old descriptors.
 #![cfg(unix)]
 use crate::{Error, Result, error::require};
@@ -15,6 +15,15 @@ use std::{
     },
     path::{Component, Path, PathBuf},
 };
+
+#[path = "hook_files/platform.rs"]
+mod platform;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use platform::MoveKind;
+
+pub(crate) fn supports_apply() -> bool {
+    platform::supports_apply()
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct Spec {
@@ -180,6 +189,10 @@ fn basename(name: &[u8]) -> bool {
 #[path = "hook_files/tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "hook_files/test_support.rs"]
+pub(crate) mod test_support;
+
 impl Root {
     pub(crate) fn open(path: &Path, spec: Spec) -> Result<Self> {
         Self::walk(path, spec, |_| {})
@@ -238,6 +251,9 @@ impl Root {
     }
 
     fn validate(&self) -> Result<()> {
+        if supports_apply() {
+            platform::validate_access(&self.0).map_err(|_| Error(self.1.errors.unsafe_root))?;
+        }
         let m = self.0.metadata()?;
         require(
             m.uid() == unsafe { libc::geteuid() } && m.mode() & 0o022 == 0,
@@ -309,6 +325,9 @@ impl Root {
             return Err(Error(self.1.errors.unsafe_leaf));
         }
         let file = unsafe { File::from_raw_fd(fd) };
+        if supports_apply() {
+            platform::validate_access(&file).map_err(|_| Error(self.1.errors.unsafe_leaf))?;
+        }
         let m = file.metadata()?;
         if let Some(prior) = prior {
             // libc's dev_t/ino_t widths and signedness vary across Unix.
@@ -338,10 +357,8 @@ impl Root {
     }
 
     pub(crate) fn lock(&self, name: &str) -> Result<Lock> {
-        require(
-            cfg!(target_os = "linux"),
-            self.1.errors.apply_unsupported_platform,
-        )?;
+        require(supports_apply(), self.1.errors.apply_unsupported_platform)?;
+        self.validate()?;
         require(self.1.private.contains(&name), self.1.errors.unsafe_leaf)?;
         let file = self
             .open_leaf(name, libc::O_RDWR | libc::O_CREAT)?
@@ -354,6 +371,7 @@ impl Root {
     }
 
     pub(crate) fn read(&self, name: &str, limit: usize) -> Result<Option<Image>> {
+        self.validate()?;
         require(limit <= self.1.read_limit, self.1.errors.size_limit)?;
         let Some(mut file) = self.open_leaf(name, libc::O_RDONLY)? else {
             return Ok(None);
@@ -363,6 +381,9 @@ impl Root {
         let mut bytes = Vec::new();
         (&mut file).take(limit as u64 + 1).read_to_end(&mut bytes)?;
         require(bytes.len() <= limit, self.1.errors.size_limit)?;
+        if supports_apply() {
+            platform::validate_access(&file).map_err(|_| Error(self.1.errors.unsafe_leaf))?;
+        }
         let after = file.metadata()?;
         require(
             m.len() == after.len()
@@ -406,18 +427,19 @@ impl Root {
         bytes: Option<&[u8]>,
         mode: u32,
     ) -> Result<()> {
-        #[cfg(target_os = "linux")]
+        require(supports_apply(), self.1.errors.apply_unsupported_platform)?;
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             self.commit(name, expected, bytes, mode, || {})
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             let _ = (name, expected, bytes, mode);
             Err(Error(self.1.errors.apply_unsupported_platform))
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn commit(
         &self,
         name: &str,
@@ -425,6 +447,27 @@ impl Root {
         bytes: Option<&[u8]>,
         mode: u32,
         after_fence: impl FnOnce(),
+    ) -> Result<()> {
+        self.commit_with_fault(
+            name,
+            expected,
+            bytes,
+            mode,
+            after_fence,
+            #[cfg(test)]
+            |_, _| Ok(()),
+        )
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn commit_with_fault(
+        &self,
+        name: &str,
+        expected: &Option<Image>,
+        bytes: Option<&[u8]>,
+        mode: u32,
+        after_fence: impl FnOnce(),
+        #[cfg(test)] mut checkpoint: impl FnMut(Checkpoint, &File) -> std::io::Result<()>,
     ) -> Result<()> {
         self.fence(name, expected)?;
         self.recovery_absent()?;
@@ -435,6 +478,9 @@ impl Root {
         )?;
         let result = (|| -> Result<()> {
             let mut stash = self.open_directory(self.1.recovery.as_bytes())?;
+            #[cfg(test)]
+            checkpoint(Checkpoint::StashAccess, &stash.0)?;
+            stash.validate()?;
             // Recovery artifacts have their own fixed allowlist, never receipt paths.
             stash.1.leaves = &["expected", "replacement", "displaced", "transaction.json"];
             stash.1.private = &[];
@@ -445,13 +491,26 @@ impl Root {
                 stash.0.metadata()?.mode() & 0o7777 == 0o700,
                 self.1.errors.recovery_required,
             )?;
-            let write = |leaf: &str, data: &[u8], mode: u32| -> Result<()> {
+            #[allow(unused_mut)] // The test checkpoint closure is mutable only in unit builds.
+            let mut write = |leaf: &str, data: &[u8], mode: u32| -> Result<()> {
                 let mut file = stash
                     .open_leaf(leaf, libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL)?
                     .ok_or(Error(self.1.errors.write_failed))?;
+                #[cfg(test)]
+                checkpoint(Checkpoint::StageAccess, &file)?;
+                platform::validate_access(&file).map_err(|_| Error(self.1.errors.unsafe_leaf))?;
+                #[cfg(test)]
+                checkpoint(Checkpoint::StageWrite, &file)?;
                 file.write_all(data)?;
                 file.set_permissions(Permissions::from_mode(mode))?;
-                file.sync_all()?;
+                require(
+                    file.metadata()?.mode() & 0o7777 == mode,
+                    self.1.errors.unsafe_leaf,
+                )?;
+                #[cfg(test)]
+                checkpoint(Checkpoint::StageSync, &file)?;
+                platform::sync_file(&file)?;
+                platform::validate_access(&file).map_err(|_| Error(self.1.errors.unsafe_leaf))?;
                 Ok(())
             };
             if let Some(image) = expected {
@@ -475,10 +534,14 @@ impl Root {
                 }))?,
                 0o600,
             )?;
-            stash.0.sync_all()?;
-            self.0.sync_all()?;
+            #[cfg(test)]
+            checkpoint(Checkpoint::PreMoveSync, &stash.0)?;
+            platform::sync_directory(&stash.0)?;
+            platform::sync_directory(&self.0)?;
             self.fence(name, expected)?;
             after_fence();
+            #[cfg(test)]
+            checkpoint(Checkpoint::Move, &self.0)?;
             let moved = if bytes.is_some() {
                 Self::move_entry(
                     &stash,
@@ -486,9 +549,9 @@ impl Root {
                     self,
                     name,
                     if expected.is_some() {
-                        libc::RENAME_EXCHANGE
+                        MoveKind::Exchange
                     } else {
-                        libc::RENAME_NOREPLACE
+                        MoveKind::NoReplace
                     },
                 )?;
                 if expected.is_some() {
@@ -497,29 +560,35 @@ impl Root {
                     None
                 }
             } else if expected.is_some() {
-                Self::move_entry(self, name, &stash, "displaced", libc::RENAME_NOREPLACE)?;
+                Self::move_entry(self, name, &stash, "displaced", MoveKind::NoReplace)?;
                 Some("displaced")
             } else {
                 None
             };
-            stash.0.sync_all()?;
-            self.0.sync_all()?;
+            #[cfg(test)]
+            checkpoint(Checkpoint::PostMoveSync, &stash.0)?;
+            platform::sync_directory(&stash.0)?;
+            platform::sync_directory(&self.0)?;
+            #[cfg(test)]
+            checkpoint(Checkpoint::Verify, &self.0)?;
             if let Some(displaced) = moved {
                 if stash.read(displaced, self.1.read_limit).ok().as_ref() != Some(expected) {
                     // Only absence restoration admits a non-clobbering undo.
                     // Otherwise keep both images; never exchange back blindly.
                     if bytes.is_none() {
                         let _ =
-                            Self::move_entry(&stash, displaced, self, name, libc::RENAME_NOREPLACE);
-                        let _ = self.0.sync_all();
-                        let _ = stash.0.sync_all();
+                            Self::move_entry(&stash, displaced, self, name, MoveKind::NoReplace);
+                        let _ = platform::sync_directory(&self.0);
+                        let _ = platform::sync_directory(&stash.0);
                     }
                     return Err(Error(self.1.errors.recovery_required));
                 }
             }
-            // This observes replacement races, not writes after verification.
+            // This observes replacement races, not later writes through externally held old FDs.
             let observed = self.read(name, self.1.read_limit)?;
             require(observed == staged, self.1.errors.recovery_required)?;
+            #[cfg(test)]
+            checkpoint(Checkpoint::Cleanup, &stash.0)?;
             for leaf in ["expected", "replacement", "displaced", "transaction.json"] {
                 let leaf = CString::new(leaf).unwrap();
                 if unsafe { libc::unlinkat(stash.0.as_raw_fd(), leaf.as_ptr(), 0) } != 0 {
@@ -529,7 +598,9 @@ impl Root {
                     )?;
                 }
             }
-            stash.0.sync_all()?;
+            #[cfg(test)]
+            checkpoint(Checkpoint::CleanupSync, &stash.0)?;
+            platform::sync_directory(&stash.0)?;
             require(
                 unsafe {
                     libc::unlinkat(
@@ -540,9 +611,10 @@ impl Root {
                 } == 0,
                 self.1.errors.recovery_required,
             )?;
-            self.0
-                .sync_all()
-                .map_err(|_| Error(self.1.errors.durability_uncertain))
+            #[cfg(test)]
+            checkpoint(Checkpoint::FinalSync, &self.0)
+                .map_err(|_| Error(self.1.errors.durability_uncertain))?;
+            platform::sync_directory(&self.0).map_err(|_| Error(self.1.errors.durability_uncertain))
         })();
         result.map_err(|e| {
             if e.code() == self.1.errors.durability_uncertain {
@@ -553,8 +625,14 @@ impl Root {
         })
     }
 
-    #[cfg(target_os = "linux")]
-    fn move_entry(from: &Root, source: &str, to: &Root, target: &str, flags: u32) -> Result<()> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn move_entry(
+        from: &Root,
+        source: &str,
+        to: &Root,
+        target: &str,
+        kind: MoveKind,
+    ) -> Result<()> {
         require(
             basename(source.as_bytes())
                 && from.1.leaves.contains(&source)
@@ -562,19 +640,33 @@ impl Root {
                 && to.1.leaves.contains(&target),
             from.1.errors.unsafe_leaf,
         )?;
+        // Darwin EXCL may succeed for the same vnode in one directory. Production
+        // moves must cross distinct opened directories, including through aliases.
+        let source_dir = from.0.metadata()?;
+        let target_dir = to.0.metadata()?;
+        require(
+            (source_dir.dev(), source_dir.ino()) != (target_dir.dev(), target_dir.ino()),
+            from.1.errors.recovery_required,
+        )?;
         let source = CString::new(source).unwrap();
         let target = CString::new(target).unwrap();
-        require(
-            unsafe {
-                libc::renameat2(
-                    from.0.as_raw_fd(),
-                    source.as_ptr(),
-                    to.0.as_raw_fd(),
-                    target.as_ptr(),
-                    flags,
-                )
-            } == 0,
-            from.1.errors.recovery_required,
-        )
+        platform::move_entry(from.0.as_raw_fd(), &source, to.0.as_raw_fd(), &target, kind)
+            .map_err(|_| Error(from.1.errors.recovery_required))
     }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Checkpoint {
+    StashAccess,
+    StageAccess,
+    StageWrite,
+    StageSync,
+    PreMoveSync,
+    Move,
+    PostMoveSync,
+    Verify,
+    Cleanup,
+    CleanupSync,
+    FinalSync,
 }

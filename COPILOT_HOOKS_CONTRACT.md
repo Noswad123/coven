@@ -6,10 +6,10 @@ Coven owns new GitHub Copilot hook configuration on **Linux**, scoped to one
 explicit global user `settings.json` and reference-only `SessionStart` capture.
 Kitsune's Linux new-install/recommendation/update/bulk paths are retired; its
 non-Linux production installer/assets/result type and recommendation/update/bulk
-paths remain until matching Coven adapters are ready. All-platform detection,
+paths remain until matching Coven native qualification is complete. All-platform detection,
 status interpretation, start/resume, agent-aware restore, legacy status/uninstall
 and old ingress remain Kitsune compatibility, not completed extraction.
-Pi/OpenCode hook ownership is next pending. See the
+Pi/OpenCode reference-file placement is also implemented, not full management. See the
 [ownership matrix](AGENT_MANAGEMENT_MIGRATION.md).
 
 ### Native documentation pin
@@ -37,11 +37,13 @@ coven agent report --provider copilot --socket ABS_COVEN_SOCKET [--event Session
 
 All operations without `--apply` are effect-free previews; `plan` ignores
 `--apply`. Previews create no lock or files. Actual install/uninstall/rollback
-apply is **Linux-only** and may create the persistent lock **before settings or
+apply uses the shared Linux/macOS backend and may create the persistent lock **before settings or
 receipt validation fails**. Do not interpret a refused apply as artifact-free.
-Other Unix platforms can preview but refuse mutation before writes; Windows is
-unsupported. Receiver transport is Unix-only; macOS operation remains unvalidated.
-Unix preview/transport is not a replacement non-Linux configuration adapter.
+macOS explicit `--apply` is source-enabled on eligible local APFS, provisional and
+not natively qualified; other Unix platforms preview but refuse mutation, and
+Windows is unsupported. See the [backend matrix](HOOK_FILE_BACKEND_CONTRACT.md).
+Receiver transport is Unix-only; macOS receiver authorization/runtime remains
+separately unvalidated. Kitsune's non-Linux paths remain.
 
 The explicit existing config root must be owned and not writable by others.
 Descriptor-relative `openat`/`O_NOFOLLOW` traversal pins directories; owned,
@@ -200,7 +202,8 @@ coven agent hooks rollback --provider copilot --config-root ABS_CONFIG_ROOT --js
 
 These are previews. Add `--migrate-kitsune` to plan/install only for verified legacy
 migration. After reviewing and stopping writers, explicitly add `--apply` to the
-chosen mutation on Linux. Start `coven agent serve WORKSPACE --socket
+chosen mutation on Linux, or provisionally on eligible macOS local APFS as described
+in the backend guide. Start `coven agent serve WORKSPACE --socket
 ABS_COVEN_SOCKET --duration 60 --json` separately, with the existing owned exact
 0700 socket parent and valid Coven workspace required by the receiver contract.
 

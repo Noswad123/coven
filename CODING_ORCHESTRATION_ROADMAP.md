@@ -15,13 +15,29 @@ recommendation/update/bulk paths remain until matching Coven platform adapters;
 all six target entries and status/uninstall/old ingress remain on all platforms.
 Receiver transport is Unix-only, Windows unsupported and macOS unvalidated.
 See [receiver](AGENT_MANAGEMENT_CONTRACT.md) and
-[hook](CLAUDE_HOOKS_CONTRACT.md) contracts for privacy, Unix transport, Linux-only
-apply, rollback/recovery and unverified-report limits. No automatic configuration
+[hook](CLAUDE_HOOKS_CONTRACT.md) contracts for privacy, Unix transport, shared
+Linux/macOS file apply, rollback/recovery and unverified-report limits. No automatic configuration
 migration or running-session conversion occurs. Claude process/screen fallback and
 agent restore remain Kitsune; subsequent Codex/Copilot hook transfers are recorded below,
 with Pi/OpenCode reference-extension transfers below, not full management completion.
 
-Next functional work adds matching non-Linux Claude/Codex/Copilot/Pi/OpenCode adapters before retiring
+The [shared backend guide/matrix](HOOK_FILE_BACKEND_CONTRACT.md) now records
+source-complete Linux/macOS private hook-file mutation, not a deferred macOS port.
+macOS explicit `--apply` is provisional eligible local APFS only, not natively
+qualified. All five providers share one capability through three runners. Separate
+receiver/store/socket privacy does not inherit Darwin ACL admission and remains
+untested; discovery still rejects macOS. Full status/start/resume/restore transfer
+remains pending on both OSes. Parent validation passed 204 distinct focused Linux
+Rust checks, strict all-target lint, Rust 1.85 all-target checking, Linux optimized
+build, locked package verification and packaged test-target compilation. Both
+Apple Rust `--tests` target typechecks passed warning-free, not native C SDK
+compilation/linking or runtime tests; both application target builds failed, with
+missing Apple SDK confirmed on a correctly targeted ARM Clang retry. The incidental
+full-library run did not pass (1,144 passed, 2 failed, 5 ignored); both exact isolated
+reruns passed, root cause unestablished. Review is ready within provisional source
+scope, not native certification or full-suite success. The guide records details.
+
+Next functional work natively qualifies macOS and supplies remaining non-Linux capabilities before retiring
 working Kit paths, then transfers remaining hook owners, management interpretation,
 provider start/resume and agent-aware restore with subsystem removal gates, not
 another permanent characterization-only milestone. Optional presentation is not
@@ -67,7 +83,8 @@ tab filter and reproduced stale golden/test-only corrections. No full-suite or n
 production UI behavior is claimed beyond intended evidence hardening.
 This is functional Coven-owned recognition with temporary duplicate legacy policy,
 not completed sole ownership/full status. Keep all five Linux hook/configuration
-retirements unchanged; non-Linux adapters and broader status remain pending.
+retirements unchanged; macOS native qualification, remaining non-Linux capabilities
+and broader status remain pending, not the shared file backend itself.
 
 The [discovery validation table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table)
 records historical discovery 201 focused Coven checks and Kit 249 API checks plus strict lint and

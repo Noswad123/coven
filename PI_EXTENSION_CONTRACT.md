@@ -8,8 +8,11 @@ This is **not full Pi management completion**. Pi lifecycle/status interpretatio
 discovery, start/resume and agent-aware restore remain pending transfers. OpenCode
 now has [separate reference-plugin placement](OPENCODE_EXTENSION_CONTRACT.md);
 separate Djinn handling is not folded into Pi.
-Mutation is Linux-only; other Unix systems support preview/transport, not a matching
-mutator. macOS is unvalidated and Windows unsupported.
+Mutation uses the [shared Linux/macOS backend](HOOK_FILE_BACKEND_CONTRACT.md).
+Explicit macOS `--apply` is source-enabled, provisional local APFS only and not
+natively qualified. Other Unix systems preview but refuse apply; Windows is
+unsupported. macOS receiver/privacy and native activation remain unvalidated,
+and all Kitsune non-Linux paths remain pending native qualification.
 
 **Explicit functional reduction:** migration drops Kitsune's working/blocked/idle
 reporting in favor of session references only. Fresh Pi receipts remain `unknown`.

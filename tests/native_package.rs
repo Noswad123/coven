@@ -61,6 +61,13 @@ fn native_source_package_boundary() {
     }
     for required in [
         "src/main.rs",
+        "build.rs",
+        "src/hook_files/platform.rs",
+        "src/hook_files/platform/linux.rs",
+        "src/hook_files/platform/macos.rs",
+        "src/hook_files/platform/macos_acl.c",
+        "src/hook_files/platform/macos_acl_mock.c",
+        "src/hook_files/platform/macos_acl_mock.h",
         "src/lib.rs",
         "src/session_resume_plans.rs",
         // Cargo omits whole nested packages even with explicit include patterns.

@@ -1,5 +1,8 @@
 #![cfg(unix)]
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
 use coven::opencode_extension::{NATIVE_PIN, Operation, Request, arguments};
+use physical_temp::tempdir;
 use serde_json::Value;
 use std::{
     fs,
@@ -13,10 +16,10 @@ const OLD: &str = "kitsune-agent-state.js";
 const RECEIPT: &str = "coven-opencode-extension.json";
 const KIT: &[u8] = include_bytes!("fixtures/opencode_extension/kitsune-agent-state.js");
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn singular_and_plural_roots_are_independent_without_discovery() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let singular = dir.path().join("plugin");
     let plural = dir.path().join("plugins");
     fs::create_dir(&singular).unwrap();
@@ -58,7 +61,7 @@ fn refuses(r: &Request, code: &str) {
 #[test]
 fn plans_are_side_effect_free_and_explicit_about_activation_and_state_loss() {
     for legacy in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         if legacy {
             fs::write(dir.path().join(OLD), KIT).unwrap();
         }
@@ -93,11 +96,11 @@ fn plans_are_side_effect_free_and_explicit_about_activation_and_state_loss() {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn immutable_original_survives_uninstall_reinstall_and_rollback_after_uninstall() {
     for legacy in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         if legacy {
             fs::write(dir.path().join(OLD), KIT).unwrap();
             fs::set_permissions(dir.path().join(OLD), fs::Permissions::from_mode(0o740)).unwrap();
@@ -179,8 +182,12 @@ fn fresh_conflicts_never_create_private_artifacts() {
         "utf8",
         "oversize",
     ] {
-        let dir = tempfile::tempdir().unwrap();
-        let mut r = request(dir.path(), Operation::Install, cfg!(target_os = "linux"));
+        let dir = tempdir();
+        let mut r = request(
+            dir.path(),
+            Operation::Install,
+            cfg!(any(target_os = "linux", target_os = "macos")),
+        );
         r.migrate_kitsune = scenario != "no_consent";
         let code = match scenario {
             "new" | "both" => {
@@ -239,7 +246,7 @@ fn fresh_conflicts_never_create_private_artifacts() {
 
 #[test]
 fn root_must_exist_be_absolute_and_have_no_symlink_components() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     refuses(
         &request(Path::new("relative"), Operation::Plan, false),
         "opencode_extension_absolute_path_required",
@@ -257,7 +264,7 @@ fn root_must_exist_be_absolute_and_have_no_symlink_components() {
 
 #[test]
 fn registered_cli_plan_is_read_only_and_requires_explicit_root() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     let output = Command::new(env!("CARGO_BIN_EXE_coven"))
         .args([
             "agent",
@@ -289,10 +296,10 @@ fn registered_cli_plan_is_read_only_and_requires_explicit_root() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn cli_migration_placement_and_rollback_do_not_touch_settings() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     fs::write(dir.path().join(OLD), KIT).unwrap();
     fs::write(dir.path().join("settings.json"), b"private native settings").unwrap();
     for operation in ["install", "uninstall", "rollback"] {
@@ -335,14 +342,20 @@ fn cli_migration_placement_and_rollback_do_not_touch_settings() {
     assert_eq!(fs::read(dir.path().join(OLD)).unwrap(), KIT);
 }
 
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 #[test]
 fn other_unix_is_preview_only() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempdir();
     succeeds(&request(dir.path(), Operation::Plan, false));
-    refuses(
-        &request(dir.path(), Operation::Install, true),
-        "opencode_extension_apply_unsupported_platform",
-    );
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    for operation in [
+        Operation::Install,
+        Operation::Uninstall,
+        Operation::Rollback,
+    ] {
+        refuses(
+            &request(dir.path(), operation, true),
+            "opencode_extension_apply_unsupported_platform",
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
 }
