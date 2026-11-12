@@ -1,8 +1,5 @@
+use super::files::{Files, Guard, Image};
 use super::*;
-use crate::{
-    read_fs,
-    storage::{self, WorkspaceGuard},
-};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -11,6 +8,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(test)]
 const RELATIVE: &str = "state/agent-management.json";
 const MAX_STORE: usize = 256 * 1024;
 
@@ -45,12 +43,7 @@ pub(super) struct Store {
     pub epoch: String,
     saved: Saved,
     receipts: BTreeMap<String, Instant>,
-    #[cfg(unix)]
-    state_identity: (u64, u64),
-    #[cfg(unix)]
-    lock_identity: (u64, u64),
-    #[cfg(unix)]
-    lease: super::unix::ReceiverLease,
+    files: Files,
 }
 
 fn record_id(provider: &str, sid: &str) -> String {
@@ -63,51 +56,42 @@ fn record_id(provider: &str, sid: &str) -> String {
 
 impl Store {
     pub fn open(workspace: &Path) -> Result<Self> {
-        Self::open_with_sync(workspace, &|path| {
-            crate::platform::sync_directory(path).map_err(|_| Error("agent_startup_sync_failed"))
-        })
+        Self::open_inner(workspace, None)
     }
 
+    #[cfg(test)]
     fn open_with_sync(workspace: &Path, sync: &dyn Fn(&Path) -> Result<()>) -> Result<Self> {
-        let root = read_fs::workspace(workspace)?;
-        #[cfg(unix)]
-        super::unix::workspace_paths(&root, true)?;
-        let guard = WorkspaceGuard::acquire(&root, Duration::from_millis(100))?;
-        let root = guard.root().to_owned();
-        #[cfg(unix)]
-        let (state_identity, lock_identity) = super::unix::workspace_paths(&root, false)?;
-        #[cfg(unix)]
-        let lease = super::unix::ReceiverLease::acquire(&root)?;
+        Self::open_inner(workspace, Some(sync))
+    }
+
+    fn open_inner(workspace: &Path, sync: Option<&dyn Fn(&Path) -> Result<()>>) -> Result<Self> {
+        let files = Files::open(workspace)?;
+        let guard = files.guard(Duration::from_millis(100))?;
+        let root = files.root().to_owned();
         // Sync on every startup, including recovery after an earlier failed sync.
         // Replacing the record only syncs state/, not the root's new state entry.
-        sync(&root.join("state"))?;
-        sync(&root)?;
-        let saved = Self::load(&root)?;
+        if let Some(sync) = sync {
+            sync(&root.join("state"))?;
+            sync(&root)?;
+        }
+        files.sync_startup()?;
+        let (saved, _) = Self::load(&files, &guard)?;
+        drop(guard);
         Ok(Self {
             root,
             epoch: crate::platform::random_uuid_hex()?,
             saved,
             receipts: BTreeMap::new(),
-            #[cfg(unix)]
-            state_identity,
-            #[cfg(unix)]
-            lock_identity,
-            #[cfg(unix)]
-            lease,
+            files,
         })
     }
 
-    fn load(root: &Path) -> Result<Saved> {
-        let path = read_fs::managed(root, Path::new(RELATIVE), false)?;
-        match std::fs::symlink_metadata(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Saved::default()),
-            Err(e) => return Err(e.into()),
-            Ok(_) => {}
-        }
-        #[cfg(unix)]
-        super::unix::private_file(&path)?;
-        let bytes = read_fs::read_regular(&path, MAX_STORE)?;
-        let saved: Saved = serde_json::from_value(decode(&bytes, MAX_STORE)?)?;
+    fn load(files: &Files, guard: &Guard<'_>) -> Result<(Saved, Image)> {
+        let image = files.load(guard)?;
+        let Some(bytes) = &image.bytes else {
+            return Ok((Saved::default(), image));
+        };
+        let saved: Saved = serde_json::from_value(decode(bytes, MAX_STORE)?)?;
         require(saved.schema_version == 1, "agent_invalid_store")?;
         require(saved.records.len() <= MAX_RECORDS, "agent_capacity")?;
         for (id, record) in &saved.records {
@@ -122,22 +106,11 @@ impl Store {
                 "agent_invalid_store",
             )?;
         }
-        Ok(saved)
+        Ok((saved, image))
     }
 
     pub(super) fn fence(&self) -> Result<()> {
-        #[cfg(unix)]
-        require(
-            super::unix::workspace_paths(&self.root, false)
-                .map_err(|_| Error("agent_store_replaced"))?
-                == (self.state_identity, self.lock_identity),
-            "agent_store_replaced",
-        )?;
-        #[cfg(unix)]
-        self.lease
-            .fence()
-            .map_err(|_| Error("agent_receiver_lease_replaced"))?;
-        Ok(())
+        self.files.fence()
     }
 
     pub fn report(&mut self, params: &Value) -> Result<Value> {
@@ -150,9 +123,9 @@ impl Store {
         let name = event(provider, text(params, "event")?)?;
         let id = record_id(provider, sid);
         self.fence()?;
-        let guard = WorkspaceGuard::existing(&self.root, Duration::from_millis(100))?;
+        let guard = self.files.guard(Duration::from_millis(100))?;
         self.fence()?;
-        let mut saved = Self::load(&self.root)?;
+        let (mut saved, image) = Self::load(&self.files, &guard)?;
         require(
             saved.records.contains_key(&id) || saved.records.len() < MAX_RECORDS,
             "agent_capacity",
@@ -174,7 +147,8 @@ impl Store {
         );
         let bytes = serde_json::to_vec(&saved)?;
         require(bytes.len() <= MAX_STORE, "agent_store_limit")?;
-        let delivery = storage::atomic_replace_bytes(&guard, Path::new(RELATIVE), &bytes)?;
+        let nonce = crate::platform::random_uuid_hex()?;
+        let delivery = self.files.replace(&guard, &image, &nonce, &bytes)?;
         // Both delivery outcomes mean replacement happened. Never retry/roll back.
         self.saved = saved;
         self.receipts.insert(id.clone(), Instant::now());
@@ -204,7 +178,7 @@ mod tests {
     #[test]
     fn startup_directory_sync_failure_never_readies_a_store_or_claims_commit() {
         for fail_root in [false, true] {
-            let root = tempfile::tempdir().unwrap();
+            let root = crate::private_access::test_support::tempdir();
             std::fs::write(root.path().join("coven.json"), b"marker").unwrap();
             let synced = RefCell::new(Vec::new());
             let result = Store::open_with_sync(root.path(), &|path| {

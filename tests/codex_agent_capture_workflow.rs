@@ -1,5 +1,7 @@
-#![cfg(unix)]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Pinned Codex projection, exercised without native agents or CLI provider choices.
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
 use coven::agent_management::{self, InventoryRequest, ReportRequest, ServeRequest};
 use serde_json::{Value, json};
 use std::{
@@ -37,7 +39,7 @@ fn receiver_child() {
 
 #[test]
 fn capture_restart_and_minimal_wire() {
-    let root = tempfile::tempdir().unwrap();
+    let root = physical_temp::tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(root.path().join("coven.json"), "{}").unwrap();
     let socket = root

@@ -11,6 +11,9 @@
 #include <sys/attr.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/kauth.h>
+#include <sys/vnode.h>
+#include <fcntl.h>
 #include <unistd.h>
 #else
 #error macos_acl.c requires an Apple SDK (or the explicit logic-test fixture)
@@ -109,4 +112,126 @@ int coven_hook_acl_state(int fd)
     if (result != 0)
         return -1;
     return state;
+}
+
+/* Pinned XNU bsd/man/man2/getattrlist.2 COMMON ATTRIBUTES and
+ * bsd/vfs/vfs_attrlist.c getattrlist_common_tab/attr_pack_common:
+ * dev_t, fsobj_type_t, uid_t, uint32_t, attrreference_t, uint64_t,
+ * each packed at 4 bytes. No RETURNED_ATTRS or PACK_INVAL: unsupported
+ * requested metadata must fail EINVAL, not masquerade as an absent ACL.
+ */
+#pragma pack(push, 4)
+struct coven_socket_attrs {
+    uint32_t length;
+    dev_t device;
+    fsobj_type_t type;
+    uid_t owner;
+    uint32_t mode;
+    attrreference_t security;
+    uint64_t inode;
+};
+struct coven_socket_buffer {
+    struct coven_socket_attrs fixed;
+    unsigned char blob[1024];
+};
+#pragma pack(pop)
+_Static_assert(sizeof(struct coven_socket_attrs) == sizeof(uint32_t) + sizeof(dev_t) +
+    sizeof(fsobj_type_t) + sizeof(uid_t) + sizeof(uint32_t) + sizeof(attrreference_t) +
+    sizeof(uint64_t), "socket attributes have no implicit padding");
+
+static int coven_socket_matches(const struct stat *s, uint64_t device,
+    uint64_t inode, uint32_t uid, uint32_t mode)
+{
+    return S_ISSOCK(s->st_mode) && s->st_uid == uid &&
+        (uint32_t)(s->st_mode & 07777) == mode && s->st_nlink == 1 &&
+        (uint64_t)s->st_dev == device && (uint64_t)s->st_ino == inode;
+}
+
+/* Metadata only. Neither connected nor listening socket FDs identify the
+ * filesystem vnode; openat(O_EVTONLY) on VSOCK is not a supported substitute.
+ * getattrlistat is available since 10.10, below the existing rename API floor
+ * (10.12); neither statement declares a product deployment floor.
+ */
+int coven_socket_entry_acl_state(int parentfd, const char *leaf,
+    uint64_t device, uint64_t inode, uint32_t uid, uint32_t mode)
+{
+    struct stat parent, before, after;
+    struct attrlist request = {0};
+    struct coven_socket_buffer buffer = {0};
+    struct coven_socket_attrs *a = &buffer.fixed;
+    struct kauth_filesec security = {0};
+    size_t start, length, header = KAUTH_FILESEC_SIZE(0), expected;
+    int64_t offset;
+    uint32_t count;
+    int state;
+
+    if (!leaf || !*leaf || !strcmp(leaf, ".") || !strcmp(leaf, "..") || strchr(leaf, '/')) {
+        errno = EINVAL;
+        return -1;
+    }
+    state = coven_hook_acl_state(parentfd);
+    if (state != 0)
+        return state;
+    if (fstat(parentfd, &parent) != 0)
+        return -1;
+    if (!S_ISDIR(parent.st_mode) || parent.st_uid != uid ||
+        (parent.st_mode & 07777) != 0700 || (uint64_t)parent.st_dev != device) {
+        errno = EACCES;
+        return -1;
+    }
+    if (fstatat(parentfd, leaf, &before, AT_SYMLINK_NOFOLLOW) != 0)
+        return -1;
+    if (!coven_socket_matches(&before, device, inode, uid, mode)) {
+        errno = EACCES;
+        return -1;
+    }
+    request.bitmapcount = ATTR_BIT_MAP_COUNT;
+    request.commonattr = ATTR_CMN_DEVID | ATTR_CMN_OBJTYPE | ATTR_CMN_OWNERID |
+        ATTR_CMN_ACCESSMASK | ATTR_CMN_EXTENDED_SECURITY | ATTR_CMN_FILEID;
+    if (getattrlistat(parentfd, leaf, &request, &buffer, sizeof(buffer),
+        FSOPT_NOFOLLOW | FSOPT_REPORT_FULLSIZE) != 0)
+        return -1; /* Including ENOENT: never infer ACL absence from an error. */
+    if (a->length < sizeof(*a) || a->length > sizeof(buffer))
+        goto malformed;
+    if ((uint64_t)a->device != device || a->inode != inode || a->type != VSOCK ||
+        a->owner != uid || (a->mode & ~S_IFMT) != mode) {
+        errno = EACCES;
+        return -1;
+    }
+    /* Signed wide arithmetic before any pointer construction; bounded by total. */
+    offset = (int64_t)offsetof(struct coven_socket_attrs, security) + a->security.attr_dataoffset;
+    if (offset < (int64_t)sizeof(*a) || offset % 4 != 0 || offset > a->length)
+        goto malformed;
+    start = (size_t)offset;
+    length = a->security.attr_length;
+    if (length > a->length - start || start + length != a->length)
+        goto malformed;
+    state = 0;
+    if (length != 0) {
+        if (length < header || header > sizeof(security))
+            goto malformed;
+        memcpy(&security, (unsigned char *)&buffer + start, header);
+        if (security.fsec_magic != KAUTH_FILESEC_MAGIC)
+            goto malformed;
+        count = security.fsec_acl.acl_entrycount;
+        if (count != KAUTH_FILESEC_NOACL && count > KAUTH_ACL_MAX_ENTRIES)
+            goto malformed;
+        /* Bound multiplication before deriving the exact SDK-owned length. */
+        if (count != KAUTH_FILESEC_NOACL && count > (length - header) / sizeof(struct kauth_ace))
+            goto malformed;
+        expected = header + (count == KAUTH_FILESEC_NOACL ? 0 : (size_t)count * sizeof(struct kauth_ace));
+        if (length != expected)
+            goto malformed;
+        state = count != 0 && count != KAUTH_FILESEC_NOACL;
+    }
+    if (fstatat(parentfd, leaf, &after, AT_SYMLINK_NOFOLLOW) != 0)
+        return -1;
+    if (!coven_socket_matches(&after, device, inode, uid, mode)) {
+        errno = EACCES;
+        return -1;
+    }
+    return state;
+malformed:
+    errno = EINVAL;
+    return -1;
 }

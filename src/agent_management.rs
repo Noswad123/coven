@@ -8,7 +8,11 @@ use std::{
 };
 
 #[path = "agent_management/store.rs"]
+#[cfg(unix)]
 mod store;
+#[cfg(unix)]
+#[path = "agent_management/files.rs"]
+mod files;
 #[cfg(unix)]
 #[path = "agent_management/unix.rs"]
 mod unix;

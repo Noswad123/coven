@@ -1,15 +1,5 @@
 use super::MoveKind;
-use std::{
-    ffi::CStr,
-    fs::File,
-    io,
-    os::fd::{AsRawFd, RawFd},
-};
-
-unsafe extern "C" {
-    // Project-owned ABI only. Apple ACL types and selectors stay in SDK-compiled C.
-    fn coven_hook_acl_state(fd: libc::c_int) -> libc::c_int;
-}
+use std::{ffi::CStr, io, os::fd::RawFd};
 
 pub(super) fn move_entry(
     from: RawFd,
@@ -28,17 +18,5 @@ pub(super) fn move_entry(
         Ok(())
     } else {
         Err(io::Error::last_os_error())
-    }
-}
-
-pub(super) fn validate_access(file: &File) -> io::Result<()> {
-    match unsafe { coven_hook_acl_state(file.as_raw_fd()) } {
-        0 => Ok(()),
-        1 => Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "hook file has an ACL",
-        )),
-        -1 => Err(io::Error::last_os_error()),
-        _ => Err(io::Error::other("invalid hook ACL adapter result")),
     }
 }

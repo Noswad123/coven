@@ -1,196 +1,186 @@
 use super::*;
 use crate::observation_socket::{NoCancel, ReadBudget};
 use std::{
-    fs,
+    ffi::CString,
     io::{Read, Write},
     os::unix::{
-        fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+        ffi::OsStrExt,
+        io::AsRawFd,
         net::{UnixListener, UnixStream},
     },
-    path::Path,
     thread,
     time::{Duration, Instant},
 };
 
-fn identity(meta: &fs::Metadata) -> (u64, u64) {
-    (meta.dev(), meta.ino())
-}
-fn owner(meta: &fs::Metadata) -> bool {
-    meta.uid() == unsafe { libc::geteuid() }
+struct Selected {
+    path: PathBuf,
+    parent: files::Directory,
+    leaf: CString,
 }
 
-pub(super) fn private_directory(path: &Path) -> Result<(u64, u64)> {
-    let meta = fs::symlink_metadata(path)?;
+fn selected(path: &str) -> Result<Selected> {
     require(
-        meta.is_dir() && owner(&meta) && meta.mode() & 0o022 == 0,
+        crate::private_access::supports_privacy(),
         "agent_unsafe_parent",
     )?;
-    Ok(identity(&meta))
-}
-
-pub(super) fn private_file(path: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(path)?;
+    crate::observation_socket::validate_path(path)?;
     require(
-        meta.is_file() && owner(&meta) && meta.nlink() == 1 && meta.mode() & 0o7777 == 0o600,
-        "agent_unsafe_store",
+        !path.split('/').any(|part| part == ".") && !path.contains("//"),
+        "agent_invalid_socket",
+    )?;
+    let path = PathBuf::from(path);
+    let parent = files::Directory::open(path.parent().ok_or(Error("agent_invalid_socket"))?)?;
+    let leaf = CString::new(
+        path.file_name()
+            .ok_or(Error("agent_invalid_socket"))?
+            .as_bytes(),
     )
+    .map_err(|_| Error("agent_invalid_socket"))?;
+    let selected = Selected { path, parent, leaf };
+    selected.fence()?;
+    Ok(selected)
 }
 
-pub(super) struct ReceiverLease {
-    file: fs::File,
-    path: PathBuf,
+impl Selected {
+    fn fence(&self) -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+        // Re-walk the physical name and repeat held-FD identity and OS privacy checks.
+        self.parent.fence()?;
+        let metadata = self.parent.file().metadata()?;
+        require(metadata.mode() & 0o7777 == 0o700, "agent_unsafe_parent")
+    }
+}
+
+struct Node {
+    selected: Selected,
     inode: (u64, u64),
 }
 
-impl ReceiverLease {
-    pub(super) fn acquire(root: &Path) -> Result<Self> {
-        let path = crate::read_fs::managed(
-            root,
-            Path::new("state/.agent-management.receiver.lock"),
-            false,
-        )?;
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(&path)?;
-        let metadata = file.metadata()?;
-        require(
-            metadata.is_file()
-                && owner(&metadata)
-                && metadata.nlink() == 1
-                && metadata.mode() & 0o7777 == 0o600,
-            "agent_unsafe_receiver_lease",
-        )?;
-        require(
-            crate::platform::try_workspace_lock(&file)?,
-            "agent_receiver_busy",
-        )?;
-        let lease = Self {
-            file,
-            path,
-            inode: identity(&metadata),
+impl Node {
+    fn capture(selected: Selected) -> Result<(Self, u32)> {
+        let stat = selected
+            .parent
+            .stat(&selected.leaf)?
+            .ok_or(Error("agent_unsafe_socket"))?;
+        let node = Self {
+            selected,
+            inode: (stat.st_dev as u64, stat.st_ino as u64),
         };
-        lease.fence()?;
-        Ok(lease)
+        Ok((node, stat.st_mode as u32))
     }
 
-    pub(super) fn fence(&self) -> Result<()> {
-        for metadata in [self.file.metadata()?, fs::symlink_metadata(&self.path)?] {
-            require(
-                metadata.is_file()
-                    && owner(&metadata)
-                    && metadata.nlink() == 1
-                    && metadata.mode() & 0o7777 == 0o600
-                    && identity(&metadata) == self.inode,
-                "agent_receiver_lease_replaced",
-            )?;
-        }
-        Ok(())
+    fn fence_mode(&self, mode: u32) -> Result<()> {
+        self.selected.fence()?;
+        let before = self.stat(mode)?;
+        crate::private_access::validate_socket_entry(
+            self.selected.parent.file(),
+            &self.selected.leaf,
+            self.inode.0,
+            self.inode.1,
+            before.st_uid,
+            before.st_mode as u32 & 0o7777,
+        )?;
+        self.stat(mode)?;
+        self.selected.fence()
     }
-    // Closing our descriptor releases flock. The persistent lease inode is never removed.
-}
 
-fn socket_parent(path: &Path) -> Result<(u64, u64)> {
-    let inode = private_directory(path)?;
-    require(
-        fs::symlink_metadata(path)?.mode() & 0o7777 == 0o700,
-        "agent_unsafe_parent",
-    )?;
-    Ok(inode)
-}
-
-pub(super) fn workspace_paths(
-    root: &Path,
-    allow_missing: bool,
-) -> Result<((u64, u64), (u64, u64))> {
-    let state = crate::read_fs::managed(root, Path::new("state"), true)?;
-    if allow_missing && !state.exists() {
-        return Ok(((0, 0), (0, 0)));
+    fn stat(&self, mode: u32) -> Result<libc::stat> {
+        let stat = self
+            .selected
+            .parent
+            .stat(&self.selected.leaf)?
+            .ok_or(Error("agent_endpoint_replaced"))?;
+        require(
+            stat.st_mode & libc::S_IFMT == libc::S_IFSOCK
+                && stat.st_nlink == 1
+                && stat.st_uid == unsafe { libc::geteuid() }
+                && stat.st_mode as u32 & 0o7777 == mode & 0o7777
+                && (stat.st_dev as u64, stat.st_ino as u64) == self.inode,
+            "agent_unsafe_socket",
+        )?;
+        Ok(stat)
     }
-    let directory = private_directory(&state)?;
-    let lock = crate::read_fs::managed(root, Path::new("state/.workspace.lock"), false)?;
-    let metadata = match fs::symlink_metadata(lock) {
-        Err(e) if allow_missing && e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok((directory, (0, 0)));
-        }
-        result => result?,
-    };
-    require(
-        metadata.is_file()
-            && owner(&metadata)
-            && metadata.nlink() == 1
-            && metadata.mode() & 0o022 == 0,
-        "agent_unsafe_workspace_lock",
-    )?;
-    Ok((directory, identity(&metadata)))
-}
 
-fn selected(path: &str) -> Result<PathBuf> {
-    crate::observation_socket::validate_path(path)?;
-    let selected = PathBuf::from(path);
-    require(
-        selected.file_name().is_some() && !path.ends_with("/.") && !path.contains("//"),
-        "agent_invalid_socket",
-    )?;
-    let parent = selected.parent().ok_or(Error("agent_invalid_socket"))?;
-    require(parent.canonicalize()? == parent, "agent_unsafe_parent")?;
-    socket_parent(parent)?;
-    Ok(selected)
+    fn fence(&self) -> Result<()> {
+        self.fence_mode(0o600)
+    }
+
+    fn chmod(&self) -> Result<()> {
+        // No pathname-following fallback, including on older Linux kernels.
+        #[cfg(target_os = "linux")]
+        let result = unsafe {
+            libc::syscall(
+                libc::SYS_fchmodat2,
+                self.selected.parent.file().as_raw_fd(),
+                self.selected.leaf.as_ptr(),
+                0o600 as libc::mode_t,
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        };
+        #[cfg(target_os = "macos")]
+        let result = unsafe {
+            libc::fchmodat(
+                self.selected.parent.file().as_raw_fd(),
+                self.selected.leaf.as_ptr(),
+                0o600,
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        let result = -1;
+        require(result == 0, "agent_socket_chmod_failed")
+    }
 }
 
 struct Bound {
     listener: UnixListener,
-    path: PathBuf,
-    inode: (u64, u64),
-    parent: (u64, u64),
+    node: Node,
 }
 
 impl Bound {
     fn bind(path: &str) -> Result<Self> {
-        let path = selected(path)?;
-        let parent = socket_parent(path.parent().unwrap())?;
-        // bind itself is exclusive. Never remove an existing leaf, including stale sockets.
-        let listener = UnixListener::bind(&path).map_err(|_| Error("agent_socket_bind_failed"))?;
-        let inode = identity(&fs::symlink_metadata(&path)?);
-        let bound = Self {
-            listener,
-            path,
-            inode,
-            parent,
-        };
-        fs::set_permissions(&bound.path, fs::Permissions::from_mode(0o600))?;
+        let selected = selected(path)?;
+        selected.fence()?;
+        // bind is exclusive and also starts listening. The admitted private parent
+        // protects the pre-chmod interval even with umask 000. Never unlink stale leaves.
+        let listener =
+            UnixListener::bind(&selected.path).map_err(|_| Error("agent_socket_bind_failed"))?;
+        let (node, mode) = Node::capture(selected)?;
+        let bound = Self { listener, node };
+        #[cfg(test)]
+        tests::checkpoint("post_bind");
+        bound.node.fence_mode(mode)?;
+        bound.node.chmod()?;
         bound.listener.set_nonblocking(true)?;
         bound.fence()?;
         Ok(bound)
     }
 
     fn fence(&self) -> Result<()> {
-        require(
-            socket_parent(self.path.parent().unwrap())? == self.parent,
-            "agent_endpoint_replaced",
-        )?;
-        let meta = fs::symlink_metadata(&self.path)?;
-        require(
-            meta.file_type().is_socket()
-                && owner(&meta)
-                && meta.mode() & 0o7777 == 0o600
-                && identity(&meta) == self.inode,
-            "agent_endpoint_replaced",
-        )
+        self.node.fence()
     }
 }
 
 impl Drop for Bound {
     fn drop(&mut self) {
-        if private_directory(self.path.parent().unwrap()).ok() == Some(self.parent)
-            && fs::symlink_metadata(&self.path)
-                .is_ok_and(|m| m.file_type().is_socket() && identity(&m) == self.inode)
+        // Failed startup may still have the original pre-chmod mode. Cleanup is
+        // identity-bound, but never proceeds through a changed/nonprivate parent.
+        if self
+                .node
+                .selected
+                .parent
+                .stat(&self.node.selected.leaf)
+                .ok()
+                .flatten()
+                .is_some_and(|s| self.node.fence_mode(s.st_mode as u32).is_ok())
         {
-            let _ = fs::remove_file(&self.path);
+            unsafe {
+                libc::unlinkat(
+                    self.node.selected.parent.file().as_raw_fd(),
+                    self.node.selected.leaf.as_ptr(),
+                    0,
+                );
+            }
         }
     }
 }
@@ -225,11 +215,14 @@ pub(super) fn serve(
                 let reply =
                     receive(&mut stream, connection_deadline, &interrupt).and_then(|bytes| {
                         bound.fence()?;
+                        check(connection_deadline, &interrupt)?;
                         handle(&mut store, &bytes)
                     });
                 if let Ok(reply) = reply {
                     publish(&projection, &store);
-                    let _ = send(&mut stream, &reply, connection_deadline, &interrupt);
+                    if bound.fence().is_ok() {
+                        let _ = send(&mut stream, &reply, connection_deadline, &interrupt);
+                    }
                 }
             }
             Err(e)
@@ -341,32 +334,48 @@ fn send(
 }
 
 pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
-    selected(path)?;
-    let meta = fs::symlink_metadata(path)?;
-    require(
-        meta.file_type().is_socket() && owner(&meta) && meta.mode() & 0o7777 == 0o600,
-        "agent_unsafe_socket",
-    )?;
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let (node, _) = Node::capture(selected(path)?)?;
+    node.fence()?;
     let endpoint =
         crate::observation_socket::select(path).map_err(|_| Error("agent_unsafe_socket"))?;
-    let deadline = Instant::now() + Duration::from_secs(1);
     let id = crate::platform::random_uuid_hex()?;
     let mut frame =
         serde_json::to_vec(&json!({"id":id,"contract":CONTRACT,"method":method,"params":params}))?;
     frame.push(b'\n');
+    #[cfg(test)]
+    tests::checkpoint("pre_connect");
+    node.fence()?;
+    crate::platform::observation_socket::fence(&endpoint)
+        .map_err(|_| Error("agent_endpoint_replaced"))?;
+    crate::observation_socket::check(deadline, &NoCancel)
+        .map_err(|_| Error("agent_connection_timeout"))?;
     let socket =
         crate::platform::observation_socket::Socket::connect(&endpoint, deadline, &NoCancel)
             .map_err(|_| Error("agent_connect_failed"))?;
+    #[cfg(test)]
+    tests::checkpoint("pre_send");
+    node.fence()?;
     crate::platform::observation_socket::fence(&endpoint)
         .map_err(|_| Error("agent_endpoint_replaced"))?;
+    crate::observation_socket::check(deadline, &NoCancel)
+        .map_err(|_| Error("agent_connection_timeout"))?;
     // From the first send onward failures are uncertain, never replayed.
     socket
         .send(&frame, deadline, &NoCancel)
+        .map_err(|_| Error("agent_delivery_uncertain"))?;
+    #[cfg(test)]
+    tests::checkpoint("post_send");
+    node.fence()
         .map_err(|_| Error("agent_delivery_uncertain"))?;
     let payload = socket
         .receive(deadline, &mut ReadBudget::new(256 * 1024), &NoCancel)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
     crate::platform::observation_socket::fence(&endpoint)
+        .map_err(|_| Error("agent_delivery_uncertain"))?;
+    node.fence()
+        .map_err(|_| Error("agent_delivery_uncertain"))?;
+    crate::observation_socket::check(deadline, &NoCancel)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
     let reply = decode(&payload, 256 * 1024).map_err(|_| Error("agent_delivery_uncertain"))?;
     require(
@@ -403,6 +412,8 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
         .get("result")
         .ok_or(Error("agent_delivery_uncertain"))?;
     validate_result(method, result).map_err(|_| Error("agent_delivery_uncertain"))?;
+    crate::observation_socket::check(deadline, &NoCancel)
+        .map_err(|_| Error("agent_delivery_uncertain"))?;
     Ok(result.clone())
 }
 
@@ -471,10 +482,352 @@ fn validate_result(method: &str, value: &Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{cell::RefCell, fs, os::unix::fs::PermissionsExt};
+
+    thread_local! {
+        static CHECKPOINT: RefCell<Option<Box<dyn FnMut(&str)>>> = RefCell::new(None);
+    }
+
+    pub(super) fn checkpoint(stage: &str) {
+        CHECKPOINT.with_borrow_mut(|hook| {
+            if let Some(hook) = hook {
+                hook(stage);
+            }
+        });
+    }
+
+    struct Hook;
+
+    impl Hook {
+        fn new(hook: impl FnMut(&str) + 'static) -> Self {
+            CHECKPOINT.with_borrow_mut(|slot| {
+                assert!(slot.is_none());
+                *slot = Some(Box::new(hook));
+            });
+            Self
+        }
+    }
+
+    impl Drop for Hook {
+        fn drop(&mut self) {
+            CHECKPOINT.with_borrow_mut(|slot| *slot = None);
+        }
+    }
+
+    fn assert_no_connection(listener: &UnixListener) {
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn admitted_bind_is_private_and_owned_cleanup_is_descriptor_relative() {
+        use std::os::unix::fs::MetadataExt;
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        assert_eq!(fs::symlink_metadata(&path).unwrap().mode() & 0o7777, 0o600);
+        bound.fence().unwrap();
+        drop(bound);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn existing_socket_is_not_unlinked_or_rebound() {
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        assert!(Bound::bind(path.to_str().unwrap()).is_err());
+        bound.fence().unwrap();
+    }
+
+    #[test]
+    fn initial_denials_never_construct_a_client_socket() {
+        use crate::platform::observation_socket::SocketConstructionGuard;
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let guard = SocketConstructionGuard::new(true);
+        for mode in [0o000, 0o400, 0o660, 0o666, 0o1600] {
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            assert!(call(path.to_str().unwrap(), "inventory", json!({})).is_err());
+        }
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        for mode in [0o600, 0o711, 0o750, 0o770, 0o1700] {
+            fs::set_permissions(root.path(), fs::Permissions::from_mode(mode)).unwrap();
+            assert!(call(path.to_str().unwrap(), "inventory", json!({})).is_err());
+        }
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(guard.count(), 0);
+        assert_no_connection(&bound.listener);
+    }
+
+    #[test]
+    fn linked_or_symlinked_socket_and_missing_leaf_never_connect() {
+        use crate::platform::observation_socket::SocketConstructionGuard;
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let guard = SocketConstructionGuard::new(true);
+        let link = root.path().join("linked.sock");
+        fs::hard_link(&path, &link).unwrap();
+        assert!(call(path.to_str().unwrap(), "inventory", json!({})).is_err());
+        assert!(call(link.to_str().unwrap(), "inventory", json!({})).is_err());
+        fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(call(link.to_str().unwrap(), "inventory", json!({})).is_err());
+        assert!(
+            call(
+                root.path().join("missing.sock").to_str().unwrap(),
+                "inventory",
+                json!({})
+            )
+            .is_err()
+        );
+        assert_eq!(guard.count(), 0);
+        assert_no_connection(&bound.listener);
+    }
+
+    #[test]
+    fn owner_mismatch_never_connects() {
+        // Only a privileged fixture can change ownership away from the effective UID.
+        if unsafe { libc::geteuid() } != 0 {
+            return;
+        }
+        use crate::platform::observation_socket::SocketConstructionGuard;
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let name = CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::lchown(name.as_ptr(), 1, !0) }, 0);
+        let guard = SocketConstructionGuard::new(true);
+        assert!(call(path.to_str().unwrap(), "inventory", json!({})).is_err());
+        assert_eq!(guard.count(), 0);
+        assert_no_connection(&bound.listener);
+    }
+
+    #[test]
+    fn preconnect_parent_change_never_connects() {
+        use crate::platform::observation_socket::SocketConstructionGuard;
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let parent = root.path().to_path_buf();
+        let _hook = Hook::new(move |stage| {
+            if stage == "pre_connect" {
+                fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        });
+        let guard = SocketConstructionGuard::new(true);
+        assert_ne!(
+            call(path.to_str().unwrap(), "inventory", json!({}))
+                .unwrap_err()
+                .code(),
+            "agent_delivery_uncertain"
+        );
+        assert_eq!(guard.count(), 0);
+        assert_no_connection(&bound.listener);
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    #[test]
+    fn preconnect_missing_leaf_race_never_connects() {
+        use crate::platform::observation_socket::SocketConstructionGuard;
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let removed = path.clone();
+        let _hook = Hook::new(move |stage| {
+            if stage == "pre_connect" {
+                fs::remove_file(&removed).unwrap();
+            }
+        });
+        let guard = SocketConstructionGuard::new(true);
+        assert!(call(path.to_str().unwrap(), "inventory", json!({})).is_err());
+        assert_eq!(guard.count(), 0);
+        assert_no_connection(&bound.listener);
+    }
+
+    #[test]
+    fn presend_denial_never_sends_private_session_id() {
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let changed = path.clone();
+        let _hook = Hook::new(move |stage| {
+            if stage == "pre_send" {
+                fs::set_permissions(&changed, fs::Permissions::from_mode(0o666)).unwrap();
+            }
+        });
+        assert_ne!(
+            call(
+                path.to_str().unwrap(),
+                "report",
+                json!({"session_id":"PRIVATE-SID"})
+            )
+            .unwrap_err()
+            .code(),
+            "agent_delivery_uncertain"
+        );
+        let (mut stream, _) = bound.listener.accept().unwrap();
+        let mut byte = [0];
+        assert_eq!(stream.read(&mut byte).unwrap(), 0);
+        assert_no_connection(&bound.listener);
+    }
+
+    #[test]
+    fn postsend_privacy_failure_is_uncertain_and_never_replayed() {
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let parent = root.path().to_path_buf();
+        let _hook = Hook::new(move |stage| {
+            if stage == "post_send" {
+                fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        });
+        assert_eq!(
+            call(
+                path.to_str().unwrap(),
+                "report",
+                json!({"session_id":"PRIVATE-SID"})
+            )
+            .unwrap_err()
+            .code(),
+            "agent_delivery_uncertain"
+        );
+        let (mut stream, _) = bound.listener.accept().unwrap();
+        let mut bytes = Vec::new();
+        stream.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes.iter().filter(|&&b| b == b'\n').count(), 1);
+        assert!(String::from_utf8(bytes).unwrap().contains("PRIVATE-SID"));
+        assert_no_connection(&bound.listener);
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    #[test]
+    fn parent_replacement_and_alias_prevent_fences_and_cleanup() {
+        let root = crate::private_access::test_support::tempdir();
+        let parent = root.path().join("private");
+        fs::create_dir(&parent).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = parent.join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let moved = root.path().join("moved");
+        fs::rename(&parent, &moved).unwrap();
+        std::os::unix::fs::symlink(&moved, &parent).unwrap();
+        assert!(bound.fence().is_err());
+        assert!(selected(path.to_str().unwrap()).is_err());
+        drop(bound);
+        assert!(moved.join("receiver.sock").exists());
+    }
+
+    #[test]
+    fn changed_parent_privacy_prevents_cleanup() {
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(bound.fence().is_err());
+        drop(bound);
+        assert!(path.exists());
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    #[test]
+    fn replacement_socket_is_preserved() {
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        fs::remove_file(&path).unwrap();
+        let replacement = UnixListener::bind(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(bound.fence().is_err());
+        drop(bound);
+        assert!(path.exists());
+        drop(replacement);
+    }
+
+    #[test]
+    fn umask_zero_is_isolated_to_child_process() {
+        const CHILD: &str = "COVEN_SOCKET_UMASK_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            unsafe {
+                libc::umask(0);
+            }
+            let root = crate::private_access::test_support::tempdir();
+            let path = root.path().join("receiver.sock");
+            let _hook = Hook::new(move |stage| {
+                if stage == "post_bind" {
+                    use std::os::unix::fs::MetadataExt;
+                    assert_eq!(fs::symlink_metadata(&path).unwrap().mode() & 0o7777, 0o777);
+                    assert_eq!(
+                        fs::metadata(path.parent().unwrap()).unwrap().mode() & 0o7777,
+                        0o700
+                    );
+                }
+            });
+            let bound = Bound::bind(root.path().join("receiver.sock").to_str().unwrap()).unwrap();
+            bound.fence().unwrap();
+            return;
+        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "agent_management::unix::tests::umask_zero_is_isolated_to_child_process",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
+    #[cfg(target_os = "macos")]
+    fn add_socket_acl(path: &std::path::Path) {
+        assert!(
+            std::process::Command::new("/bin/chmod")
+                .args(["+a", "everyone allow read,write"])
+                .arg(path)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn existing_socket_explicit_acl_denied_under_acl_free_parent() {
+        use crate::platform::observation_socket::SocketConstructionGuard;
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        add_socket_acl(&path);
+        let guard = SocketConstructionGuard::new(true);
+        assert!(call(path.to_str().unwrap(), "inventory", json!({})).is_err());
+        assert_eq!(guard.count(), 0);
+        assert_no_connection(&bound.listener);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn new_socket_explicit_acl_denied_before_processing() {
+        let root = crate::private_access::test_support::tempdir();
+        let path = root.path().join("receiver.sock");
+        let changed = path.clone();
+        let _hook = Hook::new(move |stage| {
+            if stage == "post_bind" {
+                add_socket_acl(&changed);
+            }
+        });
+        assert!(Bound::bind(path.to_str().unwrap()).is_err());
+    }
 
     #[test]
     fn replacement_leaf_is_never_unlinked_and_parent_alias_is_refused() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::private_access::test_support::tempdir();
         let path = root.path().join("receiver.sock");
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
         assert!(Bound::bind(path.to_str().unwrap()).is_err());
@@ -493,7 +846,7 @@ mod tests {
 
     #[test]
     fn private_rpc_correlation_closed_schema_and_no_mutation_on_refusal() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::private_access::test_support::tempdir();
         fs::write(root.path().join("coven.json"), b"marker").unwrap();
         let mut store = store::Store::open(root.path()).unwrap();
         let id = "a".repeat(32);

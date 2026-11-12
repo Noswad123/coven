@@ -1,5 +1,7 @@
-#![cfg(unix)]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Private fake Kit plus receiver child: no live apps or process-global test signals.
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
 use coven::{
     agent_management::{self, InventoryRequest, ReportRequest, ServeRequest},
     agent_management_presentation::{self, PresentationRequest},
@@ -222,7 +224,7 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
         "blocked_poll",
         "ctrl_c",
     ] {
-        let root = tempfile::tempdir().unwrap();
+        let root = physical_temp::tempdir();
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::write(root.path().join("coven.json"), "{}").unwrap();
         let kit = (mode != "unavailable").then(|| Kit::start(root.path(), mode));
@@ -479,7 +481,7 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
 
 #[test]
 fn failed_core_load_does_not_admit_kit_discovery() {
-    let root = tempfile::tempdir().unwrap();
+    let root = physical_temp::tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(root.path().join("coven.json"), "{}").unwrap();
     fs::create_dir(root.path().join("state")).unwrap();

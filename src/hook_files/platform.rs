@@ -39,13 +39,7 @@ pub(super) fn move_entry(
 }
 
 pub(super) fn validate_access(file: &File) -> io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    return native::validate_access(file);
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        let _ = file;
-        Err(unsupported())
-    }
+    crate::private_access::validate_fd_access(file)
 }
 
 pub(super) fn sync_file(file: &File) -> io::Result<()> {

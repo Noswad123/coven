@@ -3,7 +3,9 @@
 pub(crate) mod bootstrap;
 mod maintenance;
 mod replacement;
+mod delivery;
 pub use replacement::atomic_replace_bytes;
+pub use delivery::Delivery;
 
 use crate::{Result, error::require, platform, read_fs};
 use serde::Serialize;
@@ -88,14 +90,6 @@ impl Drop for WorkspaceGuard {
             platform::unlock_workspace(&self.file);
         }
     }
-}
-
-/// A known immutable publication is never rolled back after linking.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Delivery {
-    Committed,
-    DurabilityUncertain,
 }
 
 pub(crate) trait EvidenceIo {

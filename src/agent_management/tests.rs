@@ -1,4 +1,6 @@
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 use super::*;
+use crate::private_access::test_support::tempdir;
 use std::{
     fs,
     os::unix::{
@@ -8,7 +10,7 @@ use std::{
 };
 
 fn workspace() -> tempfile::TempDir {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     fs::write(root.path().join("coven.json"), b"marker").unwrap();
     root
 }
@@ -275,7 +277,7 @@ fn extension_capture_projects_only_reference_fields_and_keeps_store_v1() {
         ("opencode", "coven.opencode-extension.v1", "session.updated"),
     ] {
         let root = workspace();
-        let socket_root = tempfile::tempdir().unwrap();
+        let socket_root = tempdir();
         fs::set_permissions(socket_root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let path = socket_root.path().join("receiver.sock");
         let listener = UnixListener::bind(&path).unwrap();
@@ -444,7 +446,7 @@ fn copilot_strict_pascalcase_payloads_never_infer_or_connect() {
 fn copilot_capture_strips_native_fields_before_rpc_store_and_stdout() {
     use std::io::{BufRead, BufReader, Write};
     let root = workspace();
-    let socket_root = tempfile::tempdir().unwrap();
+    let socket_root = tempdir();
     fs::set_permissions(socket_root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let path = socket_root.path().join("receiver.sock");
     let listener = UnixListener::bind(&path).unwrap();
@@ -552,7 +554,7 @@ fn copilot_store_refuses_invalid_pairs_and_extra_rpc_or_persisted_fields() {
 
 #[test]
 fn codex_invalid_payloads_never_connect() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     let path = root.path().join("receiver.sock");
     let listener = UnixListener::bind(&path).unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -674,7 +676,7 @@ fn events_persistence_restart_capacity_and_private_storage() {
 
 #[test]
 fn malformed_hooks_and_subagents_never_connect() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let path = root.path().join("receiver.sock");
     let _listener = UnixListener::bind(&path).unwrap();
@@ -815,6 +817,60 @@ fn persisted_reference_schema_is_explicit_and_unknown_versions_are_refused() {
 }
 
 #[test]
+fn generic_workspace_guard_blocks_agent_mutation_without_private_writes() {
+    let root = workspace();
+    let mut receiver = store::Store::open(root.path()).unwrap();
+    let state = root.path().join("state");
+    let lease = state.join(".agent-management.receiver.lock");
+    let lock = state.join(".workspace.lock");
+    let lease_before = fs::metadata(&lease).unwrap();
+    let lock_before = fs::metadata(&lock).unwrap();
+    let guard =
+        crate::storage::WorkspaceGuard::existing(root.path(), std::time::Duration::ZERO).unwrap();
+    let mut entries_before: Vec<_> = fs::read_dir(&state)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    entries_before.sort();
+    // Busy is a definite pre-mutation refusal, unlike an uncertain receipt.
+    assert_eq!(
+        receiver
+            .report(&params("original-session", "Stop"))
+            .unwrap_err()
+            .code(),
+        "workspace_lock_busy"
+    );
+    assert!(!state.join("agent-management.json").exists());
+    assert!(
+        receiver.projection()["records"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let mut entries_after: Vec<_> = fs::read_dir(&state)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    entries_after.sort();
+    assert_eq!(entries_after, entries_before);
+    assert_eq!(fs::metadata(&lease).unwrap().ino(), lease_before.ino());
+    assert_eq!(fs::metadata(&lock).unwrap().ino(), lock_before.ino());
+    drop(guard);
+    let accepted = receiver
+        .report(&params("original-session", "Stop"))
+        .unwrap();
+    assert_eq!(accepted["type"], "accepted");
+    assert_eq!(accepted["delivery"], "committed");
+    let saved: Value =
+        serde_json::from_slice(&fs::read(state.join("agent-management.json")).unwrap()).unwrap();
+    assert_eq!(saved["records"].as_object().unwrap().len(), 1);
+    assert_eq!(
+        saved["records"][accepted["record_id"].as_str().unwrap()]["session_id"],
+        "original-session"
+    );
+}
+
+#[test]
 fn receiver_lease_rejects_symlinks_hardlinks_and_nonprivate_leaves() {
     let root = workspace();
     drop(store::Store::open(root.path()).unwrap());
@@ -832,6 +888,45 @@ fn receiver_lease_rejects_symlinks_hardlinks_and_nonprivate_leaves() {
     assert!(store::Store::open(root.path()).is_err());
     assert_eq!(fs::metadata(&lease).unwrap().mode() & 0o777, 0o644);
     assert!(!root.path().join("state/agent-management.json").exists());
+}
+
+#[test]
+fn existing_state_and_workspace_lock_keep_safe_nonprivate_modes() {
+    let root = workspace();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    let state = root.path().join("state");
+    fs::create_dir(&state).unwrap();
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o750)).unwrap();
+    let lock = state.join(".workspace.lock");
+    fs::write(&lock, b"workspace-lock-sentinel").unwrap();
+    fs::set_permissions(&lock, fs::Permissions::from_mode(0o640)).unwrap();
+    let inode = fs::metadata(&lock).unwrap().ino();
+    let mut receiver = store::Store::open(root.path()).unwrap();
+    receiver.report(&params("s", "Stop")).unwrap();
+    assert_eq!(fs::metadata(root.path()).unwrap().mode() & 0o7777, 0o755);
+    assert_eq!(fs::metadata(&state).unwrap().mode() & 0o7777, 0o750);
+    assert_eq!(fs::metadata(&lock).unwrap().mode() & 0o7777, 0o640);
+    assert_eq!(fs::metadata(&lock).unwrap().ino(), inode);
+    assert_eq!(fs::read(&lock).unwrap(), b"workspace-lock-sentinel");
+    for name in ["agent-management.json", ".agent-management.receiver.lock"] {
+        let metadata = fs::symlink_metadata(state.join(name)).unwrap();
+        assert!(metadata.is_file());
+        assert_eq!(metadata.uid(), unsafe { libc::geteuid() });
+        assert_eq!(metadata.mode() & 0o7777, 0o600);
+        assert_eq!(metadata.nlink(), 1);
+    }
+}
+
+#[test]
+fn unsafe_root_refuses_store_before_creating_state() {
+    for mode in [0o720, 0o702, 0o777] {
+        let root = workspace();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(mode)).unwrap();
+        assert!(store::Store::open(root.path()).is_err());
+        assert!(!root.path().join("state").exists());
+        assert_eq!(fs::metadata(root.path()).unwrap().mode() & 0o7777, mode);
+        assert_eq!(fs::read(root.path().join("coven.json")).unwrap(), b"marker");
+    }
 }
 
 #[test]

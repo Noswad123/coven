@@ -1,5 +1,7 @@
-#![cfg(unix)]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 //! Real Coven receiver and private RPC; no provider executables or native hooks.
+#[path = "support/physical_temp.rs"]
+mod physical_temp;
 use coven::agent_management::{self, InventoryRequest, ReportRequest, ServeRequest};
 use serde_json::{Value, json};
 use std::{
@@ -24,7 +26,7 @@ fn wait_ready(path: &std::path::Path) {
 }
 
 fn private_root() -> tempfile::TempDir {
-    let root = tempfile::tempdir().unwrap();
+    let root = physical_temp::tempdir();
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     root
 }

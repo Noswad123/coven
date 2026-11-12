@@ -45,6 +45,8 @@ pub mod opencode_extension;
 mod output;
 pub mod pi_extension;
 mod platform;
+#[cfg(unix)]
+mod private_access;
 mod process;
 mod read_fs;
 pub mod records;
