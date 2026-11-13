@@ -472,7 +472,13 @@ impl Files {
             self.state.matches(&name, inode)?;
             guard.validate(self)?;
             file.write_all(bytes)?;
+            #[cfg(test)]
+            super::receipt_trace::stage("file_sync_begin");
+            #[cfg(test)]
+            super::receipt_trace::slow_commit();
             file.sync_all()?;
+            #[cfg(test)]
+            super::receipt_trace::stage("file_sync_ok");
             admit_file(&file, true, "after_write")?;
             access("prepublication", &file)?;
             guard.validate(self)?;
@@ -493,16 +499,19 @@ impl Files {
             }
             // Publication has happened. Only the following directory sync can
             // affect delivery, and failure must never trigger rollback or resend.
-            Ok(
-                if checkpoint("postrename_sync", self.state.file())
-                    .and_then(|_| self.state.file().sync_all().map_err(Into::into))
-                    .is_ok()
-                {
-                    Delivery::Committed
-                } else {
-                    Delivery::DurabilityUncertain
-                },
-            )
+            #[cfg(test)]
+            super::receipt_trace::stage("directory_sync_begin");
+            let delivery = if checkpoint("postrename_sync", self.state.file())
+                .and_then(|_| self.state.file().sync_all().map_err(Into::into))
+                .is_ok()
+            {
+                Delivery::Committed
+            } else {
+                Delivery::DurabilityUncertain
+            };
+            #[cfg(test)]
+            super::receipt_trace::stage("directory_sync_done");
+            Ok(delivery)
         })();
         // Cleanup is best effort: failed stat/unlink can leave this attempt's
         // temporary (possibly already written). Never unlink a foreign inode.

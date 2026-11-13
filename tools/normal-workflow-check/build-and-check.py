@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline source-snapshot build and acceptance run. Never writes into a checkout."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -9,7 +10,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-from check import absolute, check, environment, owned_run, require, spawn
+from check import absolute, environment, owned_run, require, spawn
 
 
 def main():
@@ -20,6 +21,8 @@ def main():
     parser.add_argument('--bun', required=True, type=absolute)
     parser.add_argument('--zig', required=True, type=absolute)
     parser.add_argument('--zig-package-cache', required=True)
+    parser.add_argument('--acceptance-runs', type=int, choices=(1, 2), default=1,
+                        help='independent fresh acceptance runs against the same built binaries (not delivery retries)')
     args = parser.parse_args()
     with owned_run() as root:
         env = environment(root)
@@ -38,6 +41,7 @@ def main():
             shutil.copytree(source, snapshot, symlinks=True,
                             ignore=shutil.ignore_patterns('.git', 'target', 'zig-out', '.zig-cache',
                                                          'node_modules', '.local', '__pycache__'))
+            print(f'SNAPSHOT {name}: {source} -> {snapshot}', flush=True)
             target = root / (name + '-target')
             build_env = {**env, 'CARGO_TARGET_DIR': str(target)}
             argv = ['rustup', 'run', '1.96.1', 'cargo', 'build', '--offline', '--locked',
@@ -55,7 +59,19 @@ def main():
                 print(text[-16000:], file=sys.stderr)
             require(code == 0, f'{name} source build failed ({code})')
             setattr(args, name + '_bin', str(target / 'debug' / name))
-        check(args, root)
+            with Path(getattr(args, name + '_bin')).open('rb') as binary:
+                digest = hashlib.file_digest(binary, 'sha256').hexdigest()
+            print(f'BINARY {name}: {getattr(args, name + "_bin")} sha256={digest}', flush=True)
+        results = []
+        for number in range(1, args.acceptance_runs + 1):
+            print(f'ACCEPTANCE {number}/{args.acceptance_runs}: same built snapshot, fresh owned run', flush=True)
+            result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('check.py')),
+                                     '--kitsune-bin', args.kitsune_bin, '--coven-bin', args.coven_bin,
+                                     '--djinn-plugin', args.djinn_plugin, '--bun', args.bun],
+                                    env={**os.environ, 'TMPDIR': env['TMPDIR']})
+            results.append(result.returncode)
+            print(f'ACCEPTANCE {number}/{args.acceptance_runs}: exit={result.returncode}', flush=True)
+        require(all(code == 0 for code in results), f'independent acceptance exit codes: {results}')
 
 
 if __name__ == '__main__':

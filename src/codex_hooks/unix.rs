@@ -91,6 +91,8 @@ struct Receipt {
     version: u32,
     executable: String,
     socket: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    route: Option<crate::integration_route::Route>,
     migrated: bool,
     original: Pair,
     installed: Pair,
@@ -130,11 +132,12 @@ fn uninstalled(receipt: &Receipt) -> Result<Pair> {
 impl Receipt {
     fn validate(&self, request: &Request) -> Result<()> {
         require(
-            self.schema == "coven-codex-hooks" && self.version == 1,
+            self.schema == "coven-codex-hooks" && matches!(self.version, 1 | 2),
             "codex_hooks_invalid_receipt",
         )?;
         absolute(Path::new(&self.executable))?;
-        absolute(Path::new(&self.socket))?;
+        crate::integration_route::validate(&self.socket, self.version, 1, &self.route)
+            .map_err(|_| Error("codex_hooks_invalid_receipt"))?;
         for pair in [&self.original, &self.installed, &self.source, &self.target] {
             for leaf in pair.iter().flatten() {
                 leaf.validate()?;
@@ -215,7 +218,15 @@ fn prepare(root: &Root, request: &Request) -> Result<Prepared> {
             require(*exe == r.executable, "codex_hooks_conflict")?;
         }
         if let Some(socket) = &request.socket {
-            require(*socket == r.socket, "codex_hooks_conflict")?;
+            require(
+                *socket == r.socket
+                    || (!r.pending
+                        && op == Op::Install
+                        && r.operation != Op::Install
+                        && (r.route.is_some()
+                            || crate::integration_route::decode(socket)?.is_some())),
+                "codex_hooks_conflict",
+            )?;
         }
         Some(r)
     } else {
@@ -302,7 +313,8 @@ fn prepare(root: &Root, request: &Request) -> Result<Prepared> {
         }
         Receipt {
             schema: "coven-codex-hooks".into(),
-            version: 1,
+            version: 1 + u32::from(crate::integration_route::decode(socket)?.is_some()),
+            route: crate::integration_route::decode(socket)?,
             executable: exe.into(),
             socket: socket.into(),
             migrated,
@@ -348,8 +360,13 @@ fn run_inner(
     step: &mut dyn FnMut(usize) -> Result<()>,
 ) -> Result<TaskOutput> {
     let root = Root::open(&request.config_root, Spec::codex())?;
-    for path in [&request.executable, &request.socket].into_iter().flatten() {
-        absolute(Path::new(path))?;
+    if let Some(exe) = &request.executable {
+        absolute(Path::new(exe))?;
+    }
+    if let Some(pin) = &request.socket {
+        if crate::integration_route::decode(pin)?.is_none() {
+            absolute(Path::new(pin))?;
+        }
     }
     let writing = request.apply && request.operation != Operation::Plan;
     require(
@@ -437,13 +454,16 @@ fn run_inner(
         status = "planned_requires_executable_and_socket";
     }
     let r = &prepared.receipt;
-    let value = json!({"provider":"codex", "status":status, "events":["SessionStart"],
+    let mut value = json!({"provider":"codex", "status":status, "events":["SessionStart"],
         "files":LEAVES, "operation":r.operation.name(), "pending":r.pending,
         "before_digests":r.source.each_ref().map(|s| s.as_ref().map(|v| &v.digest)),
         "after_digests":r.target.each_ref().map(|s| s.as_ref().map(|v| &v.digest)),
         "features":feature_change(raw(&r.source, 1), raw(&r.target, 1))?, "migrate_kitsune":r.migrated,
         "native_hook_approval":"user-managed; may be required; not granted by this operation",
         "native_contract":"openai/codex rust-v0.167.1 0a94398fa60c4fac0e7659e4213a0a36e613dd46"});
+    if let Some(route) = &r.route {
+        value["route"] = serde_json::to_value(route)?;
+    }
     Ok(TaskOutput {
         stdout: if json_output {
             serde_json::to_string(&value)?
@@ -453,7 +473,11 @@ fn run_inner(
                 value["features"]["hooks_before"],
                 value["features"]["hooks_after"],
                 value["features"]["remove_legacy_alias"]
-            )
+            ) + if r.route.is_some() {
+                "; route: from-kitsune"
+            } else {
+                ""
+            }
         },
         warnings: vec![],
         exit_code: 0,

@@ -19,6 +19,7 @@ import time
 
 
 HERE = Path(__file__).resolve().parent
+PASS_COUNT = 0
 
 
 def require(value, message):
@@ -27,6 +28,8 @@ def require(value, message):
 
 
 def passed(message):
+    global PASS_COUNT
+    PASS_COUNT += 1
     print("PASS " + message, flush=True)
 
 
@@ -346,80 +349,38 @@ def startup_modes(args, root):
         stop_children()
 
 
-def check(args, root):
-    startup_modes(args, root)
-    env = environment(root)
-    sockets = root / 's'
-    sockets.mkdir(mode=0o700)
-    kit, receiver = sockets / 'k.sock', sockets / 'c.sock'
-    require(len(str(kit)) < 100, 'artifact path too long for Unix sockets')
-    workspace = root / 'workspace'
-    workspace.mkdir(mode=0o700)
-    # Explicit minimal initialized workspace, as in Coven's receiver tests.
-    (workspace / 'coven.json').write_text('{}\n')
-    report = [args.coven_bin, 'agent', 'report-native', '--socket', str(receiver)]
-    runtime = [args.coven_bin, 'agent', 'run', str(workspace), '--socket', str(receiver),
-               '--kitsune-socket', str(kit), '--source', 'coven', '--json']
-    config = root / 'kit.toml'
-    common = ('onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n'
-              '[session]\nresume_agents_on_restore = false\n[agent_detection]\nmanifest_check = false\n'
-              '[ui]\nsidebar_width = 160\nsidebar_min_width = 160\nsidebar_max_width = 160\n')
-    config.write_text(common + '[integrations]\nsources = ["coven"]\n[integrations.runtime]\n'
-                      'source = "coven"\nexternal_agent_management = true\ncommand = ' + json.dumps(runtime)
-                      + '\nreport_command = ' + json.dumps(report) + '\n')
-    env.update(KITSUNE_CONFIG_PATH=str(config), KITSUNE_SOCKET_PATH=str(kit),
-               KITSUNE_CLIENT_SOCKET_PATH=str(sockets / 'unused.sock'), KITSUNE_SESSION='acceptance',
-               KITSUNE_LOG='warn')
-    # Nested inherited routes must be replaced by configured new-pane routes.
-    env.update(KITSUNE_INTEGRATION_SOURCE='poison', KITSUNE_INTEGRATION_REPORT_COMMAND='["/not-used"]',
-               KITSUNE_AGENT_MANAGEMENT='inherited-poison')
-    server = spawn([args.kitsune_bin, 'server'], env, root, 'kit', stdin=subprocess.DEVNULL)
-    wait_for(lambda: receiver.exists() and api(kit, 'session.snapshot'), 'Kit startup and Coven receiver')
-    children = descendants()
-    helpers = [pid for pid in children if Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')[:4]
-               == [os.fsencode(args.coven_bin), b'agent', b'run', os.fsencode(workspace)]]
-    require(len(helpers) == 1, 'Kit did not start exactly one actual Coven agent run')
-    helper = helpers[0]
-    require(Path(f'/proc/{helper}/status').read_text().split('PPid:\t')[1].splitlines()[0] == str(server.pid),
-            'Coven helper is not Kit-owned')
-    passed('actual headless Kit opt-in startup owns actual Coven agent run')
-    view = ViewClient(sockets / 'k-client.sock')
+class Plugin:
+    def __init__(self, args, env, cwd):
+        self.child = subprocess.Popen([args.bun, str(HERE / 'plugin-fixture.ts'), args.djinn_plugin],
+                                     env=env, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, text=True, start_new_session=True, preexec_fn=limits)
+        require(self.reply().get('ready'), 'actual plugin did not load')
+
+    def reply(self):
+        require(select.select([self.child.stdout], [], [], 5)[0], 'Bun fixture timed out')
+        line = self.child.stdout.readline()
+        if not line:
+            self.child.wait(timeout=2)
+            raise AssertionError('Bun fixture failed: ' + self.child.stderr.read(4096))
+        return json.loads(line)
+
+    def event(self, kind, **properties):
+        self.child.stdin.write(json.dumps({'type': kind, 'properties': properties}) + '\n')
+        self.child.stdin.flush()
+        require(self.reply().get('dispatched'), 'event fixture dispatch failed')
+
+    def close(self):
+        self.child.stdin.close()
+        require(self.child.wait(timeout=5) == 0, 'plugin fixture did not dispose cleanly')
+
+
+def native_checks(args, root, kit, receiver, server, helper, pane_id, pane_env, view, plugin):
+    event = plugin.event
     try:
-        view.expect('Integrations', 'coven')
-        # A new real PTY pane, with an explicit non-login system shell.
-        pane_id, pane_env = pane_environment(kit, root, workspace)
-        require(pane_env.get('KITSUNE_AGENT_MANAGEMENT') == 'external', 'pane external ownership missing')
-        require(pane_env.get('KITSUNE_INTEGRATION_SOURCE') == 'coven', 'pane source missing')
-        require(json.loads(pane_env['KITSUNE_INTEGRATION_REPORT_COMMAND']) == report, 'literal reporter argv lost')
-        passed('actual new PTY pane receives external/source/literal reporter argv, replacing inherited routes')
         legacy = {'pane_id': pane_id, 'source': 'kitsune:djinn', 'agent': 'djinn', 'seq': 1, 'state': 'working'}
         rejected = rpc(kit, 'pane.report_agent', legacy)
         require(rejected.get('error', {}).get('code') == 'external_agent_management', f'legacy report not rejected: {rejected}')
         passed('legacy pane.report_agent rejected under external ownership')
-        # Native routing uses exactly the pane-delivered literal reporter argv.
-        # The otherwise-unused legacy endpoint is a listening canary, so even a
-        # rejected/unsuccessful fallback attempt is observable without a proxy.
-        canary = socket.socket(socket.AF_UNIX)
-        canary.bind(str(sockets / 'legacy.sock'))
-        os.chmod(sockets / 'legacy.sock', 0o600)
-        canary.listen(8)
-        plugin_env = {**pane_env, 'KITSUNE_SOCKET_PATH': str(sockets / 'legacy.sock')}
-        plugin = subprocess.Popen([args.bun, str(HERE / 'plugin-fixture.ts'), args.djinn_plugin],
-                                  env=plugin_env, cwd=workspace, stdin=subprocess.PIPE,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                  start_new_session=True, preexec_fn=limits)
-        def reply():
-            require(select.select([plugin.stdout], [], [], 5)[0], 'Bun fixture timed out')
-            line = plugin.stdout.readline()
-            if not line:
-                require(plugin.wait(timeout=2) == 0, 'Bun fixture failed: ' + plugin.stderr.read(4096))
-                raise AssertionError('Bun fixture closed stdout without acknowledgement')
-            return json.loads(line)
-        require(reply().get('ready'), 'actual plugin did not load')
-        def event(kind, **properties):
-            plugin.stdin.write(json.dumps({'type': kind, 'properties': properties}) + '\n')
-            plugin.stdin.flush()
-            require(reply().get('dispatched'), 'event fixture dispatch failed')
         sid = 'PRIVATE-NATIVE-ROOT'
         event('session.created', info={'id': sid})
         event('session.status', sessionID=sid, status={'type': 'busy'})
@@ -445,8 +406,8 @@ def check(args, root):
             require('BLOCKED' not in section and 'WORKING' not in section, 'child/unestablished-root status changed root')
         view.expect_row('Djinn', 'IDLE (fresh)')
         passed('child and unestablished-root input cannot change root idle state')
-        command([args.coven_bin, 'agent', 'report', '--socket', str(receiver), '--provider', 'codex', '--json'],
-                env, root, json.dumps({'session_id': 'PRIVATE-HOOK-REFERENCE', 'hook_event_name': 'SessionStart'}))
+        command([args.coven_bin, 'agent', 'report', '--from-kitsune', '--provider', 'codex', '--json'],
+                pane_env, root, json.dumps({'session_id': 'PRIVATE-HOOK-REFERENCE', 'hook_event_name': 'SessionStart'}))
         view.expect_row('codex', 'UNKNOWN', 'reference_only')
         passed('reference-only codex hook remains UNKNOWN in actual generic view')
         view.expect_row('Djinn', 'UNKNOWN (expired)', timeout=35)
@@ -455,27 +416,51 @@ def check(args, root):
         event('session.status', sessionID=sid, status={'type': 'busy'})
         view.expect_row('Djinn', 'WORKING (fresh)')
         os.kill(helper, signal.SIGKILL)
-        wait_for(lambda: api(kit, 'session.snapshot')['snapshot']['integration_views']['sources'][0]['epoch'] is None,
+        wait_for(lambda: next(s for s in api(kit, 'session.snapshot')['snapshot']['integration_views']['sources']
+                              if s['id'] == 'coven')['epoch'] is None,
                  'helper-loss five-second lease expiry', 8)
         view.expect('Unavailable')
         require('Coven / Djinn' not in view.text, 'stale generic rows survived helper loss')
         event('session.status', sessionID=sid, status={'type': 'idle'})
         time.sleep(1)
-        require(not select.select([canary], [], [], 0)[0], 'Djinn attempted legacy socket fallback')
-        canary.close()
+        # A separate invalid-API route checks no legacy socket attempt. The main
+        # plugin above keeps the actual pane API identity for --from-kitsune.
+        with socket.socket(socket.AF_UNIX) as canary:
+            canary_path = root / 'legacy.sock'
+            canary.bind(str(canary_path))
+            canary_path.chmod(0o600)
+            canary.listen(8)
+            failed = Plugin(args, {**pane_env, 'KITSUNE_SOCKET_PATH': str(canary_path)}, root)
+            failed.event('session.created', info={'id': 'PRIVATE-FAILURE'})
+            failed.event('session.status', sessionID='PRIVATE-FAILURE', status={'type': 'busy'})
+            time.sleep(1)
+            require(not select.select([canary], [], [], 0)[0], 'Djinn attempted legacy socket fallback')
+            failed.close()
         rejected = rpc(kit, 'pane.report_agent', {**legacy, 'seq': 2})
         require(rejected.get('error', {}).get('code') == 'external_agent_management', 'legacy authority revived')
         require(not api(kit, 'session.snapshot')['snapshot']['agents'], 'legacy agent appeared after transport loss')
-        require(not any(Path(f'/proc/{pid}/cmdline').read_bytes().startswith(os.fsencode(args.coven_bin) + b'\0agent\0run\0')
-                        for pid in descendants() if Path(f'/proc/{pid}/cmdline').exists()), 'helper restarted')
+        for pid in descendants():
+            try:
+                argv = Path(f'/proc/{pid}/cmdline').read_bytes()
+                parent = Path(f'/proc/{pid}/status').read_text().split('PPid:\t')[1].splitlines()[0]
+                require(not (parent == str(server.pid) and argv.startswith(
+                    os.fsencode(args.coven_bin) + b'\0integration\0runtime\0')), 'helper restarted')
+            except FileNotFoundError:
+                pass
         passed('helper SIGKILL -> actual TTL Unavailable; plugin transport loss is nonfatal; no helper restart or legacy socket attempt')
-        plugin.stdin.close()
-        require(plugin.wait(timeout=5) == 0, 'plugin fixture did not dispose cleanly')
+        plugin.close()
         api(kit, 'server.stop')
         require(server.wait(timeout=10) == 0, 'Kit did not shut down cleanly')
         passed('actual Kit server.stop exits cleanly after helper loss')
     finally:
         view.close()
+
+
+def check(args, root):
+    sys.modules.setdefault('check', sys.modules[__name__])
+    from bootstrap import check_setup
+    check_setup(args, root)
+    print(f'SUMMARY {PASS_COUNT} acceptance gates passed', flush=True)
 
 
 def arguments():

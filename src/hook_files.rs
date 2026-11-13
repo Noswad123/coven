@@ -71,6 +71,21 @@ macro_rules! errors {
 }
 
 impl Spec {
+    pub(crate) const fn integration_setup() -> Self {
+        Self {
+            recovery: ".coven-kit-integration-recovery",
+            leaves: &[
+                "config.toml",
+                "coven-kit-integration.json",
+                ".coven-kit-integration.lock",
+            ],
+            private: &["coven-kit-integration.json", ".coven-kit-integration.lock"],
+            directories: &[],
+            read_limit: 8 * 1024 * 1024,
+            errors: errors!("integration_setup"),
+        }
+    }
+
     pub(crate) const fn opencode() -> Self {
         Self {
             recovery: ".coven-opencode-extension-recovery",

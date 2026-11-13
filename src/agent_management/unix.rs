@@ -231,7 +231,11 @@ impl Drop for TermGuard {
     }
 }
 
-pub(super) fn run(request: &RunRequest, projection: Arc<Mutex<Value>>) -> Result<TaskOutput> {
+pub(super) fn run(
+    request: &RunRequest,
+    projection: Arc<Mutex<Value>>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<TaskOutput> {
     let interrupt = crate::observation_socket::InterruptGuard::install()?;
     TERMINATED.store(false, std::sync::atomic::Ordering::Relaxed);
     let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
@@ -249,6 +253,10 @@ pub(super) fn run(request: &RunRequest, projection: Arc<Mutex<Value>>) -> Result
     let mut store = store::Store::open(&request.workspace)?;
     let mut native = native::NativeStore::default();
     while !interrupt.interrupted() && !TERMINATED.load(std::sync::atomic::Ordering::Relaxed) {
+        require(
+            !cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)),
+            "agent_run_cancelled",
+        )?;
         // stdin is exclusively owned by the attached command. Poll before read,
         // rather than leaving a blocking reader thread behind on interruption.
         let mut fd = libc::pollfd {
@@ -283,14 +291,48 @@ pub(super) fn run(request: &RunRequest, projection: Arc<Mutex<Value>>) -> Result
             Ok((mut stream, _)) => {
                 stream.set_nonblocking(true)?;
                 let deadline = Instant::now() + Duration::from_millis(200);
+                #[cfg(test)]
+                super::receipt_trace::stage("accepted");
                 let reply = receive(&mut stream, deadline, &interrupt).and_then(|bytes| {
+                    #[cfg(test)]
+                    super::receipt_trace::stage("received");
                     bound.fence()?;
                     store.fence()?;
+                    #[cfg(test)]
+                    super::receipt_trace::slow_admission();
+                    check(deadline, &interrupt)?;
+                    require(
+                        !TERMINATED.load(std::sync::atomic::Ordering::Relaxed),
+                        "agent_interrupted",
+                    )?;
+                    require(
+                        !cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)),
+                        "agent_run_cancelled",
+                    )?;
+                    #[cfg(test)]
+                    super::receipt_trace::stage("admitted");
                     handle_normal(&mut store, &mut native, &bytes)
                 });
+                #[cfg(test)]
+                super::receipt_trace::stage(match &reply {
+                    Ok(_) => "handled",
+                    Err(e) => e.code(),
+                });
                 if let Ok(reply) = reply {
+                    // Normal reports may synchronously commit past the read budget.
+                    // Bound the ACK phase separately, never acknowledge before commit.
+                    let reply_deadline = Instant::now() + Duration::from_millis(200);
                     if bound.fence().is_ok() {
-                        let _ = send(&mut stream, &reply, deadline, &interrupt);
+                        let sent = send(&mut stream, &reply, reply_deadline, &interrupt);
+                        #[cfg(test)]
+                        super::receipt_trace::stage(match &sent {
+                            Ok(_) => "sent",
+                            Err(e) => e.code(),
+                        });
+                        let _ = sent;
+                    } else {
+                        #[cfg(test)]
+                        super::receipt_trace::stage("reply_fence_failed");
                     }
                 }
             }
@@ -428,6 +470,8 @@ fn handle(store: &mut store::Store, bytes: &[u8]) -> Result<Vec<u8>> {
     let value = match result {
         Ok(result) => json!({"id":id,"contract":CONTRACT,"type":"result","result":result}),
         Err(error) => {
+            #[cfg(test)]
+            super::receipt_trace::stage(error.code());
             json!({"id":id,"contract":CONTRACT,"type":"error","error":{"code":error.code()}})
         }
     };
@@ -530,13 +574,26 @@ pub(super) fn call_contract(
     socket
         .send(&frame, deadline, &NoCancel)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
+    #[cfg(test)]
+    super::receipt_trace::stage("client_sent");
     #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
     tests::checkpoint("post_send");
     node.fence()
         .map_err(|_| Error("agent_delivery_uncertain"))?;
     let payload = socket
         .receive(deadline, &mut ReadBudget::new(256 * 1024), &NoCancel)
-        .map_err(|_| Error("agent_delivery_uncertain"))?;
+        .map_err(|error| {
+            #[cfg(test)]
+            super::receipt_trace::stage(match error.code.as_str() {
+                "timeout" => "client_receive_timeout",
+                "incomplete_response" => "client_incomplete_response",
+                _ => "client_receive_failed",
+            });
+            let _ = error;
+            Error("agent_delivery_uncertain")
+        })?;
+    #[cfg(test)]
+    super::receipt_trace::stage("client_received");
     crate::platform::observation_socket::fence(&endpoint)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
     node.fence()
@@ -544,6 +601,8 @@ pub(super) fn call_contract(
     crate::observation_socket::check(deadline, &NoCancel)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
     let reply = decode(&payload, 256 * 1024).map_err(|_| Error("agent_delivery_uncertain"))?;
+    #[cfg(test)]
+    super::receipt_trace::stage("client_decoded");
     require(
         reply.as_object().is_some_and(|o| o.len() == 4)
             && reply.get("id").and_then(Value::as_str) == Some(&id)
@@ -587,6 +646,8 @@ pub(super) fn call_contract(
     }
     crate::observation_socket::check(deadline, &NoCancel)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
+    #[cfg(test)]
+    super::receipt_trace::stage("client_validated");
     Ok(result.clone())
 }
 

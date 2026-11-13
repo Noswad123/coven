@@ -111,6 +111,8 @@ pub(crate) mod single_file {
         stage: String,
         executable: String,
         socket: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        route: Option<crate::integration_route::Route>,
         migrated: bool,
         preimage: Option<String>,
         pre_mode: Option<u32>,
@@ -135,9 +137,9 @@ pub(crate) mod single_file {
     }
     fn command(exe: &str, socket: &str, event: &str) -> String {
         format!(
-            "{} agent report --provider claude --socket {} --event {} >/dev/null 2>&1 || true # {MARKER}",
+            "{} agent report --provider claude {} --event {} >/dev/null 2>&1 || true # {MARKER}",
             quote(exe),
-            quote(socket),
+            crate::integration_route::shell(socket),
             event
         )
     }
@@ -316,7 +318,9 @@ pub(crate) mod single_file {
             absolute(Path::new(exe))?;
         }
         if let Some(socket) = &request.socket {
-            absolute(Path::new(socket))?;
+            if crate::integration_route::decode(socket)?.is_none() {
+                absolute(Path::new(socket))?;
+            }
         }
         if request.operation == Operation::Install {
             require(
@@ -343,6 +347,31 @@ pub(crate) mod single_file {
             require(image.mode & 0o7000 == 0, "claude_hooks_unsafe_leaf")?;
         }
         let receipt_image = root.read(receipt_name, LIMIT * 8)?;
+        let stored_pin = receipt_image.as_ref().and_then(|image| {
+            crate::strict_json::decode(&image.bytes)
+                .ok()
+                .and_then(|v| v.get("socket").and_then(Value::as_str).map(str::to_owned))
+        });
+        let route = request
+            .socket
+            .as_deref()
+            .or(stored_pin.as_deref())
+            .map(crate::integration_route::decode)
+            .transpose()?
+            .flatten();
+        let output = |json_output, status, before, after, migrated| {
+            let mut result = output(json_output, status, before, after, migrated)?;
+            if let Some(route) = &route {
+                if json_output {
+                    let mut value: Value = serde_json::from_str(&result.stdout)?;
+                    value["route"] = serde_json::to_value(route)?;
+                    result.stdout = serde_json::to_string(&value)?;
+                } else {
+                    result.stdout.push_str("; route: from-kitsune");
+                }
+            }
+            Ok(result)
+        };
         let before = current.as_ref().map(|i| i.bytes.as_slice());
         let before_mode = current.as_ref().map(|i| i.mode & 0o7777);
         let matches =
@@ -355,7 +384,9 @@ pub(crate) mod single_file {
                 absolute(Path::new(exe))?;
             }
             if let Some(socket) = &request.socket {
-                absolute(Path::new(socket))?;
+                if crate::integration_route::decode(socket)?.is_none() {
+                    absolute(Path::new(socket))?;
+                }
             }
             let (_, migrated) = install_image(
                 before,
@@ -383,7 +414,7 @@ pub(crate) mod single_file {
             receipt = serde_json::from_value::<Receipt>(v)
                 .map_err(|_| Error("claude_hooks_invalid_receipt"))?;
             require(
-                receipt.version == 2
+                matches!(receipt.version, 2 | 3)
                     && receipt.post_mode == 0o600
                     && receipt.preimage.is_some() == receipt.pre_mode.is_some()
                     && receipt
@@ -392,7 +423,8 @@ pub(crate) mod single_file {
                 "claude_hooks_invalid_receipt",
             )?;
             absolute(Path::new(&receipt.executable))?;
-            absolute(Path::new(&receipt.socket))?;
+            crate::integration_route::validate(&receipt.socket, receipt.version, 2, &receipt.route)
+                .map_err(|_| Error("claude_hooks_invalid_receipt"))?;
             let (rebuilt, migrated) = install_image(
                 receipt.preimage.as_deref().map(str::as_bytes),
                 &request.config_root,
@@ -427,6 +459,17 @@ pub(crate) mod single_file {
                     ),
                     "claude_hooks_conflict",
                 )?;
+                if let Some(pin) = &request.socket {
+                    require(
+                        *pin == receipt.socket
+                            || receipt.route.is_some()
+                            || crate::integration_route::decode(pin)?.is_some(),
+                        "claude_hooks_conflict",
+                    )?;
+                    receipt.socket = pin.clone();
+                    receipt.route = crate::integration_route::decode(pin)?;
+                    receipt.version = 2 + u32::from(receipt.route.is_some());
+                }
                 let (built, migrated) = install_image(
                     before,
                     &request.config_root,
@@ -460,7 +503,9 @@ pub(crate) mod single_file {
                 .as_deref()
                 .ok_or(Error("claude_hooks_socket_required"))?;
             absolute(Path::new(exe))?;
-            absolute(Path::new(socket))?;
+            if crate::integration_route::decode(socket)?.is_none() {
+                absolute(Path::new(socket))?;
+            }
             let (built, migrated) = install_image(
                 before,
                 &request.config_root,
@@ -472,7 +517,8 @@ pub(crate) mod single_file {
                 verify_kit(&root)?;
             }
             receipt = Receipt {
-                version: 2,
+                version: 2 + u32::from(crate::integration_route::decode(socket)?.is_some()),
+                route: crate::integration_route::decode(socket)?,
                 stage: "new".into(),
                 executable: exe.into(),
                 socket: socket.into(),

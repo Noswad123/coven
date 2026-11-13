@@ -4,22 +4,30 @@
 
 ### Normal native-agent invocation (opt-in)
 
-The implemented [normal workflow](docs/NORMAL_AGENT_WORKFLOW.md) keeps ordinary
-`djinn`, `codex`, `copilot`, etc. invocation unchanged after one-time Kit runtime
-opt-in and explicit native hook/extension setup. No Coven launcher, group or manual
-artifact join is required. Kit starts a server-only attached `coven agent run`
-helper and presents **Coven**-attributed plain integration rows, not legacy agent
-widgets, pane focus or mobile completions. External mode suppresses all legacy
-agent-status authority/detectors and automatic agent resume, even on helper failure
-or fail-closed invalid/unreadable startup configuration. Default mode retains legacy
-compatibility. Runtime changes/rollback require a server restart, new panes and
-provider reload; helpers never auto-restart. See the guide for copyable literal-path
-TOML, separate initialized workspace/private 0700 socket-parent prerequisites,
-socket pinning, degraded operation and ownership handoff. No user config is migrated
-automatically. Djinn needs an updated native full-TUI build; reference-only providers
-remain unknown, Claude/Djinn facts expire within 30 seconds independently of the
-five-second view lease. Sessions are unbound/unattested. Complete migration and
-native macOS qualification remain open.
+The [normal workflow](docs/NORMAL_AGENT_WORKFLOW.md) keeps ordinary `djinn`,
+`codex`, `copilot`, etc. invocation unchanged after one-time setup:
+
+```sh
+coven integration plan
+coven integration enable --apply
+```
+
+Review the plan first. Then restart Kit, open new panes, select **Coven** in
+Integrations and invoke agents normally. Djinn needs an updated native full-TUI
+build; other providers need separate explicit hook/extension setup as shown in
+the guide. No Coven launcher, group, manual workspace initialization or socket
+coordination is required. [Setup](docs/INTEGRATION_SETUP_CONTRACT.md) selects Kit's
+startup config, this Coven executable and private state automatically; advanced
+path overrides are optional. Existing unmanaged runtimes require a manual handoff,
+not adoption or force-overwrite.
+
+Coven supplies attributed plain rows, not legacy widgets or pane focus. External
+mode suppresses legacy status/detectors and automatic resume even on helper
+failure; helpers never auto-restart. Reference-only providers remain unknown;
+Claude/Djinn facts expire within 30 seconds independently of the five-second view
+lease. Sessions are unbound/unattested. Disable is guarded and requires a restart
+handoff; crash recovery is manual. Complete migration and native macOS
+qualification remain open; setup is not proof of real provider event delivery.
 
 `coven` is a personal, magic-themed multi-agent workspace command for creating,
 tracking, and running local multi-agent workspaces.
@@ -226,6 +234,10 @@ Copilot adds explicit global `settings.json` management and reference-only
 `SessionStart` capture, with matching Linux-only retirement. It shares Claude's
 single-file v2 runner but has independent receipt/lock/recovery namespaces.
 
+**Advanced fixed-endpoint interface:** the examples below describe manual
+receivers and pinned hooks, not the normal setup prerequisites. Prefer the
+[normal workflow](docs/NORMAL_AGENT_WORKFLOW.md#example-usage) and its explicit
+`--from-kitsune` provider setup; installed fixed routes are not auto-converted.
 Reference syntax (explicit inspected paths; `serve` runs foreground and writes
 local receipt state; hook plan/install below are previews):
 
@@ -281,8 +293,10 @@ documentation-only native pin, supported subset and recovery limits.
 Pi uses [explicit existing-root extension placement](PI_EXTENSION_CONTRACT.md),
 not native hook JSON. `agent extensions plan/install/uninstall/rollback --provider
 pi --extension-root EXISTING_ABS_ROOT` previews unless `--apply` is explicit;
-`plan` always previews. First install requires `--executable ABS_COVEN_BINARY
---socket ABS_COVEN_SOCKET`; no automatic directories or root discovery.
+`plan` always previews. Fixed-route first install requires `--executable
+ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET`; alternatively select
+`--from-kitsune` explicitly as in the normal guide. No automatic extension
+directories or root discovery.
 `report-extension --provider pi --socket ABS_COVEN_SOCKET --event session_start`
 requires exactly `{"contract":"coven.pi-extension.v1","event":"session_start","session_id":"ID"}`.
 `agent report` stays native-three-provider only. Pi references remain unknown even

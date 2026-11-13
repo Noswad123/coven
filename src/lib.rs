@@ -31,6 +31,13 @@ pub mod handoff;
 #[cfg(unix)]
 mod hook_files;
 pub mod init;
+pub mod integration_route;
+pub mod integration_runtime;
+#[cfg(unix)]
+pub mod integration_setup;
+#[cfg(not(unix))]
+#[path = "integration_setup/unsupported.rs"]
+pub mod integration_setup;
 pub mod interactive_sessions;
 pub mod kitsune_comparison;
 pub mod kitsune_observation;

@@ -34,8 +34,8 @@ fn quote(s: &str) -> String {
 
 fn owned(exe: &str, socket: &str) -> Value {
     json!({"type":"command", "bash":format!(
-        "{} agent report --provider copilot --socket {} --event SessionStart >/dev/null 2>&1 || true # {MARKER}",
-        quote(exe), quote(socket)), "timeoutSec":10})
+        "{} agent report --provider copilot {} --event SessionStart >/dev/null 2>&1 || true # {MARKER}",
+        quote(exe), crate::integration_route::shell(socket)), "timeoutSec":10})
 }
 
 fn encoded(v: &Value) -> Result<Vec<u8>> {

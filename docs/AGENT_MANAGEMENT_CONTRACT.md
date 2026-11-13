@@ -3,7 +3,7 @@
 ## Overview
 
 For ordinary native invocation after one-time opt-in, use the
-[normal workflow and literal-path setup](NORMAL_AGENT_WORKFLOW.md). Its attached
+[normal workflow and managed setup](NORMAL_AGENT_WORKFLOW.md). Its attached
 `agent run` accepts existing five-provider receipts plus separate volatile Djinn
 native events and publishes Coven-attributed plain rows. External Kit ownership
 suppresses legacy status/detectors and automatic resume even on helper failure;
@@ -110,10 +110,17 @@ The Unix stream uses bounded newline-delimited requests with exactly `id`,
 `contract`, `method`, `params`; correlation IDs are 32 hex characters. Methods are
 only `report` and `inventory`. Report params contain exactly `provider`, `event`,
 `session_id`; inventory params are empty. Requests are bounded to 8192 bytes;
-receiver socket reads/writes use a deadline of at most 200 ms within the serve
-deadline. Storage setup/synchronization is not a hard wall-clock bound. Client calls use a
-one-second deadline and at most 256 KiB reply budget, with endpoint fences and
-closed result validation before stdout.
+frozen v1 `agent serve` retains one whole-connection deadline of at most 200 ms,
+capped by its serve deadline, for receive, handling and reply. Normal `agent run`
+instead uses 200 ms for receive/admission, then starts a separate fixed 200 ms
+reply-write window after the handler completes, before the existing endpoint
+privacy fence. Persisted receipt replies follow actual commit handling, never
+an early ACK; native volatile replies use the same phase policy without becoming
+durable. Storage/filesystem syscalls are not bounded by these 200 ms windows.
+Client calls still share one unchanged one-second deadline across connect, send
+and receive, with at most 256 KiB reply budget, endpoint fences and closed result
+validation before stdout. Slow storage can exceed that client deadline even after
+commit, leaving delivery uncertain; no resend or mutation retry follows.
 
 `report --json` returns `type: accepted`, a 64-hex `record_id`, and delivery
 `committed` or `durability_uncertain`; ignored subagents return `type: ignored`,

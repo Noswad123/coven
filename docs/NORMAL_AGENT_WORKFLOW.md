@@ -6,8 +6,9 @@ updated alongside implementation; native macOS qualification remains outstanding
 ## Overview
 
 Users invoke native agents normally. No Coven launcher, group enrollment or manual
-live-artifact attachment is required. A one-time explicit Kitsune startup
-configuration selects a generic integration runtime. Presentation-only
+live-artifact attachment is required. One-time `coven integration plan` followed by
+`coven integration enable --apply` selects a generic integration runtime, using
+Kit's startup config and privately bootstrapped state. Presentation-only
 `integrations.sources` does not execute programs or change status ownership.
 
 After that opt-in and explicit native hook/extension configuration, users still
@@ -18,7 +19,19 @@ Sessions remain unbound: no PID association or authenticated native attestation.
 
 ## API / Interfaces
 
-The optional `[integrations.runtime]` configuration has `source`, literal argv
+The public setup interface is `coven integration plan|enable|disable`:
+`plan` is always read-only; enable/disable preview unless `--apply` is explicit.
+See [setup defaults, ownership and recovery](INTEGRATION_SETUP_CONTRACT.md).
+Optional absolute `--kitsune-config`, `--executable` and `--state-root` overrides
+are advanced choices, not normal setup requirements.
+
+Managed plans/undo reuse recorded executable/state-root pins when omitted;
+explicitly different pins refuse. An active plan can warn with `runtime_ready: false`
+about an unhealthy recorded executable/root without losing the config
+description. Enable requires read-only root/ACL/creation-access preflight before
+config changes; this does not establish live helper or provider readiness.
+
+The advanced/internal `[integrations.runtime]` configuration has `source`, literal argv
 `command`, literal argv `report_command`, and `external_agent_management` fields.
 Both commands require absolute executables. The source must be explicitly enabled.
 The runtime configuration is startup-only: changing it requires a server restart.
@@ -44,10 +57,14 @@ The generic helper is server-only; `--no-session` refuses runtime/external mode.
 
 ## Data Flow
 
-`coven agent run WORKSPACE --socket ABS --kitsune-socket ABS --source SOURCE`
-is an attached receiver/presenter. Unlike bounded `agent serve`, it runs until
-stdin EOF or interruption. The socket parent must already be private and the
-workspace explicitly initialized. Socket conflicts are never unlinked/adopted.
+The generated `coven integration runtime` helper reads Kit's actual API address
+from `KITSUNE_SOCKET_PATH`. It creates a private per-address instance, minimal
+receiver workspace and receiver socket, then runs the attached receiver/presenter
+until stdin EOF or interruption. Users do not run `init`, select sockets or repeat
+state-root flags. Conflicting sockets and unreleased crash state are refused,
+never unlinked/adopted. The older explicit `agent run WORKSPACE --socket ABS
+--kitsune-socket ABS --source SOURCE` interface remains an advanced alternative;
+only that manual route requires a preinitialized workspace/private socket parent.
 
 The existing five-provider `coven.agent-management.v1` receipt path and persisted
 schema remain compatible. Its interpretation stays caller-supplied/unverified.
@@ -57,9 +74,22 @@ does not refresh evidence. Reference-only providers remain unknown. Restarted
 receipts are historical; native event observations are bounded and volatile.
 Native IDs, prompts, tools, paths and raw payloads are not generic-view fields.
 
-Existing hook commands remain pinned to their explicitly selected configuration
-roots, executable and `--socket`; those socket pins must match this helper's
-receiver socket. The pane reporter environment does not rewrite installed hooks.
+Normal `agent run` uses a 200 ms receive/admission window and a separate fixed
+200 ms reply-write window started after handling, before the existing privacy
+fence. Persisted receipts are not acknowledged ahead of commit; native-event
+acceptance remains volatile. Filesystem calls can outlast either window and the
+unchanged one-second shared client deadline, so delivery can still be uncertain;
+never resend or retry a mutation automatically. Frozen v1 `agent serve` retains
+its original whole-connection budget. See [transport details](AGENT_MANAGEMENT_CONTRACT.md#private-wire-and-output).
+
+All five hook/extension installers support explicit `--from-kitsune`, resolving
+the active private instance from inherited Kit context at report time. Omit
+`--state-root`: the configured generic reporter argv supplies it. Use the same
+Coven executable selected by setup; the CLI defaults to its current executable
+for environment-route plans/installs. Library requests still require an executable.
+Old fixed `--socket` installations remain valid but are not silently converted:
+guardedly uninstall the old route first, then explicitly install the new one.
+See [route receipts and migration](PROVIDER_ENVIRONMENT_ROUTES.md).
 Hook/extension installers remain explicit, preview-first operations, never automatic
 installation or an override of native allowed/disable/trust/approval settings
 (Codex's explicitly consented shared hooks flag is documented separately).
@@ -76,8 +106,9 @@ wrapper's `DJINN_UI_TARGET` still selects an old UI build. Restart/reload that
 provider in a new eligible pane. Mini, external attach, remote and v2 paths are
 not qualified by this cut.
 
-The configured reporter command is typically literal argv
-`[ABS_COVEN, "agent", "report-native", "--socket", ABS]`. Djinn spawns it without
+Setup generates literal reporter argv
+`[ABS_COVEN, "agent", "report-native", "--from-kitsune", "--state-root", ROOT]`.
+Djinn spawns it without
 a shell and writes only the following closed envelope to stdin:
 
 ```json
@@ -169,9 +200,13 @@ their closed-envelope contract and validate actual native cancellation delivery.
   A live presenter cannot renew the 30-second evidence clocks by repainting.
 - There is no automatic helper restart. Inspect failure/socket ownership, repair
   deliberately, then restart the Kit server. Never unlink/adopt a conflicting
-  socket to force startup. Concurrent runtimes each need their own Coven workspace
-  and receiver socket (one receiver lease per workspace), and the correct Kit API
-  socket. A copied fixed socket path is not safe multi-runtime configuration.
+  socket to force startup. Generated setup isolates concurrent exact Kit API
+  addresses automatically. Unreleased/partial crash state needs diagnosis and
+  deliberate manual recovery; restart alone is not self-healing. Private instance
+  admission is capped at 64, with no automatic cleanup. See the setup contract.
+  Shared registry contention waits cooperatively up to three seconds; competing
+  ownership of the same instance refuses immediately. Receipt-monitor failure
+  cancels the receiver and joins/cleans up owned work, retaining unreleased state.
 - Rollback is a deliberate ownership handoff: stop affected providers/helper,
   preserve/inspect config preimages, explicitly revert runtime ownership and any
   provider configuration using its guarded rollback contract, then restart Kit
@@ -182,39 +217,44 @@ their closed-envelope contract and validate actual native cancellation delivery.
 
 ## Example usage
 
-Copyable TOML shape below: replace the example **literal absolute paths** with
-inspected paths for your machine before use. `command` is
-`[ABS_COVEN, "agent", "run", WORKSPACE, "--socket", ABS_COV_SOCKET,
-"--kitsune-socket", ABS_KIT_API_SOCKET, "--source", "coven"]`; `report_command`
-uses that same ABS_COVEN and ABS_COV_SOCKET. No `~`, `$HOME`, environment-variable,
-PATH or shell expansion occurs.
+With compatible Coven/Kit builds and an updated Djinn native full-TUI build:
 
-**Manual prerequisites:** explicitly initialize a dedicated Coven workspace
-outside every application repository, such as `/home/operator/agent-state/normal`,
-and separately create/inspect an owned socket parent with exact **0700** mode,
-such as `/home/operator/agent-sockets/normal`. Neither `agent run` nor this config
-initializes the workspace or creates that parent. Select the actual Kit **API**
-socket, not its client socket. Inspect and preserve the existing installed user
-config and provider settings; merge deliberately, do not overwrite them with this
-snippet. This documentation update does not install anything or change user config.
-
-```toml
-[integrations]
-sources = ["coven"]
-
-[integrations.runtime]
-source = "coven"
-command = ["/home/operator/bin/coven", "agent", "run", "/home/operator/agent-state/normal", "--socket", "/home/operator/agent-sockets/normal/coven.sock", "--kitsune-socket", "/home/operator/kit-runtime/normal/api.sock", "--source", "coven"]
-report_command = ["/home/operator/bin/coven", "agent", "report-native", "--socket", "/home/operator/agent-sockets/normal/coven.sock"]
-external_agent_management = true
+```sh
+coven integration plan
+coven integration enable --apply
 ```
 
-Retain other enabled sources/settings as needed, but do not run `group present`,
-discovery presentation or another publisher against this same `coven` lease.
-After manual opt-in, restart a compatible Kit server (omit `--no-session`), open
-new panes and reload/restart providers whose plugins/hooks were already loaded.
-Select **Coven** in Integrations and invoke native agents normally. The runtime
-change is startup-only; a config reload cannot activate or roll it back.
+Review the selected config/executable/state root before applying. Setup preserves
+other sources and unrelated settings. An unmanaged runtime (including the previous
+manual `agent run` snippet) refuses: follow the explicit manual handoff in the
+setup contract rather than overwriting/adopting it.
+
+Other providers require one-time explicit setup. Replace the uppercase roots with
+inspected absolute existing provider roots; review each preview before applying:
+
+```text
+coven agent hooks plan --provider claude --config-root ABS_CLAUDE_ROOT --from-kitsune
+coven agent hooks install --provider claude --config-root ABS_CLAUDE_ROOT --from-kitsune --apply
+coven agent extensions plan --provider pi --extension-root ABS_PI_EXTENSION_ROOT --from-kitsune
+coven agent extensions install --provider pi --extension-root ABS_PI_EXTENSION_ROOT --from-kitsune --apply
+```
+
+The hook form also supports `codex`/`copilot`; the extension form supports
+`opencode`. No automatic provider install, native approval or trust override
+occurs. Existing Kit assets require the provider's verified migration and explicit
+`--migrate-kitsune` consent, not blind replacement. Stop providers/watchers before
+mutation; restart the native OpenCode server, not just its attached TUI.
+
+Restart Kit (without `--no-session`), open new panes and restart/reload providers.
+Ensure Djinn's UI selection points at the updated build. Select **Coven** and type
+`djinn`, `codex`, etc. normally. Do not run `group present`, discovery presentation
+or another publisher against the same `coven` lease. A config reload cannot activate
+or roll back this startup-only route. To undo, preview `coven integration disable`,
+then use `coven integration disable --apply` only against the exact managed config;
+later edits refuse. Disabling does not undo provider setup or stop a live helper:
+complete the deliberate restart/new-pane ownership handoff above. Guarded disable
+does not require a healthy runtime root or an existing recorded executable and
+does not mutate runtime state; config/receipt safety checks still apply.
 
 ## Acceptance gates
 
@@ -230,6 +270,11 @@ runtime certification are separate follow-up work.
 
 - [Receipt API and unchanged v1 inventory](AGENT_MANAGEMENT_CONTRACT.md),
   [ownership/migration](AGENT_MANAGEMENT_MIGRATION.md).
+- [Setup and bootstrap](INTEGRATION_SETUP_CONTRACT.md),
+  [provider environment routes](PROVIDER_ENVIRONMENT_ROUTES.md).
+- `src/integration_setup.rs`, `src/integration_setup/paths.rs`,
+  `src/integration_runtime.rs`, `src/integration_runtime/private_fs.rs`,
+  `src/integration_route.rs`.
 - `src/main.rs`, `src/agent_management.rs`, `src/agent_management/{native,unix}.rs`,
   `src/agent_management_presentation.rs`.
 - Kitsune: `src/config/{model,io}.rs`, `src/server/integration_runtime.rs`,

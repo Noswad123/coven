@@ -27,7 +27,14 @@ Linux new install/recommend/update/bulk paths retire without auto-running Coven.
 
 ## Public commands
 
-Reference syntax only; inspect the absolute paths first:
+For the [normal workflow](NORMAL_AGENT_WORKFLOW.md), use the explicit
+[`--from-kitsune` environment route](PROVIDER_ENVIRONMENT_ROUTES.md), not manual
+receiver/socket setup. CLI environment-route plan/install defaults to the current
+Coven executable; omit state-root to use the configured reporter context. Existing
+fixed routes require guarded uninstall before selecting the new route. The
+fixed-endpoint examples and receipt versions below remain compatibility details.
+
+Fixed-route reference syntax only; inspect the absolute paths first:
 
 ```text
 coven agent extensions plan --provider pi --extension-root EXISTING_ABS_ROOT --executable ABS_COVEN --socket ABS --migrate-kitsune --json
@@ -41,7 +48,7 @@ All four placement operations accept `--executable`, `--socket`,
 `--migrate-kitsune`, `--apply` and `--json`. `plan` always previews; the others
 preview unless `--apply` is explicit. The extension root must already exist;
 no automatic directory creation, HOME/root discovery, PATH lookup, native app
-execution or discovery probes occur. First install requires executable/socket;
+execution or discovery probes occur. Fixed-route first install requires executable/socket;
 plan may omit them and returns `planned_requires_executable_and_socket`.
 Later operations use the journal's pins; supplied pins must match. The receiver
 uses an independently prepared owned socket parent with exact 0700 mode.

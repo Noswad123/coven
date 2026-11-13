@@ -20,13 +20,20 @@ upgrade or a globally atomic transaction.
 
 ## API / Interfaces
 
+For the [normal workflow](NORMAL_AGENT_WORKFLOW.md), use the explicit
+[`--from-kitsune` environment route](PROVIDER_ENVIRONMENT_ROUTES.md), not manual
+receiver/socket setup. CLI environment-route plan/install defaults to the current
+Coven executable; omit state-root to use the configured reporter context. Existing
+fixed routes require guarded uninstall before selecting the new route. The
+fixed-endpoint examples and receipt versions below remain compatibility details.
+
 ```text
 coven agent hooks plan|install|uninstall|rollback --provider codex --config-root ABS_CONFIG_ROOT [--executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET] [--migrate-kitsune] [--apply] [--json]
 coven agent report --provider codex --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
 ```
 
 All operations preview without `--apply`; `plan` always previews, even with it.
-Install needs selected absolute executable/socket paths unless supplied by a
+Fixed-route install needs selected absolute executable/socket paths unless supplied by a
 matching receipt. Plan can use placeholders and return
 `planned_requires_executable_and_socket`. Choose a trusted Coven binary: paths are
 lexically validated, not probed/authenticated. No implicit HOME root, source flag,

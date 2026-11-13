@@ -112,6 +112,8 @@ struct Receipt {
     native_pin: String,
     executable: String,
     socket: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    route: Option<crate::integration_route::Route>,
     migrated: bool,
     original: Pair,
     installed: Pair,
@@ -134,12 +136,13 @@ impl Receipt {
     fn validate(&self, policy: &Policy) -> Result<()> {
         require(
             self.schema == policy.schema
-                && self.version == 1
+                && matches!(self.version, 1 | 2)
                 && self.native_pin == policy.native_pin,
             policy.errors.invalid_receipt,
         )?;
         absolute(policy, Path::new(&self.executable))?;
-        absolute(policy, Path::new(&self.socket))?;
+        crate::integration_route::validate(&self.socket, self.version, 1, &self.route)
+            .map_err(|_| Error(policy.errors.invalid_receipt))?;
         for pair in [&self.original, &self.installed, &self.source, &self.target] {
             for leaf in pair.iter().flatten() {
                 leaf.validate(policy)?;
@@ -217,7 +220,15 @@ fn prepare(policy: &Policy, root: &Root, request: &Request) -> Result<Prepared> 
             require(*exe == r.executable, policy.errors.conflict)?;
         }
         if let Some(socket) = &request.socket {
-            require(*socket == r.socket, policy.errors.conflict)?;
+            require(
+                *socket == r.socket
+                    || (!r.pending
+                        && op == Op::Install
+                        && r.operation != Op::Install
+                        && (r.route.is_some()
+                            || crate::integration_route::decode(socket)?.is_some())),
+                policy.errors.conflict,
+            )?;
         }
         Some(r)
     } else {
@@ -293,7 +304,8 @@ fn prepare(policy: &Policy, root: &Root, request: &Request) -> Result<Prepared> 
             .unwrap_or("/unconfigured-receiver");
         Receipt {
             schema: policy.schema.into(),
-            version: 1,
+            version: 1 + u32::from(crate::integration_route::decode(socket)?.is_some()),
+            route: crate::integration_route::decode(socket)?,
             native_pin: policy.native_pin.into(),
             executable: exe.into(),
             socket: socket.into(),
@@ -306,6 +318,16 @@ fn prepare(policy: &Policy, root: &Root, request: &Request) -> Result<Prepared> 
             target: [None, None],
         }
     };
+    if op == Op::Install {
+        if let Some(pin) = &request.socket {
+            if *pin != receipt.socket {
+                receipt.socket = pin.clone();
+                receipt.route = crate::integration_route::decode(pin)?;
+                receipt.version = 1 + u32::from(receipt.route.is_some());
+                receipt.installed = installed(policy, &receipt.executable, pin)?;
+            }
+        }
+    }
     if op == Op::Install && current[1].is_some() {
         require(
             request.migrate_kitsune,
@@ -359,8 +381,13 @@ fn run_inner(
     step: &mut dyn FnMut(usize) -> Result<()>,
 ) -> Result<TaskOutput> {
     let root = Root::open(&request.extension_root, policy.spec)?;
-    for path in [&request.executable, &request.socket].into_iter().flatten() {
-        absolute(policy, Path::new(path))?;
+    if let Some(exe) = &request.executable {
+        absolute(policy, Path::new(exe))?;
+    }
+    if let Some(pin) = &request.socket {
+        if crate::integration_route::decode(pin)?.is_none() {
+            absolute(policy, Path::new(pin))?;
+        }
     }
     let writing = request.apply && request.operation != Operation::Plan;
     require(
@@ -436,11 +463,14 @@ fn run_inner(
     let warning = "Migration drops Kit working/blocked/idle reporting; Coven reports session references only.";
     let placement =
         "File placement is not proof of native activation; no approvals or settings are changed.";
-    let value = json!({"provider":policy.provider, "status":status, "files":policy.leaves, "operation":r.operation.name(),
+    let mut value = json!({"provider":policy.provider, "status":status, "files":policy.leaves, "operation":r.operation.name(),
         "pending":r.pending, "migrate_kitsune":r.migrated, "native_contract":policy.native_pin,
         "before_digests":r.source.each_ref().map(|s| s.as_ref().map(|v| &v.digest)),
         "after_digests":r.target.each_ref().map(|s| s.as_ref().map(|v| &v.digest)),
         "activation":placement, "migration_warning":if r.migrated { Some(warning) } else { None }});
+    if let Some(route) = &r.route {
+        value["route"] = serde_json::to_value(route)?;
+    }
     Ok(TaskOutput {
         stdout: if json_output {
             serde_json::to_string(&value)?
@@ -453,7 +483,11 @@ fn run_inner(
                 } else {
                     String::new()
                 }
-            )
+            ) + if r.route.is_some() {
+                "; route: from-kitsune"
+            } else {
+                ""
+            }
         },
         warnings: if r.migrated {
             vec![warning.into()]

@@ -117,9 +117,16 @@ the parent on the same filesystem. Query errors never imply ACL absence.
 
 Clients admit the endpoint **before connect and before first send**. Once sending
 starts, privacy, identity, protocol or acknowledgement failure is delivery
-uncertainty, never permission to resend. One-second client and 200 ms server
-acceptance budgets are unchanged; they cannot interrupt native filesystem syscalls.
-A receipt may commit and its ACK still be lost.
+uncertainty, never permission to resend. The shared one-second client deadline is
+unchanged. Frozen v1 `agent serve` keeps its at-most-200 ms whole-connection budget
+(also capped by serve duration). Normal `agent run` uses a 200 ms receive/admission
+window and a separate fixed 200 ms reply-write window started after the handler
+completes, before the existing privacy fence. It never acknowledges persisted
+receipts ahead of actual commit handling. Native-event acceptance uses the same
+reply phases but remains volatile, not durable storage. These windows cannot
+interrupt native filesystem syscalls: slow storage can exceed the client deadline,
+and a receipt may commit while its ACK is still lost. No automatic resend or
+mutation retry is authorized.
 
 Cleanup uses the held parent and only the still-owned inode in the same private
 parent. Changed ACLs or namespace can prevent cleanup and leave an orphan/stale
@@ -182,9 +189,17 @@ generic storage logic changed only by pure Delivery-type extraction.
 
 Earlier agent-reported serial workflow runs sporadically returned
 `agent_delivery_uncertain`; the final selected serial runs passed. Root cause
-remains unestablished. No production timeout relaxation or resend was added.
+remains unestablished; the normal-run reply-phase fix above does not prove the
+cause of those historical failures. No production timeout relaxation or resend
+was added in that historical validation cut.
 Historical full-library failures remain failures in the
 [migration validation record](AGENT_MANAGEMENT_MIGRATION.md#validation-record).
+
+Separately reported controlled commit-delay traces demonstrated the normal-run
+reply-phase fix: a 300 ms delay received an ACK, while a 1.1-second delay still
+produced client delivery uncertainty. This is scoped timing evidence, not proof
+of the root cause of either historical full-harness failure or a full-harness pass;
+this documentation update did not rerun it.
 
 Native qualification still requires actual SDK compile/link on Apple Silicon and
 Intel; APFS sockets with absent/nonempty/inherited ACLs and capability errors;

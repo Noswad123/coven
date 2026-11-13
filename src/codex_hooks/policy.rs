@@ -29,8 +29,8 @@ fn quote(s: &str) -> String {
 }
 fn block(exe: &str, socket: &str) -> Value {
     json!({"hooks":[{"type":"command", "command":format!(
-        "{} agent report --provider codex --socket {} --event SessionStart >/dev/null 2>&1 || true # {MARKER}",
-        quote(exe), quote(socket)), "timeout":2}]})
+        "{} agent report --provider codex {} --event SessionStart >/dev/null 2>&1 || true # {MARKER}",
+        quote(exe), crate::integration_route::shell(socket)), "timeout":2}]})
 }
 
 pub(super) fn parse_json(raw: &[u8]) -> Result<Value> {

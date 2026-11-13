@@ -20,6 +20,10 @@ mod store;
 #[path = "agent_management/unix.rs"]
 mod unix;
 
+#[cfg(all(test, unix))]
+#[path = "agent_management/receipt_trace.rs"]
+pub(crate) mod receipt_trace;
+
 pub const CONTRACT: &str = "coven.agent-management.v1";
 const MAX_PAYLOAD: usize = 1_048_576;
 const MAX_RECORDS: usize = 128;
@@ -41,13 +45,22 @@ pub fn run_with_projection(
     request: &RunRequest,
     projection: Arc<Mutex<Value>>,
 ) -> Result<TaskOutput> {
+    run_with_projection_and_cancel(request, projection, None)
+}
+
+/// Optional cooperative cancellation; the receiver cleans up before returning.
+pub fn run_with_projection_and_cancel(
+    request: &RunRequest,
+    projection: Arc<Mutex<Value>>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<TaskOutput> {
     #[cfg(unix)]
     {
-        unix::run(request, projection)
+        unix::run(request, projection, cancel)
     }
     #[cfg(not(unix))]
     {
-        let _ = (request, projection);
+        let _ = (request, projection, cancel);
         Err(Error("agent_unsupported_platform"))
     }
 }

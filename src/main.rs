@@ -21,6 +21,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Preview or explicitly enable normal agent reporting in Kitsune.
+    Integration {
+        #[command(subcommand)]
+        command: Integration,
+    },
     /// Inspect existing targets or explicitly submit interactive input.
     Session {
         #[command(subcommand)]
@@ -256,8 +261,8 @@ enum Agent {
     },
     /// Read a closed Djinn native event envelope from bounded stdin.
     ReportNative {
-        #[arg(long)]
-        socket: String,
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
         #[arg(long)]
         json: bool,
     },
@@ -283,8 +288,8 @@ enum Agent {
     },
     /// Read supported native hook JSON and report once to Coven, not Kitsune.
     Report {
-        #[arg(long, allow_negative_numbers = true)]
-        socket: String,
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
         #[arg(long, value_parser = ["claude", "codex", "copilot"])]
         provider: String,
         #[arg(long, value_parser = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd", "SubagentStop"])]
@@ -294,8 +299,8 @@ enum Agent {
     },
     /// Read a Coven extension envelope, not native hook JSON, and report once.
     ReportExtension {
-        #[arg(long, allow_negative_numbers = true)]
-        socket: String,
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
         #[arg(long, value_parser = ["pi", "opencode"])]
         provider: String,
         #[arg(long, value_parser = ["session_start", "session.created", "session.updated"])]
@@ -343,6 +348,96 @@ enum Agent {
 }
 
 #[derive(clap::Args)]
+struct IntegrationOptions {
+    /// Defaults to Kitsune's startup config selection, never a temporary directory.
+    #[arg(long)]
+    kitsune_config: Option<PathBuf>,
+    /// Defaults to this Coven executable; no PATH or sibling-build discovery.
+    #[arg(long)]
+    executable: Option<PathBuf>,
+    #[arg(long)]
+    state_root: Option<PathBuf>,
+    #[arg(long)]
+    apply: bool,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum Integration {
+    /// Inspect generated startup settings without changing anything.
+    Plan(IntegrationOptions),
+    /// Enable normal reporting; remains a preview unless --apply is supplied.
+    Enable(IntegrationOptions),
+    /// Restore an unchanged managed configuration; requires --apply to write.
+    Disable(IntegrationOptions),
+    /// Attached helper invoked by the generated Kitsune startup configuration.
+    #[command(hide = true)]
+    Runtime {
+        #[arg(long)]
+        state_root: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(clap::Args)]
+struct AgentReportEndpoint {
+    #[arg(
+        long,
+        allow_negative_numbers = true,
+        required_unless_present = "from_kitsune",
+        conflicts_with = "from_kitsune"
+    )]
+    socket: Option<String>,
+    /// Use the active, private Coven instance selected by this Kitsune pane.
+    #[arg(long)]
+    from_kitsune: bool,
+    #[arg(long, requires = "from_kitsune")]
+    state_root: Option<PathBuf>,
+}
+
+impl AgentReportEndpoint {
+    fn resolve(self) -> Result<String> {
+        match (self.socket, self.from_kitsune) {
+            (Some(socket), false) => Ok(socket),
+            (None, true) => coven::integration_runtime::reporter_socket(self.state_root.as_deref()),
+            _ => Err(coven::Error::invalid_cli_arguments()),
+        }
+    }
+}
+
+fn installer_endpoint(
+    socket: Option<String>,
+    from_kitsune: bool,
+    state_root: Option<PathBuf>,
+) -> Result<Option<String>> {
+    match (socket, from_kitsune) {
+        (None, true) => Ok(Some(coven::integration_route::installed_pin(
+            state_root.as_deref(),
+        )?)),
+        (socket, false) if state_root.is_none() => Ok(socket),
+        _ => Err(coven::Error::invalid_cli_arguments()),
+    }
+}
+
+fn installer_executable(
+    executable: Option<String>,
+    from_kitsune: bool,
+    installing: bool,
+) -> Result<Option<String>> {
+    if executable.is_none() && from_kitsune && installing {
+        return Ok(Some(
+            std::env::current_exe()?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| coven::Error::invalid_cli_arguments())?,
+        ));
+    }
+    Ok(executable)
+}
+
+#[derive(clap::Args)]
 struct ProviderHookOptions {
     #[arg(long, value_parser = ["claude", "codex", "copilot"])]
     provider: String,
@@ -350,8 +445,12 @@ struct ProviderHookOptions {
     config_root: PathBuf,
     #[arg(long, allow_negative_numbers = true)]
     executable: Option<String>,
-    #[arg(long, allow_negative_numbers = true)]
+    #[arg(long, allow_negative_numbers = true, conflicts_with = "from_kitsune")]
     socket: Option<String>,
+    #[arg(long)]
+    from_kitsune: bool,
+    #[arg(long, requires = "from_kitsune")]
+    state_root: Option<PathBuf>,
     #[arg(long)]
     migrate_kitsune: bool,
     #[arg(long)]
@@ -402,8 +501,12 @@ struct ExtensionOptions {
     extension_root: PathBuf,
     #[arg(long, allow_negative_numbers = true)]
     executable: Option<String>,
-    #[arg(long, allow_negative_numbers = true)]
+    #[arg(long, allow_negative_numbers = true, conflicts_with = "from_kitsune")]
     socket: Option<String>,
+    #[arg(long)]
+    from_kitsune: bool,
+    #[arg(long, requires = "from_kitsune")]
+    state_root: Option<PathBuf>,
     #[arg(long)]
     migrate_kitsune: bool,
     #[arg(long)]
@@ -1224,6 +1327,30 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Integration { command } => {
+            use coven::integration_setup::Operation;
+            let (operation, options) = match command {
+                Integration::Plan(options) => (Operation::Plan, options),
+                Integration::Enable(options) => (Operation::Enable, options),
+                Integration::Disable(options) => (Operation::Disable, options),
+                Integration::Runtime { state_root, json } => {
+                    return coven::integration_runtime::runtime_arguments(
+                        state_root.as_deref(),
+                        json,
+                    );
+                }
+            };
+            return coven::integration_setup::arguments(
+                &coven::integration_setup::Request {
+                    operation,
+                    kitsune_config: options.kitsune_config,
+                    executable: options.executable,
+                    state_root: options.state_root,
+                    apply: options.apply,
+                },
+                options.json,
+            );
+        }
         Command::Session { command } => {
             return match command {
                 Session::List { options } => coven::session_inspection::arguments(
@@ -1557,9 +1684,9 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             );
         }
         Command::Agent {
-            command: Agent::ReportNative { socket, json },
+            command: Agent::ReportNative { endpoint, json },
         } => {
-            return coven::agent_management::native_report_arguments(&socket, json);
+            return coven::agent_management::native_report_arguments(&endpoint.resolve()?, json);
         }
         Command::Agent {
             command:
@@ -1597,7 +1724,7 @@ fn run(cli: Cli) -> Result<TaskOutput> {
         Command::Agent {
             command:
                 Agent::Report {
-                    socket,
+                    endpoint,
                     provider,
                     event,
                     json,
@@ -1605,7 +1732,7 @@ fn run(cli: Cli) -> Result<TaskOutput> {
         } => {
             return coven::agent_management::report_arguments(
                 &coven::agent_management::ReportRequest {
-                    socket,
+                    socket: endpoint.resolve()?,
                     provider,
                     event,
                 },
@@ -1650,7 +1777,7 @@ fn run(cli: Cli) -> Result<TaskOutput> {
         Command::Agent {
             command:
                 Agent::ReportExtension {
-                    socket,
+                    endpoint,
                     provider,
                     event,
                     json,
@@ -1658,7 +1785,7 @@ fn run(cli: Cli) -> Result<TaskOutput> {
         } => {
             return coven::agent_management::extension_report_arguments(
                 &coven::agent_management::ReportRequest {
-                    socket,
+                    socket: endpoint.resolve()?,
                     provider,
                     event: Some(event),
                 },
@@ -1677,8 +1804,16 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             };
             let request = coven::pi_extension::Request {
                 extension_root: options.extension_root,
-                executable: options.executable,
-                socket: options.socket,
+                executable: installer_executable(
+                    options.executable,
+                    options.from_kitsune,
+                    matches!(operation, Operation::Plan | Operation::Install),
+                )?,
+                socket: installer_endpoint(
+                    options.socket,
+                    options.from_kitsune,
+                    options.state_root,
+                )?,
                 migrate_kitsune: options.migrate_kitsune,
                 apply: options.apply,
                 operation,
@@ -1702,12 +1837,22 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                     (coven::claude_hooks::Operation::Rollback, options)
                 }
             };
+            let executable = installer_executable(
+                options.executable,
+                options.from_kitsune,
+                matches!(
+                    operation,
+                    coven::claude_hooks::Operation::Plan | coven::claude_hooks::Operation::Install
+                ),
+            )?;
+            let socket =
+                installer_endpoint(options.socket, options.from_kitsune, options.state_root)?;
             if options.provider == "codex" {
                 return coven::codex_hooks::arguments(
                     &coven::codex_hooks::Request {
                         config_root: options.config_root,
-                        executable: options.executable,
-                        socket: options.socket,
+                        executable,
+                        socket,
                         migrate_kitsune: options.migrate_kitsune,
                         apply: options.apply,
                         operation,
@@ -1717,8 +1862,8 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             }
             let request = coven::claude_hooks::Request {
                 config_root: options.config_root,
-                executable: options.executable,
-                socket: options.socket,
+                executable,
+                socket,
                 migrate_kitsune: options.migrate_kitsune,
                 apply: options.apply,
                 operation,
@@ -2651,6 +2796,128 @@ fn collection_exit(delivery: Delivery) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn integration_setup_is_explicit_and_preview_first() {
+        for operation in ["plan", "enable", "disable"] {
+            let cli = Cli::try_parse_from(["coven", "integration", operation]).unwrap();
+            let Command::Integration { command } = cli.command else {
+                panic!("expected integration");
+            };
+            let options = match command {
+                Integration::Plan(options)
+                | Integration::Enable(options)
+                | Integration::Disable(options) => options,
+                Integration::Runtime { .. } => panic!("expected setup operation"),
+            };
+            assert!(!options.apply);
+            assert!(options.kitsune_config.is_none());
+            assert!(options.executable.is_none());
+            assert!(options.state_root.is_none());
+        }
+        assert!(Cli::try_parse_from(["coven", "integration", "enable", "--apply"]).is_ok());
+        assert!(Cli::try_parse_from(["coven", "integration", "runtime"]).is_ok());
+    }
+
+    #[test]
+    fn reporter_routes_are_explicit_and_mutually_exclusive() {
+        for route in [
+            vec!["agent", "report-native"],
+            vec!["agent", "report", "--provider", "claude"],
+            vec![
+                "agent",
+                "report-extension",
+                "--provider",
+                "pi",
+                "--event",
+                "session_start",
+            ],
+        ] {
+            let parse = |extra: &[&str]| {
+                Cli::try_parse_from([vec!["coven"], route.clone(), extra.to_vec()].concat())
+            };
+            assert!(parse(&[]).is_err());
+            assert!(parse(&["--socket", "/private/receiver"]).is_ok());
+            assert!(parse(&["--from-kitsune"]).is_ok());
+            assert!(parse(&["--from-kitsune", "--state-root", "/private/state"]).is_ok());
+            assert!(parse(&["--state-root", "/private/state"]).is_err());
+            assert!(parse(&["--socket", "/private/receiver", "--from-kitsune"]).is_err());
+        }
+    }
+
+    #[test]
+    fn provider_installers_select_environment_routes_without_manual_socket_pins() {
+        for route in [
+            vec![
+                "agent",
+                "hooks",
+                "plan",
+                "--provider",
+                "claude",
+                "--config-root",
+                "/provider",
+            ],
+            vec![
+                "agent",
+                "hooks",
+                "install",
+                "--provider",
+                "codex",
+                "--config-root",
+                "/provider",
+            ],
+            vec![
+                "agent",
+                "hooks",
+                "install",
+                "--provider",
+                "copilot",
+                "--config-root",
+                "/provider",
+            ],
+            vec![
+                "agent",
+                "extensions",
+                "plan",
+                "--provider",
+                "pi",
+                "--extension-root",
+                "/provider",
+            ],
+            vec![
+                "agent",
+                "extensions",
+                "install",
+                "--provider",
+                "opencode",
+                "--extension-root",
+                "/provider",
+            ],
+        ] {
+            assert!(
+                Cli::try_parse_from(
+                    [vec!["coven"], route.clone(), vec!["--from-kitsune"]].concat(),
+                )
+                .is_ok()
+            );
+            assert!(
+                Cli::try_parse_from(
+                    [
+                        vec!["coven"],
+                        route,
+                        vec!["--from-kitsune", "--socket", "/receiver"]
+                    ]
+                    .concat(),
+                )
+                .is_err()
+            );
+        }
+        assert_eq!(
+            installer_endpoint(None, true, None).unwrap(),
+            Some(coven::integration_route::installed_pin(None).unwrap()),
+        );
+        assert!(installer_endpoint(Some("/receiver".into()), true, None).is_err());
+    }
+
     #[test]
     fn lead_operations_only_decode_selected_operands_and_clear_overrides() {
         for (items, expected) in [

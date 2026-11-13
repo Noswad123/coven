@@ -27,6 +27,17 @@ pub fn run_arguments(
     presentation: &PresentationRequest,
     json_output: bool,
 ) -> Result<TaskOutput> {
+    run_arguments_with_cancel(core, presentation, json_output, None)
+}
+
+/// Cancel only this owned receiver. The presentation worker is stopped and joined
+/// on every receiver return, including cooperative cancellation.
+pub fn run_arguments_with_cancel(
+    core: &agent_management::RunRequest,
+    presentation: &PresentationRequest,
+    json_output: bool,
+    cancel_receiver: Option<&AtomicBool>,
+) -> Result<TaskOutput> {
     socket::validate_path(&presentation.socket)?;
     crate::groups::source(&presentation.source)?;
     let projection = Arc::new(Mutex::new(Value::Null));
@@ -40,7 +51,8 @@ pub fn run_arguments(
     let worker = thread::Builder::new()
         .name("coven-normal-view".into())
         .spawn(move || worker_report(&request, &model, &cancel));
-    let result = agent_management::run_with_projection(core, projection);
+    let result =
+        agent_management::run_with_projection_and_cancel(core, projection, cancel_receiver);
     stop.0.store(true, Ordering::Release);
     // All worker IO is cancellation-aware; close has its own 200ms bound.
     // Always join, including receiver startup errors, so no worker is orphaned.

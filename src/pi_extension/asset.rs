@@ -10,6 +10,18 @@ pub(super) fn generate(executable: &str, socket: &str) -> Result<Vec<u8>> {
     if executable.len().saturating_add(socket.len()) > LIMIT {
         return Err(Error("pi_extension_asset_too_large"));
     }
+    if crate::integration_route::decode(socket)?.is_some() {
+        let args = serde_json::to_string(&crate::integration_route::argv(socket)?)?;
+        let body = BODY.replace("\"--socket\", SOCKET", "...ROUTE");
+        let source = format!(
+            "const EXECUTABLE = {};\nconst ROUTE = {args};\n{body}",
+            serde_json::to_string(executable)?
+        );
+        if source.len() > LIMIT {
+            return Err(Error("pi_extension_asset_too_large"));
+        }
+        return Ok(source.into_bytes());
+    }
     let executable = serde_json::to_string(executable)?;
     let socket = serde_json::to_string(socket)?;
     let source = format!("const EXECUTABLE = {executable};\nconst SOCKET = {socket};\n{BODY}");

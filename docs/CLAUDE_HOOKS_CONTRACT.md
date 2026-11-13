@@ -14,6 +14,13 @@ Claude detection/start/resume/restore extraction.
 
 ## API / Interfaces
 
+For the [normal workflow](NORMAL_AGENT_WORKFLOW.md), use the explicit
+[`--from-kitsune` environment route](PROVIDER_ENVIRONMENT_ROUTES.md), not manual
+receiver/socket setup. CLI environment-route plan/install defaults to the current
+Coven executable; omit state-root to use the configured reporter context. Existing
+fixed routes require guarded uninstall before selecting the new route. The
+fixed-endpoint examples and receipt versions below remain compatibility details.
+
 ```text
 coven agent hooks plan|install|uninstall|rollback --provider claude --config-root ABS_CONFIG_ROOT [--executable ABS_COVEN_BINARY --socket ABS_COVEN_SOCKET] [--migrate-kitsune] [--apply] [--json]
 ```
@@ -25,7 +32,7 @@ not writable by others. Component-by-component `openat`/`O_NOFOLLOW` traversal
 pins directory descriptors. Paths are absolute, control-free and contain no `..`.
 Existing leaves must be safe owned single-link regular files, not symlinks.
 
-Install requires explicit absolute executable and socket paths; the user must
+Fixed-route install requires explicit absolute executable and socket paths; the user must
 choose a **trusted Coven executable**. Paths are validated lexically, not probed
 or authenticated. Plan can inspect without them and report
 `planned_requires_executable_and_socket`. No implicit roots, PATH lookup,

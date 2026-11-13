@@ -24,7 +24,14 @@ entries and old ingress/lifecycle remain compatibility until explicit migration.
 
 ## Public commands
 
-Reference syntax only; inspect and select absolute paths manually:
+For the [normal workflow](NORMAL_AGENT_WORKFLOW.md), use the explicit
+[`--from-kitsune` environment route](PROVIDER_ENVIRONMENT_ROUTES.md), not manual
+receiver/socket setup. CLI environment-route plan/install defaults to the current
+Coven executable; omit state-root to use the configured reporter context. Existing
+fixed routes require guarded uninstall before selecting the new route. The
+fixed-endpoint examples and receipt versions below remain compatibility details.
+
+Fixed-route reference syntax only; inspect and select absolute paths manually:
 
 ```text
 coven agent extensions plan --provider opencode --extension-root EXISTING_ABS_ROOT --executable ABS_COVEN --socket ABS_SOCKET --migrate-kitsune --json
@@ -41,7 +48,7 @@ accepts both `plugin` and `plugins` roots, including Kit's existing `plugins` ro
 Select one: there is **no across-root deduplication or authority arbitration**.
 Do not double-install in both roots. No JSON settings, directories or packages are
 created; no SDK packages, probes, native execution, PATH discovery or automatic root
-discovery are needed. First install requires executable/socket; plan without them
+discovery are needed. Fixed-route first install requires executable/socket; plan without them
 reports `planned_requires_executable_and_socket`. Later operations use journal pins;
 supplied pins must match. Prepare the receiver's existing owned socket parent
 separately with exact 0700 mode.
