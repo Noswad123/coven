@@ -10,6 +10,9 @@ use std::{
 #[cfg(unix)]
 #[path = "agent_management/files.rs"]
 mod files;
+#[cfg(unix)]
+#[path = "agent_management/native.rs"]
+pub mod native;
 #[path = "agent_management/store.rs"]
 #[cfg(unix)]
 mod store;
@@ -26,6 +29,52 @@ pub struct ServeRequest {
     pub workspace: PathBuf,
     pub socket: String,
     pub duration: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct RunRequest {
+    pub workspace: PathBuf,
+    pub socket: String,
+}
+
+pub fn run_with_projection(
+    request: &RunRequest,
+    projection: Arc<Mutex<Value>>,
+) -> Result<TaskOutput> {
+    #[cfg(unix)]
+    {
+        unix::run(request, projection)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (request, projection);
+        Err(Error("agent_unsupported_platform"))
+    }
+}
+
+pub fn native_report_arguments(socket: &str, json: bool) -> Result<TaskOutput> {
+    let mut payload = Vec::new();
+    std::io::stdin()
+        .lock()
+        .take(8193)
+        .read_to_end(&mut payload)?;
+    native_report_payload(socket, &payload, json)
+}
+
+pub fn native_report_payload(socket: &str, payload: &[u8], json: bool) -> Result<TaskOutput> {
+    #[cfg(unix)]
+    {
+        let params = native::params(&decode(payload, 8192)?, true)?;
+        output(
+            unix::call_contract(socket, native::RPC, "report", params)?,
+            json,
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (socket, payload, json);
+        Err(Error("agent_unsupported_platform"))
+    }
 }
 
 #[derive(Clone, Debug)]

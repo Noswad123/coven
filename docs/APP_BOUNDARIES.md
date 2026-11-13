@@ -2,6 +2,17 @@
 
 ## Overview
 
+**Current opt-in cut (2026-11-12):** [normal invocation](NORMAL_AGENT_WORKFLOW.md)
+keeps native commands unchanged after explicit startup/runtime and provider setup.
+Kit starts a generic server-only helper; Coven owns attributed plain rows under
+the Coven source, not legacy status widgets, focus/sidebar agents or mobile
+completion behavior. No launcher, group/artifact join, automatic install or
+pane/PID/native attestation follows. External mode suppresses legacy status,
+detectors and automatic agent resume even on helper failure or fail-closed invalid/
+unreadable startup config. Runtime/rollback handoff needs restart, new panes and
+provider reload; no automatic helper restart. Default-mode compatibility below
+remains, and full extraction/native macOS qualification are not claimed.
+
 Decision date: **2026-10-22**. Status: **accepted target; initial read-only
 observation implemented in Coven; production opt-in terminal-border annotations
 implemented in Kitsune; explicit participant groups/roles and a foreground publisher
@@ -88,8 +99,8 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | Independent OpenCode receipts | Separate strict Coven three-string envelope, session.created/updated root references only, unknown even fresh. Native server exact-directory-instance scope, not selected TUI/pane/attach or whole project; migration drops working/blocked/idle. |
 | Independent Claude receipts | Coven Linux/macOS private receiver/inventory; macOS provisional and natively unqualified, other Unix refused, Windows unsupported. Not a non-Linux installer retirement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
 | Generic Linux/macOS foreground-cohort recognition | Coven `agent discover` recognizes all 22 literal families without Kit agent APIs/hints, workspace/storage or receipt/group joins; optional bounded watch/generic view. macOS is source-enabled/provisional, not native runtime certification. Partial scope, not native identity/activity/full status or detector retirement. See [contract](AGENT_DISCOVERY_CONTRACT.md). |
-| Agent APIs/detection, navigator/attention and mobile UI | Retained with typed foreground/fallback/history separation and deliberate readiness/authority hardening; scoped validation complete with limits below, no external mode or matching retirement. |
-| Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
+| Agent APIs/detection, navigator/attention and mobile UI | Legacy/default-mode compatibility retained; external mode suppresses legacy status authority/detectors, not replacement with Coven-owned versions of the old widgets/focus/mobile model. |
+| Native references, agent restore/resume and remaining lifecycle hooks | Legacy/default-mode policy retained; external mode preserves references/history without automatic agent resume. Broader Coven adapters still need subsystem-specific gates. |
 | `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot/Pi/OpenCode new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
 
 New Claude settings are explicitly selected and preview by default; Linux and
@@ -211,7 +222,8 @@ undetectable omissions. Bracket/endpoint fences discard detected failures, not
 make attribution atomic, eliminate PID ABA or prove complete acquisition. Read requests can ensure a default workspace/shell through
 existing Kit housekeeping; they are not zero-effect operations.
 
-No matching Kit detector retirement has occurred. The internal typed
+Historical pre-normal-workflow discovery cut (before 2026-11-12): no matching
+Kit detector retirement occurred in that cut. The internal typed
 [foreground/fallback/history seam](../../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
 implemented. Historical/screen-only data cannot mint native ownership, takeover
 or effectiveness. Restored Idle/name/reference/pending resume/managed Active remain;
@@ -468,7 +480,9 @@ acceptance interpretation without overwriting native execution facts.
 
 ## Example usage
 
-Current workflow: a user groups already-running participants from Kitsune's inventory in
+For ordinary native invocation, use the [normal workflow](NORMAL_AGENT_WORKFLOW.md)
+with no grouping requirement. Separate optional group workflow: a user groups
+already-running participants from Kitsune's legacy inventory in
 Coven and assigns display roles, with optional native references (not fresh identity
 or lifecycle verification). The explicit foreground publisher sends generic group/role
 labels; only the Kitsune presentation adapter is supported in v1. See the

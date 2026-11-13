@@ -242,6 +242,25 @@ enum Command {
 
 #[derive(Subcommand)]
 enum Agent {
+    /// Attached, opt-in normal-invocation receiver and attributed generic view.
+    Run {
+        workspace: PathBuf,
+        #[arg(long)]
+        socket: String,
+        #[arg(long)]
+        kitsune_socket: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a closed Djinn native event envelope from bounded stdin.
+    ReportNative {
+        #[arg(long)]
+        socket: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Interpret generic reported foreground-process evidence; never authorizes input.
     Discover {
         #[command(flatten)]
@@ -1517,6 +1536,30 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             };
             let result = runtime::lifecycle(&workspace, action)?;
             return Ok(command_output(result.body, result.exit_code));
+        }
+        Command::Agent {
+            command:
+                Agent::Run {
+                    workspace,
+                    socket,
+                    kitsune_socket,
+                    source,
+                    json,
+                },
+        } => {
+            return coven::agent_management_presentation::run_arguments(
+                &coven::agent_management::RunRequest { workspace, socket },
+                &coven::agent_management_presentation::PresentationRequest {
+                    socket: kitsune_socket,
+                    source,
+                },
+                json,
+            );
+        }
+        Command::Agent {
+            command: Agent::ReportNative { socket, json },
+        } => {
+            return coven::agent_management::native_report_arguments(&socket, json);
         }
         Command::Agent {
             command:

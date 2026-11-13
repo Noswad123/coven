@@ -22,6 +22,41 @@ pub struct PresentationRequest {
     pub source: String,
 }
 
+pub fn run_arguments(
+    core: &agent_management::RunRequest,
+    presentation: &PresentationRequest,
+    json_output: bool,
+) -> Result<TaskOutput> {
+    socket::validate_path(&presentation.socket)?;
+    crate::groups::source(&presentation.source)?;
+    let projection = Arc::new(Mutex::new(Value::Null));
+    let stop = Arc::new(Stop(AtomicBool::new(false)));
+    let model = projection.clone();
+    let cancel = stop.clone();
+    let request = PresentationRequest {
+        socket: presentation.socket.clone(),
+        source: presentation.source.clone(),
+    };
+    let worker = thread::Builder::new()
+        .name("coven-normal-view".into())
+        .spawn(move || worker_report(&request, &model, &cancel));
+    let result = agent_management::run_with_projection(core, projection);
+    stop.0.store(true, Ordering::Release);
+    // All worker IO is cancellation-aware; close has its own 200ms bound.
+    // Always join, including receiver startup errors, so no worker is orphaned.
+    let presentation = match worker {
+        Ok(worker) => worker.join().unwrap_or_else(
+            |_| json!({"outcome":"failed","diagnostics":["presentation_worker_panicked"]}),
+        ),
+        Err(_) => json!({"outcome":"failed","diagnostics":["presentation_worker_unavailable"]}),
+    };
+    let mut output = result?;
+    let mut report: Value = serde_json::from_str(&output.stdout)?;
+    report["presentation"] = presentation;
+    output.stdout = crate::session_support::output(&report, !json_output)?.stdout;
+    Ok(output)
+}
+
 struct Stop(AtomicBool);
 impl Cancel for Stop {
     fn interrupted(&self) -> bool {
@@ -116,6 +151,69 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
         return Ok(None);
     };
     let invalid = || Failure::new("presentation_projection_error");
+    if value["contract"] == "coven.normal-observations.v1" {
+        if value["authorization"] != "none" {
+            return Err(invalid());
+        }
+        let observations = value["observations"].as_array().ok_or_else(invalid)?;
+        let omitted = value["omitted_observations"].as_u64().ok_or_else(invalid)?;
+        let retired = value["retired_native_observations"]
+            .as_u64()
+            .ok_or_else(invalid)?;
+        let summary = omitted > 0 || retired > 0;
+        if observations.len() > if summary { 127 } else { 128 } {
+            return Err(invalid());
+        }
+        let mut rows = Vec::new();
+        for observation in observations {
+            let id = observation["observation_id"].as_str().ok_or_else(invalid)?;
+            if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(invalid());
+            }
+            let provider = observation["provider"].as_str().ok_or_else(invalid)?;
+            let state = observation["reported_state"].as_str().ok_or_else(invalid)?;
+            let origin = observation["origin"].as_str().ok_or_else(invalid)?;
+            let freshness = observation["freshness"].as_str().ok_or_else(invalid)?;
+            let capability = observation["capability"].as_str().ok_or_else(invalid)?;
+            if !matches!(
+                provider,
+                "claude" | "codex" | "copilot" | "pi" | "opencode" | "djinn"
+            ) || !matches!(state, "unknown" | "working" | "blocked" | "idle" | "ended")
+                || !matches!(origin, "v1_receipt" | "djinn_native_event")
+                || !matches!(freshness, "fresh" | "expired" | "historical" | "unknown")
+                || !matches!(capability, "activity" | "reference_only")
+                || (origin == "djinn_native_event") != (provider == "djinn")
+            {
+                return Err(invalid());
+            }
+            let item_id = format!("observation:{id}");
+            let mut detail = format!(
+                "Coven: last-reported {} ({freshness}); {origin}; {capability}; caller unverified; no pane binding or success claim",
+                state.to_ascii_uppercase()
+            );
+            if selected == Some(item_id.as_str()) {
+                detail.push_str("; selected (read-only)");
+            }
+            let label = if provider == "djinn" {
+                "Djinn"
+            } else {
+                provider
+            };
+            rows.push(json!({"id":item_id,"label":format!("Coven / {label} / {}",&id[..12]),"detail":detail}));
+        }
+        if summary {
+            rows.push(json!({"id":"normal:limits","label":"Coven / Evidence limits",
+                "detail":format!("{omitted} observations omitted from this view; {retired} native observations retired; bounded volatile history and replay protection")}));
+        }
+        rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+        if rows.windows(2).any(|p| p[0]["id"] == p[1]["id"]) {
+            return Err(invalid());
+        }
+        return Ok(Some(Model {
+            epoch: epoch.into(),
+            rows,
+        }));
+    }
     if epoch.is_empty()
         || epoch.len() > 128
         || epoch.chars().any(char::is_control)
@@ -338,6 +436,54 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normal_view_is_attributed_and_strips_all_native_details() {
+        let value = json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch","authorization":"none","omitted_observations":0,"retired_native_observations":0,"observations":[{
+            "observation_id":"b".repeat(64),"provider":"djinn","reported_state":"blocked",
+            "origin":"djinn_native_event","freshness":"fresh","capability":"activity",
+            "session_id":"PRIVATE-ID","prompt":"PRIVATE-PROMPT","cwd":"/PRIVATE-PATH"}]});
+        let model = snapshot(&Mutex::new(value), None).unwrap().unwrap();
+        let text = serde_json::to_string(&model.rows).unwrap();
+        assert!(text.contains("Coven"));
+        assert!(text.contains("Djinn"));
+        assert!(text.contains("BLOCKED"));
+        assert!(text.contains("caller unverified"));
+        assert!(text.contains("no pane binding or success claim"));
+        assert!(!text.contains("PRIVATE"));
+        assert_eq!(model.rows[0].as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn normal_view_caps_rows_and_explicitly_displays_omission_and_retirement_counts() {
+        let observations: Vec<_> = (0..127).map(|n| json!({"observation_id":format!("{n:064x}"),
+            "provider":"djinn","origin":"djinn_native_event","capability":"activity","freshness":"unknown","reported_state":"unknown"})).collect();
+        let model = Mutex::new(
+            json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch","authorization":"none",
+            "omitted_observations":129,"retired_native_observations":300,"observations":observations}),
+        );
+        let view = snapshot(&model, None).unwrap().unwrap();
+        assert_eq!(view.rows.len(), 128);
+        let summary = view
+            .rows
+            .iter()
+            .find(|r| r["id"] == "normal:limits")
+            .unwrap();
+        assert!(
+            summary["detail"]
+                .as_str()
+                .unwrap()
+                .contains("129 observations omitted")
+        );
+        assert!(
+            summary["detail"]
+                .as_str()
+                .unwrap()
+                .contains("300 native observations retired")
+        );
+        model.lock().unwrap()["observations"][0]["provider"] = json!("opencode");
+        assert!(snapshot(&model, None).is_err());
+    }
 
     fn projection() -> Value {
         json!({"contract":"coven.agent-management.v1","server_epoch":"server-1",

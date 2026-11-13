@@ -47,6 +47,247 @@ fn receiver_child() {
 }
 
 struct Receiver(Child);
+
+#[test]
+fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
+    for ending in [0, libc::SIGINT, libc::SIGTERM] {
+        let root = physical_temp::tempdir();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(root.path().join("coven.json"), "{}").unwrap();
+        let kit = Kit::start(root.path(), "success");
+        let path = root.path().join("native.sock");
+        let mut receiver = Receiver(
+            Command::new(env!("CARGO_BIN_EXE_coven"))
+                .args(["agent", "run"])
+                .arg(root.path())
+                .arg("--socket")
+                .arg(&path)
+                .arg("--kitsune-socket")
+                .arg(root.path().join("kit.sock"))
+                .args(["--source", "queueSource2", "--json"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .unwrap(),
+        );
+        let end = Instant::now() + Duration::from_secs(5);
+        while !path.exists() {
+            assert!(Instant::now() < end);
+            thread::sleep(Duration::from_millis(5));
+        }
+        let mut reporter = Command::new(env!("CARGO_BIN_EXE_coven"))
+            .args(["agent", "report-native", "--socket"])
+            .arg(&path)
+            .arg("--json")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let payload = json!({"contract":"djinn.native-events.v1","instance_id":"12345678-1234-1234-1234-123456789abc","session_id":"PRIVATE-NATIVE-ID","sequence":1,"event":"session.status","status":"busy"});
+        writeln!(reporter.stdin.take().unwrap(), "{payload}").unwrap();
+        let report = reporter.wait_with_output().unwrap();
+        assert!(
+            report.status.success(),
+            "{}",
+            String::from_utf8_lossy(&report.stderr)
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&report.stdout).unwrap(),
+            json!({"type":"accepted","delivery":"volatile"})
+        );
+        loop {
+            let calls = kit.calls.lock().unwrap();
+            if calls.iter().any(|c| {
+                c["method"] == "integration.view.replace"
+                    && c["params"]["items"].to_string().contains("WORKING")
+            }) {
+                break;
+            }
+            drop(calls);
+            assert!(
+                Instant::now() < end,
+                "normal report was not presented before EOF"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(receiver.0.try_wait().unwrap().is_none());
+        let calls = kit.calls.lock().unwrap().clone();
+        assert!(!json!(calls).to_string().contains("PRIVATE-NATIVE-ID"));
+        assert!(
+            calls
+                .iter()
+                .any(|c| c["params"]["items"].to_string().contains("Coven"))
+        );
+        assert!(
+            calls
+                .iter()
+                .any(|c| c["params"]["items"].to_string().contains("Djinn"))
+        );
+        assert!(!root.path().join("state/agent-management.json").exists());
+        if ending == 0 {
+            // Keeping the attached presenter alive must not extend evidence.
+            // A duplicate is rejected and cannot renew the original receipt.
+            assert!(
+                agent_management::native_report_payload(
+                    path.to_str().unwrap(),
+                    payload.to_string().as_bytes(),
+                    true
+                )
+                .is_err()
+            );
+            let expiry_end = Instant::now() + Duration::from_secs(32);
+            loop {
+                let calls = kit.calls.lock().unwrap();
+                if calls.iter().any(|c| {
+                    c["method"] == "integration.view.replace"
+                        && c["params"]["items"]
+                            .to_string()
+                            .contains("UNKNOWN (expired)")
+                }) {
+                    break;
+                }
+                drop(calls);
+                assert!(
+                    Instant::now() < expiry_end,
+                    "evidence was renewed by repainting"
+                );
+                thread::sleep(Duration::from_millis(20));
+            }
+            assert!(receiver.0.try_wait().unwrap().is_none());
+            agent_management::report_payload(
+                &ReportRequest {
+                    socket: path.to_string_lossy().into_owned(),
+                    provider: "claude".into(),
+                    event: None,
+                },
+                br#"{"session_id":"historical-ref","hook_event_name":"Stop"}"#,
+                true,
+            )
+            .unwrap();
+        }
+        if ending == 0 {
+            drop(receiver.0.stdin.take());
+        } else {
+            assert_eq!(unsafe { libc::kill(receiver.0.id() as i32, ending) }, 0);
+        }
+        receiver.finish();
+        assert!(!path.exists());
+        assert!(
+            kit.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|c| c["method"] == "integration.view.close")
+        );
+        if ending == 0 {
+            let before = kit.calls.lock().unwrap().len();
+            let mut restarted = Receiver(
+                Command::new(env!("CARGO_BIN_EXE_coven"))
+                    .args(["agent", "run"])
+                    .arg(root.path())
+                    .arg("--socket")
+                    .arg(&path)
+                    .arg("--kitsune-socket")
+                    .arg(root.path().join("kit.sock"))
+                    .args(["--source", "queueSource2", "--json"])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::inherit())
+                    .spawn()
+                    .unwrap(),
+            );
+            let end = Instant::now() + Duration::from_secs(5);
+            loop {
+                let calls = kit.calls.lock().unwrap();
+                if let Some(frame) = calls[before..]
+                    .iter()
+                    .find(|c| c["method"] == "integration.view.replace")
+                {
+                    let items = frame["params"]["items"].as_array().unwrap();
+                    assert_eq!(
+                        items.len(),
+                        1,
+                        "native observations must be lost on restart"
+                    );
+                    assert!(
+                        items[0]["detail"]
+                            .as_str()
+                            .unwrap()
+                            .contains("UNKNOWN (historical)")
+                    );
+                    break;
+                }
+                drop(calls);
+                assert!(Instant::now() < end);
+                thread::sleep(Duration::from_millis(10));
+            }
+            drop(restarted.0.stdin.take());
+            restarted.finish();
+        }
+    }
+}
+
+#[test]
+fn native_cli_reconstructs_closed_rpc_and_rejects_peer_extra_fields() {
+    for (extra, event) in [
+        (false, "session.created"),
+        (true, "session.created"),
+        (false, "permission.cancelled"),
+        (false, "question.cancelled"),
+    ] {
+        let root = physical_temp::tempdir();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let path = root.path().join("peer.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let worker = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            let request: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(request.as_object().unwrap().len(), 4);
+            assert_eq!(request["contract"], "coven.native-events.v1");
+            assert_eq!(request["method"], "report");
+            assert_eq!(
+                request["params"].as_object().unwrap().len(),
+                if event == "session.created" { 4 } else { 5 }
+            );
+            assert_eq!(request["params"]["event"], event);
+            assert!(request["params"].get("contract").is_none());
+            let mut result = json!({"type":"accepted","delivery":"volatile"});
+            if extra {
+                result["prompt"] = json!("PRIVATE-PEER");
+            }
+            writeln!(stream,"{}",json!({"id":request["id"],"contract":"coven.native-events.v1","type":"result","result":result})).unwrap();
+        });
+        let mut reporter = Command::new(env!("CARGO_BIN_EXE_coven"))
+            .args(["agent", "report-native", "--socket"])
+            .arg(&path)
+            .arg("--json")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut payload = json!({"contract":"djinn.native-events.v1","instance_id":"12345678-1234-1234-1234-123456789abc","session_id":"PRIVATE-SID","sequence":1,"event":event});
+        if event != "session.created" {
+            payload["request_id"] = json!("PRIVATE-REQUEST");
+        }
+        writeln!(reporter.stdin.take().unwrap(), "{payload}").unwrap();
+        let result = reporter.wait_with_output().unwrap();
+        worker.join().unwrap();
+        assert_eq!(result.status.success(), !extra);
+        assert!(!String::from_utf8_lossy(&result.stdout).contains("PRIVATE"));
+        assert!(!String::from_utf8_lossy(&result.stderr).contains("PRIVATE"));
+    }
+}
 impl Receiver {
     fn start(root: &std::path::Path) -> Self {
         Self(
@@ -142,6 +383,7 @@ impl Kit {
                         "integration_views":{"version":if mode == "unsupported" {2} else {1},
                             "sources":[{"id":"build","epoch":"build-epoch"},{"id":"queueSource2","epoch":null}]}}}),
                     "integration.view.open" => {
+                        revision = 0;
                         assert_eq!(params["version"], 1);
                         state.lock().unwrap()["queueSource2"] = json!({"items":[],"intents":[]});
                         if mode == "lost_open" {

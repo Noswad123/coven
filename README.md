@@ -2,6 +2,25 @@
 
 ## Overview
 
+### Normal native-agent invocation (opt-in)
+
+The implemented [normal workflow](docs/NORMAL_AGENT_WORKFLOW.md) keeps ordinary
+`djinn`, `codex`, `copilot`, etc. invocation unchanged after one-time Kit runtime
+opt-in and explicit native hook/extension setup. No Coven launcher, group or manual
+artifact join is required. Kit starts a server-only attached `coven agent run`
+helper and presents **Coven**-attributed plain integration rows, not legacy agent
+widgets, pane focus or mobile completions. External mode suppresses all legacy
+agent-status authority/detectors and automatic agent resume, even on helper failure
+or fail-closed invalid/unreadable startup configuration. Default mode retains legacy
+compatibility. Runtime changes/rollback require a server restart, new panes and
+provider reload; helpers never auto-restart. See the guide for copyable literal-path
+TOML, separate initialized workspace/private 0700 socket-parent prerequisites,
+socket pinning, degraded operation and ownership handoff. No user config is migrated
+automatically. Djinn needs an updated native full-TUI build; reference-only providers
+remain unknown, Claude/Djinn facts expire within 30 seconds independently of the
+five-second view lease. Sessions are unbound/unattested. Complete migration and
+native macOS qualification remain open.
+
 `coven` is a personal, magic-themed multi-agent workspace command for creating,
 tracking, and running local multi-agent workspaces.
 
@@ -134,13 +153,14 @@ read-only, without focus; publisher row IDs are not native/session/receipt ident
 Watch exit 0 means completed duration even through outages; one-shot exit 0 means
 observed, 2 incompatible, 1 unavailable. Interrupt is 130; output failure is 1.
 
-**No matching Kit detector retirement yet.** The internal typed
+**Historical pre-normal-workflow discovery cut (before 2026-11-12):** no matching
+Kit detector retirement occurred in that cut. The internal typed
 [foreground/fallback/history seam](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
 implemented. Historical/screen-only data cannot mint native ownership/takeover/
 effectiveness. Restored metadata/Idle remain; readiness needs a matching probe or
 accepted fallback, not foreground-only proof. Native input's independent fresh
 process check remains. This deliberately hardens public semantics, not blanket
-compatibility. No external mode, new Config or toggle/kill/hide controls ship;
+compatibility. That earlier cut shipped no external mode, new Config or toggle/kill/hide controls;
 the generic acquisition cut separately adds the macOS v2 descriptor. The historical
 [state-seam table and limits](docs/AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
 record final confirmation reruns, ENOSPC-aborted workspace CLI selection, zero-match
@@ -345,8 +365,8 @@ commands/script; normal uninstall never restores Kit references, while guarded
 rollback restores exact original bytes/mode or absence. Private receipts/backups
 can contain secrets. Conflicts/recovery require inspection, never blind retry or
 undo. No user configuration or running sessions are automatically migrated.
-Kitsune still owns legacy process/screen fallback and agent restore, including
-Claude; this is not full Claude/all-provider extraction. See
+Outside opted-in external mode, Kitsune retains legacy process/screen fallback
+and agent restore, including Claude; this is not full Claude/all-provider extraction. See
 [receiver safety/lifetime](docs/AGENT_MANAGEMENT_CONTRACT.md) and
 [Claude hook mutation/recovery](CLAUDE_HOOKS_CONTRACT.md) and
 [Codex hook mutation/recovery](CODEX_HOOKS_CONTRACT.md) before use. Full discovery,

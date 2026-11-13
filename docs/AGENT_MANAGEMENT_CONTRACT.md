@@ -2,6 +2,16 @@
 
 ## Overview
 
+For ordinary native invocation after one-time opt-in, use the
+[normal workflow and literal-path setup](NORMAL_AGENT_WORKFLOW.md). Its attached
+`agent run` accepts existing five-provider receipts plus separate volatile Djinn
+native events and publishes Coven-attributed plain rows. External Kit ownership
+suppresses legacy status/detectors and automatic resume even on helper failure;
+runtime changes/rollback require restart, new panes and provider reload. No launcher,
+group/artifact join, automatic installation, pane/PID binding or native attestation
+is required or claimed. Full migration/macOS native qualification remain open.
+The v1 receipt/inventory and bounded `serve` contract below is unchanged.
+
 Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi/OpenCode
 extension-envelope receiver and redacted inventory.
 Private receiver support is Linux/macOS only (Windows unsupported; other Unix
@@ -28,6 +38,8 @@ joins receipts nor changes this receiver, provider, wire/store or receipt contra
 ## API / Interfaces
 
 ```text
+coven agent run WORKSPACE --socket ABS_COVEN_SOCKET --kitsune-socket ABS_KITSUNE_SOCKET --source coven [--json]
+coven agent report-native --socket ABS_COVEN_SOCKET [--json]
 coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 [--kitsune-socket ABS_KITSUNE_SOCKET --source coven] [--json]
 coven agent report --provider claude --socket ABS_COVEN_SOCKET [--event EVENT] [--json]
 coven agent report --provider codex --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
@@ -154,7 +166,9 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
 | Persisted record after restart, until a new receipt | `unknown`, `age_ms: null` |
 
 These states are **last reported**, not current jobs/readiness/identity/completion.
-There is no freshness threshold turning them into live guarantees.
+The unchanged v1 inventory has no freshness threshold turning them into live
+guarantees. The separate normal view bounds Claude last-reported activity to
+30 seconds; repaint does not refresh facts. Its independent UI lease is five seconds.
 Codex, Copilot, Pi and OpenCode records are always **unknown**, even when fresh with a known receipt age.
 After restart **all providers'** persisted records have unknown state and null age
 until another receipt; a new Codex/Copilot/Pi/OpenCode receipt still does not establish activity.

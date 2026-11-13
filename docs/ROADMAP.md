@@ -1,5 +1,21 @@
 # Coven Roadmap
 
+## Normal invocation — implemented opt-in, 2026-11-12
+
+The [normal workflow](NORMAL_AGENT_WORKFLOW.md) is implemented: after one-time
+Kit startup opt-in and explicit native hook/extension configuration, users invoke
+agents unchanged, without a Coven launcher/group/artifact join. A server-only
+attached helper supplies Coven-attributed plain rows; external ownership suppresses
+all legacy agent-status/detector and automatic-resume paths even on helper failure
+or invalid/unreadable startup configuration. No automatic install/restart/fallback.
+Runtime changes and rollback require Kit restart, new panes and provider reload.
+Djinn requires the updated full-TUI source plugin/build; four reference-only
+providers stay unknown. Thirty-second fact freshness is independent of the
+five-second UI lease; sessions remain unbound/unattested. Broader provider
+lifecycle/restore adapters, full legacy removal and native macOS qualification
+remain next work, not completed migration. Older cut records below describe
+legacy/default-mode obligations unless explicitly stated otherwise.
+
 ## Confirmed all-agent transfer — first functional cut
 
 The authoritative [agent-management migration record](AGENT_MANAGEMENT_MIGRATION.md)
@@ -53,7 +69,8 @@ Next: natively qualify macOS and supply remaining non-Linux capabilities for the
 transfer remaining provider/source hook owners, discovery/status and
 process/screen fallback, provider start/resume, then agent-aware restore/reference
 ownership with actual runtime failure/dedupe gates. Claude fallback and restore
-are **still Kitsune**. Subsequent Codex/Copilot hook and Pi/OpenCode extension cuts are
+remain Kitsune in **legacy/default mode**, and are suppressed in external mode.
+Subsequent Codex/Copilot hook and Pi/OpenCode extension cuts are
 recorded below; other providers remain pending applicable transfers;
 native runtime facts/execution remain native. Do not equate receipt rows with
 verified activity/readiness, completion, roles or execution permission. Final
@@ -84,7 +101,8 @@ failures discard all targets, not establish completeness. Kit housekeeping on re
 can ensure a default workspace/shell, so no zero-server-effects claim is made.
 The classifier intentionally diverges from the 209-case legacy corpus, not parity.
 
-**No matched detector retirement yet.** Kit's internal typed
+**Historical pre-normal-workflow discovery cut (before 2026-11-12):** no matched
+detector retirement in that cut. Kit's internal typed
 [foreground/fallback/history seam](../../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
 implemented. Historical/screen-only data cannot mint native ownership/takeover/
 effectiveness. Restored metadata/Idle remain; readiness needs a matching probe or

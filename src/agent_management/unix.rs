@@ -218,6 +218,139 @@ fn publish(projection: &Option<Arc<Mutex<Value>>>, store: &store::Store) {
     }
 }
 
+static TERMINATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+extern "C" fn terminate(_: libc::c_int) {
+    TERMINATED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+struct TermGuard(libc::sigaction);
+impl Drop for TermGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::sigaction(libc::SIGTERM, &self.0, std::ptr::null_mut());
+        }
+    }
+}
+
+pub(super) fn run(request: &RunRequest, projection: Arc<Mutex<Value>>) -> Result<TaskOutput> {
+    let interrupt = crate::observation_socket::InterruptGuard::install()?;
+    TERMINATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+    let mut previous = action;
+    action.sa_sigaction = terminate as *const () as usize;
+    unsafe {
+        libc::sigemptyset(&mut action.sa_mask);
+    }
+    require(
+        unsafe { libc::sigaction(libc::SIGTERM, &action, &mut previous) } == 0,
+        "agent_interrupt_error",
+    )?;
+    let _term = TermGuard(previous);
+    let bound = Bound::bind(&request.socket)?;
+    let mut store = store::Store::open(&request.workspace)?;
+    let mut native = native::NativeStore::default();
+    while !interrupt.interrupted() && !TERMINATED.load(std::sync::atomic::Ordering::Relaxed) {
+        // stdin is exclusively owned by the attached command. Poll before read,
+        // rather than leaving a blocking reader thread behind on interruption.
+        let mut fd = libc::pollfd {
+            fd: libc::STDIN_FILENO,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let polled = unsafe { libc::poll(&mut fd, 1, 0) };
+        if polled < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+            return Err(Error("agent_stdin_failed"));
+        }
+        if fd.revents & (libc::POLLERR | libc::POLLNVAL) != 0 {
+            return Err(Error("agent_stdin_failed"));
+        }
+        if fd.revents & (libc::POLLIN | libc::POLLHUP) != 0 {
+            let mut bytes = [0u8; 1024];
+            let n =
+                unsafe { libc::read(libc::STDIN_FILENO, bytes.as_mut_ptr().cast(), bytes.len()) };
+            if n == 0 {
+                break;
+            }
+            if n < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+                return Err(Error("agent_stdin_failed"));
+            }
+        }
+        bound.fence()?;
+        store.fence()?;
+        if let Ok(mut model) = projection.try_lock() {
+            *model = native.projection(store.projection(), Instant::now());
+        }
+        match bound.listener.accept() {
+            Ok((mut stream, _)) => {
+                stream.set_nonblocking(true)?;
+                let deadline = Instant::now() + Duration::from_millis(200);
+                let reply = receive(&mut stream, deadline, &interrupt).and_then(|bytes| {
+                    bound.fence()?;
+                    store.fence()?;
+                    handle_normal(&mut store, &mut native, &bytes)
+                });
+                if let Ok(reply) = reply {
+                    if bound.fence().is_ok() {
+                        let _ = send(&mut stream, &reply, deadline, &interrupt);
+                    }
+                }
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                thread::sleep(Duration::from_millis(5))
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    output(
+        json!({"type":"stopped","contract":native::VIEW,"server_epoch":store.epoch,"authorization":"none"}),
+        true,
+    )
+}
+
+fn handle_normal(
+    store: &mut store::Store,
+    native: &mut native::NativeStore,
+    bytes: &[u8],
+) -> Result<Vec<u8>> {
+    let request = decode(bytes, 8192)?;
+    if request.get("contract").and_then(Value::as_str) == Some(CONTRACT) {
+        return handle(store, bytes);
+    }
+    let id = text(&request, "id")?;
+    require(
+        id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()),
+        "agent_invalid_schema",
+    )?;
+    let result = (|| {
+        require(
+            request.as_object().is_some_and(|o| o.len() == 4)
+                && text(&request, "contract")? == native::RPC,
+            "agent_contract_mismatch",
+        )?;
+        require(
+            text(&request, "method")? == "report",
+            "agent_unknown_method",
+        )?;
+        native.report(
+            request.get("params").ok_or(Error("agent_invalid_schema"))?,
+            Instant::now(),
+        )
+    })();
+    let value = match result {
+        Ok(result) => json!({"id":id,"contract":native::RPC,"type":"result","result":result}),
+        Err(error) => {
+            json!({"id":id,"contract":native::RPC,"type":"error","error":{"code":error.code()}})
+        }
+    };
+    let mut bytes = serde_json::to_vec(&value)?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
 pub(super) fn serve(
     request: &ServeRequest,
     json_mode: bool,
@@ -358,6 +491,15 @@ fn send(
 }
 
 pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
+    call_contract(path, CONTRACT, method, params)
+}
+
+pub(super) fn call_contract(
+    path: &str,
+    contract: &str,
+    method: &str,
+    params: Value,
+) -> Result<Value> {
     let deadline = Instant::now() + Duration::from_secs(1);
     let (node, _) = Node::capture(selected(path)?)?;
     node.fence()?;
@@ -365,7 +507,7 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
         crate::observation_socket::select(path).map_err(|_| Error("agent_unsafe_socket"))?;
     let id = crate::platform::random_uuid_hex()?;
     let mut frame =
-        serde_json::to_vec(&json!({"id":id,"contract":CONTRACT,"method":method,"params":params}))?;
+        serde_json::to_vec(&json!({"id":id,"contract":contract,"method":method,"params":params}))?;
     frame.push(b'\n');
     #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
     tests::checkpoint("pre_connect");
@@ -405,7 +547,7 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
     require(
         reply.as_object().is_some_and(|o| o.len() == 4)
             && reply.get("id").and_then(Value::as_str) == Some(&id)
-            && reply.get("contract").and_then(Value::as_str) == Some(CONTRACT),
+            && reply.get("contract").and_then(Value::as_str) == Some(contract),
         "agent_delivery_uncertain",
     )?;
     if reply.get("type").and_then(Value::as_str) == Some("error") {
@@ -435,7 +577,14 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
     let result = reply
         .get("result")
         .ok_or(Error("agent_delivery_uncertain"))?;
-    validate_result(method, result).map_err(|_| Error("agent_delivery_uncertain"))?;
+    if contract == native::RPC {
+        require(
+            *result == json!({"type":"accepted","delivery":"volatile"}),
+            "agent_delivery_uncertain",
+        )?;
+    } else {
+        validate_result(method, result).map_err(|_| Error("agent_delivery_uncertain"))?;
+    }
     crate::observation_socket::check(deadline, &NoCancel)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
     Ok(result.clone())
@@ -1058,6 +1207,55 @@ mod tests {
             saved,
             fs::read(root.path().join("state/agent-management.json")).unwrap()
         );
+    }
+
+    #[test]
+    fn full_legacy_history_does_not_block_native_and_keeps_v1_bytes_and_inventory() {
+        let root = private_root();
+        fs::write(root.path().join("coven.json"), b"marker").unwrap();
+        let mut store = store::Store::open(root.path()).unwrap();
+        for n in 0..128 {
+            store.report(&json!({"provider":"copilot","event":"SessionStart","session_id":format!("legacy-{n}")})).unwrap();
+        }
+        let saved = fs::read(root.path().join("state/agent-management.json")).unwrap();
+        let mut native = native::NativeStore::default();
+        let request = json!({"id":"a".repeat(32),"contract":native::RPC,"method":"report","params":{
+            "instance_id":"12345678-1234-1234-1234-123456789abc","session_id":"native","sequence":1,"event":"session.status","status":"busy"}});
+        let response: Value = serde_json::from_slice(
+            &handle_normal(
+                &mut store,
+                &mut native,
+                &serde_json::to_vec(&request).unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(response["type"], "result");
+        assert_eq!(response["result"]["delivery"], "volatile");
+        assert_eq!(
+            fs::read(root.path().join("state/agent-management.json")).unwrap(),
+            saved
+        );
+        let inventory =
+            json!({"id":"b".repeat(32),"contract":CONTRACT,"method":"inventory","params":{}});
+        let bytes = serde_json::to_vec(&inventory).unwrap();
+        let mut normal: Value =
+            serde_json::from_slice(&handle_normal(&mut store, &mut native, &bytes).unwrap())
+                .unwrap();
+        let mut legacy: Value =
+            serde_json::from_slice(&handle(&mut store, &bytes).unwrap()).unwrap();
+        for value in [&mut normal, &mut legacy] {
+            for record in value["result"]["records"].as_array_mut().unwrap() {
+                record["age_ms"] = Value::Null;
+            }
+        }
+        assert_eq!(normal, legacy);
+        let projection = native.projection(store.projection(), Instant::now());
+        assert_eq!(projection["observations"].as_array().unwrap().len(), 127);
+        assert_eq!(projection["omitted_observations"], 2);
+        assert_eq!(projection["observations"][0]["provider"], "djinn");
+        assert_eq!(projection["observations"][0]["reported_state"], "working");
+        assert!(!projection.to_string().contains("legacy-"));
     }
 
     #[test]

@@ -2,6 +2,26 @@
 
 ## Overview
 
+### Current normal-invocation cut — 2026-11-12
+
+[Normal workflow](NORMAL_AGENT_WORKFLOW.md) implements explicit startup opt-in:
+Kit owns a server-only attached helper, Coven owns attributed plain observation
+rows, and native agents are invoked normally without a launcher, group or artifact
+join. External mode suppresses all legacy agent-status authority/detectors and
+automatic resume even if the helper fails; invalid/unreadable startup ownership
+configuration fails closed, not back to legacy restore. No automatic installation,
+helper restart or live config handoff occurs. Restart Kit, create new panes and
+reload providers for runtime changes/rollback. Each concurrent runtime needs its
+own initialized, dedicated external workspace and receiver socket. Existing hooks'
+explicit socket pins must match the receiver. Installed user config is not rewritten.
+Djinn's updated full-TUI source plugin reports bounded volatile native events;
+Claude has bounded last-reported activity, and Codex/Copilot/Pi/OpenCode remain
+reference-only unknown. Facts expire within 30 seconds independently of the
+five-second presentation lease; no pane/PID binding or native attestation follows.
+The matrix below retains legacy/default-mode and platform transfer obligations,
+not a claim that external mode still runs legacy ownership. Full extraction and
+native macOS qualification remain incomplete.
+
 **Confirmed scope: all agent management on all platforms moves to Coven**, including discovery and
 status interpretation, hooks/installers, start/resume, and agent-aware restore.
 Kitsune retains generic multiplexer operations and optional presentation/messaging;
@@ -103,10 +123,10 @@ not full OpenCode management completion.
 | Optional five-provider inventory presentation | Coven projects its own records with dynamic provider labels through generic Kitsune snapshot + `integration.view.*`. | Kitsune remains agent-neutral; no management authority comes from row selection. |
 | Legacy Claude surfaces on all platforms | Kitsune retains all six `IntegrationTarget::ALL` entries, installation status, uninstall and old hook ingress. Non-Linux new installation also remains. | Retire only after platform-matched compatibility/transition coverage; running sessions are not converted by editing settings. |
 | Generic Linux/macOS foreground-cohort recognition (all 22 literal families) | Coven production `agent discover`, bounded watch and optional generic presentation; ephemeral PID/provider/rule/locator evidence only, no receipt/group join. Linux v1 and provisional macOS v2 with exact `argument_policy: darwin_procargs2_lp64_v1` are admitted; both require `pane_foreground_cohort`/`unclassified`, protocol 18 unchanged. | Partial scope, not detector retirement/full status or native macOS certification. Linux optional argument_policy is ignored; macOS v1 rejects even with the marker. Windows selected_process/legacy_agent_aware rejects. Acquisition completeness stays unknown. See [discovery contract](AGENT_DISCOVERY_CONTRACT.md). |
-| Process/screen fallback, status/attention, navigation, agent APIs and mobile surfaces | Still Kitsune; internal typed foreground/fallback/history separation is implemented with deliberate readiness/authority hardening. | Validate the seam before future external mode or matching retirement; neither ships now. |
+| Process/screen fallback, status/attention, navigation, agent APIs and mobile surfaces | Legacy/default-mode compatibility remains. External mode suppresses legacy agent-status authority/detectors; Coven supplies plain integration rows, not the old widgets/focus/mobile model. | Broader adapters and removal gates remain; external mode is implemented, not universal surface replacement. |
 | Interactive start/resume | Coven's explicit Djinn UI start/resume uses generic terminal-pinned submission. Kitsune's legacy provider paths remain. | Coven adapters for remaining supported providers; unsupported capabilities stay explicit. |
 | Resume policy | Coven pure planner characterizes 16 historical mappings; no new execution authority. | Coven owns provider policy; pure argv equivalence alone cannot replace restore ownership/history semantics. |
-| Agent-aware persistence/restore, native-reference ownership/deduplication and deferred launch | Still Kitsune. | Coven owns agent restore policy; Kitsune retains generic terminal/session persistence and transport. |
+| Agent-aware persistence/restore, native-reference ownership/deduplication and deferred launch | Legacy/default-mode compatibility remains; external mode retains history/references without automatic agent resume. | Broader Coven restore adapters remain pending; Kitsune retains generic terminal/session persistence and transport. |
 | Other hook/provider integrations | Separate built-in Djinn handling and other applicable sources remain pending. Pi full-v7 and OpenCode full-v9 legacy ingress/lifecycle persist until explicit migration. | Coven-owned adapters/configuration with per-source removal gates, not permanent Kit ownership. |
 | Jobs, participant roles and task authority | Coven declarations/task contracts; hook rows have no roles or task authority. | Coven orchestration, separate from native execution and generic presentation. |
 
@@ -140,7 +160,8 @@ stores nothing and joins neither receipts nor groups. Alias provenance is Kit
 the 209-case legacy process corpus comparison records intentional divergences,
 not parity, job-leader selection or ranking.
 
-**No matching detector retirement yet:** the internal typed foreground/fallback/history
+**Historical pre-normal-workflow cut (before 2026-11-12), not current external-mode behavior:**
+no matching detector retirement occurred in that cut; the internal typed foreground/fallback/history
 seam is implemented in Kit. See the optional sibling
 [evidence guide](../../kitsune/DETECTOR_EVIDENCE_SEPARATION.md). Historical/screen-only
 data cannot mint ownership, hook takeover or effective native authority. Restored
@@ -199,7 +220,7 @@ launch, adoption or role assignment is part of this flow.
 2. Build on Linux and source-enabled provisional macOS `agent discover`, without calling recognition detector
    retirement. Build on the implemented typed foreground/fallback/history seam
    and completed scoped API/UI/compatibility checks, retaining the limits below
-   before any future external mode.
+    for broader retirement beyond the implemented opt-in external mode.
    Then move remaining status interpretation, process/screen fallback,
    attention/navigation and mobile agent model into Coven; supply missing generic evidence first,
    especially Windows tree scope/parent relationships. Do not mislabel today's
