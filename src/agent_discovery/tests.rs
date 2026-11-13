@@ -75,7 +75,7 @@ fn snapshot_is_neutral_and_does_not_narrow_extensions() {
 }
 
 #[test]
-fn descriptor_is_mandatory_and_linux_unclassified_only() {
+fn descriptor_is_mandatory_and_legacy_mac_is_rejected() {
     for (key, value) in [
         ("version", json!(2)),
         ("version", json!(true)),
@@ -99,6 +99,84 @@ fn descriptor_is_mandatory_and_linux_unclassified_only() {
     assert_eq!(
         schema::snapshot(&reply(s)).err().unwrap().code,
         "process_observation_unsupported"
+    );
+}
+
+#[test]
+fn exact_peer_capability_tuples_and_mac_only_marker_validation() {
+    for platform in ["linux", "macos", "windows", "unknown"] {
+        for version in [0, 1, 2, 3, u32::MAX] {
+            for policy in [
+                Value::Null,
+                json!(false),
+                json!("wrong"),
+                json!("darwin_procargs2_lp64_v1"),
+                json!("x".repeat(65)),
+            ] {
+                let mut s = snapshot(0);
+                let d = &mut s["snapshot"]["process_observation"];
+                d["platform"] = json!(platform);
+                d["version"] = json!(version);
+                d["argument_policy"] = policy.clone();
+                let expected = if platform == "linux" && version == 1 {
+                    d.as_object_mut().unwrap().remove("argument_policy");
+                    Some(d.clone())
+                } else if platform == "macos"
+                    && version == 2
+                    && policy == "darwin_procargs2_lp64_v1"
+                {
+                    Some(d.clone())
+                } else {
+                    None
+                };
+                // Linux does not consume or narrow this unknown extension.
+                s["snapshot"]["process_observation"]["argument_policy"] = policy;
+                let decoded = schema::snapshot(&reply(s));
+                if let Some(expected) = expected {
+                    assert_eq!(decoded.unwrap().descriptor, expected);
+                } else {
+                    assert_eq!(
+                        decoded.err().unwrap().code,
+                        "process_observation_unsupported"
+                    );
+                }
+            }
+        }
+    }
+    for (key, value) in [
+        ("argument_policy", Value::Null),
+        ("argument_policy", json!("darwin_procargs2_lp64_v1\0")),
+        ("version", json!(2.0)),
+        ("scope", json!("selected_agent")),
+        ("selection", json!("ranked")),
+    ] {
+        let mut s = snapshot(0);
+        s["snapshot"]["process_observation"] = json!({"version":2,"platform":"macos","scope":"pane_foreground_cohort","selection":"unclassified","argument_policy":"darwin_procargs2_lp64_v1"});
+        s["snapshot"]["process_observation"][key] = value;
+        assert_eq!(
+            schema::snapshot(&reply(s)).err().unwrap().code,
+            "process_observation_unsupported"
+        );
+    }
+}
+
+#[test]
+fn raw_arguments_preserve_empty_operands_and_unreadable_name_only_hints() {
+    let facts = schema::processes(
+        &processes(json!([
+            {"pid":4294967295u64,"name":"claude","argv0":"codex","argv":["","claude",""]},
+            {"pid":4294967294u64,"name":"claude","argv0":null,"argv":null}
+        ])),
+        "p0",
+    )
+    .unwrap();
+    assert_eq!(facts[0].argv.as_ref().unwrap(), &["", "claude", ""]);
+    assert!(crate::agent_processes::classify(&facts[0]).is_none());
+    assert_eq!(
+        crate::agent_processes::classify(&facts[1])
+            .unwrap()
+            .provider,
+        "claude"
     );
 }
 

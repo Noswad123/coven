@@ -2,7 +2,7 @@
 
 ## Scope and ownership
 
-Coven owns new Linux reference-plugin placement, Unix receipt capture, redacted
+Coven owns new Linux reference-plugin placement, Linux/macOS receipt capture, redacted
 inventory and optional generic Kitsune presentation. This is **not full OpenCode
 management completion**. Migration is an explicit **functional reduction from
 working/blocked/idle lifecycle reporting to references only**, always `unknown`,
@@ -11,7 +11,11 @@ References establish no activity, identity, readiness, completion or resume auth
 
 Apply uses the [shared Linux/macOS backend](HOOK_FILE_BACKEND_CONTRACT.md).
 Explicit macOS `--apply` is source-enabled, provisional local APFS only, not
-natively qualified; receiver/privacy and native activation remain unvalidated.
+natively qualified. Receiver privacy now shares OS admission, with provisional,
+natively unqualified local-APFS macOS support. Other Unix receivers refuse before
+binding; see [private storage](AGENT_PRIVATE_STORAGE_CONTRACT.md) for the Linux
+receiver's permitted/available `fchmodat2` requirement (6.5 or backport).
+Native activation remains unvalidated.
 Other Unix platforms preview but refuse apply; Windows is unsupported.
 Kit Linux new-install/recommend/
 update/bulk paths retire without running Coven. Non-Linux legacy new-install paths,

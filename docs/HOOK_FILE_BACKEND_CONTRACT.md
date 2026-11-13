@@ -18,7 +18,7 @@ the contract. Provider policy remains in the provider modules.
 | --- | --- | --- | --- | --- |
 | Claude/Codex/Copilot hook-file and Pi/OpenCode extension-file preview | Implemented | Source-enabled; physical paths and APFS admission required | Preview only; not a replacement mutator | Unsupported |
 | Explicit install/uninstall/rollback `--apply` | Implemented; existing admission unchanged | Source-enabled, provisional local APFS only; native qualification pending | Refused before mutation | Unsupported |
-| Private agent receiver/store/socket authorization | Existing Unix implementation; separate validation | Untested separately; hook-file ACL checks do not protect this layer | Unix implementation is not qualification | Unsupported |
+| Private agent receiver/store/socket admission | Shared OS admission and agent-specific descriptor storage; receiver startup needs permitted `fchmodat2` (6.5 or backport) | Source-enabled provisional local APFS; shared FD guard plus parent-relative socket-entry guard; native qualification pending | Receiver refuses before binding; generic storage unchanged | Unsupported |
 | Generic foreground-cohort discovery/watch | Implemented recognition, not full status | Explicitly rejected by current discovery contract | Unsupported by current discovery contract | Selected-process/legacy-agent-aware evidence rejected |
 | Full status interpretation, provider start/resume and agent-aware restore transfer | Pending; explicit Djinn capabilities are not all-provider completion | Pending | Pending | Pending |
 | Kitsune new-install/recommend/update/bulk retirement for these five providers | Existing retirement unchanged | **Not retired** | Not retired | Not retired |
@@ -88,7 +88,9 @@ Provider pending-receipt recovery rules remain unchanged.
 ## Native Admission
 
 Linux retains Root's existing ownership/mode admission. Its extra platform access
-hook is a no-op: success **does not claim ACL absence** or add a Linux ACL policy.
+hook delegates to `private_access.rs` and is a no-op: success **does not claim ACL
+absence** or add a Linux ACL policy. Shared OS admission is independent of hook
+transactions; see [agent private storage](AGENT_PRIVATE_STORAGE_CONTRACT.md).
 
 macOS requires each checked descriptor to identify local APFS (`MNT_LOCAL`) with
 ownership enabled: `MNT_IGNORE_OWNERSHIP`/`noowners` is rejected even with no ACL.
@@ -104,8 +106,11 @@ restore full metadata (ACLs, xattrs or flags), validate ancestor ACL policy, or
 guarantee SIP/TCC authorization. Conservative refusal is intentional.
 
 Rust libc lacks the needed Darwin ACL API. `macos_acl.c` therefore uses native
-Apple SDK ACL, mount and attribute types; Rust sees only the project-owned
-`int coven_hook_acl_state(int fd)` ABI (0 absent, 1 any ACE, -1 error). Linux mock
+Apple SDK ACL, mount and attribute types. The single C unit retains the project-owned
+`int coven_hook_acl_state(int fd)` ABI (0 absent, 1 any ACE, -1 error) and adds
+`coven_socket_entry_acl_state` for parent-FD/basename metadata admission, never a
+socket-FD or `O_EVTONLY` ACL check. The private storage contract records its fixed
+`getattrlistat` schema and bounds. Linux mock
 types exercise decision logic, **not native Apple ABI correctness**.
 
 `build.rs` selects `CARGO_CFG_TARGET_OS`, not host cfg/HOST, and compiles the native
@@ -121,7 +126,7 @@ Rust, dependencies, packaging and SDK/deployment requirements.
 
 ## Validation Gates
 
-The completed parent validation below is recorded without rerunning tests/builds
+The historical backend parent validation below is recorded without rerunning tests/builds
 in this documentation update. Review is ready with no blockers **within the
 provisional source scope**, not native macOS certification or full-suite success.
 
@@ -149,7 +154,7 @@ OpenCode 236 and 1,318 Kit seam checks are separate, non-additive evidence.
 | C mock noowners review | The 33 scenarios include the source-backed P1 fix: `MNT_IGNORE_OWNERSHIP` is rejected early with zero capability/ACL queries. Not a native reproduction or two-UID test. |
 | Apple Rust target availability | Both `aarch64-apple-darwin` and `x86_64-apple-darwin` standard libraries installed for Rust 1.96.1 in the reported development environment. |
 | Full Coven Apple-target build attempts | Both failed: default cc rejects Apple architecture/minimum-version flags. An ARM retry using the correct Clang target confirmed the missing Apple SDK (`TargetConditionals.h` in ring). **Neither an application macOS build pass nor a native backend C compilation pass.** |
-| Development Rust target-check harness | `--tests` passed warning-free for both `aarch64-apple-darwin` and `x86_64-apple-darwin`. Imports actual Root/platform Rust, types and shared tests with locked direct libc 0.2.186 and real target cfg. Initial ambiguous child-module path failure was resolved with explicit paths. No synthetic OS cfg or copied implementation. |
+| Development Rust target-check harness | `--tests` passed warning-free for both `aarch64-apple-darwin` and `x86_64-apple-darwin` after direct serde dependency/lock update. Imports actual Root/platform, private access, agent Files, storage Delivery and tests with real target cfg. No synthetic OS cfg or copied implementation; no full receiver/RPC Unix import. |
 | What that harness does not validate | Does not compile Apple SDK C, link/run the application, exercise APFS, certify Cocoa/provider behavior or establish native qualification. |
 | Historical discovery/state-seam checks | Separate evidence only; 1,318 Kit seam checks and earlier Coven/provider totals are not new hook-backend results and are not additive here. |
 | Native qualification | Pending both architectures, native SDK linking and product deployment-floor validation. |
@@ -169,10 +174,25 @@ actual rename flags and same-vnode/alias behavior; mandatory file/directory sync
 errors; locking, exact modes, crash recovery and physical-path alias rejection.
 Linux C mocks and Rust target typechecks cannot discharge these gates.
 
-The separate `agent_management::{store,unix}` code still uses its own Unix
-ownership/mode checks for store, lease and socket authorization; it does not call
-the hook-file Darwin ACL admission adapter. Its macOS authorization/privacy and
-runtime behavior remain separately unqualified and are the next macOS gate. These
-hook-file checks do not protect workspace state. Qualifying this configuration backend
-would not qualify private receiver privacy, process discovery, full status,
+The receiver now shares OS privacy admission via `private_access.rs`, with its own
+descriptor-rooted store/lease/lock and socket-entry policies, not hook journals.
+See [agent private storage](AGENT_PRIVATE_STORAGE_CONTRACT.md) for the current
+311 distinct focused Linux Rust passes (231 unit/bin + 80 integration), Linux receiver syscall
+requirement and native macOS gates. The 204 checks above are historical backend
+evidence, not a fresh result for this cut or additive to those 311 checks. Current
+strict all-target lint with warnings denied, MSRV 1.85 all-target checking, Linux
+optimized build, locked package verification and packaged test-target compilation
+all passed. The current 15 hook-file checks include one C-mock test with 110
+scenarios (33 old FD + 46 socket + 31 parent); scenarios and umask child test prints
+are not additional Rust checks. Agent-reported ASan/UBSan C checks are Linux source-
+mock evidence, not native macOS ABI. The private storage contract records the
+initial 27/1 four-thread generic-storage run, subsequent serial 28-pass run and
+sporadic workflow uncertainty; root causes remain unestablished.
+The updated actual-source harness imports Root/private access/Files/shared Delivery
+and tests; `--tests` passed warning-free for both Apple architectures after its
+direct serde dependency/lock update. Final read-only review is ready within
+provisional source scope with no remaining P0-P2 findings reported, not full-suite green.
+It does not import full receiver/RPC, compile SDK C, link or run. Full native builds
+remain blocked by the previously missing Apple SDK. Shared admission does not
+qualify native receiver runtime behavior, process discovery, full status,
 start/resume/restore or installed native delivery.

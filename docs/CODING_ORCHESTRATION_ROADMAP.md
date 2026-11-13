@@ -13,7 +13,7 @@ optional generic-view presentation, and retirement of Kitsune's new Claude
 installer **on Linux only**. Non-Linux production installer/assets/result type and
 recommendation/update/bulk paths remain until matching Coven platform adapters;
 all six target entries and status/uninstall/old ingress remain on all platforms.
-Receiver transport is Unix-only, Windows unsupported and macOS unvalidated.
+Receiver support is Linux/macOS only, Windows unsupported and macOS natively unqualified.
 See [receiver](AGENT_MANAGEMENT_CONTRACT.md) and
 [hook](CLAUDE_HOOKS_CONTRACT.md) contracts for privacy, Unix transport, shared
 Linux/macOS file apply, rollback/recovery and unverified-report limits. No automatic configuration
@@ -24,9 +24,15 @@ with Pi/OpenCode reference-extension transfers below, not full management comple
 The [shared backend guide/matrix](HOOK_FILE_BACKEND_CONTRACT.md) now records
 source-complete Linux/macOS private hook-file mutation, not a deferred macOS port.
 macOS explicit `--apply` is provisional eligible local APFS only, not natively
-qualified. All five providers share one capability through three runners. Separate
-receiver/store/socket privacy does not inherit Darwin ACL admission and remains
-untested; discovery still rejects macOS. Full status/start/resume/restore transfer
+qualified. All five providers share one capability through three runners.
+Receiver/store/socket privacy now shares OS admission through `private_access.rs`,
+with agent-specific descriptor storage and parent-relative socket checks, not hook
+transactions. See [private storage](AGENT_PRIVATE_STORAGE_CONTRACT.md) for provisional
+local-APFS macOS admission, pre-secret-write checks and best-effort orphan cleanup.
+Linux receiver startup requires permitted/available `fchmodat2` (6.5 or backport),
+not a minimum for all commands/hooks. Other Unix receivers refuse before binding;
+generic storage is unchanged. Generic macOS discovery is source-enabled/provisional,
+not native runtime certification. Full status/start/resume/restore transfer
 remains pending on both OSes. Parent validation passed 204 distinct focused Linux
 Rust checks, strict all-target lint, Rust 1.85 all-target checking, Linux optimized
 build, locked package verification and packaged test-target compilation. Both
@@ -35,7 +41,19 @@ compilation/linking or runtime tests; both application target builds failed, wit
 missing Apple SDK confirmed on a correctly targeted ARM Clang retry. The incidental
 full-library run did not pass (1,144 passed, 2 failed, 5 ignored); both exact isolated
 reruns passed, root cause unestablished. Review is ready within provisional source
-scope, not native certification or full-suite success. The guide records details.
+scope, not native certification or full-suite success. Those 204 checks are
+historical backend evidence. Final private-storage parent evidence is **311
+distinct focused Linux Rust checks** (231 unit/bin + 80 integration), with strict
+all-target lint denying warnings, MSRV 1.85 all-target checking, Linux optimized
+build, locked package verification and packaged test-target compilation all passed.
+Both Apple actual-source harness `--tests` checks passed warning-free after direct
+serde dependency/lock update with Root/private access/agent Files/storage Delivery/
+tests, not full receiver/RPC Unix or SDK C/link/run. Final read-only review is ready
+within provisional scope with no remaining P0-P2 findings reported. The private
+storage contract records the initial four-thread generic-storage 27/1 run and
+serial 28-pass rerun, plus sporadic workflow uncertainty before final selected
+serial passes; causes remain unestablished, no timing relaxation/resends or full-
+suite-green claim. Native qualification remains pending.
 
 Next functional work natively qualifies macOS and supplies remaining non-Linux capabilities before retiring
 working Kit paths, then transfers remaining hook owners, management interpretation,
@@ -58,26 +76,31 @@ No adoption, launch/input/stop/resume, roles, native-ID association or receipt/g
 join. Activity/attention stay unknown and native identity/lifecycle/completion
 unestablished; help/server/maintenance family hints are not interactive certification.
 
-Kit adds optional `snapshot.process_observation` v1 without changing protocol 18.
-Coven accepts only Linux `pane_foreground_cohort`/`unclassified`, explicitly
-rejecting Windows `selected_process`/`legacy_agent_aware` and macOS first cut.
-Metadata is not authenticated platform/live attestation, process tree/host catalog
-or native generation. Bracket/endpoint checks discard partial failures, not make
-attribution atomic or eliminate PID ABA. Reads can trigger Kit housekeeping and
+Kit adds optional `snapshot.process_observation` without changing protocol 18.
+Coven admits exact Linux v1 and macOS v2 tuples, both
+`pane_foreground_cohort`/`unclassified`. macOS requires exact
+`argument_policy: darwin_procargs2_lp64_v1`; Linux's optional marker is ignored.
+Old macOS v1 rejects even with the marker; Windows unsupported. Generic macOS
+`pane.process_info` acquisition is isolated from unchanged legacy detector
+parsing/hints. It is source-enabled/provisional, not native runtime certification.
+Peer labels/PIDs grant no local OS/PID authority. `acquisition_completeness` stays
+`unknown`: argument mutation and unreadable/failed acquisition can leave undetectable
+omissions. Bracket/endpoint checks discard detected failures, not make acquisition
+complete, attribution atomic or eliminate PID ABA. Reads can trigger Kit housekeeping and
 default-workspace/shell creation. The 209-case legacy comparison is intentional
 divergence, not parity; no filesystem/PATH/native-store/env or execution-text
 resolution belongs in classifier v1.
 
 **No matching Kit detector retirement yet.** The internal typed
-[foreground/fallback/history seam](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
+[foreground/fallback/history seam](../../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
 implemented. Historical/screen-only data cannot mint native ownership, takeover or
 effectiveness. Restored metadata/Idle remain; readiness needs a matching probe or
 accepted fallback, not foreground-only proof. Native input's independent fresh
 process check remains. This deliberately narrows public semantics, not blanket
 compatibility. No external mode, new Config, wire/API/snapshot fields or
-toggle/kill/hide controls ship. Scoped validation is complete: **1,318 distinct Kit
-checks**, separate **50 Coven cross-compatibility checks** and strict all-target
-Kit lint. The [state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
+toggle/kill/hide controls shipped with that earlier evidence seam; the generic
+acquisition cut separately adds the macOS v2 descriptor. The historical
+[state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
 record final confirmation reruns, ENOSPC-aborted workspace CLI selection, zero-match
 tab filter and reproduced stale golden/test-only corrections. No full-suite or new
 production UI behavior is claimed beyond intended evidence hardening.
@@ -87,10 +110,12 @@ retirements unchanged; macOS native qualification, remaining non-Linux capabilit
 and broader status remain pending, not the shared file backend itself.
 
 The [discovery validation table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table)
-records historical discovery 201 focused Coven checks and Kit 249 API checks plus strict lint and
-MSRV/release/package checks. No full-suite/native certification is claimed; do not
-add historical OpenCode 236. No actual live installed Kit
-commands were used in this documentation session. See the contract for bounded
+separates source/fixture coverage from historical checks, not current composed
+totals or full-suite/native certification. Actual Apple Rust-target source-checks
+are not SDK C/link/runtime validation; missing SDK `TargetConditionals.h` still
+blocks native validation. Native qualification remains the next platform gate,
+not detector retirement. No tests, builds or live installed Kit commands were run
+in this documentation session. See the contract for bounded
 collection, watch/TTL/uncertain UI stop, omission and distinct exit semantics.
 
 ## Priority rebaseline — 2026-10-22

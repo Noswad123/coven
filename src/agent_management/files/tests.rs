@@ -82,6 +82,126 @@ fn marker_never_followed_and_state_only_created_after_admission() {
 }
 
 #[test]
+fn relative_workspace_is_lexical_and_descriptor_flags_are_private() {
+    let cwd = std::env::current_dir().unwrap();
+    let root = tempfile::tempdir_in(&cwd).unwrap();
+    fs::write(root.path().join("coven.json"), b"marker").unwrap();
+    let relative = root.path().strip_prefix(&cwd).unwrap().join(".");
+    let files = Files::open(&relative).unwrap();
+    assert_eq!(files.root(), root.path());
+    for file in [
+        files.root.file(),
+        files.state.file(),
+        &files.lock.file,
+        &files.lease.file,
+    ] {
+        assert_ne!(
+            unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
+            0
+        );
+    }
+    let guard = files.guard(Duration::ZERO).unwrap();
+    assert!(guard.validate(&files).is_ok());
+    let other_root = workspace();
+    let other = Files::open(other_root.path()).unwrap();
+    assert_eq!(
+        guard.validate(&other).unwrap_err().code(),
+        "invalid_workspace_lock_owner"
+    );
+}
+
+#[test]
+fn inherited_files_and_invalid_guard_owner_cannot_unlock_parent_description() {
+    let root = workspace();
+    let mut files = Files::open(root.path()).unwrap();
+    files.pid = files.pid.wrapping_add(1);
+    assert_eq!(
+        files.guard(Duration::ZERO).err().unwrap().code(),
+        "invalid_workspace_lock_owner"
+    );
+    files.pid = std::process::id();
+    let mut guard = files.guard(Duration::ZERO).unwrap();
+    guard.pid = guard.pid.wrapping_add(1);
+    assert_eq!(
+        guard.validate(&files).unwrap_err().code(),
+        "invalid_workspace_lock_owner"
+    );
+    // Dropping a foreign-PID token must not issue LOCK_UN on an inherited OFD.
+    drop(guard);
+    let other = File::open(root.path().join("state/.workspace.lock")).unwrap();
+    assert!(flock(&other, Duration::ZERO, "busy").is_err());
+    drop(files);
+    flock(&other, Duration::ZERO, "busy").unwrap();
+}
+
+#[test]
+fn admission_boundary_mode_changes_refuse_before_read_or_write() {
+    let root = workspace();
+    let files = Files::open(root.path()).unwrap();
+    let guard = files.guard(Duration::ZERO).unwrap();
+    let image = files.load(&guard).unwrap();
+    let hook = Hook::set(|role, file| {
+        if role == "pre_temp_write" {
+            assert_eq!(file.metadata()?.len(), 0);
+            file.set_permissions(fs::Permissions::from_mode(0o644))?;
+        }
+        Ok(())
+    });
+    assert!(files.replace(&guard, &image, NONCE, b"secret").is_err());
+    drop(hook);
+    assert!(!root.path().join("state/agent-management.json").exists());
+    assert!(!temporary(root.path()).exists());
+    files.replace(&guard, &image, NONCE, b"old secret").unwrap();
+    let hook = Hook::set(|role, file| {
+        if role == "existing_store" {
+            assert_eq!(
+                unsafe { libc::lseek(file.as_raw_fd(), 0, libc::SEEK_CUR) },
+                0
+            );
+            file.set_permissions(fs::Permissions::from_mode(0o644))?;
+        }
+        Ok(())
+    });
+    assert!(files.load(&guard).is_err());
+    drop(hook);
+}
+
+#[test]
+fn read_same_fd_metadata_and_name_are_rechecked() {
+    for replace_entry in [false, true] {
+        let root = workspace();
+        let files = Files::open(root.path()).unwrap();
+        let guard = files.guard(Duration::ZERO).unwrap();
+        let image = files.load(&guard).unwrap();
+        files.replace(&guard, &image, NONCE, b"old secret").unwrap();
+        let path = root.path().join("state/agent-management.json");
+        let calls = Cell::new(0);
+        let hook = Hook::set(move |role, file| {
+            if role == "existing_store" {
+                calls.set(calls.get() + 1);
+                if calls.get() == 2 {
+                    assert_eq!(
+                        unsafe { libc::lseek(file.as_raw_fd(), 0, libc::SEEK_CUR) },
+                        10
+                    );
+                    if replace_entry {
+                        fs::rename(&path, path.with_extension("old"))?;
+                    } else {
+                        fs::write(&path, b"changed")?;
+                    }
+                }
+            }
+            Ok(())
+        });
+        assert_eq!(
+            files.load(&guard).err().unwrap().code(),
+            "agent_store_replaced"
+        );
+        drop(hook);
+    }
+}
+
+#[test]
 fn state_admitted_before_any_lock_and_old_modes_are_not_repaired() {
     let root = workspace();
     fs::create_dir(root.path().join("state")).unwrap();
@@ -342,6 +462,78 @@ fn publication_exact_mode_and_directory_sync_uncertainty_never_rollback() {
         files.replace(&guard, &image, NONCE, b"next").unwrap(),
         Delivery::Committed
     );
+}
+
+#[test]
+fn failed_cleanup_can_leave_one_owned_temp_without_changing_old_target() {
+    // Root bypasses the directory write-permission failure used by this test.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let root = workspace();
+    let files = Files::open(root.path()).unwrap();
+    let guard = files.guard(Duration::ZERO).unwrap();
+    let image = files.load(&guard).unwrap();
+    files.replace(&guard, &image, NONCE, b"old").unwrap();
+    let image = files.load(&guard).unwrap();
+    let state = root.path().join("state");
+    let state_clone = state.clone();
+    let hook = Hook::set(move |role, _| {
+        if role == "after_write" {
+            fs::set_permissions(&state_clone, fs::Permissions::from_mode(0o500))?;
+            return Err(std::io::ErrorKind::PermissionDenied.into());
+        }
+        Ok(())
+    });
+    let result = files.replace(&guard, &image, NONCE, b"new secret");
+    drop(hook);
+    // Restore permissions before assertions so fixture teardown can clean up.
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err());
+    assert_eq!(
+        fs::read(state.join("agent-management.json")).unwrap(),
+        b"old"
+    );
+    let temp = temporary(root.path());
+    assert_eq!(fs::read(&temp).unwrap(), b"new secret");
+    let metadata = fs::metadata(&temp).unwrap();
+    assert_eq!(metadata.mode() & 0o7777, 0o600);
+    assert_eq!(metadata.nlink(), 1);
+    assert_eq!(metadata.uid(), unsafe { libc::geteuid() });
+    assert_ne!(
+        metadata.ino(),
+        fs::metadata(state.join("agent-management.json"))
+            .unwrap()
+            .ino()
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn real_temporary_acl_is_denied_while_still_empty() {
+    let root = workspace();
+    let files = Files::open(root.path()).unwrap();
+    let guard = files.guard(Duration::ZERO).unwrap();
+    let image = files.load(&guard).unwrap();
+    let path = temporary(root.path());
+    let hook = Hook::set(move |role, file| {
+        if role == "pre_temp_write" {
+            assert_eq!(file.metadata()?.len(), 0);
+            assert!(
+                std::process::Command::new("/bin/chmod")
+                    .arg("+a")
+                    .arg("everyone allow read")
+                    .arg(&path)
+                    .status()?
+                    .success()
+            );
+        }
+        Ok(())
+    });
+    assert!(files.replace(&guard, &image, NONCE, b"secret").is_err());
+    drop(hook);
+    assert!(!temporary(root.path()).exists());
+    assert!(!root.path().join("state/agent-management.json").exists());
 }
 
 #[cfg(target_os = "macos")]

@@ -4,17 +4,26 @@
 
 Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi/OpenCode
 extension-envelope receiver and redacted inventory.
-Transport is Unix-only (Windows unsupported); macOS operation has not been validated.
+Private receiver support is Linux/macOS only (Windows unsupported; other Unix
+refuses before binding); macOS is source-enabled but not natively qualified.
 This is distinct from [private hook-file mutation](HOOK_FILE_BACKEND_CONTRACT.md):
 Linux and provisional local-APFS macOS apply are source-enabled, but Kit installer
-retirement remains Linux-only. `agent_management::{store,unix}` still uses separate
-Unix owner/mode checks and does not use the hook-file Darwin ACL adapter. macOS
-receiver/store/socket authorization and privacy remain separately untested;
-configuration-backend support does not qualify them or broader management.
+retirement remains Linux-only. Receiver storage and hook files now share OS
+privacy admission through `private_access.rs`, not hook transaction machinery.
+The [private storage and endpoint contract](AGENT_PRIVATE_STORAGE_CONTRACT.md)
+defines descriptor-rooted storage, provisional local-APFS macOS ACL admission,
+socket admission and native qualification limits. Linux receiver startup requires
+available/permitted `fchmodat2` (Linux 6.5 or backport), not a minimum for all Coven
+commands. Configuration-backend support alone does not qualify broader management.
 Contract: `coven.agent-management.v1`. These are **caller-supplied, unverified
 receipts**, not an authenticated native-session registry or task authority. See
 [the migration matrix](AGENT_MANAGEMENT_MIGRATION.md) for the all-provider target
-and the still-pending discovery/start/resume/restore transfers.
+and the still-pending full discovery/start/resume/restore transfers.
+
+Separate [ephemeral discovery](AGENT_DISCOVERY_CONTRACT.md) admits Linux v1 and
+source-enabled provisional macOS v2 generic foreground-cohort evidence, not native
+runtime certification. It keeps `acquisition_completeness: unknown` and neither
+joins receipts nor changes this receiver, provider, wire/store or receipt contract.
 
 ## API / Interfaces
 
@@ -121,8 +130,12 @@ a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
    object. Prompt, transcript, cwd and all unknown fields are dropped **before
    transport, storage or stdout**; Claude subagent events never revive the main record.
 2. Validate the private endpoint and send one correlated request. No automatic retry.
-3. Receiver takes the ordinary workspace guard for each update, rereads and validates
-   the store, then atomically replaces it. It releases that guard between reports.
+3. Receiver retains root/state/lock/lease descriptors, takes the ordinary workspace
+   lock for each update, rereads from the same admitted private FD, then publishes
+   with held-state-relative `renameat`. It releases that guard between reports.
+   Temporary files are privacy-admitted before secret writes. Best-effort cleanup
+   can leave one private, potentially secret-bearing orphan per failed attempt;
+   fences are not CAS against hostile same-UID/root or old-FD writes.
 4. Persist `state/agent-management.json` with unchanged `schema_version: 1` as private
    **0600**, at most **128 records aggregate across five providers** (not per provider)
    and **256 KiB**. Private records retain full native IDs, last events, receipt
@@ -154,12 +167,21 @@ There is no automatic downgrade conversion or reset.
 
 ### Receiver lifetime and optional presentation
 
-Unix-only transport requires an existing owned socket parent with **exact 0700**
+Linux/macOS transport requires an existing owned socket parent with **exact 0700**
 mode and a private **0600** socket. Aliased/unsafe paths are refused. Bind never
 unlinks an existing leaf, even a stale socket. Parent/socket inode fences detect
 replacement; cleanup removes only the still-owned endpoint. A SIGINT guard is
 installed **before bind**, including startup error cleanup. SIGTERM/SIGKILL cleanup
 is not promised: verify no live owner before manually removing a stale socket.
+
+Bind starts listening before chmod; the admitted private parent protects that
+interval even with umask 000. No-follow descriptor-relative chmod has no
+pathname-following fallback. Missing/blocked Linux `fchmodat2` returns
+`agent_socket_chmod_failed`, attempts owned-node cleanup and precedes Store private
+writes. Changed parent privacy/namespace can prevent cleanup and leave a stale node.
+Clients admit before connect and first send; later privacy/identity faults are
+uncertain delivery without resend. See the private storage contract for macOS's
+parent-FD/basename metadata query, not a socket-FD ACL check.
 
 A separate persistent `state/.agent-management.receiver.lock` lease admits only
 one receiver per workspace, even on different sockets. Its 0600 inode stays after
@@ -167,6 +189,12 @@ exit and is protected from generic replacement by its reserved basename; never
 remove/replace it to bypass a live receiver. Startup synchronizes `state/` and the
 workspace root before admitting report commits. State/workspace-lock/lease identity
 is fenced during service.
+
+Root/state require ownership and no group/other write bits, not exact 0700;
+existing 0755 directories and a 0640 workspace lock can be valid without repair.
+The private lease is never truncated/replaced/unlinked. Agent paths refuse symlink
+ancestors and `..`; relative workspaces use physical cwd, without automatic user-
+alias canonicalization. Generic storage policies remain unchanged.
 
 Optional `--kitsune-socket` and `--source` must be supplied together. An independent
 worker waits for initialized receiver projection before UI IO. It reads only generic
@@ -217,7 +245,8 @@ for optional generic presentation; core inventory requires no Kitsune installati
 
 ## Related files
 
-- `src/agent_management.rs`, `src/agent_management/{store,unix}.rs`
+- [Private storage and endpoints](AGENT_PRIVATE_STORAGE_CONTRACT.md)
+- `src/agent_management.rs`, `src/agent_management/{files,store,unix}.rs`, `src/private_access.rs`
 - `src/agent_management_presentation.rs`, `src/main.rs`
 - `src/{read_fs,strict_json,session_support,observation_socket}.rs`,
   `src/storage/replacement.rs`, `src/group_presenter/wire.rs`

@@ -1,14 +1,13 @@
 //! Shared persistent workspace lock, immutable publication, and mutable replacement.
 //! Never replace/unlink a lock inode or steal it based on process metadata.
 pub(crate) mod bootstrap;
+mod delivery;
 mod maintenance;
 mod replacement;
-mod delivery;
-pub use replacement::atomic_replace_bytes;
 pub use delivery::Delivery;
+pub use replacement::atomic_replace_bytes;
 
 use crate::{Result, error::require, platform, read_fs};
-use serde::Serialize;
 use std::io::Write;
 use std::{
     fs::File,

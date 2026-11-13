@@ -35,7 +35,11 @@ Mutation uses the shared Linux/macOS backend: explicit macOS `--apply` is
 source-enabled on eligible local APFS, provisional and not natively qualified.
 Other Unix platforms preview but refuse apply; non-Unix is unsupported.
 This does not retire Kitsune's macOS/Windows installer.
-Coven's receiver is Unix-only, Windows unsupported, and macOS not validated.
+Coven's receiver supports Linux/macOS only, with shared privacy admission and
+provisional, natively unqualified local-APFS macOS support. Other Unix receivers
+refuse before binding; Windows is unsupported. See
+[private storage and endpoints](AGENT_PRIVATE_STORAGE_CONTRACT.md), including the
+Linux receiver's available/permitted `fchmodat2` requirement (6.5 or backport).
 Library: `claude_hooks::{Operation, Request, arguments}`; successful plans,
 mutations and unchanged results return `TaskOutput` exit 0. Refusals expose fixed
 codes, not raw settings/OS diagnostics. JSON reports provider, status, settings

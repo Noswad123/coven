@@ -1,4 +1,7 @@
 //! Ephemeral, unclassified foreground-cohort observation, never execution authority.
+//!
+//! Raw acquisition completeness is unknown: native APIs may omit unreadable
+//! members or represent failed listing/argument reads as empty or missing data.
 mod schema;
 
 use crate::observation_socket::{self, Cancel, Failure, ReadBudget, ReadMethod, WireResult};
@@ -59,11 +62,12 @@ pub(crate) fn inspect_cancel(request: &Request, cancel: &dyn Cancel) -> Result<V
         "target_count":null,"recognized_target_count":null,
         "endpoint":{"selected":request.socket,"resolved":null,"device":null,"inode":null},
         "process_observation":null,"authorization":"none","dispatchable":false,
-        "native_catalog_complete":false,"activity":"unknown","attention":"unknown",
+        "native_catalog_complete":false,"acquisition_completeness":"unknown","activity":"unknown","attention":"unknown",
         "native_identity":"unestablished","native_lifecycle":"unestablished","job_completion":"unestablished",
         "limitations":[
             "Read-only requests are not zero-effect server operations: Kit pipeline housekeeping may expire metadata, drain events, synchronize titles, and ensure a default workspace or shell.",
-            "Reported Linux foreground-cohort capability only. Unix transport on macOS is unvalidated; Windows acquisition is unsupported. Endpoint fences are not authentication and cannot eliminate pathname races.",
+            "Peer-reported Linux v1 or macOS v2 LP64 foreground-cohort capability only, not inferred from the Coven host. macOS support is source-enabled and provisional, not native SDK runtime certification. Windows acquisition is unsupported. Endpoint fences are not authentication and cannot eliminate pathname races.",
+            "Linux rooted-tree and macOS process-group member sampling are different best-effort cohorts, not atomic or complete. Upstream unreadable members and failed list or argument reads may be omitted or empty; acquisition completeness remains unknown.",
             "Matching inventory brackets are not atomic attribution or freshness attestation. Processes may exit, PIDs may be reused, and mappings may change between reads. Unknown does not establish absence.",
             "Provider-family recognition is not native identity, activity, lifecycle, job completion, authorization, or a complete native catalog. No persistence, adoption, roles, or terminal associations are created."
         ]

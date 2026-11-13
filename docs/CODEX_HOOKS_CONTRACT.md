@@ -162,7 +162,10 @@ released and no running session/user config is automatically converted.
   recovery artifacts can contain secrets; do not publish them.
 - Mutation uses the Linux/macOS shared backend; macOS is source-enabled,
   provisional local APFS only, not natively qualified. Other Unix platforms preview but refuse apply;
-  non-Unix manager/receiver support is absent and macOS capture is unvalidated.
+  receiver support is Linux/macOS only, with shared privacy admission and provisional,
+  natively unqualified local-APFS macOS support. Other Unix receivers refuse before
+  binding; Windows is unsupported. See [private storage](AGENT_PRIVATE_STORAGE_CONTRACT.md)
+  for the Linux receiver's permitted/available `fchmodat2` requirement (6.5 or backport).
   Kitsune preserves its non-Linux legacy installer until matching Coven native
   qualification is complete. Linux retires new install/recommend/update/bulk paths only;
   legacy status/uninstall/old ingress remain compatible. No platform-wide

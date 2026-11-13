@@ -96,11 +96,22 @@ pub(super) fn snapshot(reply: &Reply) -> WireResult<Snapshot> {
     }
     let descriptor = (|| -> WireResult<Value> {
         let d = field(snapshot, "process_observation")?;
-        require(uint(field(d,"version")?, u32::MAX.into())? == 1)?;
-        for (key, expected) in [("platform","linux"),("scope","pane_foreground_cohort"),("selection","unclassified")] {
+        let version = uint(field(d,"version")?, u32::MAX.into())?;
+        let platform = string(field(d,"platform")?, 64)?;
+        for (key, expected) in [("scope","pane_foreground_cohort"),("selection","unclassified")] {
             require(string(field(d,key)?, 64)? == expected)?;
         }
-        Ok(json!({"version":1,"platform":"linux","scope":"pane_foreground_cohort","selection":"unclassified"}))
+        let mut descriptor = json!({"version":version,"platform":platform,"scope":"pane_foreground_cohort","selection":"unclassified"});
+        match (platform, version) {
+            ("linux", 1) => {},
+            ("macos", 2) => {
+                let policy = string(field(d, "argument_policy")?, 64)?;
+                require(policy == "darwin_procargs2_lp64_v1")?;
+                descriptor["argument_policy"] = json!(policy);
+            }
+            _ => return Err(Failure::new("process_observation_unsupported")),
+        }
+        Ok(descriptor)
     })().map_err(|_| Failure::new("process_observation_unsupported"))?;
     let rows = field(snapshot, "panes")?
         .as_array()

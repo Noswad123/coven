@@ -62,7 +62,7 @@ fn unavailable(sequence: u64, code: &str) -> Value {
         "schema_version":1,"assessment":"unavailable", "diagnostics":[code], "targets":[],
         "target_count":null,"recognized_target_count":null,"authorization":"none","dispatchable":false,
         "activity":"unknown","attention":"unknown","native_identity":"unestablished",
-        "native_lifecycle":"unestablished","job_completion":"unestablished","native_catalog_complete":false})
+        "native_lifecycle":"unestablished","job_completion":"unestablished","native_catalog_complete":false,"acquisition_completeness":"unknown"})
 }
 
 fn run(

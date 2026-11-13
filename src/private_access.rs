@@ -105,7 +105,7 @@ pub(crate) fn validate_socket_entry(
 pub(crate) mod test_support {
     /// Physical known temporary base for receiver tests; not production resolution.
     pub(crate) fn tempdir() -> tempfile::TempDir {
-        let base = std::path::Path::new("/tmp")
+        let base = std::env::temp_dir()
             .canonicalize()
             .expect("physical temporary base");
         tempfile::tempdir_in(base).expect("private test directory")

@@ -7,5 +7,17 @@
 mod error;
 pub use error::{Error, Result};
 
+#[path = "../../../../src/private_access.rs"]
+mod private_access;
+
+#[path = "../../../../src/storage/delivery.rs"]
+mod delivery;
+mod storage {
+    pub use crate::delivery::Delivery;
+}
+
+#[path = "../../../../src/agent_management/files.rs"]
+mod agent_files;
+
 #[path = "../../../../src/hook_files.rs"]
 mod hook_files;

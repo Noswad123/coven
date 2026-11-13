@@ -10,7 +10,7 @@ of Kitsune's agent inventory; explicit Djinn live attachments and read-only
 busy/unknown group status and explicit expiry-bounded live publishing implemented;
 native opt-in agent comparison implemented as extraction characterization;
 Coven-owned Claude/Codex/Copilot hook and Pi/OpenCode reference-extension cuts implemented with Linux-only Kitsune new-install retirement;
-production Coven-owned Linux all-22-family discovery/watch implemented with temporary duplicate legacy recognition policy, not detector retirement;
+production Coven-owned Linux and provisional source-enabled macOS all-22-family discovery/watch implemented with temporary duplicate legacy recognition policy, not detector retirement;
 native lifecycle/scheduling, automatic following, complete extraction, and workspace
 annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
@@ -40,9 +40,15 @@ The [hook-file backend matrix](HOOK_FILE_BACKEND_CONTRACT.md) separates Linux/ma
 shared mutation from platform retirement. All five managers use one capability
 through three runners; macOS file apply is provisional, not a late-port backlog.
 All existing Kit non-Linux installers/assets/status/uninstall/recommend/update/bulk
-paths stay until native qualification. Receiver/store/socket privacy is separate:
-its Unix mode checks do not use the hook-file Darwin ACL admission. macOS discovery
-is explicitly rejected; full status/start/resume/restore transfer remains pending
+paths stay until native qualification. Receiver/store/socket privacy now shares
+OS admission through `private_access.rs`, not hook transactions; macOS local-APFS
+support remains provisional, not natively qualified. The
+[private storage contract](AGENT_PRIVATE_STORAGE_CONTRACT.md) covers held-directory
+fences, pre-secret-write admission, best-effort orphan cleanup and socket policy.
+Linux receiver startup requires available/permitted `fchmodat2` (6.5 or backport),
+not a minimum for all commands/hooks; other Unix receivers refuse before bind,
+generic storage unchanged, Windows unsupported. Generic macOS discovery is
+source-enabled/provisional, not native runtime certification; full status/start/resume/restore transfer remains pending
 on Linux and macOS. The per-provider rows below retain the Linux retirement scope,
 not an assertion that macOS file mutation is absent.
 
@@ -80,8 +86,8 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 | Independent Pi receipts | Separate report-extension with strict Coven three-field envelope; session_start/getSessionId references only, always unknown. Migration drops Kit working/blocked/idle; no full Pi management transfer. |
 | New OpenCode reference plugin | Linux: Coven explicit existing plugin or plugins root placement and exact opt-in full-v9 migration; Kit new install/recommend/update/bulk retired. Non-Linux full legacy paths preserved. See [contract](OPENCODE_EXTENSION_CONTRACT.md). |
 | Independent OpenCode receipts | Separate strict Coven three-string envelope, session.created/updated root references only, unknown even fresh. Native server exact-directory-instance scope, not selected TUI/pane/attach or whole project; migration drops working/blocked/idle. |
-| Independent Claude receipts | Coven Unix private receiver/inventory; Windows unsupported, macOS not validated. Not a non-Linux hook-configuration replacement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
-| Generic Linux foreground-cohort recognition | Coven `agent discover` recognizes all 22 literal families without Kit agent APIs/hints, workspace/storage or receipt/group joins; optional bounded watch/generic view. Partial scope, not native identity/activity/full status or detector retirement. See [contract](AGENT_DISCOVERY_CONTRACT.md). |
+| Independent Claude receipts | Coven Linux/macOS private receiver/inventory; macOS provisional and natively unqualified, other Unix refused, Windows unsupported. Not a non-Linux installer retirement. See [receiver contract](AGENT_MANAGEMENT_CONTRACT.md). |
+| Generic Linux/macOS foreground-cohort recognition | Coven `agent discover` recognizes all 22 literal families without Kit agent APIs/hints, workspace/storage or receipt/group joins; optional bounded watch/generic view. macOS is source-enabled/provisional, not native runtime certification. Partial scope, not native identity/activity/full status or detector retirement. See [contract](AGENT_DISCOVERY_CONTRACT.md). |
 | Agent APIs/detection, navigator/attention and mobile UI | Retained with typed foreground/fallback/history separation and deliberate readiness/authority hardening; scoped validation complete with limits below, no external mode or matching retirement. |
 | Native references, agent restore/resume and remaining lifecycle hooks | Still Kitsune, including Claude process/screen fallback and restore; transfer to Coven/runtime adapters with subsystem-specific removal gates. |
 | `integration.install/uninstall`, fixed `IntegrationTarget`, legacy agent-hook settings | All six target entries, status/uninstall/old ingress remain on all platforms. Claude/Codex/Copilot/Pi/OpenCode new installs remain non-Linux only; legacy UI settings remain for other providers/platforms. Not a generic provider registry. |
@@ -192,33 +198,37 @@ No storage, adoption, launch/input/stop/resume, roles, native-ID association or
 receipt/group join is added. The classifier intentionally diverges from the
 209-case legacy process corpus; it is not parity.
 
-Kit's optional `snapshot.process_observation` version 1 advertises
-`platform: linux`, `scope: pane_foreground_cohort`, `selection: unclassified`.
-Protocol 18 is unchanged and capability discovery is additive. Coven rejects
-Windows `selected_process`/`legacy_agent_aware` and macOS in this first cut.
-Reported Linux metadata is not authenticated platform/live-process attestation,
-a process tree/host catalog or native generation. Matching inventory brackets and
-endpoint fences discard partial failures but do not make attribution atomic or
-eliminate PID ABA. Read requests can ensure a default workspace/shell through
+Kit's optional `snapshot.process_observation` admits Linux version 1 and macOS
+version 2, both with `scope: pane_foreground_cohort`, `selection: unclassified`.
+macOS requires exact `argument_policy: darwin_procargs2_lp64_v1`; Linux's optional
+marker is ignored. Old macOS v1 rejects even with the marker; Windows remains
+unsupported. Protocol 18 is unchanged. The generic macOS `pane.process_info` route
+is isolated from unchanged legacy detector parsing/hints. Support is source-enabled
+and provisional, not native runtime certification. Peer platform labels and PIDs
+grant no local OS/PID authority. `acquisition_completeness` stays `unknown`:
+mutable arguments, unreadable members and failed list/argument reads can leave
+undetectable omissions. Bracket/endpoint fences discard detected failures, not
+make attribution atomic, eliminate PID ABA or prove complete acquisition. Read requests can ensure a default workspace/shell through
 existing Kit housekeeping; they are not zero-effect operations.
 
 No matching Kit detector retirement has occurred. The internal typed
-[foreground/fallback/history seam](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
+[foreground/fallback/history seam](../../kitsune/DETECTOR_EVIDENCE_SEPARATION.md) is
 implemented. Historical/screen-only data cannot mint native ownership, takeover
 or effectiveness. Restored Idle/name/reference/pending resume/managed Active remain;
 readiness needs a matching probe or accepted fallback, not foreground-only proof.
 Native input's independent fresh process check remains. This deliberately narrows
-public semantics, not blanket compatibility. No external mode, new Config,
-wire/API/snapshot fields or toggle/kill/hide controls ship. This is functional Coven recognition
+public semantics, not blanket compatibility. That earlier seam added no external
+mode, Config, wire/API/snapshot fields or toggle/kill/hide controls; the generic
+acquisition cut separately adds the macOS v2 descriptor. This is functional Coven recognition
 with temporary duplicate legacy policy, not completed sole ownership/full status.
 The five Linux configuration retirements stand; macOS native qualification and
 remaining non-Linux capabilities stay pending, not the shared file backend itself.
-The 201 focused Coven checks, 249 Kit API checks and lint/MSRV/release/package
-validation are recorded in
-the [discovery table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table),
-not added to historical OpenCode 236. No actual live installed Kit commands were
-used in this documentation session. Discovery results are historical, not added to
-**1,318 distinct Kit seam checks** or separate **50 Coven cross-compatibility checks**.
+The [discovery table](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table)
+separates source/fixture evidence from native qualification. Actual Apple Rust
+target source-checks are not SDK C/link/runtime validation; missing SDK
+`TargetConditionals.h` still blocks native validation. Historical discovery/seam
+results are not current composed totals. No live installed Kit commands were used
+in this documentation session.
 The [state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
 record completed scoped validation, strict all-target lint, final confirmation
 reruns, ENOSPC-aborted workspace CLI selection, zero-match tab filter and reproduced

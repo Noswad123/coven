@@ -42,8 +42,11 @@ receipt validation fails**. Do not interpret a refused apply as artifact-free.
 macOS explicit `--apply` is source-enabled on eligible local APFS, provisional and
 not natively qualified; other Unix platforms preview but refuse mutation, and
 Windows is unsupported. See the [backend matrix](HOOK_FILE_BACKEND_CONTRACT.md).
-Receiver transport is Unix-only; macOS receiver authorization/runtime remains
-separately unvalidated. Kitsune's non-Linux paths remain.
+Receiver support is Linux/macOS only, using shared privacy admission; macOS local
+APFS remains provisional and natively unqualified. Other Unix receivers refuse
+before bind; Windows is unsupported. See [private storage](AGENT_PRIVATE_STORAGE_CONTRACT.md)
+for the Linux receiver's permitted/available `fchmodat2` requirement (6.5 or backport).
+Kitsune's non-Linux paths remain.
 
 The explicit existing config root must be owned and not writable by others.
 Descriptor-relative `openat`/`O_NOFOLLOW` traversal pins directories; owned,

@@ -26,6 +26,8 @@ const LIMIT: usize = 256 * 1024;
 fn identity(m: &Metadata) -> (u64, u64) {
     (m.dev(), m.ino())
 }
+// dev_t is signed 32-bit on Darwin; stat field widths vary across Unix targets.
+#[allow(clippy::unnecessary_cast)]
 fn stat_identity(s: &libc::stat) -> (u64, u64) {
     (s.st_dev as u64, s.st_ino as u64)
 }
@@ -44,7 +46,7 @@ fn openat(parent: &File, leaf: &CStr, flags: i32, mode: libc::mode_t) -> std::io
             parent.as_raw_fd(),
             leaf.as_ptr(),
             flags | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
-            mode,
+            mode as libc::c_uint,
         )
     };
     if fd < 0 {
@@ -56,10 +58,12 @@ fn openat(parent: &File, leaf: &CStr, flags: i32, mode: libc::mode_t) -> std::io
 
 // Tests inject extra-access denials and races at the actual descriptor boundary.
 #[cfg(test)]
+type AccessCheckpoint = Box<dyn Fn(&str, &File) -> std::io::Result<()>>;
+#[cfg(test)]
 thread_local! {
-    static CHECKPOINT: std::cell::RefCell<Option<Box<dyn Fn(&str, &File) -> std::io::Result<()>>>> = const { std::cell::RefCell::new(None) };
+    static CHECKPOINT: std::cell::RefCell<Option<AccessCheckpoint>> = const { std::cell::RefCell::new(None) };
 }
-fn access(role: &str, file: &File) -> Result<()> {
+fn checkpoint(role: &str, file: &File) -> Result<()> {
     #[cfg(test)]
     CHECKPOINT
         .with(|hook| {
@@ -69,20 +73,25 @@ fn access(role: &str, file: &File) -> Result<()> {
             Ok::<_, std::io::Error>(())
         })
         .map_err(|_| Error("agent_private_access_denied"))?;
-    let _ = role;
+    let _ = (role, file);
+    Ok(())
+}
+fn access(role: &str, file: &File) -> Result<()> {
+    checkpoint(role, file)?;
     crate::private_access::validate_fd_access(file)
         .map_err(|_| Error("agent_private_access_denied"))
 }
 fn admit_directory(file: &File, role: &str) -> Result<Metadata> {
+    access(role, file)?;
     let m = file.metadata()?;
     require(
         m.is_dir() && m.uid() == unsafe { libc::geteuid() } && m.mode() & 0o022 == 0,
         "agent_unsafe_parent",
     )?;
-    access(role, file)?;
     Ok(m)
 }
 fn admit_file(file: &File, private: bool, role: &str) -> Result<Metadata> {
+    access(role, file)?;
     let m = file.metadata()?;
     require(
         m.is_file()
@@ -95,7 +104,6 @@ fn admit_file(file: &File, private: bool, role: &str) -> Result<Metadata> {
             },
         "agent_unsafe_store",
     )?;
-    access(role, file)?;
     Ok(m)
 }
 
@@ -221,6 +229,7 @@ pub(super) struct Files {
     lock: Held,
     lease: Held,
     guarded: Cell<bool>,
+    pid: u32,
 }
 pub(super) struct Guard<'a> {
     files: &'a Files,
@@ -296,8 +305,9 @@ impl Files {
                 .any(|c| matches!(c, Component::ParentDir)),
             "agent_unsafe_parent",
         )?;
+        let absolute: PathBuf = absolute.components().collect();
         let root = Directory::open(&absolute)?;
-        access("root", root.file())?;
+        admit_directory(root.file(), "root")?;
         let marker = openat(root.file(), c"coven.json", libc::O_RDONLY, 0)?;
         require(marker.metadata()?.is_file(), "invalid_workspace")?;
         root.fence()?;
@@ -341,10 +351,12 @@ impl Files {
             lock,
             lease: lease_result?,
             guarded: Cell::new(false),
+            pid: std::process::id(),
         };
         files.fence()?;
         Ok(files)
     }
+    #[cfg(test)]
     pub fn root(&self) -> &Path {
         self.root.path()
     }
@@ -360,11 +372,15 @@ impl Files {
             .map_err(|_| Error("agent_startup_sync_failed"))
     }
     pub fn fence(&self) -> Result<()> {
+        require(
+            self.pid == std::process::id(),
+            "invalid_workspace_lock_owner",
+        )?;
         (|| {
             self.root.fence()?;
-            access("root", self.root.file())?;
+            admit_directory(self.root.file(), "root")?;
             self.state.fence()?;
-            access("state", self.state.file())?;
+            admit_directory(self.state.file(), "state")?;
             self.root.matches(STATE, self.state.identity())?;
             self.lock.fence(&self.state, LOCK, false, "workspace_lock")
         })()
@@ -478,7 +494,7 @@ impl Files {
             // Publication has happened. Only the following directory sync can
             // affect delivery, and failure must never trigger rollback or resend.
             Ok(
-                if access("postrename_sync", self.state.file())
+                if checkpoint("postrename_sync", self.state.file())
                     .and_then(|_| self.state.file().sync_all().map_err(Into::into))
                     .is_ok()
                 {
@@ -488,7 +504,8 @@ impl Files {
                 },
             )
         })();
-        // Never unlink a foreign replacement, even when initial admission failed.
+        // Cleanup is best effort: failed stat/unlink can leave this attempt's
+        // temporary (possibly already written). Never unlink a foreign inode.
         if self
             .state
             .stat(&name)

@@ -19,6 +19,8 @@ roster. Kit remains independently useful without Coven.
 
 ## API / Interfaces
 
+### Example usage
+
 Reference syntax only, with explicitly inspected absolute socket and opaque IDs:
 
 ```text
@@ -42,7 +44,9 @@ the accepted descriptor, target pane/terminal/workspace/tab locators, reception
 time, recognition and provider candidates. Matches expose only PID, canonical
 provider and rule, never raw process text. No title, cwd, argv, cmdline, native
 reference, legacy hint or raw snapshot is returned. Diagnostics are local codes;
-peer error text is never echoed. `native_catalog_complete` is always false.
+peer error text is never echoed. `native_catalog_complete` is always false and
+`acquisition_completeness` is always `unknown`, including observed samples and
+watch outage samples. Successful admission does not establish complete acquisition.
 
 Human one-shot output lists escaped pane/terminal locators and canonical
 provider/PID/rule hints. It shows up to eight matches per pane, explicitly reporting
@@ -60,24 +64,66 @@ Kit adds optional `snapshot.process_observation` to the existing source API.
 Binary protocol **18 is unchanged**; this is an additive capability, not a new
 binary protocol or a guarantee derived from the server's version string:
 
+The exact admitted descriptors are:
+
 ```json
 {"version":1,"platform":"linux","scope":"pane_foreground_cohort","selection":"unclassified"}
+{"version":2,"platform":"macos","scope":"pane_foreground_cohort","selection":"unclassified","argument_policy":"darwin_procargs2_lp64_v1"}
 ```
 
-Coven requires protocol exactly 18 and exactly this descriptor's version and
-field values. Missing/null/malformed/unsupported descriptors fail closed as
+Coven requires protocol exactly 18 and one of these exact tuples. On Linux v1,
+an optional `argument_policy` is an ignored extension: it is neither validated nor
+projected, and changes to it do not change the accepted descriptor. On macOS v2,
+the exact string marker is required and participates in bracket comparison.
+Old macOS v1 is rejected even with that marker. Missing/null/malformed/unsupported descriptors fail closed as
 incompatible (`process_observation_unsupported`); no legacy-hint fallback occurs.
 Unknown extension fields are not projected. Both brackets must agree on server
 version/protocol and the accepted descriptor fields. Changes require a separately
 reviewed supported capability version, not silent reinterpretation of v1.
 
 Windows advertises `platform: windows`, `scope: selected_process`,
-`selection: legacy_agent_aware`: Coven explicitly rejects it. macOS advertises
-its own unclassified foreground-cohort metadata but is unsupported by this first
-cut, not Linux-compatible by virtue of Unix transport. Windows acquisition is
-unsupported. Server-reported Linux metadata is not authenticated platform
-attestation, live-process attestation, a complete process tree/host catalog or a
+`selection: legacy_agent_aware`: Coven rejects it, and Windows acquisition remains
+unsupported. macOS support is **source-enabled and provisional, not native runtime
+certification**. Descriptor admission uses peer labels, not the Coven host OS;
+those labels and returned PIDs grant no local OS/PID authority. Neither tuple is
+authenticated platform/live-process attestation, a complete tree/host catalog or a
 native process-generation guarantee. Endpoint inode checks are not authentication.
+
+### Generic macOS Acquisition And Data Flow
+
+Kit routes `pane.process_info` through `platform::process_observation_job` to
+`macos_observation`, independently of the unchanged legacy macOS detector parser,
+argv0 normalization and environment-hint path. No detector retirement follows.
+Linux retains its rooted-tree walk filtered by foreground PGID; macOS samples
+process-group members. These are different best-effort cohorts, not complete or
+atomic process trees.
+
+The macOS source reads the pane child's foreground PGID, lists positive sorted,
+deduplicated members, and checks each member's BSD metadata around argument reads.
+Visible PID/start-time, membership, width or comm changes omit the member; equality
+cannot detect every exec or concurrent argument mutation. Unreadable members can
+be omitted, while failed listing can become an empty API cohort. Unavailable or
+rejected arguments retain a name-only row with argv/argv0/cmdline absent. Such
+omissions are not necessarily detectable by Coven; unknown is not absence.
+
+Argument policy is reviewed against Apple XNU `xnu-11215.81.4`, commit
+`d4514f0bc1d3f944c22d92e68b646ac3fb40d452` (`exec_save_path`,
+`exec_extract_strings`, `sysctl_procargsx`). Target BSD flags must establish LP64,
+not observer pointer width. Reply argv starts at **`4 + round_up(L, 8)`**, where
+`L` is executable-path bytes including NUL, **not `round_up(4 + L, 8)`**.
+Calculated padding must be zero; the decoder preserves empty argv0 and later
+empty operands, consuming exactly argc NUL-terminated strings. It does not
+intentionally parse environment bytes after them. Runtime stack mutation or stale
+exec data remains possible; the policy is interpretation, not authenticated argv.
+
+Raw argument allocation is capped at **1 MiB**, with at most **six** size/read
+attempts. Capacity-filling successful reads are inconclusive and retried with
+headroom, not decoded as complete. Group listing also has at most six attempts
+and admits at most **256** members. Decoding admits **1–128 arguments**, **4 KiB**
+per decoded argument (including lossy UTF-8 expansion), **64 KiB** aggregate argv.
+Before export a stricter 64 KiB process-text budget counts name, argv, duplicated
+argv0, joined cmdline and a 3,072-byte cwd reserve; failure omits all argument
+fields rather than exporting a truncated argument list.
 
 ### Classifier V1
 
@@ -145,7 +191,7 @@ filesystem resolver, lexical suffixes/wrappers, and all-match/no-leader/no-ranki
 semantics. The comparison ledger in `src/agent_processes/tests.rs` is not parity,
 provider operational certification or a port of the legacy detector.
 
-## Collection Bounds
+## Data Flow And Collection Bounds
 
 One initial `session.snapshot`, one `pane.process_info` per selected pane, and one
 final snapshot share an entire-collection deadline and aggregate response budget.
@@ -164,10 +210,13 @@ schema/budget admission precede projection; ignored raw fields are not output.
 | Aggregate response bytes | 1 KiB through 8 MiB; default 1 MiB |
 | `--timeout` | finite, greater than zero, at most 30 seconds; default 3 |
 
+### Edge Cases
+
 Both inventory brackets must preserve selected pane/terminal/workspace/tab
 mappings. Endpoint selection/device/inode checks fence reads and their replies.
-Any endpoint, mapping, capability, schema, budget, timeout or partial-cohort
-failure discards **all** collected targets, not just the failed pane. Failed
+Any detected endpoint, mapping, capability, schema, budget, timeout or collection
+failure discards **all** collected targets, not just the failed pane. This does not
+detect every upstream omission or partial acquisition. Failed
 counts are null rather than successful zeroes. Matching mappings are not atomic
 PID attribution; processes can exit and PIDs can be reused (ABA) between reads.
 Reception time is not a native freshness or process-generation attestation.
@@ -235,45 +284,45 @@ path with temporary duplicate legacy policy, not completed sole ownership/full s
 
 The internal typed **foreground-owner evidence**, **fallback publication**, and
 **historical identity** seam is now implemented in Kit; see the optional sibling
-[evidence guide](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md). Historical/screen-only
+[evidence guide](../../kitsune/DETECTOR_EVIDENCE_SEPARATION.md). Historical/screen-only
 data cannot mint ownership, takeover or native effectiveness. Restored Idle/name/
 reference/pending resume/managed Active remain, but `interactive_ready` needs a
 matching probe or accepted fallback, not foreground-only readiness or native proof.
 Native input's independent fresh process check remains. This is deliberate public
 semantic hardening, not blanket compatibility. No new Config, wire/API/snapshot
-fields or external mode ship; Coven's reader/accepted capabilities are unchanged.
-Scoped validation is complete: **1,318 distinct Kit checks**, separate **50 Coven
-cross-compatibility checks**, and strict Kit all-target lint passed. Final
-state/API/headless/lint confirmation reruns are in progress after the latest private
-suspension flag; state 142 already agent-passed. The
-[state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
-record ENOSPC-aborted workspace CLI selection, a zero-match tab filter and
-independently reproduced stale golden/test-only corrections, not full-suite or
-production UI behavior changes beyond intended evidence hardening.
+fields or external mode were introduced by that earlier evidence seam. The current
+generic acquisition cut separately adds the macOS v2 argument-policy descriptor
+and Coven admission described above. Historical seam validation and limits remain
+in the [migration record](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table),
+not current acquisition validation totals.
 Do not use an ephemeral family hint as owner confirmation. Status/attention,
 mobile/navigation, start/resume and agent-aware restore remain separate transfers.
 All five prior Linux hook/configuration retirements stay unchanged; matching
-non-Linux discovery and broader management capabilities remain pending. The
+Windows discovery and broader management capabilities remain pending. The
 [private hook-file backend](HOOK_FILE_BACKEND_CONTRACT.md) now source-enables
 provisional eligible-local-APFS macOS apply for all five file managers; this does
-not change discovery's explicit macOS rejection or qualify receiver privacy,
+not itself qualify generic process acquisition, receiver privacy,
 full status/start/resume/restore, or any non-Linux Kit retirement. See the authoritative
 [migration ledger and validation](AGENT_MANAGEMENT_MIGRATION.md).
 
-## Validation And Files
+## Validation And Related Files
 
-Historical discovery scope passed **201 focused Coven checks**: 5 classifier, 8 collector,
-16 watch/presentation unit, 91 CLI, 15 discovery workflow, 14 presentation workflow,
-2 package-boundary and 50 legacy observation/inspection/watch/presenter checks.
-Kit passed **249 API checks**, including capability/schema freshness coverage.
-Strict all-target lint passed in both apps. Coven also passed Rust 1.85 all-target
-checking, optimized build, package verification and packaged test-target compilation.
+Current source includes decoder/acquisition fixtures, exact-tuple admission and
+bracket-drift checks, empty-argv/name-only cases, and watch/presentation coverage.
+These are not native provider or macOS runtime certification. Actual-source Rust
+checks for Apple Silicon and Intel targets are distinct from Apple SDK C compilation,
+native linking and execution. Native validation remains blocked by the missing
+Apple SDK header `TargetConditionals.h`; no SDK/link/runtime success follows from
+Rust target source-checks. Historical validation is recorded separately in the
+[migration ledger](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table), not
+recounted as the current composed cut. This docs-only update ran no tests, builds
+or live endpoint commands and generated no test/build artifacts.
 
 Review fixed queued selection loss, source-package fixture omission, protocol
 admission, nullable-field handling and typed negative CLI operand handling. Actual
 Kit intent-queue semantics are modeled: fresh observed scans poll the displayed
 revision before replacement; failed scans clear positives before polling.
-No installed-native/provider interactive behavior or macOS/Windows operation is
+No installed-native/provider interactive behavior or macOS/Windows runtime operation is
 certified. Full `just check` remains unapproved/not run. Earlier OpenCode results
 are historical and non-additive. No live installed Kit configuration was changed.
 
@@ -282,6 +331,7 @@ Implementation: `src/agent_discovery.rs`, `src/agent_discovery/{schema,tests}.rs
 `src/agent_discovery_watch.rs`, `src/agent_discovery_watch/{presentation,tests}.rs`,
 `src/main.rs`; workflow fixtures: `tests/agent_discovery_workflow.rs` and
 `tests/agent_discovery_presentation.rs`. Kit capability producers live in
-`src/platform/{linux,macos,windows,fallback}.rs`, `src/api/schema/session.rs` and
-`src/app/api/session.rs` in the separate checkout. Sibling links are navigation,
+`src/platform/{linux,macos,windows,fallback}.rs`,
+`src/platform/{foreground,macos_observation,macos_procargs}.rs`,
+`src/api/schema/session.rs` and `src/app/api/{session,panes}.rs` in the separate checkout. Sibling links are navigation,
 not core dependencies.

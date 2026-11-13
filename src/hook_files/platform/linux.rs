@@ -1,5 +1,5 @@
 use super::MoveKind;
-use std::{ffi::CStr, fs::File, io, os::fd::RawFd};
+use std::{ffi::CStr, io, os::fd::RawFd};
 
 pub(super) fn move_entry(
     from: RawFd,
@@ -17,10 +17,4 @@ pub(super) fn move_entry(
     } else {
         Err(io::Error::last_os_error())
     }
-}
-
-pub(super) fn validate_access(_file: &File) -> io::Result<()> {
-    // Shared ownership and mode admission checks remain in Root. Linux adds no
-    // admission checks here; success does not claim ACL absence.
-    Ok(())
 }

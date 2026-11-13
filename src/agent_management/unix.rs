@@ -2,7 +2,7 @@ use super::*;
 use crate::observation_socket::{NoCancel, ReadBudget};
 use std::{
     ffi::CString,
-    io::{Read, Write},
+    io::{self, Read, Write},
     os::unix::{
         ffi::OsStrExt,
         io::AsRawFd,
@@ -56,6 +56,18 @@ struct Node {
     inode: (u64, u64),
 }
 
+// Darwin dev_t is signed and mode_t is u16; Linux uses u64/u32 here.
+// Keep the flat policy ABI's conversions explicit across platform widths.
+#[allow(clippy::unnecessary_cast)]
+fn socket_identity(stat: &libc::stat) -> (u64, u64) {
+    (stat.st_dev as u64, stat.st_ino as u64)
+}
+
+#[allow(clippy::unnecessary_cast)] // mode_t varies between Darwin u16 and Linux u32.
+fn socket_mode(stat: &libc::stat) -> u32 {
+    stat.st_mode as u32 & 0o7777
+}
+
 impl Node {
     fn capture(selected: Selected) -> Result<(Self, u32)> {
         let stat = selected
@@ -64,9 +76,9 @@ impl Node {
             .ok_or(Error("agent_unsafe_socket"))?;
         let node = Self {
             selected,
-            inode: (stat.st_dev as u64, stat.st_ino as u64),
+            inode: socket_identity(&stat),
         };
-        Ok((node, stat.st_mode as u32))
+        Ok((node, socket_mode(&stat)))
     }
 
     fn fence_mode(&self, mode: u32) -> Result<()> {
@@ -78,7 +90,7 @@ impl Node {
             self.inode.0,
             self.inode.1,
             before.st_uid,
-            before.st_mode as u32 & 0o7777,
+            socket_mode(&before),
         )?;
         self.stat(mode)?;
         self.selected.fence()
@@ -94,8 +106,8 @@ impl Node {
             stat.st_mode & libc::S_IFMT == libc::S_IFSOCK
                 && stat.st_nlink == 1
                 && stat.st_uid == unsafe { libc::geteuid() }
-                && stat.st_mode as u32 & 0o7777 == mode & 0o7777
-                && (stat.st_dev as u64, stat.st_ino as u64) == self.inode,
+                && socket_mode(&stat) == mode & 0o7777
+                && socket_identity(&stat) == self.inode,
             "agent_unsafe_socket",
         )?;
         Ok(stat)
@@ -105,15 +117,16 @@ impl Node {
         self.fence_mode(0o600)
     }
 
-    fn chmod(&self) -> Result<()> {
+    fn chmod(&self) -> io::Result<()> {
         // No pathname-following fallback, including on older Linux kernels.
         #[cfg(target_os = "linux")]
         let result = unsafe {
+            let mode: libc::mode_t = 0o600;
             libc::syscall(
                 libc::SYS_fchmodat2,
                 self.selected.parent.file().as_raw_fd(),
                 self.selected.leaf.as_ptr(),
-                0o600 as libc::mode_t,
+                mode,
                 libc::AT_SYMLINK_NOFOLLOW,
             )
         };
@@ -128,7 +141,11 @@ impl Node {
         };
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let result = -1;
-        require(result == 0, "agent_socket_chmod_failed")
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
     }
 }
 
@@ -139,6 +156,13 @@ struct Bound {
 
 impl Bound {
     fn bind(path: &str) -> Result<Self> {
+        Self::bind_inner_with_chmod(path, Node::chmod)
+    }
+
+    fn bind_inner_with_chmod(
+        path: &str,
+        chmod: impl FnOnce(&Node) -> io::Result<()>,
+    ) -> Result<Self> {
         let selected = selected(path)?;
         selected.fence()?;
         // bind is exclusive and also starts listening. The admitted private parent
@@ -147,10 +171,10 @@ impl Bound {
             UnixListener::bind(&selected.path).map_err(|_| Error("agent_socket_bind_failed"))?;
         let (node, mode) = Node::capture(selected)?;
         let bound = Self { listener, node };
-        #[cfg(test)]
+        #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
         tests::checkpoint("post_bind");
         bound.node.fence_mode(mode)?;
-        bound.node.chmod()?;
+        chmod(&bound.node).map_err(|_| Error("agent_socket_chmod_failed"))?;
         bound.listener.set_nonblocking(true)?;
         bound.fence()?;
         Ok(bound)
@@ -166,13 +190,13 @@ impl Drop for Bound {
         // Failed startup may still have the original pre-chmod mode. Cleanup is
         // identity-bound, but never proceeds through a changed/nonprivate parent.
         if self
-                .node
-                .selected
-                .parent
-                .stat(&self.node.selected.leaf)
-                .ok()
-                .flatten()
-                .is_some_and(|s| self.node.fence_mode(s.st_mode as u32).is_ok())
+            .node
+            .selected
+            .parent
+            .stat(&self.node.selected.leaf)
+            .ok()
+            .flatten()
+            .is_some_and(|s| self.node.fence_mode(socket_mode(&s)).is_ok())
         {
             unsafe {
                 libc::unlinkat(
@@ -343,7 +367,7 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
     let mut frame =
         serde_json::to_vec(&json!({"id":id,"contract":CONTRACT,"method":method,"params":params}))?;
     frame.push(b'\n');
-    #[cfg(test)]
+    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
     tests::checkpoint("pre_connect");
     node.fence()?;
     crate::platform::observation_socket::fence(&endpoint)
@@ -353,7 +377,7 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
     let socket =
         crate::platform::observation_socket::Socket::connect(&endpoint, deadline, &NoCancel)
             .map_err(|_| Error("agent_connect_failed"))?;
-    #[cfg(test)]
+    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
     tests::checkpoint("pre_send");
     node.fence()?;
     crate::platform::observation_socket::fence(&endpoint)
@@ -364,7 +388,7 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
     socket
         .send(&frame, deadline, &NoCancel)
         .map_err(|_| Error("agent_delivery_uncertain"))?;
-    #[cfg(test)]
+    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
     tests::checkpoint("post_send");
     node.fence()
         .map_err(|_| Error("agent_delivery_uncertain"))?;
@@ -479,13 +503,15 @@ fn validate_result(method: &str, value: &Value) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
     use super::*;
     use std::{cell::RefCell, fs, os::unix::fs::PermissionsExt};
 
+    type Checkpoint = Box<dyn FnMut(&str)>;
+
     thread_local! {
-        static CHECKPOINT: RefCell<Option<Box<dyn FnMut(&str)>>> = RefCell::new(None);
+        static CHECKPOINT: RefCell<Option<Checkpoint>> = RefCell::new(None);
     }
 
     pub(super) fn checkpoint(stage: &str) {
@@ -522,10 +548,16 @@ mod tests {
         );
     }
 
+    fn private_root() -> tempfile::TempDir {
+        let root = crate::private_access::test_support::tempdir();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        root
+    }
+
     #[test]
     fn admitted_bind_is_private_and_owned_cleanup_is_descriptor_relative() {
         use std::os::unix::fs::MetadataExt;
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         assert_eq!(fs::symlink_metadata(&path).unwrap().mode() & 0o7777, 0o600);
@@ -534,9 +566,76 @@ mod tests {
         assert!(!path.exists());
     }
 
+    fn assert_chmod_startup_failure(errno: i32) {
+        use std::cell::Cell;
+        let root = private_root();
+        let workspace = root.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let marker = workspace.join("coven.json");
+        fs::write(&marker, b"unchanged-marker").unwrap();
+        let path = root.path().join("receiver.sock");
+        let called = Cell::new(false);
+        let error = Bound::bind_inner_with_chmod(path.to_str().unwrap(), |node| {
+            called.set(true);
+            let stat = fs::symlink_metadata(&path).unwrap();
+            use std::os::unix::fs::{FileTypeExt, MetadataExt};
+            assert!(stat.file_type().is_socket());
+            assert_eq!((stat.dev(), stat.ino()), node.inode);
+            assert_eq!(node.selected.path, path);
+            node.fence_mode(stat.mode() & 0o7777).unwrap();
+            Err(io::Error::from_raw_os_error(errno))
+        })
+        .and_then(|bound| {
+            // The same startup ordering as serve: no store may open after chmod refusal.
+            let _store = store::Store::open(&workspace)?;
+            Ok(bound)
+        })
+        .err()
+        .unwrap();
+        assert!(called.get());
+        assert_eq!(error.code(), "agent_socket_chmod_failed");
+        assert!(fs::symlink_metadata(&path).is_err_and(|e| e.kind() == io::ErrorKind::NotFound));
+        assert_eq!(fs::read(&marker).unwrap(), b"unchanged-marker");
+        assert_eq!(fs::read_dir(&workspace).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn chmod_enosys_refuses_startup_and_cleans_owned_socket_before_store() {
+        assert_chmod_startup_failure(libc::ENOSYS);
+    }
+
+    #[test]
+    fn chmod_eperm_refuses_startup_and_cleans_owned_socket_before_store() {
+        assert_chmod_startup_failure(libc::EPERM);
+    }
+
+    #[test]
+    fn foreign_leaf_refuses_bind_without_invoking_chmod_callback() {
+        use std::{cell::Cell, os::unix::fs::MetadataExt};
+        let root = private_root();
+        let path = root.path().join("receiver.sock");
+        fs::write(&path, b"FOREIGN").unwrap();
+        let before = fs::symlink_metadata(&path).unwrap();
+        let called = Cell::new(false);
+        let error = Bound::bind_inner_with_chmod(path.to_str().unwrap(), |_| {
+            called.set(true);
+            Err(io::Error::from_raw_os_error(libc::EPERM))
+        })
+        .err()
+        .unwrap();
+        assert_eq!(error.code(), "agent_socket_bind_failed");
+        assert!(!called.get());
+        let after = fs::symlink_metadata(&path).unwrap();
+        assert_eq!((before.dev(), before.ino()), (after.dev(), after.ino()));
+        assert_eq!(before.mode(), after.mode());
+        assert_eq!(fs::read(&path).unwrap(), b"FOREIGN");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
     #[test]
     fn existing_socket_is_not_unlinked_or_rebound() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         assert!(Bound::bind(path.to_str().unwrap()).is_err());
@@ -544,9 +643,39 @@ mod tests {
     }
 
     #[test]
+    fn stale_socket_requires_manual_removal() {
+        let root = private_root();
+        let path = root.path().join("receiver.sock");
+        drop(UnixListener::bind(&path).unwrap());
+        assert!(Bound::bind(path.to_str().unwrap()).is_err());
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn prechmod_replacement_symlink_is_not_followed_or_cleaned() {
+        use std::os::unix::fs::MetadataExt;
+        let root = private_root();
+        let path = root.path().join("receiver.sock");
+        let target = root.path().join("target");
+        fs::write(&target, b"foreign").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        let replaced = path.clone();
+        let destination = target.clone();
+        let _hook = Hook::new(move |stage| {
+            if stage == "post_bind" {
+                fs::remove_file(&replaced).unwrap();
+                std::os::unix::fs::symlink(&destination, &replaced).unwrap();
+            }
+        });
+        assert!(Bound::bind(path.to_str().unwrap()).is_err());
+        assert!(fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(fs::metadata(&target).unwrap().mode() & 0o7777, 0o644);
+    }
+
+    #[test]
     fn initial_denials_never_construct_a_client_socket() {
         use crate::platform::observation_socket::SocketConstructionGuard;
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         let guard = SocketConstructionGuard::new(true);
@@ -567,7 +696,7 @@ mod tests {
     #[test]
     fn linked_or_symlinked_socket_and_missing_leaf_never_connect() {
         use crate::platform::observation_socket::SocketConstructionGuard;
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         let guard = SocketConstructionGuard::new(true);
@@ -597,7 +726,7 @@ mod tests {
             return;
         }
         use crate::platform::observation_socket::SocketConstructionGuard;
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         let name = CString::new(path.as_os_str().as_bytes()).unwrap();
@@ -611,7 +740,7 @@ mod tests {
     #[test]
     fn preconnect_parent_change_never_connects() {
         use crate::platform::observation_socket::SocketConstructionGuard;
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         let parent = root.path().to_path_buf();
@@ -635,7 +764,7 @@ mod tests {
     #[test]
     fn preconnect_missing_leaf_race_never_connects() {
         use crate::platform::observation_socket::SocketConstructionGuard;
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         let removed = path.clone();
@@ -651,8 +780,38 @@ mod tests {
     }
 
     #[test]
+    fn preconnect_parent_replacement_never_connects_to_new_private_socket() {
+        use crate::platform::observation_socket::SocketConstructionGuard;
+        let root = private_root();
+        let parent = root.path().join("private");
+        fs::create_dir(&parent).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = parent.join("receiver.sock");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let moved = root.path().join("moved");
+        let changed = parent.clone();
+        let new_path = path.clone();
+        let _hook = Hook::new(move |stage| {
+            if stage == "pre_connect" {
+                fs::rename(&changed, &moved).unwrap();
+                fs::create_dir(&changed).unwrap();
+                fs::set_permissions(&changed, fs::Permissions::from_mode(0o700)).unwrap();
+                drop(UnixListener::bind(&new_path).unwrap());
+                fs::set_permissions(&new_path, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+        });
+        let guard = SocketConstructionGuard::new(true);
+        assert!(call(path.to_str().unwrap(), "inventory", json!({})).is_err());
+        assert_eq!(guard.count(), 0);
+        assert_no_connection(&bound.listener);
+        drop(bound);
+        assert!(path.exists());
+        assert!(root.path().join("moved/receiver.sock").exists());
+    }
+
+    #[test]
     fn presend_denial_never_sends_private_session_id() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         let changed = path.clone();
@@ -679,7 +838,7 @@ mod tests {
 
     #[test]
     fn postsend_privacy_failure_is_uncertain_and_never_replayed() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         let parent = root.path().to_path_buf();
@@ -709,7 +868,7 @@ mod tests {
 
     #[test]
     fn parent_replacement_and_alias_prevent_fences_and_cleanup() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let parent = root.path().join("private");
         fs::create_dir(&parent).unwrap();
         fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
@@ -726,7 +885,7 @@ mod tests {
 
     #[test]
     fn changed_parent_privacy_prevents_cleanup() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
@@ -738,7 +897,7 @@ mod tests {
 
     #[test]
     fn replacement_socket_is_preserved() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         fs::remove_file(&path).unwrap();
@@ -757,7 +916,7 @@ mod tests {
             unsafe {
                 libc::umask(0);
             }
-            let root = crate::private_access::test_support::tempdir();
+            let root = private_root();
             let path = root.path().join("receiver.sock");
             let _hook = Hook::new(move |stage| {
                 if stage == "post_bind" {
@@ -801,7 +960,7 @@ mod tests {
     #[test]
     fn existing_socket_explicit_acl_denied_under_acl_free_parent() {
         use crate::platform::observation_socket::SocketConstructionGuard;
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
         add_socket_acl(&path);
@@ -814,7 +973,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn new_socket_explicit_acl_denied_before_processing() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         let changed = path.clone();
         let _hook = Hook::new(move |stage| {
@@ -827,7 +986,7 @@ mod tests {
 
     #[test]
     fn replacement_leaf_is_never_unlinked_and_parent_alias_is_refused() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         let path = root.path().join("receiver.sock");
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
         assert!(Bound::bind(path.to_str().unwrap()).is_err());
@@ -846,7 +1005,7 @@ mod tests {
 
     #[test]
     fn private_rpc_correlation_closed_schema_and_no_mutation_on_refusal() {
-        let root = crate::private_access::test_support::tempdir();
+        let root = private_root();
         fs::write(root.path().join("coven.json"), b"marker").unwrap();
         let mut store = store::Store::open(root.path()).unwrap();
         let id = "a".repeat(32);

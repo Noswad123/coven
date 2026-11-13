@@ -114,6 +114,17 @@ fn positive() -> Value {
             {"provider":"codex","pid":11,"rule":"exact"}]}]})
 }
 
+fn platform_samples() -> [Value; 2] {
+    [
+        json!({"version":1,"platform":"linux","scope":"pane_foreground_cohort","selection":"unclassified"}),
+        json!({"version":2,"platform":"macos","scope":"pane_foreground_cohort","selection":"unclassified","argument_policy":"darwin_procargs2_lp64_v1"}),
+    ].map(|descriptor| {
+        let mut sample = positive();
+        sample["process_observation"] = descriptor;
+        sample
+    })
+}
+
 #[test]
 fn mixed_projection_is_ephemeral_and_never_displays_raw_fields() {
     let (rows, omitted) = presentation::rows(&positive(), "nonce", None);
@@ -572,5 +583,98 @@ mod unix {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn both_platforms_preserve_queued_selection_and_clear_it_before_failure_poll() {
+        for sample in platform_samples() {
+            for code in ["timeout", "schema_error", "incompatible"] {
+                let server = Server::new("");
+                let mut ui = presentation::Presenter::new(
+                    Some("coven-discovery"),
+                    socket::select(&server.path),
+                );
+                let end = Instant::now() + Duration::from_secs(3);
+                ui.sample(&sample, Instant::now(), end, &socket::NoCancel);
+                ui.sample(&sample, Instant::now(), end, &socket::NoCancel);
+                assert_eq!(ui.report["selections"], 1);
+                assert_eq!(ui.report["ignored_intents"], 3);
+                let before = server.calls.lock().unwrap().len();
+                let mut failed = unavailable(3, code);
+                if code == "incompatible" {
+                    failed["assessment"] = json!("incompatible");
+                }
+                ui.sample(&failed, Instant::now(), end, &socket::NoCancel);
+                assert_eq!(ui.report["selections"], 1);
+                let calls = server.calls.lock().unwrap();
+                assert_eq!(calls[before]["method"], "integration.view.replace");
+                assert_eq!(
+                    calls[before]["params"]["items"].as_array().unwrap().len(),
+                    1
+                );
+                assert_eq!(calls[before + 1]["method"], "integration.view.poll");
+                let frames: Vec<_> = calls
+                    .iter()
+                    .filter(|r| r["method"] == "integration.view.replace")
+                    .collect();
+                assert!(
+                    frames[1]["params"]["items"][1]["detail"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Selected (read-only)")
+                );
+                assert!(
+                    !calls[before]["params"]
+                        .to_string()
+                        .contains("Selected (read-only)")
+                );
+                drop(calls);
+                ui.finish();
+            }
+        }
+    }
+
+    #[test]
+    fn both_platforms_expired_display_never_renews_even_for_fresh_failure() {
+        let end = Instant::now() + Duration::from_secs(10);
+        let mut displays = platform_samples().map(|sample| {
+            let server = Server::new("");
+            let mut ui =
+                presentation::Presenter::new(Some("coven-discovery"), socket::select(&server.path));
+            ui.sample(&sample, Instant::now(), end, &socket::NoCancel);
+            let before = server.calls.lock().unwrap().len();
+            (server, ui, sample, before)
+        });
+        thread::sleep(Duration::from_millis(5100));
+        for (server, ui, sample, before) in &mut displays {
+            ui.sample(
+                &unavailable(2, "timeout"),
+                Instant::now(),
+                end,
+                &socket::NoCancel,
+            );
+            ui.sample(sample, Instant::now(), end, &socket::NoCancel);
+            ui.finish();
+            assert_eq!(ui.report["outcome"], "expired");
+            assert_eq!(ui.report["cleanup"], "ttl_only_expired");
+            assert_eq!(server.calls.lock().unwrap().len(), *before);
+        }
+    }
+
+    #[test]
+    fn both_platforms_candidate_drift_invalidates_queued_selection() {
+        for sample in platform_samples() {
+            let server = Server::new("");
+            let mut ui =
+                presentation::Presenter::new(Some("coven-discovery"), socket::select(&server.path));
+            let end = Instant::now() + Duration::from_secs(3);
+            ui.sample(&sample, Instant::now(), end, &socket::NoCancel);
+            let mut fresh = sample.clone();
+            fresh["targets"][0]["matches"][0]["pid"] = json!(u32::MAX);
+            ui.sample(&fresh, Instant::now(), end, &socket::NoCancel);
+            assert_eq!(ui.report["selections"], 0);
+            assert_eq!(ui.report["ignored_intents"], 4);
+            ui.finish();
+        }
     }
 }

@@ -166,7 +166,17 @@ fn macos_acl_adapter_mock_logic() {
     assert!(stdout.contains("46 scenarios + 31 parent guard failures passed"));
     // This adapter inspects metadata only; it cannot authenticate or contact peers.
     let adapter = include_str!("macos_acl.c");
-    for forbidden in ["connect(", "accept(", "socket(", "F_GETPATH", "/proc/", "acl_set_"] {
-        assert!(!adapter.contains(forbidden), "unexpected operation: {forbidden}");
+    for forbidden in [
+        "connect(",
+        "accept(",
+        "socket(",
+        "F_GETPATH",
+        "/proc/",
+        "acl_set_",
+    ] {
+        assert!(
+            !adapter.contains(forbidden),
+            "unexpected operation: {forbidden}"
+        );
     }
 }

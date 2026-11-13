@@ -51,9 +51,15 @@ Every provider ledger row below describing a Linux ownership transfer is a
 retirement statement, not denial of provisional macOS file mutation. All Kit
 non-Linux installers/assets/status/uninstall/recommendation/update/bulk paths remain
 until native qualification. Full status/start/resume/restore transfer remains
-pending on both OSes, and macOS discovery is still explicitly rejected. Receiver,
-store and socket authorization/privacy are separate, untested macOS gates: their
-Unix mode checks do not inherit the hook-file Darwin ACL adapter.
+pending on both OSes. Generic macOS discovery is now source-enabled/provisional
+under the exact v2 LP64 descriptor, not native runtime certification. Receiver,
+store and socket privacy now use shared OS admission through `private_access.rs`,
+with separate agent descriptor storage and socket-entry policies, not hook
+transactions. macOS local-APFS support is provisional and natively unqualified;
+see [private storage and endpoints](AGENT_PRIVATE_STORAGE_CONTRACT.md). Linux
+receiver startup needs available/permitted `fchmodat2` (6.5 or backport), with no
+pathname-following fallback. Other Unix receivers refuse before binding; generic
+storage is unchanged and Windows unsupported.
 
 The subsequent [Pi extension cut](PI_EXTENSION_CONTRACT.md) transfers new Linux
 reference-extension placement, not full Pi management. `agent extensions`
@@ -81,22 +87,22 @@ not full OpenCode management completion.
 | --- | --- | --- |
 | New Claude hook configuration — Linux | Coven plans/installs/uninstalls/rolls back explicit settings roots; Linux Kitsune refuses new installs with Coven guidance. | Coven is sole owner of new Linux hook configuration; existing roots require explicit opt-in migration. |
 | New Claude hook configuration — non-Linux | macOS file apply is source-enabled, provisional eligible local APFS only; Windows unsupported, other Unix preview only. Kitsune preserves production `legacy_install_claude`, assets/result type and recommendation/update/bulk paths. | Native macOS qualification before retirement; do not drop a working path. |
-| Claude hook receipts and inventory | Coven private Unix receiver/store and redacted last-reported inventory, independent of Kitsune; Windows unsupported, macOS not validated. | Broader discovery, native association and status capabilities belong in Coven; receipts are not native truth. |
+| Claude hook receipts and inventory | Coven private Linux/macOS receiver/store and redacted last-reported inventory, independent of Kitsune; macOS provisional and natively unqualified, other Unix refused, Windows unsupported. | Broader discovery, native association and status capabilities belong in Coven; receipts are not native truth. |
 | New Codex hook configuration — Linux | Coven two-file preview/install/uninstall/rollback; Linux Kit refuses new install and excludes recommendation/update/bulk paths. | Explicit legacy migration only; global hooks enablement is not native approval. |
 | New Codex hook configuration — non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit legacy installer/assets/result type and recommendation/update/bulk remain. Windows unsupported; other Unix preview only. | Native qualification before retirement, not backend existence alone. |
-| Codex receipts and inventory | Coven Unix reference-only SessionStart capture; always unknown, even fresh. | No working/idle lifecycle or native association is inferred. |
+| Codex receipts and inventory | Same Linux/macOS receiver, reference-only SessionStart capture; always unknown, even fresh. | No working/idle lifecycle or native association is inferred. |
 | New Copilot hook configuration - Linux | Coven explicit global settings.json plan/install/uninstall/rollback and exact opt-in legacy migration; Kit install/recommend/update/bulk paths retired. | Scoped new hook ownership complete, not broader management or native certification. |
 | New Copilot hook configuration - non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit legacy installer/assets/result type and recommendation/update/bulk remain. Windows unsupported; other Unix preview only. | Native qualification before retirement. |
-| Copilot receipts and inventory | Coven Unix exact SessionStart reference capture; unknown even fresh, no Claude subagent suppression. | No inferred events, camelCase aliases or native lifecycle/association. |
+| Copilot receipts and inventory | Same Linux/macOS receiver, exact SessionStart reference capture; unknown even fresh, no Claude subagent suppression. | No inferred events, camelCase aliases or native lifecycle/association. |
 | New Pi extension placement - Linux | Coven explicit existing-root plan/install/uninstall/rollback; Kit new install/recommend/update/bulk paths retired. | File placement only, not native activation or lifecycle parity. |
 | New Pi extension placement - non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit preserves full v7 asset/installer/result type and recommendation/update/bulk paths. Windows unsupported; other Unix preview only. | Native qualification before retirement; placement is not activation. |
-| Pi receipts and inventory | Coven Unix strict `coven.pi-extension.v1` envelope via separate report-extension; `session_start` reference only, always unknown. | Discovery/status/lifecycle/start/resume/restore remain pending; upgrade receiver first. |
+| Pi receipts and inventory | Same Linux/macOS receiver, strict `coven.pi-extension.v1` envelope via separate report-extension; `session_start` reference only, always unknown. | Discovery/status/lifecycle/start/resume/restore remain pending; upgrade receiver first. |
 | New OpenCode reference plugin - Linux | Coven explicit existing-root plan/install/uninstall/rollback; Kit new install/recommend/update/bulk retired. | Placement only; exact v9 opt-in migration, no native activation/lifecycle parity. |
 | New OpenCode reference plugin - non-Linux | macOS provisional local-APFS file apply is source-enabled; Kit preserves full v9 asset/legacy installer/result and recommendation/update/bulk paths. Windows unsupported; other Unix preview only. | Native qualification before retirement; placement is not activation. |
-| OpenCode receipts and inventory | Coven Unix strict extension envelope, session.created/updated root DTO references only, unknown even fresh. | Server exact-directory-instance scope, not selected TUI/pane/attach or whole project; no universal resume capture. |
+| OpenCode receipts and inventory | Same Linux/macOS receiver, strict extension envelope, session.created/updated root DTO references only, unknown even fresh. | Server exact-directory-instance scope, not selected TUI/pane/attach or whole project; no universal resume capture. |
 | Optional five-provider inventory presentation | Coven projects its own records with dynamic provider labels through generic Kitsune snapshot + `integration.view.*`. | Kitsune remains agent-neutral; no management authority comes from row selection. |
 | Legacy Claude surfaces on all platforms | Kitsune retains all six `IntegrationTarget::ALL` entries, installation status, uninstall and old hook ingress. Non-Linux new installation also remains. | Retire only after platform-matched compatibility/transition coverage; running sessions are not converted by editing settings. |
-| Generic Linux foreground-cohort recognition (all 22 literal families) | Coven production `agent discover`, bounded watch and optional generic presentation; ephemeral PID/provider/rule/locator evidence only, no receipt/group join. Kit adds optional version-1 `process_observation` metadata; binary protocol 18 unchanged. | Partial ownership scope, not detector retirement/full status: temporary duplicate legacy policy remains. Windows selected_process/legacy_agent_aware rejected; macOS unsupported first cut. See [discovery contract](AGENT_DISCOVERY_CONTRACT.md). |
+| Generic Linux/macOS foreground-cohort recognition (all 22 literal families) | Coven production `agent discover`, bounded watch and optional generic presentation; ephemeral PID/provider/rule/locator evidence only, no receipt/group join. Linux v1 and provisional macOS v2 with exact `argument_policy: darwin_procargs2_lp64_v1` are admitted; both require `pane_foreground_cohort`/`unclassified`, protocol 18 unchanged. | Partial scope, not detector retirement/full status or native macOS certification. Linux optional argument_policy is ignored; macOS v1 rejects even with the marker. Windows selected_process/legacy_agent_aware rejects. Acquisition completeness stays unknown. See [discovery contract](AGENT_DISCOVERY_CONTRACT.md). |
 | Process/screen fallback, status/attention, navigation, agent APIs and mobile surfaces | Still Kitsune; internal typed foreground/fallback/history separation is implemented with deliberate readiness/authority hardening. | Validate the seam before future external mode or matching retirement; neither ships now. |
 | Interactive start/resume | Coven's explicit Djinn UI start/resume uses generic terminal-pinned submission. Kitsune's legacy provider paths remain. | Coven adapters for remaining supported providers; unsupported capabilities stay explicit. |
 | Resume policy | Coven pure planner characterizes 16 historical mappings; no new execution authority. | Coven owns provider policy; pure argv equivalence alone cannot replace restore ownership/history semantics. |
@@ -111,13 +117,13 @@ groups, not promises that each kind has hooks or resume support:
 
 | Provider group | Transfer status |
 | --- | --- |
-| Claude | New hook configuration transferred on Linux only; independent receipt inventory is Unix-only, not macOS-validated. Non-Linux installer/recommendation/update paths and all-platform process/screen fallback, start/resume and restore remain pending. |
+| Claude | New hook configuration transferred on Linux only; independent receipt inventory supports Linux/macOS, with macOS provisional and natively unqualified. Non-Linux installer/recommendation/update paths and all-platform process/screen fallback, start/resume and restore remain pending. |
 | Djinn | Coven observation and explicit interactive/prompt capabilities exist; Kitsune's built-in detection, reporting, start/resume and restore remain pending extraction. |
-| Codex | New two-file hook configuration transferred on Linux only; Unix receiver captures SessionStart references only. Independent Linux literal-family discovery now exists; non-Linux installer/recommendation/update paths and full discovery/status/start/resume/restore transfer remain pending. Legacy status/uninstall/old ingress remain. |
+| Codex | New two-file hook configuration transferred on Linux only; Unix receiver captures SessionStart references only. Independent Linux/provisional macOS literal-family discovery exists; non-Linux installer/recommendation/update paths and full discovery/status/start/resume/restore transfer remain pending. Legacy status/uninstall/old ingress remain. |
 | GitHub Copilot | New global hook configuration transferred on Linux only; Unix exact SessionStart references stay unknown. Non-Linux installer/recommend/update/bulk and all-platform detection/status/start/resume/restore/old ingress/uninstall remain. |
-| Pi | New Linux reference-extension placement transferred; strict Unix startup-reference capture only. Migration drops working/blocked/idle. Independent Linux literal-family discovery now exists; non-Linux paths and full discovery/lifecycle/status/start/resume/restore/legacy ingress/status/uninstall transfer remain. |
+| Pi | New Linux reference-extension placement transferred; strict Unix startup-reference capture only. Migration drops working/blocked/idle. Independent Linux/provisional macOS literal-family discovery exists; non-Linux paths and full discovery/lifecycle/status/start/resume/restore/legacy ingress/status/uninstall transfer remain. |
 | OpenCode | New Linux reference-plugin placement transferred; strict Unix created/updated root-reference capture only. Migration drops working/blocked/idle. Non-Linux new-install paths, full v9 asset and all-platform legacy CLI/status/uninstall/old ingress remain; broader discovery/status/start/resume/restore pending. |
-| Gemini, Cursor, Devin, Antigravity, Cline, OMP, Mastracode, Kimi, Kiro, Droid, Amp, Grok, Hermes, Kilo, QoderCLI, Maki | Independent Linux literal-family discovery exists; broader discovery/status/start/resume/restore policy transfer pending, with no matching Kit detector retirement. |
+| Gemini, Cursor, Devin, Antigravity, Cline, OMP, Mastracode, Kimi, Kiro, Droid, Amp, Grok, Hermes, Kilo, QoderCLI, Maki | Independent Linux/provisional macOS literal-family discovery exists; broader discovery/status/start/resume/restore policy transfer pending, with no matching Kit detector retirement. |
 
 Provider labels, hook sources and native references are distinct. Remaining source
 owners include each legacy `kitsune:<provider>` producer and its configuration,
@@ -136,13 +142,14 @@ not parity, job-leader selection or ranking.
 
 **No matching detector retirement yet:** the internal typed foreground/fallback/history
 seam is implemented in Kit. See the optional sibling
-[evidence guide](../kitsune/DETECTOR_EVIDENCE_SEPARATION.md). Historical/screen-only
+[evidence guide](../../kitsune/DETECTOR_EVIDENCE_SEPARATION.md). Historical/screen-only
 data cannot mint ownership, hook takeover or effective native authority. Restored
 Idle/name/reference/pending resume/managed Active remain; `interactive_ready` needs
 a matching probe or accepted fallback, not foreground-only readiness or native proof.
 Native input retains its independent fresh process check. This deliberately narrows
-public semantics beyond a neutral refactor. No external mode, new Config,
-wire/API/snapshot-format fields or toggle/kill/hide controls ship. This functional
+public semantics beyond a neutral refactor. That earlier seam added no external
+mode, Config, wire/API/snapshot-format fields or toggle/kill/hide controls; the
+generic acquisition cut separately adds the macOS v2 descriptor. This functional
 Coven-owned recognition path temporarily duplicates legacy policy; it is not
 completed sole ownership or full status. The five Linux hook/configuration
 retirements remain unchanged; macOS native qualification and remaining non-Linux
@@ -189,7 +196,7 @@ launch, adoption or role assignment is part of this flow.
    with independent receivers where supported and conservative legacy migration.
    Separate Djinn and other applicable sources remain. Record exact source ownership and
    retirement behavior for each provider.
-2. Build on production Linux `agent discover`, without calling recognition detector
+2. Build on Linux and source-enabled provisional macOS `agent discover`, without calling recognition detector
    retirement. Build on the implemented typed foreground/fallback/history seam
    and completed scoped API/UI/compatibility checks, retaining the limits below
    before any future external mode.
@@ -255,17 +262,62 @@ is needed; the generic view adds no native-effects ownership.
   apply may create a persistent lock before validation. Do not generalize Codex's
   artifact-free prevalidation to Claude/Copilot apply.
 - Hook apply is source-enabled on Linux and provisionally on eligible macOS local
-  APFS; Kit installer retirement remains Linux-only. Receiver transport is Unix-only,
+  APFS; Kit installer retirement remains Linux-only. Receiver support is Linux/macOS only,
   Windows unsupported and macOS authorization/runtime unvalidated. The provisional
   backend is not native qualification or grounds to remove preserved Kit paths. No all-platform completion,
   full Claude transfer or all-provider certification is claimed.
 
 ### Validation record
 
-#### Hook-file backend validation table
+#### Private storage and endpoint validation
 
-The [new backend validation table](HOOK_FILE_BACKEND_CONTRACT.md#validation-gates)
-records completed parent validation, not tests rerun by this documentation update:
+The [private storage contract](AGENT_PRIVATE_STORAGE_CONTRACT.md#validation-and-gates)
+records final parent evidence, not tests rerun by this documentation update:
+
+| Focused Linux Rust Scope | Distinct Passed Checks |
+| --- | --- |
+| Agent management / hook files / generic storage / receipt-presentation units | 59 / 15 / 28 / 5 |
+| Codex / Copilot / extension-engine units / CLI | 7 / 6 / 20 / 91 |
+| **Unit/bin subtotal** | **231** |
+| Management workflow / presentation / private / Codex capture / package integrations | 6 / 3 / 3 / 2 / 2 |
+| Five generated end-to-end / five-provider config workflows / frozen Pi integrations | 5 / 57 / 2 |
+| **Integration subtotal** | **80** |
+| **Total** | **311** |
+
+Agent-management 59 includes Files 14, Unix 24, Store 1 and existing 20. Hook files
+15 includes one C-mock test; its 110 scenarios (33 FD + 46 socket + 31 parent),
+child umask test prints and historical totals are not extra Rust checks.
+Agent-reported ASan/UBSan mock checks ran on Linux, not native macOS ABI.
+Strict Linux all-target lint with warnings denied, Rust 1.85 all-target checking,
+Linux optimized build, locked package verification and packaged test-target
+compilation all passed. Package assertions include actual private-access,
+agent-Files and storage-Delivery sources, not broadened generic privacy policy.
+
+Both Apple architecture `--tests` typechecks passed warning-free after the direct
+serde dependency/lock update, importing actual Root/private access/agent Files/
+storage Delivery/tests, not the full receiver/RPC Unix module. They do not check
+Apple SDK C, link or run. No fresh full macOS application build succeeded; the
+prior SDK `TargetConditionals.h` block remains. UID-0 ownership mutation was not
+exercised; native macOS ACL tests were not run. Final read-only review is ready
+within provisional scope with no remaining P0-P2 findings reported, not native
+certification or a full-suite-green claim. Current teardown fixtures are clean;
+production best-effort cleanup may still leave private secret-bearing temporaries.
+
+The initial four-thread `storage::` run had **27 passed, 1 failed** in
+`storage::bootstrap::tests::reservation_failure_matrix_preserves_exact_partials_without_adoption_or_lock_stealing`,
+asserting `try_workspace_lock(probe)` at `src/storage/bootstrap/tests.rs:164`.
+All **28 passed serially** afterward. Root cause remains unestablished, not proven
+unrelated; generic storage logic changed only by pure Delivery-type extraction.
+Earlier agent-reported serial workflows sporadically returned
+`agent_delivery_uncertain`; final selected serial runs passed. Neither successful
+reruns nor final counts establish a cause. No production timing relaxation or
+resends were added. Historical full-library failures below remain recorded.
+
+#### Historical hook-file backend validation table
+
+The [historical backend validation table](HOOK_FILE_BACKEND_CONTRACT.md#validation-gates)
+records the earlier backend cut, not fresh tests for the 311-check cut above or
+tests rerun by this documentation update:
 
 | Focused Linux Rust Scope | Distinct Passed Checks |
 | --- | --- |
@@ -288,7 +340,8 @@ Apple SDK C, link or run. Both full application target attempts failed on defaul
 cc's Apple flags; an ARM retry with correct Clang targeting confirmed missing SDK
 `TargetConditionals.h` in ring. Neither application builds nor native backend C
 compilation passed. Native SDK ABI/linking, APFS and minimum-OS qualification,
-and separate receiver/store/socket privacy remain pending.
+and native receiver/store/socket privacy qualification remain pending, despite
+the now-shared source-enabled admission described above.
 
 | Incidental Broader Full-Library Run | Result |
 | --- | --- |
@@ -360,10 +413,11 @@ repeated Idle stays quiet. Stale/foreign/rejected reports do not touch that flag
 
 Both restore branches seed history, not fabricated process observations. Runtime
 import/resume submission is not proof; actor proof is never persisted. Snapshot
-schema/capture bytes and Coven's reader/accepted capabilities remain unchanged.
+schema/capture bytes and Coven's reader/accepted capabilities were unchanged by
+that historical seam; the current acquisition cut separately admits macOS v2.
 Five Linux retirements and earlier generic metadata are preserved. No fresh
-full-suite/live-provider/cross-platform result is claimed. Discovery Coven 201/Kit
-249 below are historical, not new seam totals or additive evidence.
+full-suite/live-provider/cross-platform result is claimed. Earlier discovery counts
+are historical, not new seam totals or additive evidence.
 
 #### State-seam validation limits
 
@@ -387,14 +441,17 @@ provider, full readiness or cross-platform certification follows from these chec
 
 #### Discovery validation table
 
-Historical discovery results, unchanged by the state seam; not current parent totals.
+The current composed cut source-enables generic macOS acquisition and Coven
+discovery admission; it does not certify native runtime behavior. Earlier Linux
+discovery and evidence-seam counts are historical, not current composed totals.
 
-| Scope | Current record |
+| Scope | Evidence and limits |
 | --- | --- |
-| Current Coven scope | **201 focused checks passed**: classifier 5, collector 8, watch/presentation unit 16, CLI 91, discovery workflow 15, presentation workflow 14, package boundary 2 and legacy compatibility 50. Not full classifier parity or a full-suite result. |
-| Kit generic capability | **249 API checks passed** plus strict all-target lint; optional metadata only, not detector retirement. |
-| Build/package compatibility | Coven strict all-target lint, Rust 1.85 all-target checking, optimized build, package verification and packaged test-target compilation passed. |
-| Live installed Kit / platforms | No live installed Kit/provider execution or configuration changes; macOS unsupported first cut, Windows acquisition/legacy selection rejected. Full `just check` remains unapproved/not run. |
+| Coven admission | Source fixtures cover exact Linux v1/macOS v2 tuples, required macOS marker, rejected old macOS v1, descriptor drift and empty argv/name-only recognition. Linux's optional marker remains an ignored extension. |
+| Kit generic acquisition | Decoder and fake-source fixtures cover reviewed LP64 layout, bounds, short/full reads, empty operands and visible member changes. `pane.process_info` uses the isolated generic route; legacy detector parser/hints remain unchanged. |
+| Apple source checks | Actual Rust source checks for both Apple architectures are not SDK C compilation, native linking or runtime tests. Native validation remains blocked by missing SDK `TargetConditionals.h`. |
+| Completeness and authority | `acquisition_completeness: unknown`; peer labels/PIDs are not local OS/PID authority. Mutable arguments, unreadable members and failed listing/argument reads can leave undetectable omissions. |
+| This documentation update | Source/doc consistency inspection only; no builds, tests, live endpoint/provider use, configuration changes or substantial artifacts. No full-suite/native certification claim. Windows remains unsupported. |
 
 See [discovery bounds, versioning and failure semantics](AGENT_DISCOVERY_CONTRACT.md).
 Read requests may trigger Kit housekeeping/default-workspace/shell creation, so

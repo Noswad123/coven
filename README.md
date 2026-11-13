@@ -5,7 +5,7 @@
 `coven` is a personal, magic-themed multi-agent workspace command for creating,
 tracking, and running local multi-agent workspaces.
 
-See [APP_BOUNDARIES.md](APP_BOUNDARIES.md) for the accepted target decision:
+See [APP_BOUNDARIES.md](docs/APP_BOUNDARIES.md) for the accepted target decision:
 independent apps, Coven-owned cross-runtime observation/grouping first, optional
 Kitsune annotations as a separate generic presentation path, and Djinn-owned native
 execution. Initial Kitsune observation, explicit participant groups/roles, and a
@@ -91,8 +91,9 @@ not through a permanent test-only gate.
 
 ### Coven-owned agent discovery
 
-Production [`coven agent discover`](AGENT_DISCOVERY_CONTRACT.md) recognizes all
-22 literal provider families from generic Kit Linux foreground-cohort evidence,
+Production [`coven agent discover`](docs/AGENT_DISCOVERY_CONTRACT.md) recognizes all
+22 literal provider families from generic Kit Linux and provisional source-enabled
+macOS foreground-cohort evidence,
 without a workspace/default lookup, storage, Kit agent APIs/hints or receipt/group
 joins. Only redacted locators and PID/provider/rule matches are exposed; every
 match is retained without leader selection/ranking. Activity/attention remain
@@ -110,12 +111,17 @@ coven agent discover --socket ABS_KITSUNE_SOCKET --watch --duration 60 --interva
 ```
 
 The optional generic view source must already be manually enabled in Kit.
-Discovery requires additive `snapshot.process_observation` version 1 with Linux,
-`pane_foreground_cohort`, `unclassified`; binary protocol 18 is unchanged.
-Windows `selected_process`/`legacy_agent_aware` and macOS are rejected in this first
-cut. Metadata is not authenticated platform/live-process attestation. Bounded
-bracket matching discards partial failures but is not atomic attribution/PID-ABA
-protection. Read requests can trigger Kit housekeeping/default-workspace/shell
+Discovery admits exact additive `snapshot.process_observation` tuples: Linux v1
+or macOS v2, both `pane_foreground_cohort`/`unclassified`, protocol exactly 18.
+macOS requires exact `argument_policy: darwin_procargs2_lp64_v1`; Linux's optional
+marker is ignored. Old macOS v1 rejects even with the marker; Windows unsupported.
+macOS support is **source-enabled/provisional, not native runtime certification**.
+Its generic `pane.process_info` route is isolated from unchanged legacy detector
+parsing/hints. Peer labels/PIDs grant no local OS/PID authority.
+`acquisition_completeness` stays `unknown`; mutable arguments and unreadable/failed
+acquisition can leave undetectable omissions. Bounded bracket matching discards
+detected failures but is not atomic attribution/PID-ABA protection or proof of
+complete acquisition. Read requests can trigger Kit housekeeping/default-workspace/shell
 creation, so read-only is not zero server effects.
 
 Watch is serial and bounded (duration `0.1..3600`, interval `0.1..60` seconds).
@@ -134,10 +140,9 @@ implemented. Historical/screen-only data cannot mint native ownership/takeover/
 effectiveness. Restored metadata/Idle remain; readiness needs a matching probe or
 accepted fallback, not foreground-only proof. Native input's independent fresh
 process check remains. This deliberately hardens public semantics, not blanket
-compatibility. No external mode, new Config, wire/API/snapshot fields or
-toggle/kill/hide controls ship. Scoped validation is complete: **1,318 distinct Kit
-checks**, separate **50 Coven cross-compatibility checks** and strict all-target
-Kit lint. The [state-seam table and limits](AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
+compatibility. No external mode, new Config or toggle/kill/hide controls ship;
+the generic acquisition cut separately adds the macOS v2 descriptor. The historical
+[state-seam table and limits](docs/AGENT_MANAGEMENT_MIGRATION.md#state-seam-validation-table)
 record final confirmation reruns, ENOSPC-aborted workspace CLI selection, zero-match
 tab filter and reproduced stale golden/test-only corrections. No full-suite or new
 production UI behavior is claimed beyond intended evidence hardening.
@@ -145,21 +150,27 @@ This is functional Coven-owned recognition with temporary duplicate legacy polic
 not sole ownership/full status; the classifier intentionally diverges from the
 209-case legacy corpus. Five prior Linux hook/configuration retirements stand and
 macOS native qualification and remaining non-Linux capabilities remain pending,
-not the shared file backend itself. See the [historical discovery 201 focused Coven checks, 249 Kit API
-checks and build/package validation](AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table);
-historical OpenCode 236 is not a new discovery total. No actual live installed Kit
-commands were used in this documentation session.
+not the shared file backend itself. See the [discovery evidence and limits](docs/AGENT_MANAGEMENT_MIGRATION.md#discovery-validation-table),
+not stale exact totals. Actual Apple Rust-target source-checks are not SDK C,
+native link or runtime validation; missing SDK `TargetConditionals.h` still blocks
+native validation. This documentation update ran no tests, builds or live Kit calls.
 
 ### Coven-owned agent receipts, hooks and extensions
 
-The [private hook-file backend guide and support matrix](HOOK_FILE_BACKEND_CONTRACT.md)
+The [private hook-file backend guide and support matrix](docs/HOOK_FILE_BACKEND_CONTRACT.md)
 documents shared Linux/macOS mutation now, not a late macOS port. All five file
 managers source-enable explicit macOS `--apply` through one shared capability,
 provisionally on eligible local APFS with ownership enabled and no ACL entries.
 This is **not native macOS qualification** or all-agent-management support.
 Kit's non-Linux installers/assets/status/uninstall/recommend/update/bulk paths stay.
-Receiver/store/socket authorization and privacy do not inherit this backend's
-Darwin ACL checks and remain separately untested. Discovery still rejects macOS;
+Receiver/store/socket privacy now shares OS admission through `private_access.rs`,
+with agent-only descriptor-rooted storage and parent-relative socket checks, not
+hook transactions. See [private storage and endpoint safety](docs/AGENT_PRIVATE_STORAGE_CONTRACT.md):
+macOS is source-enabled provisional local APFS, **not natively qualified**. Linux
+receiver startup requires available/permitted `fchmodat2` (Linux 6.5 or backport),
+without a pathname-following fallback; this is not a kernel minimum for all Coven
+commands/hooks. Other Unix receivers refuse before bind, generic storage unchanged;
+Windows unsupported. Generic macOS discovery is separately source-enabled/provisional;
 full status/start/resume/restore transfer remains pending on both OSes. The guide
 separates Apple Rust-target typechecks from failed full application cross-builds
 and pending native SDK/APFS gates. Parent validation passed 204 distinct focused
@@ -168,11 +179,22 @@ Linux optimized build, locked package verification and packaged test-target
 compilation. The incidental full-library run did not pass (1,144 passed, 2 failed,
 5 ignored); both exact isolated reruns passed, with no established root cause.
 Review is ready within provisional source scope, not native certification or
-full-suite success. The guide records the breakdown and failure details.
+full-suite success. Those 204 passes are historical backend evidence; current
+private-storage final parent evidence is **311 distinct focused Linux Rust checks**
+(231 unit/bin + 80 integration). Strict all-target lint with warnings denied,
+MSRV 1.85 all-target checking, Linux optimized build, locked package verification
+and packaged test-target compilation all passed. Both Apple actual-source Rust
+harness `--tests` checks passed warning-free after direct serde dependency/lock
+update, not native SDK C/link/run or full receiver/RPC Unix checks. Final read-only
+review is ready within provisional source scope with no remaining P0-P2 findings
+reported. The private storage contract records the initial four-thread generic-
+storage 27/1 run and serial 28-pass rerun, plus sporadic workflow delivery
+uncertainty before final selected serial passes; causes remain unestablished.
+No timing relaxation/resends or full-suite-green claim follows.
 
 The confirmed migration includes **all** discovery/status interpretation, hooks,
 start/resume and agent restore, not only Claude. The authoritative
-[ownership matrix and next transfers](AGENT_MANAGEMENT_MIGRATION.md) distinguish
+[ownership matrix and next transfers](docs/AGENT_MANAGEMENT_MIGRATION.md) distinguish
 that target from the first functional cut: independent Coven Claude receipt
 capture/inventory, explicit settings management, optional generic presentation,
 and retirement of Kitsune's new Claude installer **on Linux only**. The subsequent
@@ -314,7 +336,8 @@ source-enabled on Linux and provisionally on eligible macOS local APFS, not
 natively qualified. Other Unix platforms preview but refuse apply.
 Kitsune preserves macOS/Windows production installation/assets/result type and
 recommendation/update/bulk paths until matching native qualification is complete. Coven's
-receiver is Unix-only (Windows unsupported); macOS has not been validated.
+receiver supports Linux/macOS only (Windows unsupported); macOS remains natively
+unqualified under the private storage contract above.
 All six Kit target entries, status/uninstall/old ingress and legacy UI settings
 remain; no working non-Linux path is dropped. Stop native providers/editors
 before apply. Explicit `--migrate-kitsune` accepts only exact verified legacy
@@ -324,7 +347,7 @@ can contain secrets. Conflicts/recovery require inspection, never blind retry or
 undo. No user configuration or running sessions are automatically migrated.
 Kitsune still owns legacy process/screen fallback and agent restore, including
 Claude; this is not full Claude/all-provider extraction. See
-[receiver safety/lifetime](AGENT_MANAGEMENT_CONTRACT.md) and
+[receiver safety/lifetime](docs/AGENT_MANAGEMENT_CONTRACT.md) and
 [Claude hook mutation/recovery](CLAUDE_HOOKS_CONTRACT.md) and
 [Codex hook mutation/recovery](CODEX_HOOKS_CONTRACT.md) before use. Full discovery,
 start/resume and restore transfers remain pending for **all providers**; the

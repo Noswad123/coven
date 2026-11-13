@@ -116,6 +116,14 @@ fn snapshot(count: usize) -> Value {
         "agents":[false,{"malformed":"SECRET_AGENT"}]}})
 }
 
+fn mac_snapshot(count: usize) -> Value {
+    let mut s = snapshot(count);
+    s["snapshot"]["process_observation"] = json!({"version":2,"platform":"macos",
+        "scope":"pane_foreground_cohort","selection":"unclassified",
+        "argument_policy":"darwin_procargs2_lp64_v1"});
+    s
+}
+
 fn process(request: &Value, rows: Value) -> Value {
     json!({"type":"pane_process_info","process_info":{"pane_id":request["params"]["pane_id"],"foreground_processes":rows}})
 }
@@ -132,6 +140,273 @@ fn failed(output: &Output, report: &Value, exit: i32, code: &str) {
     assert!(report["target_count"].is_null());
     assert!(report["recognized_target_count"].is_null());
     assert_eq!(report["diagnostics"], json!([code]));
+    assert_eq!(report["acquisition_completeness"], "unknown");
+}
+
+#[test]
+fn both_peer_platforms_retain_all_22_families_without_raw_evidence_or_user_state() {
+    const FAMILIES: [&str; 22] = [
+        "pi",
+        "claude",
+        "codex",
+        "gemini",
+        "cursor",
+        "devin",
+        "agy",
+        "cline",
+        "omp",
+        "mastracode",
+        "opencode",
+        "copilot",
+        "kimi",
+        "kiro",
+        "droid",
+        "amp",
+        "grok",
+        "hermes",
+        "kilo",
+        "qodercli",
+        "maki",
+        "djinn",
+    ];
+    for mac in [false, true] {
+        let server = Server::new(move |_, r| {
+            if r["method"] == "session.snapshot" {
+                let mut s = if mac { mac_snapshot(1) } else { snapshot(1) };
+                s["snapshot"]["panes"][0]["agentHint"] = json!({"provider":"SECRET_ENV_SENTINEL"});
+                return frame(r, s);
+            }
+            let mut rows: Vec<_> = FAMILIES.iter().enumerate().map(|(i, family)| {
+                json!({"pid":4_000_000_000u32 + i as u32,"name":"SECRET_NAME",
+                    "argv0":"SECRET_ARGV0","argv":[format!("/nonexistent/SECRET_PATH/{family}"),"","SECRET_ENV_SENTINEL"],
+                    "cwd":"/SECRET_CWD","cmdline":"SECRET_CMDLINE","env":{"SECRET_ENV_SENTINEL":"SECRET"}})
+            }).collect();
+            // Unsupported 32-bit argument acquisition is name-only, not absence.
+            rows.push(json!({"pid":4_000_000_100u32,"name":"claude","argv0":null,"argv":null}));
+            // A nonempty structured vector masks both raw argv0 and name.
+            rows.push(json!({"pid":4_000_000_101u32,"name":"claude","argv0":"codex","argv":["","claude",""]}));
+            rows.push(json!({"pid":4_000_000_102u32,"name":"claude","argv":["C:\\bin\\claude"]}));
+            frame(r, process(r, json!(rows)))
+        });
+        let (out, report) = server.run(&[]);
+        assert_eq!(out.status.code(), Some(0), "{report}");
+        assert_eq!(
+            report["process_observation"],
+            if mac { mac_snapshot(0) } else { snapshot(0) }["snapshot"]["process_observation"]
+        );
+        let target = &report["targets"][0];
+        let matches = target["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 23);
+        for (i, family) in FAMILIES.iter().enumerate() {
+            assert_eq!(matches[i]["provider"], *family);
+            assert_eq!(matches[i]["pid"], 4_000_000_000u32 + i as u32);
+        }
+        assert_eq!(matches[22]["provider"], "claude");
+        assert_eq!(target["provider_candidates"].as_array().unwrap().len(), 22);
+        assert_eq!(target["activity"], "unknown");
+        assert_eq!(report["acquisition_completeness"], "unknown");
+        assert_eq!(report["native_catalog_complete"], false);
+        assert!(!String::from_utf8_lossy(&out.stdout).contains("SECRET"));
+        let entries: Vec<_> = std::fs::read_dir(server.dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, [std::ffi::OsString::from("kit.sock")]);
+    }
+}
+
+#[test]
+fn mac_admission_rejects_legacy_missing_wrong_or_malformed_marker_before_reads() {
+    for change in [
+        "legacy",
+        "legacy_marker",
+        "missing",
+        "wrong",
+        "typed",
+        "long",
+        "ranked",
+        "scope",
+        "version",
+        "windows",
+    ] {
+        let server = Server::new(move |_, r| {
+            let mut s = mac_snapshot(1);
+            let d = &mut s["snapshot"]["process_observation"];
+            match change {
+                "legacy" | "legacy_marker" => d["version"] = json!(1),
+                "wrong" => d["argument_policy"] = json!("darwin_procargs2_lp64_v0"),
+                "typed" => d["argument_policy"] = json!(true),
+                "long" => d["argument_policy"] = json!("x".repeat(65)),
+                "ranked" => d["selection"] = json!("ranked"),
+                "scope" => d["scope"] = json!("agent_aware"),
+                "version" => d["version"] = json!(2.0),
+                "windows" => d["platform"] = json!("windows"),
+                _ => {}
+            }
+            if matches!(change, "legacy" | "missing") {
+                d.as_object_mut().unwrap().remove("argument_policy");
+            }
+            frame(r, s)
+        });
+        let (out, report) = server.run(&[]);
+        failed(&out, &report, 2, "process_observation_unsupported");
+        assert_eq!(server.methods.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn supported_platform_drift_and_unsupported_marker_clear_whole_sample() {
+    for change in [
+        "linux_to_mac",
+        "mac_to_linux",
+        "marker",
+        "raw_version",
+        "raw_tuple",
+        "partial",
+    ] {
+        let server = Server::new(move |index, r| {
+            let mut s = if r["method"] == "session.snapshot" {
+                if change == "linux_to_mac" {
+                    snapshot(2)
+                } else {
+                    mac_snapshot(2)
+                }
+            } else {
+                process(r, json!([{"pid":4_000_000_000u32,"name":"claude"}]))
+            };
+            if index == 3 {
+                match change {
+                    "linux_to_mac" => s = mac_snapshot(2),
+                    "mac_to_linux" => s = snapshot(2),
+                    "marker" => {
+                        s["snapshot"]["process_observation"]["argument_policy"] =
+                            json!("unsupported")
+                    }
+                    "raw_version" => s["snapshot"]["process_observation"]["version"] = json!("2"),
+                    "raw_tuple" => s["snapshot"]["process_observation"]["scope"] = json!(null),
+                    _ => {}
+                }
+            }
+            if index == 2 && change == "partial" {
+                s["process_info"]["foreground_processes"][0]["argv"] = json!(false);
+            }
+            frame(r, s)
+        });
+        let (out, report) = server.run(&[]);
+        let (exit, code) = match change {
+            "linux_to_mac" | "mac_to_linux" => (1, "process_observation_changed"),
+            "partial" => (1, "schema_error"),
+            _ => (2, "process_observation_unsupported"),
+        };
+        failed(&out, &report, exit, code);
+        assert_eq!(
+            report["process_observation"]["platform"],
+            if change == "linux_to_mac" {
+                "linux"
+            } else {
+                "macos"
+            }
+        );
+    }
+}
+
+#[test]
+fn mac_upstream_missing_cohort_is_observed_but_completeness_is_unknown() {
+    let server = Server::new(|_, r| {
+        frame(
+            r,
+            if r["method"] == "session.snapshot" {
+                mac_snapshot(1)
+            } else {
+                json!({"type":"pane_process_info","process_info":{"pane_id":r["params"]["pane_id"]}})
+            },
+        )
+    });
+    let (out, report) = server.run(&[]);
+    assert_eq!(out.status.code(), Some(0), "{report}");
+    assert_eq!(report["targets"][0]["recognition"], "unknown");
+    assert_eq!(report["acquisition_completeness"], "unknown");
+}
+
+#[test]
+fn mac_uses_the_same_generic_bounds_and_exact_protocol() {
+    for case in [
+        "panes64",
+        "panes65",
+        "processes256",
+        "processes257",
+        "args128",
+        "args129",
+        "bytes4096",
+        "bytes4097",
+        "text65536",
+        "text65537",
+        "protocol17",
+        "protocol19",
+        "budget",
+    ] {
+        let server = Server::new(move |_, r| {
+            let mut result = if r["method"] == "session.snapshot" {
+                let mut s = mac_snapshot(match case {
+                    "panes64" => 64,
+                    "panes65" => 65,
+                    _ => 1,
+                });
+                if case == "protocol17" {
+                    s["snapshot"]["protocol"] = json!(17);
+                }
+                if case == "protocol19" {
+                    s["snapshot"]["protocol"] = json!(19);
+                }
+                s
+            } else {
+                let mut row = json!({"pid":4_000_000_000u32,"name":""});
+                match case {
+                    "args128" => row["argv"] = json!(vec![""; 128]),
+                    "args129" => row["argv"] = json!(vec![""; 129]),
+                    "bytes4096" => row["argv"] = json!(["x".repeat(4096)]),
+                    "bytes4097" => row["argv"] = json!(["x".repeat(4097)]),
+                    "text65536" | "text65537" => {
+                        row["argv"] = json!(vec!["x".repeat(4096); 16]);
+                        if case == "text65537" {
+                            row["name"] = json!("x");
+                        }
+                    }
+                    _ => {}
+                }
+                let count = match case {
+                    "processes256" => 256,
+                    "processes257" => 257,
+                    _ => 1,
+                };
+                let rows: Vec<_> = (0..count)
+                    .map(|i| {
+                        let mut row = row.clone();
+                        row["pid"] = json!(4_000_000_000u32 + i);
+                        row
+                    })
+                    .collect();
+                process(r, json!(rows))
+            };
+            if case == "budget" {
+                result["padding"] = json!("x".repeat(600));
+            }
+            frame(r, result)
+        });
+        let (out, report) = server.run(if case == "budget" {
+            &["--max-response-bytes", "1600"]
+        } else {
+            &[]
+        });
+        match case {
+            "panes65" => failed(&out, &report, 1, "pane_limit"),
+            "processes257" => failed(&out, &report, 1, "process_limit"),
+            "args129" | "bytes4097" | "text65537" => failed(&out, &report, 1, "schema_error"),
+            "protocol17" | "protocol19" => failed(&out, &report, 2, "unsupported_protocol"),
+            "budget" => failed(&out, &report, 1, "response_limit"),
+            _ => assert_eq!(out.status.code(), Some(0), "{case}: {report}"),
+        }
+    }
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 ## Scope and ownership
 
-Coven owns new Pi reference-extension placement on Linux, independent Unix
+Coven owns new Pi reference-extension placement on Linux, independent Linux/macOS
 receipt capture, redacted inventory and optional generic Kitsune presentation.
 This is **not full Pi management completion**. Pi lifecycle/status interpretation,
 discovery, start/resume and agent-aware restore remain pending transfers. OpenCode
@@ -11,8 +11,11 @@ separate Djinn handling is not folded into Pi.
 Mutation uses the [shared Linux/macOS backend](HOOK_FILE_BACKEND_CONTRACT.md).
 Explicit macOS `--apply` is source-enabled, provisional local APFS only and not
 natively qualified. Other Unix systems preview but refuse apply; Windows is
-unsupported. macOS receiver/privacy and native activation remain unvalidated,
-and all Kitsune non-Linux paths remain pending native qualification.
+unsupported. Receiver privacy now shares OS admission, with provisional, natively
+unqualified local-APFS macOS support; other Unix receivers refuse before binding.
+See [private storage](AGENT_PRIVATE_STORAGE_CONTRACT.md) for the Linux receiver's
+permitted/available `fchmodat2` requirement (6.5 or backport). Native activation is
+unvalidated, and all Kitsune non-Linux paths remain pending native qualification.
 
 **Explicit functional reduction:** migration drops Kitsune's working/blocked/idle
 reporting in favor of session references only. Fresh Pi receipts remain `unknown`.

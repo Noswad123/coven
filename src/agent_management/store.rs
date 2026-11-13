@@ -39,7 +39,6 @@ impl Default for Saved {
 }
 
 pub(super) struct Store {
-    pub root: PathBuf,
     pub epoch: String,
     saved: Saved,
     receipts: BTreeMap<String, Instant>,
@@ -56,29 +55,27 @@ fn record_id(provider: &str, sid: &str) -> String {
 
 impl Store {
     pub fn open(workspace: &Path) -> Result<Self> {
-        Self::open_inner(workspace, None)
+        Self::open_inner(workspace, Files::sync_startup)
     }
 
     #[cfg(test)]
     fn open_with_sync(workspace: &Path, sync: &dyn Fn(&Path) -> Result<()>) -> Result<Self> {
-        Self::open_inner(workspace, Some(sync))
+        Self::open_inner(workspace, |files| {
+            sync(&files.root().join("state"))?;
+            sync(files.root())?;
+            files.sync_startup()
+        })
     }
 
-    fn open_inner(workspace: &Path, sync: Option<&dyn Fn(&Path) -> Result<()>>) -> Result<Self> {
+    fn open_inner(workspace: &Path, sync: impl FnOnce(&Files) -> Result<()>) -> Result<Self> {
         let files = Files::open(workspace)?;
         let guard = files.guard(Duration::from_millis(100))?;
-        let root = files.root().to_owned();
         // Sync on every startup, including recovery after an earlier failed sync.
         // Replacing the record only syncs state/, not the root's new state entry.
-        if let Some(sync) = sync {
-            sync(&root.join("state"))?;
-            sync(&root)?;
-        }
-        files.sync_startup()?;
+        sync(&files)?;
         let (saved, _) = Self::load(&files, &guard)?;
         drop(guard);
         Ok(Self {
-            root,
             epoch: crate::platform::random_uuid_hex()?,
             saved,
             receipts: BTreeMap::new(),
@@ -170,7 +167,7 @@ impl Store {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
     use super::*;
     use std::{cell::RefCell, os::unix::fs::MetadataExt};
