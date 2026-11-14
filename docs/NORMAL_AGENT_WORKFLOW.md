@@ -132,6 +132,17 @@ plugin instance. Queue size and child lifetime are bounded, stale queued reports
 are dropped, and delivery is never retried or replayed as fresh evidence.
 Transport failure never affects native agent execution or invokes legacy fallback.
 
+Existing/resumed sessions need not replay a creation event. When a live status or
+decision event names an unknown session, the updated Djinn plugin looks up that
+session's native metadata to establish root/child eligibility. Metadata registration
+is silent: it emits no lifecycle/status report, consumes no sequence and does not
+restore historical pending requests. Merely opening a historical session therefore
+does not establish fresh activity. Lookups run only on demand, never during plugin
+initialization, with one active lookup and at most 32 waiting live observations.
+Lookup time counts against the original 1,900 ms observation-age budget; failures,
+stale observations, deletion and disposal cannot turn late metadata into fresh
+activity. This requires an updated Djinn UI build, not a Coven receiver restart.
+
 Coven validates the envelope before using its private client. Native RPC uses
 `coven.native-events.v1`, method `report`, and exactly the same allowlisted params
 without `contract`. Its response uses the existing id/type/result-or-error framing
@@ -280,4 +291,5 @@ runtime certification are separate follow-up work.
 - Kitsune: `src/config/{model,io}.rs`, `src/server/integration_runtime.rs`,
   `src/server/headless.rs`, `src/integration/env.rs`, `src/persist/restore.rs`.
 - Djinn: `clients/djinn-ui/packages/opencode/src/plugin/kitsune-agent-state.ts`
-  and `src/coven/native-event-reporter.ts` under that same package.
+  and `src/plugin/native-event-adapter.ts`, `src/coven/native-event-reporter.ts`
+  under that same package.
