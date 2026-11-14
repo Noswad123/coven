@@ -146,6 +146,56 @@ fn generated(bytes: &[u8], executable: &Path, state_root: &Path) -> Result<Vec<u
     Ok(output)
 }
 
+fn disable_warning(bytes: Option<&[u8]>) -> Option<&'static str> {
+    let bytes = bytes?;
+    let automatic = (|| {
+        if bytes.len() > CONFIG_LIMIT {
+            return None;
+        }
+        let doc = std::str::from_utf8(bytes)
+            .ok()?
+            .parse::<DocumentMut>()
+            .ok()?;
+        let Some(integrations) = doc.get("integrations") else {
+            return Some(false);
+        };
+        let integrations = integrations.as_table_like()?;
+        if let Some(runtime) = integrations.get("runtime") {
+            runtime.as_table_like()?;
+            return Some(false);
+        }
+        let Some(sources) = integrations.get("sources") else {
+            return Some(false);
+        };
+        let sources = sources.as_array()?;
+        if sources.iter().any(|source| source.as_str().is_none()) {
+            return None;
+        }
+        if !sources
+            .iter()
+            .any(|source| source.as_str() == Some("coven"))
+        {
+            return Some(false);
+        }
+        let Some(coven) = integrations.get("coven") else {
+            return Some(true);
+        };
+        match coven.as_table_like()?.get("auto_start") {
+            Some(auto_start) => auto_start.as_bool(),
+            None => Some(true),
+        }
+    })();
+    match automatic {
+        Some(true) => Some(
+            "Guarded disable restores the exact preimage, but the restored source enables automatic Coven startup; an unchanged source-only config on a no-op does too. Set [integrations.coven] auto_start=false or remove 'coven' from [integrations].sources during an explicit ownership handoff, then restart Kitsune.",
+        ),
+        Some(false) => None,
+        None => Some(
+            "Disable target configuration could not be interpreted safely; automatic Coven startup may remain enabled. No configuration was adopted or repaired. Inspect the target and set [integrations.coven] auto_start=false or remove 'coven' from [integrations].sources during an explicit ownership handoff, then restart Kitsune.",
+        ),
+    }
+}
+
 impl Receipt {
     fn validate(&self, config: &Path) -> Result<()> {
         require(
@@ -423,6 +473,16 @@ pub fn arguments(request: &Request, json_output: bool) -> Result<TaskOutput> {
     };
     if let Some(error) = &runtime_error {
         warnings.push(format!("Recorded runtime is not ready: {}. Disable remains available without runtime readiness.", error.code()));
+    }
+    if request.operation == Operation::Disable {
+        // Managed undo targets the recorded preimage, not the generated runtime config.
+        let target = match &receipt {
+            Some(receipt) => receipt.preimage.as_ref().map(|p| p.bytes.as_slice()),
+            None => config_image.as_ref().map(|i| i.bytes.as_slice()),
+        };
+        if let Some(warning) = disable_warning(target) {
+            warnings.push(warning.to_owned());
+        }
     }
     let report = json!({"schema_version":1,"operation":format!("{:?}", request.operation).to_lowercase(),"applied":apply && !noop,"noop":noop,"kitsune_config":config,"executable":executable,"state_root":state_root,"receipt":parent.join(RECEIPT),"stage":receipt.as_ref().map(|r| r.stage),"command":runtime_command,"report_command":report_command,"runtime_ready":(request.operation != Operation::Disable).then_some(runtime_error.is_none()),"runtime_readiness_error":runtime_error.as_ref().map(Error::code),"source":"coven","external_agent_management":true,"development_binary_warning":development,"warnings":warnings,"kit_restart_required":true,"new_panes_required":true,"provider_reload_required":true,"provider_setup_required":true,"other_providers_setup_required":true,"automatic_provider_install":false,"live_api_used":false});
     let stdout = if json_output {

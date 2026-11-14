@@ -2,8 +2,12 @@
 
 ## Overview
 
-The implemented setup surface configures normal native-agent reporting without
-manual workspace initialization or socket coordination. Kit stays generic;
+The explicit managed setup surface configures native-agent reporting without
+manual workspace initialization or socket coordination. The normal shorthand in
+compatible Kitsune builds is `[integrations] sources = ["coven"]`, negotiated
+through the read-only [doctor-status contract](DOCTOR_STATUS_CONTRACT.md). This
+document describes the retained advanced executable/root pinning and exact undo
+interface, not a required step for the shorthand. Kit's view model stays generic;
 Coven owns bootstrap, capture and interpretation. Native macOS qualification and
 real provider UI emission remain separate from source and controlled validation.
 
@@ -101,6 +105,13 @@ not change. Normal native invocation remains unchanged.
   Disable does not require the recorded executable to exist or the runtime root
   to be healthy: it only performs guarded config preimage undo and does not
   mutate runtime state. Config/receipt safety and exact-image checks still apply.
+  With source-triggered Coven defaults, an exact preimage containing source-only
+  Coven may still enable automatic management after undo. Disable previews,
+  applies and no-ops warn about this target. The journal/preimage is never silently
+  rewritten: set `[integrations.coven] auto_start = false` or remove the source
+  during the subsequent explicit handoff if presentation-only/disabled behavior
+  is intended. The opt-out disables the implicit runtime and inferred ownership;
+  an explicit runtime remains a whole-block override.
 - **Ownership handoff:** disable only changes config. Stop affected providers,
   inspect any separate provider rollback, restart Kit and open new panes/reload
   providers. Removing rows, config reload or helper failure never returns authority

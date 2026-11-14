@@ -19,6 +19,7 @@ pub mod console;
 pub mod copilot_hooks;
 pub mod djinn_live_observation;
 pub mod djinn_observation;
+pub mod doctor;
 pub mod error;
 pub mod execution;
 mod extension_assets;

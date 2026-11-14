@@ -21,6 +21,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Inspect this native executable's compatibility metadata without probing a runtime.
+    Doctor {
+        #[command(subcommand)]
+        command: Doctor,
+    },
     /// Preview or explicitly enable normal agent reporting in Kitsune.
     Integration {
         #[command(subcommand)]
@@ -242,6 +247,15 @@ enum Command {
     Handoff {
         #[command(subcommand)]
         command: Handoff,
+    },
+}
+
+#[derive(Subcommand)]
+enum Doctor {
+    /// Report build capabilities and defaults; never asserts live readiness or changes state.
+    Status {
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1327,6 +1341,9 @@ enum Handoff {
 
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Doctor { command } => match command {
+            Doctor::Status { json } => return coven::doctor::status_arguments(json),
+        },
         Command::Integration { command } => {
             use coven::integration_setup::Operation;
             let (operation, options) = match command {

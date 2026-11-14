@@ -172,7 +172,118 @@ fn unowned_disable_never_selects_or_validates_runtime_defaults() {
         assert!(output["state_root"].is_null());
         assert!(output["command"].is_null());
         assert!(output["report_command"].is_null());
+        assert!(
+            output["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|warning| {
+                    let warning = warning.as_str().unwrap();
+                    warning.contains("could not be interpreted safely")
+                        && warning.contains("No configuration was adopted or repaired")
+                })
+        );
+        assert_eq!(
+            fs::read(f.config()).unwrap(),
+            b"# unmanaged config\n[invalid toml"
+        );
         assert_eq!(fs::read_dir(f.dir.path()).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn disable_warns_for_source_only_preimage_without_changing_restore_or_journal_bytes() {
+    for suffix in ["", "\n[integrations.coven]\nauto_start = true\n"] {
+        let mut f = Fixture::new();
+        let original = format!(
+            "# exact original\n[integrations]\nsources = ['aux', 'coven'] # keep\n{suffix}"
+        );
+        f.write(original.as_bytes(), 0o640);
+        f.run().unwrap();
+        let active = fs::read(f.config()).unwrap();
+        let journal = fs::read(f.dir.path().join(RECEIPT)).unwrap();
+        f.request.operation = Operation::Disable;
+        for (apply, noop) in [(false, false), (true, false), (false, true), (true, true)] {
+            f.request.apply = apply;
+            let output = arguments(&f.request, true).unwrap();
+            let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+            assert_eq!(report["noop"], noop);
+            assert_eq!(report["applied"], apply && !noop);
+            let warning = output
+                .warnings
+                .iter()
+                .find(|warning| warning.contains("restored source enables automatic Coven"))
+                .unwrap();
+            for action in [
+                "auto_start=false",
+                "explicit ownership handoff",
+                "restart Kitsune",
+            ] {
+                assert!(warning.contains(action), "{warning}");
+            }
+            assert!(
+                report["warnings"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!(warning))
+            );
+            if !apply && !noop {
+                assert_eq!(fs::read(f.config()).unwrap(), active);
+                assert_eq!(fs::read(f.dir.path().join(RECEIPT)).unwrap(), journal);
+            } else {
+                assert_eq!(fs::read(f.config()).unwrap(), original.as_bytes());
+                assert_eq!(fs::metadata(f.config()).unwrap().mode() & 0o7777, 0o640);
+                let mut expected: Receipt = serde_json::from_slice(&journal).unwrap();
+                expected.stage = Stage::Inactive;
+                assert_eq!(
+                    fs::read(f.dir.path().join(RECEIPT)).unwrap(),
+                    serde_json::to_vec(&expected).unwrap()
+                );
+            }
+            assert_eq!(f.receipt().preimage.unwrap().bytes, original.as_bytes());
+        }
+    }
+}
+
+#[test]
+fn disable_warning_uses_current_unmanaged_config_and_respects_optout_or_no_source() {
+    for (original, warns) in [
+        ("[integrations]\nsources = ['coven']\n", true),
+        (
+            "[integrations]\nsources = ['coven']\n[integrations.coven]\nauto_start = false\n",
+            false,
+        ),
+        ("[integrations]\nsources = ['aux']\n", false),
+        ("# no integrations\n", false),
+    ] {
+        for managed in [false, true] {
+            let mut f = Fixture::new();
+            f.write(original.as_bytes(), 0o640);
+            if managed {
+                f.run().unwrap();
+            } else {
+                f.request.executable = None;
+                f.request.state_root = None;
+            }
+            f.request.operation = Operation::Disable;
+            for apply in [false, true] {
+                f.request.apply = apply;
+                let output = arguments(&f.request, false).unwrap();
+                assert_eq!(
+                    output
+                        .warnings
+                        .iter()
+                        .any(|warning| warning.contains("automatic Coven")),
+                    warns
+                );
+                if !managed || apply {
+                    assert_eq!(fs::read(f.config()).unwrap(), original.as_bytes());
+                }
+                if !managed {
+                    assert_eq!(fs::read_dir(f.dir.path()).unwrap().count(), 1);
+                }
+            }
+        }
     }
 }
 

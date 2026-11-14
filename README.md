@@ -5,21 +5,24 @@
 ### Normal native-agent invocation (opt-in)
 
 The [normal workflow](docs/NORMAL_AGENT_WORKFLOW.md) keeps ordinary `djinn`,
-`codex`, `copilot`, etc. invocation unchanged after one-time setup:
+`codex`, `copilot`, etc. invocation unchanged. Enable Coven in a compatible
+Kitsune build's TOML configuration:
 
-```sh
-coven integration plan
-coven integration enable --apply
+```toml
+[integrations]
+sources = ["coven"]
 ```
 
-Review the plan first. Then restart Kit, open new panes, select **Coven** in
+Kitsune uses `coven doctor status --json` to negotiate capabilities and resolve the
+selected native build/default state root once at startup. Then restart Kit, open new panes, select **Coven** in
 Integrations and invoke agents normally. Djinn needs an updated native full-TUI
 build; other providers need separate explicit hook/extension setup as shown in
 the guide. No Coven launcher, group, manual workspace initialization or socket
-coordination is required. [Setup](docs/INTEGRATION_SETUP_CONTRACT.md) selects Kit's
-startup config, this Coven executable and private state automatically; advanced
-path overrides are optional. Existing unmanaged runtimes require a manual handoff,
-not adoption or force-overwrite.
+coordination is required. See the [doctor contract](docs/DOCTOR_STATUS_CONTRACT.md).
+The existing `coven integration plan` / `enable --apply`
+[managed setup](docs/INTEGRATION_SETUP_CONTRACT.md) remains available for advanced
+explicit executable/root pinning. Existing runtime blocks take precedence and
+require a deliberate handoff, not automatic adoption or force-overwrite.
 
 Coven supplies attributed plain rows, not legacy widgets or pane focus. External
 mode suppresses legacy status/detectors and automatic resume even on helper

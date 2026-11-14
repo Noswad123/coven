@@ -6,10 +6,12 @@ updated alongside implementation; native macOS qualification remains outstanding
 ## Overview
 
 Users invoke native agents normally. No Coven launcher, group enrollment or manual
-live-artifact attachment is required. One-time `coven integration plan` followed by
-`coven integration enable --apply` selects a generic integration runtime, using
-Kit's startup config and privately bootstrapped state. Presentation-only
-`integrations.sources` does not execute programs or change status ownership.
+live-artifact attachment is required. With compatible Kitsune/Coven builds, adding
+`"coven"` to `integrations.sources` selects the default runtime and external agent
+ownership at server startup. Kitsune negotiates capabilities through
+`coven doctor status --json`, retains the selected native executable/default root,
+and lets Coven privately bootstrap state. Unknown source IDs remain
+presentation-only; selecting a source in the UI never launches a process.
 
 After that opt-in and explicit native hook/extension configuration, users still
 type `djinn`, `codex`, `copilot`, etc. unchanged. Coven supplies attributed plain
@@ -19,7 +21,14 @@ Sessions remain unbound: no PID association or authenticated native attestation.
 
 ## API / Interfaces
 
-The public setup interface is `coven integration plan|enable|disable`:
+The normal configuration is `[integrations] sources = ["coven"]`; see the
+[doctor compatibility contract](DOCTOR_STATUS_CONTRACT.md). The optional
+`[integrations.coven] auto_start = false` disables the implicit runtime and
+inferred ownership for presentation-only/manual publishers. Changes require a
+server restart. This is a deliberate change from the older presentation-only
+meaning of a source-only Coven configuration.
+
+The advanced managed setup interface remains `coven integration plan|enable|disable`:
 `plan` is always read-only; enable/disable preview unless `--apply` is explicit.
 See [setup defaults, ownership and recovery](INTEGRATION_SETUP_CONTRACT.md).
 Optional absolute `--kitsune-config`, `--executable` and `--state-root` overrides
@@ -34,6 +43,9 @@ config changes; this does not establish live helper or provider readiness.
 The advanced/internal `[integrations.runtime]` configuration has `source`, literal argv
 `command`, literal argv `report_command`, and `external_agent_management` fields.
 Both commands require absolute executables. The source must be explicitly enabled.
+An explicit runtime block wins as a whole over the Coven defaults, including
+`auto_start = false`; invalid explicit configuration never falls back to defaults.
+Existing managed configurations/receipts are not rewritten or adopted by discovery.
 The runtime configuration is startup-only: changing it requires a server restart.
 The helper starts after API readiness, owns piped stdin, and exits on stdin EOF.
 Kitsune closes stdin, waits a bounded interval, then kills/reaps if necessary.
@@ -57,7 +69,7 @@ The generic helper is server-only; `--no-session` refuses runtime/external mode.
 
 ## Data Flow
 
-The generated `coven integration runtime` helper reads Kit's actual API address
+The selected `coven integration runtime` helper reads Kit's actual API address
 from `KITSUNE_SOCKET_PATH`. It creates a private per-address instance, minimal
 receiver workspace and receiver socket, then runs the attached receiver/presenter
 until stdin EOF or interruption. Users do not run `init`, select sockets or repeat
@@ -85,7 +97,7 @@ its original whole-connection budget. See [transport details](AGENT_MANAGEMENT_C
 All five hook/extension installers support explicit `--from-kitsune`, resolving
 the active private instance from inherited Kit context at report time. Omit
 `--state-root`: the configured generic reporter argv supplies it. Use the same
-Coven executable selected by setup; the CLI defaults to its current executable
+Coven executable selected at startup or by explicit setup; the CLI defaults to its current executable
 for environment-route plans/installs. Library requests still require an executable.
 Old fixed `--socket` installations remain valid but are not silently converted:
 guardedly uninstall the old route first, then explicitly install the new one.
@@ -230,6 +242,20 @@ their closed-envelope contract and validate actual native cancellation delivery.
 
 With compatible Coven/Kit builds and an updated Djinn native full-TUI build:
 
+```toml
+[integrations]
+sources = ["coven"]
+```
+
+Preserve any other configured sources. Put the intended Coven launcher first on
+startup PATH; `coven doctor status --json` shows the selected native identity and
+capabilities without creating state. No explicit runtime block is needed. Existing
+explicit blocks still win, so a Brew-pinned block does not follow a new dev
+selection. Do not blindly delete a setup-managed block: its exact-image receipt
+requires a deliberate handoff.
+
+For advanced explicit executable/root pinning, the existing managed setup remains:
+
 ```sh
 coven integration plan
 coven integration enable --apply
@@ -260,10 +286,14 @@ Restart Kit (without `--no-session`), open new panes and restart/reload provider
 Ensure Djinn's UI selection points at the updated build. Select **Coven** and type
 `djinn`, `codex`, etc. normally. Do not run `group present`, discovery presentation
 or another publisher against the same `coven` lease. A config reload cannot activate
-or roll back this startup-only route. To undo, preview `coven integration disable`,
-then use `coven integration disable --apply` only against the exact managed config;
-later edits refuse. Disabling does not undo provider setup or stop a live helper:
-complete the deliberate restart/new-pane ownership handoff above. Guarded disable
+or roll back this startup-only route. To stop the implicit runtime, remove the Coven
+source or set `[integrations.coven] auto_start = false`, then complete the deliberate
+restart/new-pane ownership handoff above. For managed explicit setup, preview
+`coven integration disable`, then use `coven integration disable --apply` only
+against the exact managed config; later edits refuse. It restores the exact
+preimage, which can itself enable the implicit Coven runtime; heed the warning and
+deliberately opt out if necessary. Disabling does not undo provider setup or stop a
+live helper. Guarded disable
 does not require a healthy runtime root or an existing recorded executable and
 does not mutate runtime state; config/receipt safety checks still apply.
 
@@ -282,6 +312,7 @@ runtime certification are separate follow-up work.
 - [Receipt API and unchanged v1 inventory](AGENT_MANAGEMENT_CONTRACT.md),
   [ownership/migration](AGENT_MANAGEMENT_MIGRATION.md).
 - [Setup and bootstrap](INTEGRATION_SETUP_CONTRACT.md),
+  [doctor compatibility](DOCTOR_STATUS_CONTRACT.md),
   [provider environment routes](PROVIDER_ENVIRONMENT_ROUTES.md).
 - `src/integration_setup.rs`, `src/integration_setup/paths.rs`,
   `src/integration_runtime.rs`, `src/integration_runtime/private_fs.rs`,

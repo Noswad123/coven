@@ -21,8 +21,7 @@ python3 -B tools/normal-workflow-check/check.py \
   --bun /absolute/path/to/bun
 ```
 
-Offline dirty-source snapshot build plus the same acceptance checks, qualified on
-this development machine:
+Offline dirty-source snapshot build plus the same acceptance checks:
 
 ```sh
 python3 -B tools/normal-workflow-check/build-and-check.py \
@@ -55,10 +54,51 @@ or downloaded. Cargo/Rustup package/toolchain caches are reused, not copied.
 `CARGO_TARGET_DIR`, `TMPDIR`, and Zig local/global caches are run-owned. Kitsune's
 hardcoded `vendor/libghostty-vt/zig-out` stays inside its disposable source snapshot.
 
+### Startup-Only Runner
+
+To exercise only `startup_modes(args, root)` with freshly built actual Coven and
+Kit binaries, run this from the Coven checkout in a dedicated Python process:
+
+```sh
+python3 -B - /absolute/path/to/kitsune /absolute/path/to/coven <<'PY'
+import sys
+from types import SimpleNamespace
+sys.path.insert(0, 'tools/normal-workflow-check')
+import check
+args = SimpleNamespace(kitsune_bin=check.absolute(sys.argv[1]),
+                       coven_bin=check.absolute(sys.argv[2]))
+with check.owned_run() as root:
+    check.startup_modes(args, root)
+PY
+```
+
+Use `/home/jdawson/.cache` as `XDG_CACHE_HOME` (or leave it unset with that HOME).
+The default receiver under `RUN/auto/v/coven/integration/i/KEY/r.sock` is exactly
+107 filesystem-encoded bytes at this cache base with the current `nw-` run names.
+Longer paths are refused before startup, not shortened with a `/tmp` alias.
+The source-only fixture exposes only the supplied Coven binary via a run-owned
+`bin/coven` symlink ahead of `/usr/bin:/bin`; it writes no runtime table and does
+not override the default state root, only its isolated `XDG_STATE_HOME`.
+
+The runner needs Python's standard library, Linux `/proc`, `findmnt`, `/bin/sh`,
+and the two actual binaries, but not Bun or the Djinn plugin. Import the module
+as `check` with its directory on `sys.path`: the auto-start case also imports
+`bootstrap.instance` and `bootstrap.helper_for`, which import helpers from `check`.
+For function extraction, retain those imports and all referenced `check` helpers
+and standard-library globals. There is no global child registry: `descendants()`
+tracks the process tree and `owned_run()` enables Linux subreaping before launch.
+Always enclose the call in `owned_run()` in a dedicated process without unrelated
+children; its finalizer stops/reaps **all** descendants before deleting the exact
+run directory, including on failure or catchable interruption. Each successful
+phase also calls `stop_children()`. `passed()` updates module-global `PASS_COUNT`.
+No build, install, live config mutation, or 30-second expiry test runs here.
+
 ## Assertions
 
-The finished setup/bootstrap path is primary. The original 15 acceptance behaviors
-remain covered, with 16 additional setup/isolation gates: **31 gates total**.
+The finished setup/bootstrap path is primary. The checks below describe harness
+assertions, not a claim that this revision passed the full gate. The targeted
+startup-fixture update was syntax-checked only; binary-backed startup and full
+integrated acceptance must be run separately against freshly built binaries.
 
 - Actual `integration plan` selects the current built Coven executable and default
   XDG config path without creating files. A separate HOME-only plan checks default
@@ -97,11 +137,17 @@ remain covered, with 16 additional setup/isolation gates: **31 gates total**.
   and helper reaping. A clean actual Kit restart at the same API path reuses the
   released instance directory with a new generation. A primary clean restart
   clears isolation-only volatile rows before the single-root expiry test.
-- Default and presentation-only `integrations.sources` server startup creates no
+- Default (no sources) and explicitly presentation-only startup, with
+  `[integrations.coven] auto_start = false`, create no helper, runtime state, or
   live integration lease. Real new PTY panes strip inherited integration routes
   and external-management variables.
-- An independently started opt-in server shuts down with a live actual Coven
-  helper: Kitsune closes stdin and reaps it, and Coven removes its receiver socket.
+- Source-only `sources = ["coven"]` with no runtime table or auto-start override
+  discovers the supplied actual Coven on isolated PATH and starts a direct
+  production `integration runtime` helper with the default XDG state root. Its
+  exact argv, live lease, receiver socket, and new-pane native reporter argv,
+  source, API identity and external ownership replace inherited poison. Actual
+  Kit shutdown closes helper stdin, reaps Coven, removes the receiver, and leaves
+  the same generation's receipt released.
 - The old advanced explicit `agent run` socket/workspace configuration remains
   covered by a cheap independent shutdown test; it is not the primary workflow
   and does not duplicate the 30-second expiry wait.

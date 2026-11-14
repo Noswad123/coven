@@ -295,15 +295,25 @@ def pane_environment(kit, root, workspace):
 
 
 def startup_modes(args, root):
-    for mode in ('default', 'sources-only', 'attached-shutdown'):
-        phase = root / mode
+    for mode in ('default', 'presentation-only', 'sources-only', 'attached-shutdown'):
+        phase = root / ('auto' if mode == 'sources-only' else mode)
         phase.mkdir(mode=0o700)
         env = environment(phase)
+        if mode == 'sources-only':
+            # Default-root receiver paths consume all 107 bytes at the usual cache base.
+            env['XDG_STATE_HOME'] = str(phase / 'v')
+            state = phase / 'v/coven/integration'
+            probe = state / 'i' / ('0' * 24) / 'r.sock'
+            require(len(os.fsencode(probe)) <= 107, 'artifact root too long for default receiver')
+            bindir = phase / 'bin'
+            bindir.mkdir(mode=0o700)
+            (bindir / 'coven').symlink_to(args.coven_bin)
+            env['PATH'] = str(bindir) + ':/usr/bin:/bin'
         sockets = phase / 's'
         sockets.mkdir(mode=0o700)
         kit, receiver = sockets / 'k.sock', sockets / 'c.sock'
         # Keep nested paths below sockaddr_un's limit even for the longer phase.
-        require(len(str(receiver)) < 108, 'artifact root too long for phase sockets')
+        require(len(os.fsencode(receiver)) <= 107, 'artifact root too long for phase sockets')
         workspace = phase / 'w'
         workspace.mkdir(mode=0o700)
         (workspace / 'coven.json').write_text('{}\n')
@@ -312,6 +322,8 @@ def startup_modes(args, root):
                 '[session]\nresume_agents_on_restore = false\n[agent_detection]\nmanifest_check = false\n')
         if mode != 'default':
             text += '[integrations]\nsources = ["coven"]\n'
+        if mode == 'presentation-only':
+            text += '[integrations.coven]\nauto_start = false\n'
         if mode == 'attached-shutdown':
             runtime = [args.coven_bin, 'agent', 'run', str(workspace), '--socket', str(receiver),
                        '--kitsune-socket', str(kit), '--source', 'coven', '--json']
@@ -324,7 +336,27 @@ def startup_modes(args, root):
                    KITSUNE_AGENT_MANAGEMENT='external', KITSUNE_LOG='warn')
         server = spawn([args.kitsune_bin, 'server'], env, phase, 'kit', stdin=subprocess.DEVNULL)
         wait_for(lambda: api(kit, 'session.snapshot'), mode + ' startup')
-        if mode == 'attached-shutdown':
+        if mode == 'sources-only':
+            from bootstrap import helper_for, instance
+            directory, receipt = wait_for(lambda: instance(state, kit), 'source-only default active receipt')
+            helper = wait_for(lambda: helper_for(args, server), 'source-only direct production helper')
+            runtime = [args.coven_bin, 'integration', 'runtime', '--state-root', str(state)]
+            require(Path(f'/proc/{helper}/cmdline').read_bytes().split(b'\0')[:-1] ==
+                    [os.fsencode(arg) for arg in runtime], 'source-only helper argv mismatch')
+            receiver = directory / 'r.sock'
+            require(len(os.fsencode(receiver)) <= 107 and receiver.is_socket(),
+                    'source-only default receiver missing or too long')
+            _, pane_env = pane_environment(kit, phase, workspace)
+            report = [args.coven_bin, 'agent', 'report-native', '--from-kitsune', '--state-root', str(state)]
+            require(pane_env.get('KITSUNE_INTEGRATION_SOURCE') == 'coven' and
+                    pane_env.get('KITSUNE_AGENT_MANAGEMENT') == 'external' and
+                    pane_env.get('KITSUNE_SOCKET_PATH') == str(kit) and
+                    json.loads(pane_env.get('KITSUNE_INTEGRATION_REPORT_COMMAND', 'null')) == report,
+                    'source-only pane native/external route mismatch')
+            wait_for(lambda: any(s['id'] == 'coven' and s['epoch'] is not None
+                                for s in api(kit, 'session.snapshot')['snapshot']['integration_views']['sources']),
+                     'source-only live integration lease')
+        elif mode == 'attached-shutdown':
             wait_for(receiver.exists, 'attached helper startup')
             helper = wait_for(lambda: next((pid for pid in descendants()
                              if Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')[:4]
@@ -338,12 +370,29 @@ def startup_modes(args, root):
             require(sources == ([] if mode == 'default' else [{'id': 'coven', 'epoch': None}]),
                     f'{mode} unexpectedly activated integration: {sources}')
             require(not receiver.exists(), 'presentation-only source launched helper')
+            require(not (Path(env['XDG_STATE_HOME']) / 'coven/integration').exists(),
+                    mode + ' created runtime state')
+            for pid in descendants():
+                try:
+                    parent = Path(f'/proc/{pid}/status').read_text().split('PPid:\t')[1].splitlines()[0]
+                    require(parent != str(server.pid) or
+                            Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')[1:3] not in
+                            ([b'integration', b'runtime'], [b'agent', b'run']),
+                            mode + ' launched integration helper')
+                except FileNotFoundError:
+                    pass
         api(kit, 'server.stop')
         require(server.wait(timeout=10) == 0, mode + ' server stop failed')
-        if mode == 'attached-shutdown':
+        if mode in ('sources-only', 'attached-shutdown'):
             require(not Path(f'/proc/{helper}').exists(), 'Kit did not reap attached Coven helper')
             require(not receiver.exists(), 'Coven did not clean its receiver socket on stdin EOF')
-            passed('actual Kit shutdown closes helper stdin; actual Coven exits, unlinks socket, and is reaped')
+            if mode == 'sources-only':
+                released = json.loads((directory / 'receipt.json').read_text())
+                require(released['released'] and released['nonce'] == receipt['nonce'],
+                        'source-only shutdown did not release the active generation')
+                passed('source-only default auto-start discovers actual Coven on isolated PATH; production helper/native pane route/lease; EOF cleanup, reap and released receipt')
+            else:
+                passed('actual Kit shutdown closes helper stdin; actual Coven exits, unlinks socket, and is reaped')
         else:
             passed(mode + ' startup creates no helper/lease and strips nested inherited reporting routes in actual pane')
         stop_children()

@@ -17,7 +17,15 @@ First use a compatible running Kitsune build and manually configure sources:
 ```toml
 [integrations]
 sources = ["coven", "build"]
+
+[integrations.coven]
+auto_start = false
 ```
+
+The opt-out is necessary for this manual publisher: source-only Coven otherwise
+starts the managed normal-workflow runtime and requests external ownership. An
+existing explicit runtime block takes precedence; do not run two publishers
+against the same Coven lease. Runtime/ownership changes require server restart.
 
 Preserve existing configuration; Coven does not edit/reload/restart/install
 Kitsune. Source IDs are logical routing, not authentication: at most eight ordered,
