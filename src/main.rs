@@ -261,6 +261,41 @@ enum Doctor {
 
 #[derive(Subcommand)]
 enum Agent {
+    /// Read normal observations; opaque IDs never establish native hosting.
+    Observations {
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
+        #[arg(long)]
+        json: bool,
+    },
+    Attention {
+        #[command(subcommand)]
+        command: Attention,
+    },
+    /// Assert a temporary navigation target, not a proven native attachment.
+    Associate {
+        #[command(flatten)]
+        options: NavigationOptions,
+        #[arg(long)]
+        kitsune_socket: String,
+        #[arg(long)]
+        terminal: String,
+        #[arg(long)]
+        apply: bool,
+    },
+    Dissociate {
+        #[command(flatten)]
+        options: NavigationOptions,
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Checked terminal navigation only. Preview unless --execute is supplied.
+    Focus {
+        #[command(flatten)]
+        options: NavigationOptions,
+        #[arg(long)]
+        execute: bool,
+    },
     /// Attached, opt-in normal-invocation receiver and attributed generic view.
     Run {
         workspace: PathBuf,
@@ -339,6 +374,11 @@ enum Agent {
         #[command(subcommand)]
         command: AgentExtensions,
     },
+    /// Explicit native activity assets; independent of reference extensions.
+    NativeExtensions {
+        #[command(subcommand)]
+        command: AgentExtensions,
+    },
     Status {
         #[arg(num_args = 0.., allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
         items: Vec<PathBuf>,
@@ -393,6 +433,42 @@ enum Integration {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum Attention {
+    List {
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
+        #[arg(long)]
+        json: bool,
+    },
+    Acknowledge {
+        observation: String,
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
+        #[arg(long)]
+        expected_epoch: String,
+        #[arg(long)]
+        expected_revision: String,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(clap::Args)]
+struct NavigationOptions {
+    observation: String,
+    #[command(flatten)]
+    endpoint: AgentReportEndpoint,
+    #[arg(long)]
+    expected_epoch: String,
+    #[arg(long)]
+    expected_revision: Option<String>,
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(clap::Args)]
@@ -595,8 +671,10 @@ impl SessionInspection {
 struct SessionInteractive {
     #[arg(allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
     workspace: PathBuf,
-    #[arg(long, value_parser = ["djinn"])]
+    #[arg(long, value_parser = ["djinn", "claude", "codex", "copilot", "devin", "droid", "kimi", "mastracode", "pi", "omp", "hermes", "opencode", "qodercli", "kilo", "cursor", "grok"])]
     runtime: String,
+    #[arg(long, value_enum)]
+    session_kind: Option<ResumeReferenceKind>,
     #[arg(long, allow_negative_numbers = true)]
     executable: String,
     #[arg(long, allow_negative_numbers = true)]
@@ -626,6 +704,10 @@ impl SessionInteractive {
             pane: self.pane.clone(),
             expected_terminal: self.expected_terminal.clone(),
             session,
+            session_kind: self.session_kind.map(|kind| match kind {
+                ResumeReferenceKind::Id => coven::interactive_sessions::SessionKind::Id,
+                ResumeReferenceKind::Path => coven::interactive_sessions::SessionKind::Path,
+            }),
             timeout: self.output.timeout,
             execute: self.execute,
         }
@@ -640,6 +722,11 @@ enum ResumeReferenceKind {
 
 #[derive(Subcommand)]
 enum Session {
+    /// Inspect or explicitly execute workspace-scoped recovery selections.
+    Recovery {
+        #[command(subcommand)]
+        command: SessionRecovery,
+    },
     #[command(infer_long_args = true, args_override_self = true)]
     List {
         #[command(flatten)]
@@ -720,6 +807,30 @@ enum Session {
         execute: bool,
         #[command(flatten)]
         output: SessionOutput,
+    },
+}
+
+#[derive(Subcommand)]
+enum SessionRecovery {
+    Inspect {
+        #[arg(allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Run {
+        #[arg(allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        workspace: PathBuf,
+        #[arg(long, allow_negative_numbers = true, value_parser=clap::builder::OsStringValueParser::new().map(PathBuf::from))]
+        file: PathBuf,
+        #[arg(long, allow_negative_numbers = true)]
+        socket: String,
+        #[arg(long, allow_negative_numbers = true)]
+        expect_recovery_revision: String,
+        #[arg(long)]
+        execute: bool,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1370,6 +1481,28 @@ fn run(cli: Cli) -> Result<TaskOutput> {
         }
         Command::Session { command } => {
             return match command {
+                Session::Recovery { command } => match command {
+                    SessionRecovery::Inspect { workspace, json } => {
+                        coven::session_recovery::inspect(&workspace, json)
+                    }
+                    SessionRecovery::Run {
+                        workspace,
+                        file,
+                        socket,
+                        expect_recovery_revision,
+                        execute,
+                        json,
+                    } => coven::session_recovery::run(
+                        &coven::session_recovery::Request {
+                            workspace,
+                            file,
+                            socket,
+                            expect_recovery_revision,
+                            execute,
+                        },
+                        json,
+                    ),
+                },
                 Session::List { options } => coven::session_inspection::arguments(
                     &options.request(None, None)?,
                     options.json,
@@ -1706,6 +1839,88 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             return coven::agent_management::native_report_arguments(&endpoint.resolve()?, json);
         }
         Command::Agent {
+            command: Agent::Observations { endpoint, json },
+        } => {
+            return coven::agent_management::observations_arguments(&endpoint.resolve()?, json);
+        }
+        Command::Agent {
+            command: Agent::Attention { command },
+        } => {
+            return match command {
+                Attention::List { endpoint, json } => {
+                    coven::agent_management::attention_list_arguments(&endpoint.resolve()?, json)
+                }
+                Attention::Acknowledge {
+                    observation,
+                    endpoint,
+                    expected_epoch,
+                    expected_revision,
+                    apply,
+                    json,
+                } => coven::agent_management::attention_ack_arguments(
+                    &endpoint.resolve()?,
+                    &observation,
+                    &expected_epoch,
+                    &expected_revision,
+                    apply,
+                    json,
+                ),
+            };
+        }
+        Command::Agent {
+            command:
+                Agent::Associate {
+                    options,
+                    kitsune_socket,
+                    terminal,
+                    apply,
+                },
+        } => {
+            let socket = options.endpoint.resolve()?;
+            return coven::agent_navigation::associate_arguments(
+                &coven::agent_navigation::Selection {
+                    socket: &socket,
+                    observation: &options.observation,
+                    expected_epoch: &options.expected_epoch,
+                    expected_revision: options.expected_revision.as_deref(),
+                },
+                &kitsune_socket,
+                &terminal,
+                apply,
+                options.json,
+            );
+        }
+        Command::Agent {
+            command: Agent::Dissociate { options, apply },
+        } => {
+            let socket = options.endpoint.resolve()?;
+            return coven::agent_navigation::dissociate_arguments(
+                &coven::agent_navigation::Selection {
+                    socket: &socket,
+                    observation: &options.observation,
+                    expected_epoch: &options.expected_epoch,
+                    expected_revision: options.expected_revision.as_deref(),
+                },
+                apply,
+                options.json,
+            );
+        }
+        Command::Agent {
+            command: Agent::Focus { options, execute },
+        } => {
+            let socket = options.endpoint.resolve()?;
+            return coven::agent_navigation::focus_arguments(
+                &coven::agent_navigation::Selection {
+                    socket: &socket,
+                    observation: &options.observation,
+                    expected_epoch: &options.expected_epoch,
+                    expected_revision: options.expected_revision.as_deref(),
+                },
+                execute,
+                options.json,
+            );
+        }
+        Command::Agent {
             command:
                 Agent::Serve {
                     workspace,
@@ -1808,6 +2023,44 @@ fn run(cli: Cli) -> Result<TaskOutput> {
                 },
                 json,
             );
+        }
+        Command::Agent {
+            command: Agent::NativeExtensions { command },
+        } => {
+            use coven::native_extensions::Operation;
+            let (operation, options) = match command {
+                AgentExtensions::Plan(o) => (Operation::Plan, o),
+                AgentExtensions::Install(o) => (Operation::Install, o),
+                AgentExtensions::Uninstall(o) => (Operation::Uninstall, o),
+                AgentExtensions::Rollback(o) => (Operation::Rollback, o),
+            };
+            if options.socket.is_none() && !options.from_kitsune {
+                return Err(coven::Error::invalid_cli_arguments());
+            }
+            let installing = matches!(operation, Operation::Plan | Operation::Install);
+            let executable = if installing && options.executable.is_none() {
+                Some(
+                    std::env::current_exe()?
+                        .into_os_string()
+                        .into_string()
+                        .map_err(|_| coven::Error::invalid_cli_arguments())?,
+                )
+            } else {
+                options.executable
+            };
+            let request = coven::native_extensions::Request {
+                extension_root: options.extension_root,
+                executable,
+                socket: installer_endpoint(
+                    options.socket,
+                    options.from_kitsune,
+                    options.state_root,
+                )?,
+                migrate_kitsune: options.migrate_kitsune,
+                apply: options.apply,
+                operation,
+            };
+            return coven::native_extensions::arguments(&options.provider, &request, options.json);
         }
         Command::Agent {
             command: Agent::Extensions { command },

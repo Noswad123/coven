@@ -24,13 +24,26 @@ The existing `coven integration plan` / `enable --apply`
 explicit executable/root pinning. Existing runtime blocks take precedence and
 require a deliberate handoff, not automatic adoption or force-overwrite.
 
-Coven supplies attributed plain rows, not legacy widgets or pane focus. External
-mode suppresses legacy status/detectors and automatic resume even on helper
+Coven supplies attributed plain rows, not legacy widgets or implicit row-click
+focus. External mode suppresses legacy status/detectors and automatic resume even on helper
 failure; helpers never auto-restart. Reference-only providers remain unknown;
-Claude/Djinn facts expire within 30 seconds independently of the five-second view
-lease. Sessions are unbound/unattested. Disable is guarded and requires a restart
-handoff; crash recovery is manual. Complete migration and native macOS
+Claude/Djinn and independent Pi/OpenCode native-profile facts expire within 30
+seconds independently of the five-second view lease. No automatic binding or native
+attestation follows; checked CLI focus uses temporary user assertions, not proven
+hosting. Disable is guarded and requires a restart handoff; helper crash recovery
+is manual. Complete migration and native macOS
 qualification remain open; setup is not proof of real provider event delivery.
+
+The user-approved [A1-A5 adoption status](docs/FEATURE_ADOPTION_STATUS.md) records
+delivered commands and limits separately from the
+[remaining feature backlog](docs/KITSUNE_RETIREMENT_FEATURE_DECISIONS.md).
+Attention lists/occurrence acknowledgements and checked CLI focus are available;
+generic row clicks remain read-only. Explicit selected-session recovery adds
+durable before-send intent and conservative duplicate/reference vetoes, not
+autostart, saved consent or global exactly-once. A2 producer-backed hosting and
+A3 residual native coverage remain partial. New opt-in `agent native-extensions`
+Pi/OpenCode assets are separate from unchanged reference assets; Codex/Copilot
+remain reference-only. Doctor's closed-v1 capabilities are unchanged.
 
 `coven` is a personal, magic-themed multi-agent workspace command for creating,
 tracking, and running local multi-agent workspaces.
@@ -47,19 +60,22 @@ native lifecycle, scheduling, complete extraction and automatic following
 are not shipped. See [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md) and
 [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md).
 
-Explicit interactive Djinn UI launch/resume is also available through `coven session
-start` and `coven session resume` into a selected existing Kitsune pane. Commands
+Explicit interactive native UI launch/resume for 16 paired source-characterized
+adapters is also available through `coven session start` and `coven session resume`
+into a selected existing Kitsune pane. Commands
 preview by default; `--execute` uses discovered, terminal-pinned generic command
 submission and the existing workspace transport gate. No worker readiness, prompt,
 scheduling, automatic following or native lifecycle acceptance is inferred. See
-[INTERACTIVE_SESSION_CONTRACT.md](INTERACTIVE_SESSION_CONTRACT.md) before using it.
+[INTERACTIVE_SESSION_CONTRACT.md](docs/INTERACTIVE_SESSION_CONTRACT.md) before using it.
+Installed CLI/version compatibility remains unverified; input queued is not proof
+that the provider started. No arbitrary extra args, probes or automatic retry.
 
 Separate read-only `coven session plan-resume --runtime claude --source
 kitsune:claude --session-kind id --session saved-session --json` inspects literal
 resume argv for 16 historical provider mappings. It never launches a provider,
 looks up executables, contacts a socket, or grants execution authority. Only Pi
-and OMP accept path references. Existing execution-capable resume remains
-Djinn-only and unchanged. See [SESSION_RESUME_PLAN_CONTRACT.md](SESSION_RESUME_PLAN_CONTRACT.md)
+and OMP accept path references. This historical pure planner is unchanged and
+separate from the 16 explicit execution-capable adapters. See [SESSION_RESUME_PLAN_CONTRACT.md](docs/SESSION_RESUME_PLAN_CONTRACT.md)
 for validation, independent reference characterization, and extraction limits.
 
 Development-only [extraction characterization](KITSUNE_EXTRACTION_CHARACTERIZATION.md)
@@ -307,7 +323,7 @@ fresh; provider/event encode getSessionId interpretation, not authentication.
 Upgrade receivers first: older binaries reject Pi wire/store records despite
 schema 1, and storing Pi records limits downgrade.
 
-**Pi migration drops legacy working/blocked/idle reporting to reference-only**,
+**Historical `agent extensions` Pi migration drops working/blocked/idle to reference-only**,
 not full Pi management completion. Exact v7 bytes and `--migrate-kitsune` consent
 are required; `coven-agent-reference.ts` is distinct from `kitsune-agent-state.ts`.
 The private two-leaf journal preserves originals across reinstall; normal uninstall
@@ -316,7 +332,8 @@ Stop providers/watchers before mutation: no atomic activation, autoload or live
 authority release. File placement is not native activation proof. The pinned
 source declares 1.5.2 on main, not a release tag; hasUI includes TUI/RPC, not root/TUI
 proof, and headless capture is not supported. No approval/policy changes occur.
-Pi broader discovery/lifecycle/start/resume/restore remain pending. The historical
+Separate [native profiles](docs/NATIVE_PROVIDER_EVENTS_CONTRACT.md), interactive
+submission and bounded recovery now exist; full legacy transfer remains open. The historical
 [Pi validation record](AGENT_MANAGEMENT_MIGRATION.md#pi-validation-table)
 covers 212 focused Rust checks, generated-asset Node/Bun checks and Kit compatibility,
 with native activation unclaimed and the receipt timing limitation retained.
@@ -342,7 +359,7 @@ or enumeration, and quiet resumed sessions need not emit either event. Conservat
 DTO validation caps summary.diffs and permission at 256. Queue capacity precedes
 DTO work; 32 pending plus one active child, incoming-full drop, no dedupe/retry.
 
-**OpenCode migration drops working/blocked/idle to references only**, unknown even
+**Historical `agent extensions` OpenCode migration drops working/blocked/idle to references only**, unknown even
 fresh, not full management completion. Exact full-v9 bytes/SHA and explicit consent
 are required. Shared private two-leaf v1 journaling has independent OpenCode
 namespaces, preserves immutable originals and rollback after uninstall, and protects
@@ -726,8 +743,10 @@ coverage review and retirement approval are still pending.
 
 Readers use an explicit workspace and Kitsune socket, optional `--group GROUP
 [--member MEMBER]` and `--recognized-only`; inspect requires `--pane` and permits
-`--expected-terminal`. Start/resume require `--runtime djinn`, absolute executable/
-socket paths, pane and terminal pins; resume also requires `--session`.
+`--expected-terminal`. Start/resume require an explicit supported `--runtime`,
+absolute executable/socket paths, pane and terminal pins; resume also requires
+`--session`. Optional `--session-kind` defaults to `id`; only Pi/OMP accept `path`.
+See the [interactive adapter table](docs/INTERACTIVE_SESSION_CONTRACT.md).
 Prompt capabilities takes `--native-socket`; prompt requires workspace, native
 socket, runtime UUID, `ses_…` session ID, request UUID and absolute prompt-file path.
 Start/resume/prompt preview unless `--execute` is explicit. Session, action inspect

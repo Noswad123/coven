@@ -71,6 +71,38 @@ macro_rules! errors {
 }
 
 impl Spec {
+    pub(crate) const fn pi_native() -> Self {
+        Self {
+            recovery: ".coven-pi-native-recovery",
+            leaves: &[
+                "coven-native-events.ts",
+                "kitsune-agent-state.ts",
+                "coven-pi-native.json",
+                ".coven-pi-native.lock",
+            ],
+            private: &["coven-pi-native.json", ".coven-pi-native.lock"],
+            directories: &[],
+            read_limit: 8 * 1024 * 1024,
+            errors: errors!("pi_native"),
+        }
+    }
+
+    pub(crate) const fn opencode_native() -> Self {
+        Self {
+            recovery: ".coven-opencode-native-recovery",
+            leaves: &[
+                "coven-native-events.js",
+                "kitsune-agent-state.js",
+                "coven-opencode-native.json",
+                ".coven-opencode-native.lock",
+            ],
+            private: &["coven-opencode-native.json", ".coven-opencode-native.lock"],
+            directories: &[],
+            read_limit: 8 * 1024 * 1024,
+            errors: errors!("opencode_native"),
+        }
+    }
+
     pub(crate) const fn integration_setup() -> Self {
         Self {
             recovery: ".coven-kit-integration-recovery",

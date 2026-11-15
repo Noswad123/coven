@@ -1,4 +1,11 @@
-//! Closed Djinn capture boundary and volatile, caller-unverified evidence.
+//! Closed native capture boundaries and volatile, caller-unverified evidence.
+//!
+//! `coven.provider-events.v1` envelopes select exactly OpenCode's
+//! `opencode-root.v1` (producer-qualified root lifecycle/status/decisions), or
+//! Pi's `pi-context.v1` (UI/RPC context metadata and busy/idle only). Selecting
+//! a profile is a producer claim, never receiver authentication. Normalized
+//! report RPC params omit `contract` and retain `provider` and `profile`.
+//! Replay/observation/tombstone bounds are shared across all profiles.
 use super::*;
 use sha2::{Digest, Sha256};
 use std::{
@@ -7,6 +14,9 @@ use std::{
 };
 
 pub const RPC: &str = "coven.native-events.v1";
+pub const PROVIDER_RPC: &str = "coven.provider-events.v1";
+pub const CONTROL_RPC: &str = "coven.observation-control.v1";
+pub const ATTENTION_VIEW: &str = "coven.attention.v1";
 pub const VIEW: &str = "coven.normal-observations.v1";
 const ENVELOPE: &str = "djinn.native-events.v1";
 const EVIDENCE_TTL: Duration = Duration::from_secs(30);
@@ -19,6 +29,65 @@ fn identifier(value: &str) -> Result<&str> {
         "agent_invalid_session",
     )?;
     Ok(value)
+}
+
+/// Validate a capture envelope and reconstruct only its normalized RPC fields.
+pub fn params_for_envelope(value: &Value) -> Result<Value> {
+    match text(value, "contract")? {
+        ENVELOPE => params(value, true),
+        PROVIDER_RPC => provider_params(value, true),
+        _ => Err(Error("agent_contract_mismatch")),
+    }
+}
+
+pub(super) fn provider_params(value: &Value, envelope: bool) -> Result<Value> {
+    let provider = text(value, "provider")?;
+    let profile = text(value, "profile")?;
+    require(
+        matches!(
+            (provider, profile),
+            ("opencode", "opencode-root.v1") | ("pi", "pi-context.v1")
+        ),
+        "agent_unsupported_profile",
+    )?;
+    if envelope {
+        require(
+            text(value, "contract")? == PROVIDER_RPC,
+            "agent_contract_mismatch",
+        )?;
+    }
+    let event = text(value, "event")?;
+    require(
+        if provider == "pi" {
+            matches!(event, "session.updated" | "session.status")
+                && (event != "session.status" || matches!(text(value, "status")?, "busy" | "idle"))
+        } else {
+            matches!(
+                event,
+                "session.created"
+                    | "session.updated"
+                    | "session.deleted"
+                    | "session.status"
+                    | "permission.asked"
+                    | "permission.replied"
+                    | "question.asked"
+                    | "question.replied"
+                    | "question.rejected"
+            )
+        },
+        "agent_invalid_event",
+    )?;
+    let mut base = value.clone();
+    let object = base.as_object_mut().ok_or(Error("agent_invalid_schema"))?;
+    object.remove("provider");
+    object.remove("profile");
+    if envelope {
+        object.remove("contract");
+    }
+    let mut result = params(&base, false)?;
+    result["provider"] = json!(provider);
+    result["profile"] = json!(profile);
+    Ok(result)
 }
 
 pub(super) fn params(value: &Value, envelope: bool) -> Result<Value> {
@@ -85,10 +154,18 @@ pub(super) fn params(value: &Value, envelope: bool) -> Result<Value> {
 
 struct Observation {
     id: String,
+    provider: String,
+    profile: Option<String>,
     status: Option<(&'static str, Instant)>,
-    pending: BTreeMap<(String, String), Instant>,
+    pending: BTreeMap<(String, String), Pending>,
     ended: Option<Instant>,
     first_seen: Instant,
+}
+
+struct Pending {
+    at: Instant,
+    occurrence_seq: u64,
+    acknowledged: bool,
 }
 
 fn fresh(at: Instant, now: Instant) -> bool {
@@ -96,12 +173,34 @@ fn fresh(at: Instant, now: Instant) -> bool {
 }
 
 impl Observation {
+    fn attention(&self, epoch: &str, now: Instant) -> Value {
+        let mut hash = Sha256::new();
+        hash.update(b"coven.attention.v1\0");
+        hash.update(epoch.as_bytes());
+        hash.update(self.id.as_bytes());
+        let mut count = 0;
+        let mut unacknowledged = 0;
+        for pending in self.pending.values().filter(|p| fresh(p.at, now)) {
+            count += 1;
+            unacknowledged += usize::from(!pending.acknowledged);
+            hash.update(pending.occurrence_seq.to_be_bytes());
+            hash.update([u8::from(pending.acknowledged)]);
+        }
+        json!({"fresh_pending_count":count,"unacknowledged_pending_count":unacknowledged,"attention_revision":format!("{:x}", hash.finalize())})
+    }
+
     fn fact(&self, now: Instant) -> Option<(&'static str, Instant)> {
         if let Some(at) = self.ended {
             return Some(("ended", at));
         }
-        if let Some(at) = self.pending.values().filter(|at| fresh(**at, now)).min() {
-            return Some(("blocked", *at));
+        if let Some(at) = self
+            .pending
+            .values()
+            .map(|p| p.at)
+            .filter(|at| fresh(*at, now))
+            .min()
+        {
+            return Some(("blocked", at));
         }
         if let Some((state, at)) = self.status {
             if fresh(at, now) {
@@ -111,7 +210,7 @@ impl Observation {
         self.status
             .map(|(_, at)| at)
             .into_iter()
-            .chain(self.pending.values().copied())
+            .chain(self.pending.values().map(|p| p.at))
             .max()
             .map(|at| ("unknown", at))
     }
@@ -123,14 +222,105 @@ impl Observation {
 
 #[derive(Default)]
 pub(super) struct NativeStore {
+    navigation_generation: u64,
     sequences: BTreeMap<String, (u64, Instant)>,
     tombstones: BTreeMap<(String, String), Instant>,
     observations: BTreeMap<(String, String), Observation>,
     retired: u64,
+    occurrence: u64,
 }
 
 impl NativeStore {
+    pub(super) fn navigation_fact(&self, id: &str, now: Instant) -> Option<u64> {
+        self.observations
+            .values()
+            .find(|o| o.id == id && o.active(now))
+            .map(|_| self.navigation_generation)
+    }
+    pub(super) fn control(
+        &mut self,
+        method: &str,
+        params: &Value,
+        legacy: Value,
+        now: Instant,
+    ) -> Result<Value> {
+        let object = params.as_object().ok_or(Error("agent_invalid_schema"))?;
+        let epoch = text(&legacy, "server_epoch")?;
+        if matches!(method, "observations" | "attention.list") {
+            require(object.is_empty(), "agent_invalid_schema")?;
+            if method == "observations" {
+                return Ok(self.projection(legacy, now));
+            }
+            let mut observations: Vec<_> = self
+                .observations
+                .values()
+                .filter_map(|o| {
+                    let mut attention = o.attention(epoch, now);
+                    if attention["fresh_pending_count"] == 0 {
+                        return None;
+                    }
+                    attention["observation_id"] = json!(o.id);
+                    Some(attention)
+                })
+                .collect();
+            observations.sort_by_key(|o| {
+                (
+                    o["unacknowledged_pending_count"].as_u64().unwrap_or(0) == 0,
+                    o["observation_id"].as_str().unwrap_or_default().to_owned(),
+                )
+            });
+            return Ok(
+                json!({"contract":ATTENTION_VIEW,"server_epoch":epoch,"authorization":"none","observations":observations}),
+            );
+        }
+        require(method == "attention.acknowledge", "agent_unknown_method")?;
+        require(object.len() == 4, "agent_invalid_schema")?;
+        let id = text(params, "observation_id")?;
+        require(
+            hex(id, 64)
+                && hex(text(params, "expected_epoch")?, 32)
+                && hex(text(params, "expected_revision")?, 64),
+            "agent_invalid_schema",
+        )?;
+        let apply = params["apply"]
+            .as_bool()
+            .ok_or(Error("agent_invalid_schema"))?;
+        require(
+            text(params, "expected_epoch")? == epoch,
+            "agent_stale_epoch",
+        )?;
+        let observation = self
+            .observations
+            .values_mut()
+            .find(|o| o.id == id)
+            .ok_or(Error("agent_unknown_observation"))?;
+        let current = observation.attention(epoch, now);
+        require(
+            current["fresh_pending_count"].as_u64().unwrap_or(0) > 0,
+            "agent_no_fresh_attention",
+        )?;
+        require(
+            current["attention_revision"] == params["expected_revision"],
+            "agent_stale_revision",
+        )?;
+        if apply {
+            for pending in observation
+                .pending
+                .values_mut()
+                .filter(|p| fresh(p.at, now))
+            {
+                pending.acknowledged = true;
+            }
+        }
+        let mut attention = observation.attention(epoch, now);
+        attention["observation_id"] = json!(observation.id);
+        Ok(
+            json!({"contract":ATTENTION_VIEW,"server_epoch":epoch,"authorization":"none","observations":[attention],"applied":apply}),
+        )
+    }
+
     fn invalidate(&mut self, instance: &str) {
+        self.navigation_generation = self.navigation_generation.saturating_add(1);
         for ((owner, _), observation) in &mut self.observations {
             if owner == instance {
                 observation.status = None;
@@ -175,8 +365,27 @@ impl NativeStore {
 
     pub fn report(&mut self, value: &Value, now: Instant) -> Result<Value> {
         let p = params(value, false)?;
+        self.report_validated(p, now)
+    }
+
+    pub fn report_provider(&mut self, value: &Value, now: Instant) -> Result<Value> {
+        let p = provider_params(value, false)?;
+        self.report_validated(p, now)
+    }
+
+    fn report_validated(&mut self, p: Value, now: Instant) -> Result<Value> {
         self.retire(now);
-        let instance = text(&p, "instance_id")?;
+        // UUIDs cannot contain NUL, so these namespace components cannot alias.
+        let owner = if let Some(provider) = p["provider"].as_str() {
+            format!(
+                "{provider}\0{}\0{}",
+                text(&p, "profile")?,
+                text(&p, "instance_id")?
+            )
+        } else {
+            text(&p, "instance_id")?.to_owned()
+        };
+        let instance = owner.as_str();
         let key = (instance.to_owned(), text(&p, "session_id")?.to_owned());
         let sequence = p["sequence"].as_u64().unwrap();
         require(
@@ -257,7 +466,11 @@ impl NativeStore {
                     "{:x}",
                     Sha256::digest(
                         [
-                            b"native\0".as_slice(),
+                            if p.get("provider").is_some() {
+                                b"provider-events\0".as_slice()
+                            } else {
+                                b"native\0".as_slice()
+                            },
                             key.0.as_bytes(),
                             b"\0",
                             key.1.as_bytes()
@@ -265,6 +478,8 @@ impl NativeStore {
                         .concat()
                     )
                 ),
+                provider: p["provider"].as_str().unwrap_or("djinn").to_owned(),
+                profile: p["profile"].as_str().map(str::to_owned),
                 status: None,
                 pending: BTreeMap::new(),
                 ended: None,
@@ -286,13 +501,27 @@ impl NativeStore {
                 observation.status = Some((state, now));
             }
             _ if event.ends_with(".asked") => {
-                observation.pending.retain(|_, at| fresh(*at, now));
+                observation
+                    .pending
+                    .retain(|_, pending| fresh(pending.at, now));
                 let request = request.unwrap();
                 require(
                     observation.pending.len() < 128 || observation.pending.contains_key(&request),
                     "agent_capacity",
                 )?;
-                observation.pending.entry(request).or_insert(now);
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    observation.pending.entry(request)
+                {
+                    self.occurrence = self
+                        .occurrence
+                        .checked_add(1)
+                        .ok_or(Error("agent_capacity"))?;
+                    entry.insert(Pending {
+                        at: now,
+                        occurrence_seq: self.occurrence,
+                        acknowledged: false,
+                    });
+                }
             }
             _ => {
                 if let Some(request) = request {
@@ -330,8 +559,12 @@ impl NativeStore {
             });
             let mut native = row(
                 json!(observation.id),
-                json!("djinn"),
-                "djinn_native_event",
+                json!(observation.provider),
+                if observation.profile.is_some() {
+                    "provider_native_event"
+                } else {
+                    "djinn_native_event"
+                },
                 "activity",
                 fact.map_or("unknown", |(state, _)| state),
                 age,
@@ -339,12 +572,32 @@ impl NativeStore {
             if age.is_none() {
                 native["freshness"] = json!("unknown");
             }
+            if let Some(profile) = &observation.profile {
+                native["profile"] = json!(profile);
+                native["root_eligibility"] = json!(if profile == "opencode-root.v1" {
+                    "producer_checked"
+                } else {
+                    "ui_rpc_context"
+                });
+            }
+            let attention =
+                observation.attention(legacy["server_epoch"].as_str().unwrap_or_default(), now);
+            for (key, value) in attention.as_object().unwrap() {
+                native[key] = value.clone();
+            }
             observations.push(native);
         }
         observations.sort_by_key(|o| {
             (
+                if o["unacknowledged_pending_count"].as_u64().unwrap_or(0) > 0 {
+                    0
+                } else if o["fresh_pending_count"].as_u64().unwrap_or(0) > 0 {
+                    1
+                } else {
+                    2
+                },
                 o["freshness"] != "fresh",
-                o["origin"] != "djinn_native_event",
+                o["origin"] == "v1_receipt",
                 o["observation_id"].as_str().unwrap_or_default().to_owned(),
             )
         });
@@ -358,6 +611,171 @@ impl NativeStore {
         json!({"contract":VIEW,"server_epoch":legacy["server_epoch"],"authorization":"none","observations":observations,
             "omitted_observations":omitted,"retired_native_observations":self.retired})
     }
+}
+
+fn hex(value: &str, len: usize) -> bool {
+    value.len() == len
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Validate private control replies before they can reach a public wrapper.
+pub(super) fn validate_control_result(method: &str, value: &Value) -> Result<()> {
+    require(
+        value["authorization"] == "none" && hex(text(value, "server_epoch")?, 32),
+        "agent_invalid_schema",
+    )?;
+    let rows = value["observations"]
+        .as_array()
+        .ok_or(Error("agent_invalid_schema"))?;
+    require(rows.len() <= MAX_RECORDS, "agent_invalid_schema")?;
+    let normal = method == "observations";
+    require(
+        value.as_object().is_some_and(|o| {
+            o.len()
+                == if normal {
+                    6
+                } else if method == "attention.acknowledge" {
+                    5
+                } else {
+                    4
+                }
+        }),
+        "agent_invalid_schema",
+    )?;
+    require(
+        value["contract"] == if normal { VIEW } else { ATTENTION_VIEW },
+        "agent_contract_mismatch",
+    )?;
+    if normal {
+        require(
+            value["omitted_observations"].as_u64().is_some()
+                && value["retired_native_observations"].as_u64().is_some(),
+            "agent_invalid_schema",
+        )?;
+    } else if method == "attention.acknowledge" {
+        require(
+            value["applied"].is_boolean() && rows.len() == 1,
+            "agent_invalid_schema",
+        )?;
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    for row in rows {
+        let id = text(row, "observation_id")?;
+        require(hex(id, 64) && ids.insert(id), "agent_invalid_schema")?;
+        if normal {
+            validate_observation(row)?;
+        } else {
+            require(
+                row.as_object().is_some_and(|o| o.len() == 4),
+                "agent_invalid_schema",
+            )?;
+            validate_attention(row)?;
+            require(
+                row["fresh_pending_count"].as_u64().unwrap_or(0) > 0,
+                "agent_invalid_schema",
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_attention(row: &Value) -> Result<()> {
+    let count = row["fresh_pending_count"]
+        .as_u64()
+        .ok_or(Error("agent_invalid_schema"))?;
+    let unacked = row["unacknowledged_pending_count"]
+        .as_u64()
+        .ok_or(Error("agent_invalid_schema"))?;
+    require(
+        count <= 128 && unacked <= count && hex(text(row, "attention_revision")?, 64),
+        "agent_invalid_schema",
+    )
+}
+
+fn valid_provenance(provider: &str, origin: &str, profile: Option<&str>) -> bool {
+    matches!(
+        (provider, origin, profile),
+        ("djinn", "djinn_native_event", None)
+            | (
+                "opencode",
+                "provider_native_event",
+                Some("opencode-root.v1")
+            )
+            | ("pi", "provider_native_event", Some("pi-context.v1"))
+            | (
+                "claude" | "codex" | "copilot" | "pi" | "opencode",
+                "v1_receipt",
+                None
+            )
+    )
+}
+
+fn validate_observation(row: &Value) -> Result<()> {
+    let provider = text(row, "provider")?;
+    let origin = text(row, "origin")?;
+    let profile = row
+        .get("profile")
+        .map(|_| text(row, "profile"))
+        .transpose()?;
+    let native = origin != "v1_receipt";
+    require(
+        valid_provenance(provider, origin, profile)
+            && row.as_object().is_some_and(|o| {
+                o.len() == 13 + if native { 3 } else { 0 } + usize::from(profile.is_some())
+                    && o.keys().all(|key| match key.as_str() {
+                        "observation_id" | "provider" | "origin" | "capability"
+                        | "reported_state" | "age_ms" | "freshness" | "reference_trust"
+                        | "root_eligibility" | "native_identity" | "job_completion" | "binding"
+                        | "attribution" => true,
+                        "fresh_pending_count"
+                        | "unacknowledged_pending_count"
+                        | "attention_revision" => native,
+                        "profile" => profile.is_some(),
+                        _ => false,
+                    })
+            })
+            && row["reference_trust"] == "caller_supplied_unverified"
+            && row["native_identity"] == "unestablished"
+            && row["job_completion"] == "unestablished"
+            && row["binding"] == "none"
+            && row["attribution"] == "Coven"
+            && row["root_eligibility"]
+                == if origin == "djinn_native_event" || profile == Some("opencode-root.v1") {
+                    "producer_checked"
+                } else if profile == Some("pi-context.v1") {
+                    "ui_rpc_context"
+                } else {
+                    "unestablished"
+                }
+            && row["capability"]
+                == if native || provider == "claude" {
+                    "activity"
+                } else {
+                    "reference_only"
+                }
+            && matches!(
+                text(row, "freshness")?,
+                "fresh" | "expired" | "historical" | "unknown"
+            )
+            && matches!(
+                text(row, "reported_state")?,
+                "unknown" | "working" | "idle" | "blocked" | "ended"
+            )
+            && (row["freshness"] == "fresh" || row["reported_state"] == "unknown")
+            && (native || provider == "claude" || row["reported_state"] == "unknown")
+            && (profile != Some("pi-context.v1")
+                || !matches!(text(row, "reported_state")?, "blocked" | "ended"))
+            && row
+                .get("age_ms")
+                .is_some_and(|age| age.is_null() || age.as_u64().is_some()),
+        "agent_invalid_schema",
+    )?;
+    if native {
+        validate_attention(row)?;
+    }
+    Ok(())
 }
 
 fn row(
@@ -385,6 +803,366 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
     use std::time::Duration;
+
+    fn provider(mut value: Value, name: &str) -> Value {
+        value["provider"] = json!(name);
+        value["profile"] = json!(if name == "pi" {
+            "pi-context.v1"
+        } else {
+            "opencode-root.v1"
+        });
+        value
+    }
+
+    fn control(
+        store: &mut NativeStore,
+        method: &str,
+        params: Value,
+        now: Instant,
+    ) -> Result<Value> {
+        store.control(
+            method,
+            &params,
+            json!({"server_epoch":"a".repeat(32),"records":[]}),
+            now,
+        )
+    }
+
+    fn ack_params(row: &Value, apply: bool) -> Value {
+        json!({"observation_id":row["observation_id"],"expected_epoch":"a".repeat(32),"expected_revision":row["attention_revision"],"apply":apply})
+    }
+
+    #[test]
+    fn provider_profiles_are_closed_and_have_no_legacy_fallback() {
+        for name in ["opencode", "pi"] {
+            for event_name in [
+                "session.created",
+                "session.updated",
+                "session.deleted",
+                "session.status",
+                "permission.asked",
+                "permission.replied",
+                "question.asked",
+                "question.replied",
+                "question.rejected",
+                "permission.cancelled",
+                "question.cancelled",
+                "shutdown",
+            ] {
+                let mut p = provider(event(1, event_name), name);
+                p["contract"] = json!(PROVIDER_RPC);
+                if event_name == "session.status" {
+                    p["status"] = json!("busy");
+                }
+                if event_name.starts_with("permission.") || event_name.starts_with("question.") {
+                    p["request_id"] = json!("private-request");
+                }
+                let accepted = !event_name.ends_with("cancelled")
+                    && event_name != "shutdown"
+                    && (name == "opencode"
+                        || matches!(event_name, "session.updated" | "session.status"));
+                assert_eq!(
+                    params_for_envelope(&p).is_ok(),
+                    accepted,
+                    "{name}/{event_name}"
+                );
+                if !accepted {
+                    continue;
+                }
+                for field in ["prompt", "path", "parent_id", "root_qualified", "payload"] {
+                    let mut bad = p.clone();
+                    bad[field] = json!("private");
+                    assert!(params_for_envelope(&bad).is_err());
+                }
+                let normalized = params_for_envelope(&p).unwrap();
+                assert_eq!(normalized["provider"], name);
+                assert!(normalized.get("contract").is_none());
+                p["profile"] = json!("future.v1");
+                assert!(params_for_envelope(&p).is_err());
+            }
+        }
+        let mut bad = provider(status(1, "retry"), "pi");
+        assert!(provider_params(&bad, false).is_err());
+        bad["provider"] = json!("opencode");
+        assert!(provider_params(&bad, false).is_err());
+    }
+
+    #[test]
+    fn identical_native_references_are_isolated_by_provider_and_profile() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        store.report(&status(1, "busy"), now).unwrap();
+        for name in ["pi", "opencode"] {
+            store
+                .report_provider(&provider(status(1, "busy"), name), now)
+                .unwrap();
+        }
+        store
+            .report_provider(&provider(event(2, "session.deleted"), "opencode"), now)
+            .unwrap();
+        store
+            .report_provider(&provider(status(2, "idle"), "pi"), now)
+            .unwrap();
+        store.report(&status(2, "retry"), now).unwrap();
+        assert!(
+            store
+                .report_provider(&provider(status(3, "busy"), "opencode"), now)
+                .is_err()
+        );
+        let rows = view(&store, now)["observations"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            rows.iter()
+                .map(|r| r["observation_id"].as_str().unwrap())
+                .collect::<BTreeSet<_>>()
+                .len(),
+            3
+        );
+        let pi = rows.iter().find(|r| r["provider"] == "pi").unwrap();
+        assert_eq!(pi["root_eligibility"], "ui_rpc_context");
+        assert_eq!(pi["native_identity"], "unestablished");
+        assert_eq!(pi["reported_state"], "idle");
+        let old_hash = format!(
+            "{:x}",
+            Sha256::digest(b"native\x0012345678-1234-1234-1234-123456789abc\x00PRIVATE-SID")
+        );
+        assert_eq!(
+            rows.iter().find(|r| r["provider"] == "djinn").unwrap()["observation_id"],
+            old_hash
+        );
+        let normal = control(&mut store, "observations", json!({}), now).unwrap();
+        validate_control_result("observations", &normal).unwrap();
+        assert!(!normal.to_string().contains("PRIVATE"));
+    }
+
+    #[test]
+    fn acknowledgement_is_occurrence_scoped_previewed_and_never_resolves_decisions() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        for (seq, kind) in [(1, "permission.asked"), (2, "question.asked")] {
+            store
+                .report(&decision(seq, kind, "private-request"), now)
+                .unwrap();
+        }
+        let list = control(&mut store, "attention.list", json!({}), now).unwrap();
+        validate_control_result("attention.list", &list).unwrap();
+        let row = &list["observations"][0];
+        assert_eq!(row["fresh_pending_count"], 2);
+        let params = ack_params(row, false);
+        let preview = control(&mut store, "attention.acknowledge", params.clone(), now).unwrap();
+        assert_eq!(preview["observations"][0], *row);
+        assert_eq!(
+            control(&mut store, "attention.list", json!({}), now).unwrap(),
+            list
+        );
+        let applied = control(
+            &mut store,
+            "attention.acknowledge",
+            ack_params(row, true),
+            now,
+        )
+        .unwrap();
+        validate_control_result("attention.acknowledge", &applied).unwrap();
+        assert_eq!(
+            applied["observations"][0]["unacknowledged_pending_count"],
+            0
+        );
+        assert_ne!(
+            applied["observations"][0]["attention_revision"],
+            row["attention_revision"]
+        );
+        assert_eq!(state(&store, now), "blocked");
+        store
+            .report(
+                &decision(3, "permission.asked", "private-request"),
+                now + Duration::from_secs(2),
+            )
+            .unwrap();
+        assert_eq!(
+            control(&mut store, "attention.list", json!({}), now).unwrap()["observations"],
+            applied["observations"]
+        );
+        store.report(&status(4, "idle"), now).unwrap();
+        assert_eq!(state(&store, now), "blocked");
+        store
+            .report(&decision(5, "permission.replied", "private-request"), now)
+            .unwrap();
+        store
+            .report(&decision(6, "permission.asked", "private-request"), now)
+            .unwrap();
+        let next = control(&mut store, "attention.list", json!({}), now).unwrap();
+        assert_eq!(next["observations"][0]["unacknowledged_pending_count"], 1);
+        assert!(
+            control(
+                &mut store,
+                "attention.acknowledge",
+                ack_params(&applied["observations"][0], true),
+                now
+            )
+            .is_err()
+        );
+        let mut stale_epoch = ack_params(&next["observations"][0], true);
+        stale_epoch["expected_epoch"] = json!("b".repeat(32));
+        assert!(control(&mut store, "attention.acknowledge", stale_epoch, now).is_err());
+        assert!(
+            control(
+                &mut store,
+                "attention.acknowledge",
+                ack_params(&next["observations"][0], true),
+                now + EVIDENCE_TTL
+            )
+            .is_err()
+        );
+        store
+            .report(
+                &decision(7, "permission.asked", "private-request"),
+                now + EVIDENCE_TTL,
+            )
+            .unwrap();
+        let reask = control(&mut store, "attention.list", json!({}), now + EVIDENCE_TTL).unwrap();
+        assert_eq!(reask["observations"][0]["fresh_pending_count"], 1);
+        assert_ne!(
+            reask["observations"][0]["attention_revision"],
+            next["observations"][0]["attention_revision"]
+        );
+        store
+            .report(&event(9, "session.updated"), now + EVIDENCE_TTL)
+            .unwrap();
+        assert!(
+            control(
+                &mut store,
+                "attention.acknowledge",
+                ack_params(&reask["observations"][0], true),
+                now + EVIDENCE_TTL
+            )
+            .is_err()
+        );
+        assert_eq!(
+            control(&mut store, "attention.list", json!({}), now + EVIDENCE_TTL).unwrap()["observations"],
+            json!([])
+        );
+        assert!(!list.to_string().contains("private-request"));
+    }
+
+    #[test]
+    fn attention_priority_precedes_display_truncation_and_list_is_complete() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        for n in 1..=128 {
+            let mut p = decision(n, "permission.asked", "private");
+            p["session_id"] = json!(format!("s{n}"));
+            store.report(&p, now).unwrap();
+        }
+        let list = control(&mut store, "attention.list", json!({}), now).unwrap();
+        assert_eq!(list["observations"].as_array().unwrap().len(), 128);
+        let acked = &list["observations"][0];
+        control(
+            &mut store,
+            "attention.acknowledge",
+            ack_params(acked, true),
+            now,
+        )
+        .unwrap();
+        let legacy = json!({"server_epoch":"a".repeat(32),"records":[{"record_id":"f".repeat(64),"provider":"claude","reported_state":"working","age_ms":0}]});
+        let projection = store.projection(legacy, now);
+        let rows = projection["observations"].as_array().unwrap();
+        assert_eq!(rows.len(), 127);
+        assert!(rows.iter().all(|r| r["unacknowledged_pending_count"] == 1));
+        assert!(
+            rows.iter()
+                .all(|r| r["observation_id"] != acked["observation_id"])
+        );
+        assert_eq!(
+            control(&mut store, "attention.list", json!({}), now).unwrap()["observations"]
+                .as_array()
+                .unwrap()
+                .len(),
+            128
+        );
+    }
+
+    #[test]
+    fn deleted_unknown_and_restarted_attention_cannot_be_acknowledged() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        store
+            .report_provider(
+                &provider(decision(1, "question.asked", "private"), "opencode"),
+                now,
+            )
+            .unwrap();
+        let list = control(&mut store, "attention.list", json!({}), now).unwrap();
+        let params = ack_params(&list["observations"][0], true);
+        store
+            .report_provider(&provider(event(2, "session.deleted"), "opencode"), now)
+            .unwrap();
+        assert!(control(&mut store, "attention.acknowledge", params.clone(), now).is_err());
+        assert!(
+            store
+                .report_provider(
+                    &provider(decision(3, "question.asked", "private"), "opencode"),
+                    now
+                )
+                .is_err()
+        );
+        assert!(
+            control(
+                &mut NativeStore::default(),
+                "attention.acknowledge",
+                params,
+                now
+            )
+            .is_err()
+        );
+        let normal = control(&mut store, "observations", json!({}), now).unwrap();
+        validate_control_result("observations", &normal).unwrap();
+        for field in ["prompt", "request_id", "session_id", "cwd"] {
+            let mut invalid = normal.clone();
+            invalid["observations"][0][field] = json!("private");
+            assert!(validate_control_result("observations", &invalid).is_err());
+        }
+        let mut invalid = list.clone();
+        invalid["observations"][0]["request_id"] = json!("private");
+        assert!(validate_control_result("attention.list", &invalid).is_err());
+    }
+
+    #[test]
+    fn control_observation_rows_reject_age_substitution_for_every_origin() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        store.report(&status(1, "busy"), now).unwrap();
+        for name in ["pi", "opencode"] {
+            store
+                .report_provider(&provider(status(1, "busy"), name), now)
+                .unwrap();
+        }
+        let legacy = json!({"server_epoch":"a".repeat(32),"records":[{
+            "record_id":"b".repeat(64),"provider":"claude","reported_state":"working","age_ms":0
+        }]});
+        let normal = store.projection(legacy, now);
+        validate_control_result("observations", &normal).unwrap();
+        for index in 0..4 {
+            for field in ["prompt", "session_id", "request_id", "unknown"] {
+                let mut invalid = normal.clone();
+                let row = invalid["observations"][index].as_object_mut().unwrap();
+                let len = row.len();
+                assert!(row.remove("age_ms").is_some());
+                row.insert(field.into(), json!("PRIVATE"));
+                assert_eq!(row.len(), len);
+                assert!(validate_control_result("observations", &invalid).is_err());
+            }
+            let mut valid = normal.clone();
+            valid["observations"][index]["age_ms"] = Value::Null;
+            validate_control_result("observations", &valid).unwrap();
+            valid["observations"][index]
+                .as_object_mut()
+                .unwrap()
+                .remove("age_ms");
+            assert!(validate_control_result("observations", &valid).is_err());
+        }
+    }
 
     fn event(sequence: u64, event: &str) -> Value {
         json!({"instance_id":"12345678-1234-1234-1234-123456789abc","session_id":"PRIVATE-SID","sequence":sequence,"event":event})

@@ -20,6 +20,7 @@ include = [
     "/src/**/*.py",
     "/src/pi_extension/template.js",
     "/src/opencode_extension/template.js",
+    "/src/native_extensions/*.js",
     "/src/hook_files/platform/*.c",
     "/src/hook_files/platform/*.h",
     "/src/workspace_assets/*.txt",

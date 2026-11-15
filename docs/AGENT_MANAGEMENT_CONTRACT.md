@@ -5,11 +5,15 @@
 For ordinary native invocation after one-time opt-in, use the
 [normal workflow and managed setup](NORMAL_AGENT_WORKFLOW.md). Its attached
 `agent run` accepts existing five-provider receipts plus separate volatile Djinn
-native events and publishes Coven-attributed plain rows. External Kit ownership
+and explicitly installed Pi/OpenCode native-profile events and publishes
+Coven-attributed plain rows. External Kit ownership
 suppresses legacy status/detectors and automatic resume even on helper failure;
 runtime changes/rollback require restart, new panes and provider reload. No launcher,
-group/artifact join, automatic installation, pane/PID binding or native attestation
-is required or claimed. Full migration/macOS native qualification remain open.
+group/artifact join, automatic installation, automatic pane/PID binding or native
+attestation is required or claimed. Separate [temporary asserted CLI navigation](AGENT_NAVIGATION_CONTRACT.md)
+is not independently proven hosting. [Native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md)
+do not change old reference assets/receipts or the doctor's closed-v1 capabilities.
+See the [adoption status](FEATURE_ADOPTION_STATUS.md); full migration/macOS native qualification remain open.
 The v1 receipt/inventory and bounded `serve` contract below is unchanged.
 
 Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi/OpenCode
@@ -28,7 +32,8 @@ commands. Configuration-backend support alone does not qualify broader managemen
 Contract: `coven.agent-management.v1`. These are **caller-supplied, unverified
 receipts**, not an authenticated native-session registry or task authority. See
 [the migration matrix](AGENT_MANAGEMENT_MIGRATION.md) for the all-provider target
-and the still-pending full discovery/start/resume/restore transfers.
+and remaining full ownership/qualification transfers, distinct from delivered
+16-adapter interactive submission and bounded explicit recovery.
 
 Separate [ephemeral discovery](AGENT_DISCOVERY_CONTRACT.md) admits Linux v1 and
 source-enabled provisional macOS v2 generic foreground-cohort evidence, not native
@@ -176,7 +181,7 @@ These states are **last reported**, not current jobs/readiness/identity/completi
 The unchanged v1 inventory has no freshness threshold turning them into live
 guarantees. The separate normal view bounds Claude last-reported activity to
 30 seconds; repaint does not refresh facts. Its independent UI lease is five seconds.
-Codex, Copilot, Pi and OpenCode records are always **unknown**, even when fresh with a known receipt age.
+Codex, Copilot, Pi and OpenCode v1 receipt records are always **unknown**, even when fresh with a known receipt age.
 After restart **all providers'** persisted records have unknown state and null age
 until another receipt; a new Codex/Copilot/Pi/OpenCode receipt still does not establish activity.
 

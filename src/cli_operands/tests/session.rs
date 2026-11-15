@@ -61,6 +61,79 @@ const OPERATIONS: &[&str] = &[
 ];
 
 #[test]
+fn recovery_routes_are_closed_and_restore_lexical_operands() {
+    let inspect = args(&[
+        "coven",
+        "session",
+        "recovery",
+        "inspect",
+        "-1workspace",
+        "--json",
+    ]);
+    let (_, matches) = parse(&inspect).unwrap();
+    let leaf = matches
+        .subcommand_matches("session")
+        .unwrap()
+        .subcommand_matches("recovery")
+        .unwrap()
+        .subcommand_matches("inspect")
+        .unwrap();
+    assert_eq!(
+        leaf.get_one::<PathBuf>("workspace").unwrap(),
+        &PathBuf::from("-1workspace")
+    );
+    let run = args(&[
+        "coven",
+        "session",
+        "recovery",
+        "run",
+        "-1workspace",
+        "--file",
+        "-.2selection",
+        "--socket",
+        "-3socket",
+        "--expect-recovery-revision",
+        "-4token",
+        "--json",
+    ]);
+    let (_, matches) = parse(&run).unwrap();
+    let leaf = matches
+        .subcommand_matches("session")
+        .unwrap()
+        .subcommand_matches("recovery")
+        .unwrap()
+        .subcommand_matches("run")
+        .unwrap();
+    assert_eq!(
+        leaf.get_one::<PathBuf>("file").unwrap(),
+        &PathBuf::from("-.2selection")
+    );
+    assert_eq!(leaf.get_one::<String>("socket").unwrap(), "-3socket");
+    assert_eq!(
+        leaf.get_one::<String>("expect_recovery_revision").unwrap(),
+        "-4token"
+    );
+    assert!(!leaf.get_one::<bool>("execute").unwrap());
+    for flag in [
+        "--argv=x",
+        "--runtime=djinn",
+        "--prompt=x",
+        "--permission=true",
+        "--timeout=1",
+    ] {
+        let mut bad = run.clone();
+        bad.push(flag.into());
+        assert!(parse(&bad).is_err());
+    }
+    for field in ["--file", "--socket", "--expect-recovery-revision"] {
+        let mut bad = run.clone();
+        let index = bad.iter().position(|s| s == field).unwrap();
+        bad.drain(index..=index + 1);
+        assert!(parse(&bad).is_err());
+    }
+}
+
+#[test]
 fn seven_routes_have_exact_flags_types_and_defaults() {
     for operation in OPERATIONS {
         let (_, matches) = parse(&session_args(operation)).unwrap();
@@ -288,6 +361,57 @@ fn inspection_selection_and_interactive_validation_remain_family_owned() {
         values.extend(args(&extra));
         let cli = parse(&values).unwrap().0;
         assert!(run(cli).is_err(), "{operation}");
+    }
+}
+
+#[test]
+fn interactive_provider_and_selector_kind_options_are_closed() {
+    for runtime in [
+        "djinn",
+        "claude",
+        "codex",
+        "copilot",
+        "devin",
+        "droid",
+        "kimi",
+        "mastracode",
+        "pi",
+        "omp",
+        "hermes",
+        "opencode",
+        "qodercli",
+        "kilo",
+        "cursor",
+        "grok",
+    ] {
+        for operation in ["start", "resume"] {
+            let mut values = session_args(operation);
+            values.extend(args(&[&format!("--runtime={runtime}"), "--json"]));
+            let output = run(parse(&values).unwrap().0).unwrap();
+            assert_eq!(output.exit_code, 0);
+            let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+            assert_eq!(report["runtime"], runtime);
+        }
+    }
+    for kind in ["id", "path"] {
+        let mut values = session_args("start");
+        values.extend(args(&[&format!("--session-kind={kind}")]));
+        assert!(run(parse(&values).unwrap().0).is_err());
+    }
+    for runtime in ["pi", "omp", "claude"] {
+        let mut values = session_args("resume");
+        values.extend(args(&[
+            &format!("--runtime={runtime}"),
+            "--session-kind=path",
+            "--session=/saved/session",
+            "--json",
+        ]));
+        assert_eq!(run(parse(&values).unwrap().0).is_ok(), runtime != "claude");
+    }
+    for option in ["--runtime=gemini", "--session-kind=other"] {
+        let mut values = session_args("resume");
+        values.extend(args(&[option]));
+        assert!(parse(&values).is_err());
     }
 }
 

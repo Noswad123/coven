@@ -36,6 +36,15 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
             Some("report") => (3, "", &["agent", "report"]),
             Some("report-extension") => (3, "", &["agent", "report-extension"]),
             Some("inventory") => (3, "", &["agent", "inventory"]),
+            Some("observations") => (3, "", &["agent", "observations"]),
+            Some("associate") => (3, "", &["agent", "associate"]),
+            Some("dissociate") => (3, "", &["agent", "dissociate"]),
+            Some("focus") => (3, "", &["agent", "focus"]),
+            Some("attention") => match arguments.get(3).and_then(|v| v.to_str()) {
+                Some("list") => (4, "", &["agent", "attention", "list"]),
+                Some("acknowledge") => (4, "", &["agent", "attention", "acknowledge"]),
+                _ => return (command, parsed),
+            },
             Some("hooks") => match arguments.get(3).and_then(|value| value.to_str()) {
                 Some("plan") => (4, "", &["agent", "hooks", "plan"]),
                 Some("install") => (4, "", &["agent", "hooks", "install"]),
@@ -48,6 +57,13 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
                 Some("install") => (4, "", &["agent", "extensions", "install"]),
                 Some("uninstall") => (4, "", &["agent", "extensions", "uninstall"]),
                 Some("rollback") => (4, "", &["agent", "extensions", "rollback"]),
+                _ => return (command, parsed),
+            },
+            Some("native-extensions") => match arguments.get(3).and_then(|value| value.to_str()) {
+                Some("plan") => (4, "", &["agent", "native-extensions", "plan"]),
+                Some("install") => (4, "", &["agent", "native-extensions", "install"]),
+                Some("uninstall") => (4, "", &["agent", "native-extensions", "uninstall"]),
+                Some("rollback") => (4, "", &["agent", "native-extensions", "rollback"]),
                 _ => return (command, parsed),
             },
             Some("status") => (3, "items", &["agent", "status"]),
@@ -100,6 +116,11 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
             _ => return (command, parsed),
         },
         Some("session") => match arguments.get(2).and_then(|value| value.to_str()) {
+            Some("recovery") => match arguments.get(3).and_then(|value| value.to_str()) {
+                Some("inspect") => (4, "workspace", &["session", "recovery", "inspect"]),
+                Some("run") => (4, "workspace", &["session", "recovery", "run"]),
+                _ => return (command, parsed),
+            },
             Some("list") => (3, "workspace", &["session", "list"]),
             Some("inspect") => (3, "workspace", &["session", "inspect"]),
             Some("watch") => (3, "workspace", &["session", "watch"]),
@@ -142,10 +163,32 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         _ => return (command, parsed),
     };
     let string_fields: &[&str] = match route {
+        ["agent", "observations"] | ["agent", "attention", "list"] => &["socket"],
+        ["agent", "attention", "acknowledge"] => &[
+            "observation",
+            "socket",
+            "expected_epoch",
+            "expected_revision",
+        ],
+        ["agent", "dissociate" | "focus"] => &[
+            "observation",
+            "socket",
+            "expected_epoch",
+            "expected_revision",
+        ],
+        ["agent", "associate"] => &[
+            "observation",
+            "socket",
+            "kitsune_socket",
+            "terminal",
+            "expected_epoch",
+            "expected_revision",
+        ],
+        ["session", "recovery", "run"] => &["socket", "expect_recovery_revision"],
         ["agent", "serve"] => &["socket", "kitsune_socket", "source"],
         ["agent", "discover"] => &["socket", "pane", "expected_terminal", "source"],
         ["agent", "report" | "report-extension" | "inventory"] => &["socket"],
-        ["agent", "hooks" | "extensions", _] => &["socket", "executable"],
+        ["agent", "hooks" | "extensions" | "native-extensions", _] => &["socket", "executable"],
         ["session", "plan-resume"] => &["runtime", "source", "session", "executable"],
         ["session", "list"] => &["socket", "group", "member"],
         ["session", "inspect" | "watch"] => {
@@ -235,8 +278,9 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         _ => &[],
     };
     let path_fields: &[&str] = match route {
+        ["session", "recovery", "run"] => &["file"],
         ["agent", "hooks", _] => &["config_root"],
-        ["agent", "extensions", _] => &["extension_root"],
+        ["agent", "extensions" | "native-extensions", _] => &["extension_root"],
         ["repository", "register"] => &["path"],
         ["worker", "readiness"] => &["executable"],
         ["task", "attempt", "prepare"] => &["intent"],
@@ -259,7 +303,7 @@ pub(super) fn checkpoint_compat(arguments: &[OsString]) -> (clap::Command, Vec<O
         ["agent", "serve"] => &["duration"],
         ["agent", "discover"] => &["timeout", "max-response-bytes", "duration", "interval"],
         ["agent", "report" | "report-extension"] => &["provider", "event"],
-        ["agent", "hooks" | "extensions", _] => &["provider"],
+        ["agent", "hooks" | "extensions" | "native-extensions", _] => &["provider"],
         ["session", "plan-resume"] => &["session-kind"],
         ["session", "list" | "inspect"] => &["runtime", "timeout", "max-response-bytes"],
         ["session", "watch"] => &[

@@ -510,11 +510,14 @@ fn resume(cwd: &Path, runtime: &str) -> Command {
 }
 
 #[test]
-fn execution_capable_resume_stays_djinn_only_and_cannot_consume_saved_report() {
+fn execution_capable_resume_requires_fresh_inputs_and_cannot_consume_saved_report() {
     let temp = tempfile::tempdir().unwrap();
     let output = resume(temp.path(), "claude").output().unwrap();
-    syntax_error(&output);
+    // Claude is now an explicit execution adapter, but accepting the runtime does
+    // not bypass workspace admission or turn a pure planner report into consent.
+    status(&output, 1);
     let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("invalid_checkpoint_workspace"));
     assert!(!error.contains("claude"));
     assert!(!error.contains("djinn"));
     empty(temp.path());
@@ -532,14 +535,16 @@ fn execution_capable_resume_stays_djinn_only_and_cannot_consume_saved_report() {
             .contains("saved reports are not execution inputs")
     }));
     std::fs::write(&report_path, &output.stdout).unwrap();
-    for option in ["--plan", "--report", "--plan-file", "--resume-plan"] {
-        let rejected = resume(temp.path(), "djinn")
-            .arg(option)
-            .arg(&report_path)
-            .output()
-            .unwrap();
-        syntax_error(&rejected);
-        assert!(!String::from_utf8_lossy(&rejected.stderr).contains(option));
+    for runtime in ["djinn", "claude"] {
+        for option in ["--plan", "--report", "--plan-file", "--resume-plan"] {
+            let rejected = resume(temp.path(), runtime)
+                .arg(option)
+                .arg(&report_path)
+                .output()
+                .unwrap();
+            syntax_error(&rejected);
+            assert!(!String::from_utf8_lossy(&rejected.stderr).contains(option));
+        }
     }
     assert_eq!(std::fs::read(&report_path).unwrap(), output.stdout);
     assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);

@@ -2,12 +2,22 @@
 
 ## Overview
 
-**Current opt-in cut (2026-11-12):** [normal invocation](NORMAL_AGENT_WORKFLOW.md)
+**Current adoption (2026-11-14):** the [A1-A5 implementation record](FEATURE_ADOPTION_STATUS.md)
+tracks delivered 16-adapter interactive submission, attention/checked CLI navigation
+and bounded explicit recovery, plus partial asserted association and independent
+Pi/OpenCode native profiles. It supersedes capability-absence summaries in the
+historical transfer detail below, not legacy retirement or platform gates. A2
+producer-proven hosting and A3 residuals remain; all 22 interactive families,
+Windows support and native macOS qualification are not claimed.
+
+**Normal ownership cut (2026-11-12):** [normal invocation](NORMAL_AGENT_WORKFLOW.md)
 keeps native commands unchanged after explicit startup/runtime and provider setup.
 Kit starts a generic server-only helper; Coven owns attributed plain rows under
 the Coven source, not legacy status widgets, focus/sidebar agents or mobile
 completion behavior. No launcher, group/artifact join, automatic install or
-pane/PID/native attestation follows. External mode suppresses legacy status,
+automatic pane/PID binding or native attestation follows. Temporary explicit
+user-asserted CLI navigation is separate, not independently proven hosting.
+External mode suppresses legacy status,
 detectors and automatic agent resume even on helper failure or fail-closed invalid/
 unreadable startup config. Runtime/rollback handoff needs restart, new panes and
 provider reload; no automatic helper restart. Default-mode compatibility below
@@ -89,6 +99,11 @@ at-most-once intents grant no native execution or physical-pixel acknowledgement
 
 ### Legacy migration scope
 
+The Pi/OpenCode receipt rows describe historical reference assets, not the separate
+explicitly installed native profiles. Start/resume/restore and attention removal
+obligations below do not imply that the bounded A1/A4/A5 replacements are absent;
+consult the current implementation record above.
+
 | Surface | Current scope / next owner |
 | --- | --- |
 | Desktop persistent lower menu | Generic multi-app block, not a built-in agent inventory. |
@@ -124,8 +139,8 @@ rereads under lock and commits pending journal → hooks → TOML → final jour
 there is no global atomicity claim. Normal uninstall leaves the shared global
 feature enabled, never revives Kit commands; explicit guarded rollback restores both
 original images/modes/absence. Native trust state stays user/native-controlled.
-Full discovery/status/start/resume/restore transfer remains pending for every
-provider despite the independent literal-family discovery path.
+Full legacy ownership transfer remains pending; this is not absence of the
+delivered 16 interactive adapters, bounded recovery or partial native activity.
 
 Copilot shares Claude's single-file v2 operation runner with independent receipt,
 lock, recovery and error namespaces, not Codex's separate two-file journal.

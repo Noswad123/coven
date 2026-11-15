@@ -16,6 +16,10 @@ mod group_family;
 mod group_socket;
 #[path = "tests/init.rs"]
 mod init;
+#[path = "tests/native_extensions.rs"]
+mod native_extensions;
+#[path = "tests/navigation.rs"]
+mod navigation;
 #[path = "tests/session.rs"]
 mod session;
 

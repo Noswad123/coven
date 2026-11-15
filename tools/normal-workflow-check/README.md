@@ -95,6 +95,92 @@ No build, install, live config mutation, or 30-second expiry test runs here.
 
 ## Assertions
 
+### Composed Adoption Runner
+
+`adoption.py` is the small, independent acceptance gate for the current A1/A4/A5
+composition and temporary user-asserted navigation. It does not run `check.py`'s
+30-second expiry workflow and needs neither Bun nor a provider plugin:
+
+```sh
+python3 -B tools/normal-workflow-check/adoption.py \
+  --coven-bin /absolute/path/to/coven \
+  --kitsune-bin /absolute/path/to/kitsune
+```
+
+Run it in a dedicated process: it reuses `check.owned_run`'s subreaper and exact
+cleanup of **all descendants**. Both binary arguments must be existing absolute
+paths. Kit receives only `sources = ["coven"]`, no runtime table; production
+auto-start finds the supplied Coven through an owned `bin/coven` PATH symlink.
+The fixture uses private API/client endpoints, a non-login `/bin/sh`, isolated
+HOME/XDG roots, and `XDG_STATE_HOME=RUN/v`. The default receiver address is checked
+to fit Linux's 107-byte Unix pathname limit before startup. It pins the real
+helper's argv and the actual new-pane environment using the existing probe.
+Read APIs may perform Kit's ordinary housekeeping, including spawning owned PTY
+shells; zero receiver-side effects from reads are not claimed.
+
+The four numbered scenarios are:
+
+1. Synthetic, inert Djinn envelopes enter only the real `report-native
+   --from-kitsune` subprocess and owned production receiver. Actual observations,
+   attention and rendered rows prove busy/blocked, preview without acknowledgement,
+   applied acknowledgement without decision resolution, matching-kind/request-only
+   replies, and a newly rearmed ask. Public/generic projections exclude raw private
+   IDs. Facts remain fresh under the unchanged 30-second TTL; no expiry wait occurs.
+2. Two actual Kit panes advertise `terminal_navigation.v1`. Exact runtime inspection,
+   association preview/apply, receiver epoch/revision and generation checks compose
+   with Coven's executed focus. A direct stale-generation focus rejects without
+   moving focus. Actual server request logs are scanned for terminal-only navigation
+   and absence of legacy focus/input fallbacks. Generic DEC focus reports are allowed.
+   Association remains `user_asserted`, with `native_hosting: unestablished`: this
+   does **not** complete A2 producer attachment qualification.
+3. A1's additional-provider `claude` resume adapter previews, then explicitly queues
+   **only `/usr/bin/true`** with an inert dummy selector into an owned generic shell.
+   `input_queued` proves typed policy/PTY delivery, not native provider startup.
+4. A5 inspects a new owned control workspace, previews an explicit two-entry
+   selection with the same `codex` reference tuple, then executes using its CAS token.
+   Exactly one `/usr/bin/true` command is submitted; the second entry skips. A new
+   CLI process with a fresh revision skips the journaled tuple without another
+   enqueue or journal mutation. No scheduler, automatic restore or native exactly-once
+   guarantee is inferred. Persisted Kit-reference/import vetoes remain separately
+   covered by recovery workflow tests; this runner does not fabricate agent APIs.
+
+For a complete offline build plus this gate and focused regressions:
+
+```sh
+python3 -B tools/normal-workflow-check/build-adoption.py \
+  --coven-source /home/jdawson/Projects/coven \
+  --kitsune-source /home/jdawson/Projects/kitsune \
+  --zig /home/linuxbrew/.linuxbrew/opt/zig@0.15/bin/zig \
+  --zig-package-cache /home/jdawson/.cache/zig/p
+```
+
+This smaller builder uses **current working-tree sources directly**, including
+uncommitted production changes, not HEAD or installed binaries. It prints exact
+commands and binary SHA-256 values. Rust 1.96.1 Cargo builds are `--locked --offline
+-j 2`, with one shared owned short target directory, private TMPDIR/Zig local cache,
+and existing Cargo/Rustup/Zig global/package caches. Zig must already be 0.15.2.
+Kit's pre-existing `vendor/libghostty-vt/zig-out` is reused/retained, not deleted.
+There are no toolchain installs or downloads. Concurrent source edits are not
+snapshotted atomically; rerun after production changes settle.
+
+The retained target is used to compile and run focused Coven native/navigation,
+interactive-session, recovery, native-asset and CLI groups, the two interactive/
+recovery workflow binaries, and Kit terminal-navigation, generic command-submission,
+integration-view/env and helper lifecycle tests. Unit groups run together at the
+Rust test runner's default parallelism; no forced serial guard masking is used.
+Only compilation receives the 4 GiB build-artifact limit. Runtime test/application
+children receive 32 MiB per-file limits, and build logs are monitored to 32 MiB.
+All waits are bounded. On success, actual `server.stop` must reap the helper,
+release the same receipt generation and remove the receiver. Failure/interruption
+still stops/reaps all owned children before removing the exact runtime/build roots.
+No user configuration, live server, provider executable, credential or model is used.
+
+Pi/OpenCode generated native-emitter E2E remains a separate acceptance layer under
+`NATIVE_PROVIDER_EVENTS_CONTRACT.md`; this runner adds real Kit/Coven composition,
+not a claim of live provider activation or a repeat of that generated-asset test.
+
+### Full Workflow Assertions
+
 The finished setup/bootstrap path is primary. The checks below describe harness
 assertions, not a claim that this revision passed the full gate. The targeted
 startup-fixture update was syntax-checked only; binary-backed startup and full

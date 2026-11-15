@@ -1,15 +1,15 @@
-# Explicit interactive Djinn UI start/resume
+# Explicit interactive native UI start/resume
 
 This is a small interactive-control slice, not scheduling, task dispatch, native
 worker admission, lifecycle supervision or an automatic replacement for existing
 Kitsune/Coven agent commands. Kitsune stays a generic multiplexer; Coven constructs
-native arguments and consumes only the public JSON API. Djinn code is unchanged.
+native arguments and consumes only the public JSON API. Provider code is unchanged.
 
 ## Preview by default; submit only explicitly
 
 ```text
-coven session start WORKSPACE --runtime djinn --executable ABS_BINARY --socket ABS_SOCKET --pane PANE --expected-terminal TERMINAL [--execute] [--json]
-coven session resume WORKSPACE --runtime djinn --executable ABS_BINARY --socket ABS_SOCKET --pane PANE --expected-terminal TERMINAL --session SELECTOR [--execute] [--json]
+coven session start WORKSPACE --runtime RUNTIME --executable ABS_BINARY --socket ABS_SOCKET --pane PANE --expected-terminal TERMINAL [--execute] [--json]
+coven session resume WORKSPACE --runtime RUNTIME --executable ABS_BINARY --socket ABS_SOCKET --pane PANE --expected-terminal TERMINAL --session SELECTOR [--session-kind id|path] [--execute] [--json]
 ```
 
 Without `--execute`, this validates/composes a preview only: no workspace/executable
@@ -18,23 +18,42 @@ Python import/CLI/locale setup is not a filesystem sandbox. An uninitialized pat
 or absent executable can be previewed; that establishes no usable native fact.
 No preview file/report grants later execution permission.
 
-Start constructs `[ABS_BINARY, "--ui"]`. Resume constructs
+Djinn start preserves `[ABS_BINARY, "--ui"]`. Djinn resume preserves
 `[ABS_BINARY, "--session", SELECTOR]`. Djinn's selector can denote a native UI id,
 folder/name/path; it is a literal requested selector, not verified session or
 execution identity. Arguments are never shell-interpreted by Coven. No prompt,
 model override, permission auto-approval, hidden help/status/watch call, installed
 binary fallback or native-worker-readiness probe is generated.
 
+All 16 paired source-characterized adapters support explicit execution: djinn,
+claude, codex, copilot, devin, droid, kimi, mastracode, pi, omp, hermes, opencode,
+qodercli, kilo, cursor and grok. Other starts use `[ABS_BINARY]`; resume uses this
+closed native argv policy (no arbitrary extra arguments):
+
+| Runtime | Arguments after ABS_BINARY |
+| --- | --- |
+| djinn, kimi, pi, opencode, kilo | `--session SELECTOR` |
+| claude, devin, droid, hermes, qodercli, cursor, grok | `--resume SELECTOR` |
+| codex | `resume SELECTOR` |
+| copilot, omp | `--resume=SELECTOR` (one argument) |
+| mastracode | `--thread SELECTOR` |
+
+Resume kind defaults to `id`; only Pi/OMP accept explicit `path` (absolute).
+Reports mark `native_cli_compatibility: unverified` and
+`argv_evidence: characterized_legacy_policy`. Source characterization is not
+installed CLI/version qualification. The historical pure resume planner is unchanged.
+
 Executable/socket paths must be explicit absolute local paths without `..`/trailing
 slash. The CLI expands the workspace path to an absolute control context; `..` is
 not accepted in that context. Identifiers
 must be exact, nonblank and whitespace-free. Paths/selector/identifiers reject
-control characters, invalid UTF-8 and values above 4096 UTF-8 bytes. Resume selectors
-also reject an initial `-`. Start has no selector. Runtime is explicitly `djinn`.
+control characters, invalid UTF-8 and values above 4096 UTF-8 bytes. Resume IDs are
+bounded to 512 UTF-8 bytes, paths to 4096; selectors reject `-` after leading
+whitespace. Start has neither selector nor session kind. Runtime must be explicit.
 
 `--execute` is an explicit request to submit an **unrestricted interactive native
 UI command** into a quiescent empty shell prompt. Native configuration, credentials,
-permissions and tools remain Djinn's; no read-only/resource/tool sandbox or task
+permissions and tools remain the provider's; no read-only/resource/tool sandbox or task
 authorization follows. WORKSPACE is an existing initialized Coven control context,
 not an implicit target-shell cwd change or resource boundary.
 
@@ -93,14 +112,24 @@ Peer error messages, terminal text, credentials and native output are not projec
 Handled interruptions exit 130 and preserve any already recorded queue
 acknowledgement; before-send is unsent and unrecorded in-flight outcomes are
 uncertain. There are no durable admission receipts or exactly-once guarantees.
-SIGKILL/crash cannot yield a receipt. Reinvocation is not a safe retry: inspect
+Standalone A1 has no journal; SIGKILL/crash cannot yield a receipt. Reinvocation is not a safe retry: inspect
 the native UI/process after uncertainty and make any further action explicitly.
 
 Execution reports authorize only `interactive_terminal_submission_only` and leave
 native lifecycle, native worker acceptance and job completion **unestablished**.
-Even a valid ack is not proof that Djinn started, the selector existed/resumed, the
+Even a valid ack is not proof that the provider started, the selector existed/resumed, the
 UI is ready, model work succeeded, or later input is safe. No activity/group
 enrollment, attachment or result facts are synthesized from it.
+
+## Private recovery seam
+
+The private `preview`/`execute_with_guard` interface lets
+[explicit A5 recovery](SESSION_RECOVERY_CONTRACT.md) reuse preflight with a
+caller-owned transport guard and cancellation source. Its before-send callback
+runs once after preflight and before any possible mutation; failure prevents send.
+A5 durably records intent there. Timeout/cancellation after callback success but
+before send remains known-unsent, not uncertain delivery. Callback success is not
+a queue acknowledgement. This seam adds no standalone journal or automatic retry.
 
 ## Compatibility and limits
 
@@ -111,6 +140,6 @@ configuration and independent permissions still apply to any launched UI.
 
 This requires a feature-bearing Kitsune server advertising the descriptor, not
 merely an updated CLI or protocol 18. Old/incompatible servers are refused before
-submission. See the optional sibling [generic API guide](../kitsune/COMMAND_SUBMISSION.md).
+submission. See the optional sibling [generic API guide](../../kitsune/COMMAND_SUBMISSION.md).
 No installed server, native UI, model job, provider, install or upgrade is started by
 the implementation's offline tests.

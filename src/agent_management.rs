@@ -18,7 +18,7 @@ pub mod native;
 mod store;
 #[cfg(unix)]
 #[path = "agent_management/unix.rs"]
-mod unix;
+pub(crate) mod unix;
 
 #[cfg(all(test, unix))]
 #[path = "agent_management/receipt_trace.rs"]
@@ -77,15 +77,75 @@ pub fn native_report_arguments(socket: &str, json: bool) -> Result<TaskOutput> {
 pub fn native_report_payload(socket: &str, payload: &[u8], json: bool) -> Result<TaskOutput> {
     #[cfg(unix)]
     {
-        let params = native::params(&decode(payload, 8192)?, true)?;
+        let envelope = decode(payload, 8192)?;
+        let params = native::params_for_envelope(&envelope)?;
+        let rpc = if envelope["contract"] == native::PROVIDER_RPC {
+            native::PROVIDER_RPC
+        } else {
+            native::RPC
+        };
+        output(unix::call_contract(socket, rpc, "report", params)?, json)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (socket, payload, json);
+        Err(Error("agent_unsupported_platform"))
+    }
+}
+
+/// Current normal receiver evidence, with opaque observation IDs and no session references.
+pub fn observations_arguments(socket: &str, json: bool) -> Result<TaskOutput> {
+    observation_control(socket, "observations", json!({}), json)
+}
+
+/// All fresh pending native observations (up to 128), without display truncation.
+pub fn attention_list_arguments(socket: &str, json: bool) -> Result<TaskOutput> {
+    observation_control(socket, "attention.list", json!({}), json)
+}
+
+/// Preview by default; apply only to the exact epoch and occurrence-set revision.
+pub fn attention_ack_arguments(
+    socket: &str,
+    id: &str,
+    epoch: &str,
+    revision: &str,
+    apply: bool,
+    json: bool,
+) -> Result<TaskOutput> {
+    require(
+        id.len() == 64
+            && epoch.len() == 32
+            && revision.len() == 64
+            && [id, epoch, revision].iter().all(|s| {
+                s.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            }),
+        "agent_invalid_schema",
+    )?;
+    observation_control(
+        socket,
+        "attention.acknowledge",
+        json!({"observation_id":id,"expected_epoch":epoch,"expected_revision":revision,"apply":apply}),
+        json,
+    )
+}
+
+fn observation_control(
+    socket: &str,
+    method: &str,
+    params: Value,
+    json: bool,
+) -> Result<TaskOutput> {
+    #[cfg(unix)]
+    {
         output(
-            unix::call_contract(socket, native::RPC, "report", params)?,
+            unix::call_contract(socket, native::CONTROL_RPC, method, params)?,
             json,
         )
     }
     #[cfg(not(unix))]
     {
-        let _ = (socket, payload, json);
+        let _ = (socket, method, params, json);
         Err(Error("agent_unsupported_platform"))
     }
 }

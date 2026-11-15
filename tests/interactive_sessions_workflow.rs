@@ -21,6 +21,7 @@ fn request(
         pane: "w1:p1".into(),
         expected_terminal: "terminal-1".into(),
         session: None,
+        session_kind: None,
         timeout: 1.0,
         execute: true,
     }
@@ -49,6 +50,52 @@ fn writes(server: &Server) -> usize {
         .iter()
         .filter(|r| r["method"] == "pane.submit_command")
         .count()
+}
+
+#[test]
+fn unsupported_adapters_never_contact_or_create_workspace() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = temp.path().join("missing");
+    let exe = fixture::executable(temp.path());
+    let server = Server::new(|_, _| panic!("unsupported requests cannot contact endpoint"));
+    for runtime in [
+        "unknown", "Claude", " claude", "claude ", "amp", "aider", "gemini", "goose", "qwen",
+        "crush",
+    ] {
+        for operation in [Operation::Start, Operation::Resume] {
+            let mut request = request(&workspace, &exe, &server.path);
+            request.runtime = runtime.into();
+            request.operation = operation;
+            request.session = (operation == Operation::Resume).then(|| "saved".into());
+            assert!(arguments(&request, true).is_err());
+            assert!(!workspace.exists());
+        }
+    }
+    for runtime in [
+        "djinn",
+        "claude",
+        "codex",
+        "copilot",
+        "devin",
+        "droid",
+        "kimi",
+        "mastracode",
+        "hermes",
+        "opencode",
+        "qodercli",
+        "kilo",
+        "cursor",
+        "grok",
+    ] {
+        let mut request = request(&workspace, &exe, &server.path);
+        request.runtime = runtime.into();
+        request.operation = Operation::Resume;
+        request.session = Some("/saved/path".into());
+        request.session_kind = Some(coven::interactive_sessions::SessionKind::Path);
+        assert!(arguments(&request, true).is_err());
+        assert!(!workspace.exists());
+    }
+    assert!(server.requests().is_empty());
 }
 
 // One test owns the process-wide interrupt handler; scenarios deliberately run sequentially.

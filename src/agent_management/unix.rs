@@ -1,4 +1,6 @@
 use super::*;
+#[path = "navigation.rs"]
+mod navigation;
 use crate::observation_socket::{NoCancel, ReadBudget};
 use std::{
     ffi::CString,
@@ -252,6 +254,7 @@ pub(super) fn run(
     let bound = Bound::bind(&request.socket)?;
     let mut store = store::Store::open(&request.workspace)?;
     let mut native = native::NativeStore::default();
+    let mut associations = navigation::Associations::default();
     while !interrupt.interrupted() && !TERMINATED.load(std::sync::atomic::Ordering::Relaxed) {
         require(
             !cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)),
@@ -284,6 +287,7 @@ pub(super) fn run(
         }
         bound.fence()?;
         store.fence()?;
+        associations.refresh(&native, Instant::now());
         if let Ok(mut model) = projection.try_lock() {
             *model = native.projection(store.projection(), Instant::now());
         }
@@ -311,7 +315,7 @@ pub(super) fn run(
                     )?;
                     #[cfg(test)]
                     super::receipt_trace::stage("admitted");
-                    handle_normal(&mut store, &mut native, &bytes)
+                    handle_normal_navigation(&mut store, &mut native, &mut associations, &bytes)
                 });
                 #[cfg(test)]
                 super::receipt_trace::stage(match &reply {
@@ -353,10 +357,35 @@ pub(super) fn run(
     )
 }
 
+#[cfg(test)]
 fn handle_normal(
     store: &mut store::Store,
     native: &mut native::NativeStore,
     bytes: &[u8],
+) -> Result<Vec<u8>> {
+    handle_normal_navigation(
+        store,
+        native,
+        &mut navigation::Associations::default(),
+        bytes,
+    )
+}
+
+fn handle_normal_navigation(
+    store: &mut store::Store,
+    native: &mut native::NativeStore,
+    associations: &mut navigation::Associations,
+    bytes: &[u8],
+) -> Result<Vec<u8>> {
+    handle_normal_navigation_with_clock(store, native, associations, bytes, Instant::now)
+}
+
+fn handle_normal_navigation_with_clock(
+    store: &mut store::Store,
+    native: &mut native::NativeStore,
+    associations: &mut navigation::Associations,
+    bytes: &[u8],
+    mut now: impl FnMut() -> Instant,
 ) -> Result<Vec<u8>> {
     let request = decode(bytes, 8192)?;
     if request.get("contract").and_then(Value::as_str) == Some(CONTRACT) {
@@ -367,25 +396,49 @@ fn handle_normal(
         id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()),
         "agent_invalid_schema",
     )?;
+    let contract = text(&request, "contract")?;
     let result = (|| {
         require(
             request.as_object().is_some_and(|o| o.len() == 4)
-                && text(&request, "contract")? == native::RPC,
+                && matches!(
+                    contract,
+                    native::RPC | native::PROVIDER_RPC | native::CONTROL_RPC
+                ),
             "agent_contract_mismatch",
         )?;
-        require(
-            text(&request, "method")? == "report",
-            "agent_unknown_method",
-        )?;
-        native.report(
-            request.get("params").ok_or(Error("agent_invalid_schema"))?,
-            Instant::now(),
-        )
+        let method = text(&request, "method")?;
+        let params = request.get("params").ok_or(Error("agent_invalid_schema"))?;
+        // Refresh old evidence before overwriting it, using the report's exact time.
+        let now = now();
+        associations.refresh(native, now);
+        if contract == native::CONTROL_RPC {
+            if matches!(
+                method,
+                "association.assert" | "association.remove" | "focus.prepare"
+            ) {
+                return associations.control(method, params, &store.epoch, native, now);
+            }
+            return native.control(method, params, store.projection(), now);
+        }
+        require(method == "report", "agent_unknown_method")?;
+        if contract == native::PROVIDER_RPC {
+            native.report_provider(params, now)
+        } else {
+            native.report(params, now)
+        }
     })();
+    let contract = if matches!(
+        contract,
+        native::RPC | native::PROVIDER_RPC | native::CONTROL_RPC
+    ) {
+        contract
+    } else {
+        native::RPC
+    };
     let value = match result {
-        Ok(result) => json!({"id":id,"contract":native::RPC,"type":"result","result":result}),
+        Ok(result) => json!({"id":id,"contract":contract,"type":"result","result":result}),
         Err(error) => {
-            json!({"id":id,"contract":native::RPC,"type":"error","error":{"code":error.code()}})
+            json!({"id":id,"contract":contract,"type":"error","error":{"code":error.code()}})
         }
     };
     let mut bytes = serde_json::to_vec(&value)?;
@@ -538,7 +591,7 @@ pub(super) fn call(path: &str, method: &str, params: Value) -> Result<Value> {
     call_contract(path, CONTRACT, method, params)
 }
 
-pub(super) fn call_contract(
+pub(crate) fn call_contract(
     path: &str,
     contract: &str,
     method: &str,
@@ -553,6 +606,7 @@ pub(super) fn call_contract(
     let mut frame =
         serde_json::to_vec(&json!({"id":id,"contract":contract,"method":method,"params":params}))?;
     frame.push(b'\n');
+    require(frame.len() <= 8192, "agent_payload_limit")?;
     #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
     tests::checkpoint("pre_connect");
     node.fence()?;
@@ -636,11 +690,32 @@ pub(super) fn call_contract(
     let result = reply
         .get("result")
         .ok_or(Error("agent_delivery_uncertain"))?;
-    if contract == native::RPC {
+    if matches!(contract, native::RPC | native::PROVIDER_RPC) {
         require(
             *result == json!({"type":"accepted","delivery":"volatile"}),
             "agent_delivery_uncertain",
         )?;
+    } else if contract == native::CONTROL_RPC {
+        (if matches!(
+            method,
+            "association.assert" | "association.remove" | "focus.prepare"
+        ) {
+            crate::agent_navigation::validate_control_result(result)
+        } else {
+            native::validate_control_result(method, result)
+        })
+        .map_err(|_| Error("agent_delivery_uncertain"))?;
+        if method == "attention.acknowledge" {
+            require(
+                result["server_epoch"] == params["expected_epoch"]
+                    && result["observations"][0]["observation_id"] == params["observation_id"]
+                    && result["applied"] == params["apply"]
+                    && (params["apply"] == true
+                        || result["observations"][0]["attention_revision"]
+                            == params["expected_revision"]),
+                "agent_delivery_uncertain",
+            )?;
+        }
     } else {
         validate_result(method, result).map_err(|_| Error("agent_delivery_uncertain"))?;
     }
@@ -717,6 +792,323 @@ fn validate_result(method: &str, value: &Value) -> Result<()> {
 mod tests {
     use super::*;
     use std::{cell::RefCell, fs, os::unix::fs::PermissionsExt};
+
+    struct ControlChild(std::process::Child);
+
+    impl Drop for ControlChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            self.0.wait().expect("reap owned control test child");
+        }
+    }
+
+    fn control_child_status(
+        command: &mut std::process::Command,
+        timeout: Duration,
+    ) -> io::Result<std::process::ExitStatus> {
+        // The parent owns every child artifact, including after panic or SIGKILL.
+        let artifacts = private_root();
+        let mut child = ControlChild(command.env("TMPDIR", artifacts.path()).spawn()?);
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(status) = child.0.try_wait()? {
+                drop(child);
+                artifacts.close()?;
+                return Ok(status);
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "control test child deadline",
+                ));
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn isolated_control_fixture(name: &str) -> bool {
+        let name = format!("agent_management::unix::tests::{name}");
+        if std::env::var("COVEN_CONTROL_TEST_CHILD").as_deref() == Ok(name.as_str()) {
+            return false;
+        }
+        let status = control_child_status(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", &name, "--nocapture", "--test-threads=1"])
+                .env("COVEN_CONTROL_TEST_CHILD", &name),
+            Duration::from_secs(20),
+        )
+        .unwrap();
+        assert!(
+            status.success(),
+            "isolated control fixture failed: {name}: {status}"
+        );
+        true
+    }
+
+    #[test]
+    fn control_subprocess_cleanup_fixture() {
+        let Some(mode) = std::env::var_os("COVEN_CONTROL_CLEANUP_PROBE") else {
+            return;
+        };
+        let _interrupt = crate::observation_socket::InterruptGuard::install().unwrap();
+        let root = private_root();
+        fs::write(root.path().join("owned"), b"fixture artifact").unwrap();
+        fs::write(
+            std::env::var_os("COVEN_CONTROL_PROBE_ROOT").unwrap(),
+            root.path().as_os_str().as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            std::env::var_os("COVEN_CONTROL_PROBE_PID").unwrap(),
+            std::process::id().to_string(),
+        )
+        .unwrap();
+        if mode == "fail" {
+            panic!("intentional control fixture failure");
+        }
+        assert_eq!(mode, "timeout");
+        thread::sleep(Duration::from_secs(60));
+    }
+
+    #[test]
+    fn control_subprocess_failure_and_timeout_reap_children_and_remove_artifacts() {
+        use std::os::unix::ffi::OsStringExt;
+        for mode in ["fail", "timeout"] {
+            let root = private_root();
+            let pid_file = root.path().join("pid");
+            let fixture_file = root.path().join("fixture");
+            let result = control_child_status(
+                std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "agent_management::unix::tests::control_subprocess_cleanup_fixture",
+                        "--test-threads=1",
+                    ])
+                    .env("COVEN_CONTROL_CLEANUP_PROBE", mode)
+                    .env("COVEN_CONTROL_PROBE_PID", &pid_file)
+                    .env("COVEN_CONTROL_PROBE_ROOT", &fixture_file)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null()),
+                Duration::from_secs(3),
+            );
+            if mode == "fail" {
+                assert!(!result.unwrap().success());
+            } else {
+                assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+            }
+            let pid: libc::pid_t = fs::read_to_string(pid_file).unwrap().parse().unwrap();
+            assert_eq!(
+                unsafe { libc::kill(pid, 0) },
+                -1,
+                "control child remains alive"
+            );
+            assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+            let fixture = PathBuf::from(std::ffi::OsString::from_vec(
+                fs::read(fixture_file).unwrap(),
+            ));
+            assert!(!fixture.exists());
+            assert!(!fixture.parent().unwrap().exists());
+        }
+    }
+
+    #[test]
+    fn observations_wrapper_never_outputs_peer_rows_with_substituted_private_fields() {
+        if isolated_control_fixture(
+            "observations_wrapper_never_outputs_peer_rows_with_substituted_private_fields",
+        ) {
+            return;
+        }
+        let root = private_root();
+        let path = root.path().join("s");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let mut native = native::NativeStore::default();
+        native
+            .report(
+                &json!({"instance_id":"12345678-1234-1234-1234-123456789abc",
+            "session_id":"private","sequence":1,"event":"session.status","status":"busy"}),
+                Instant::now(),
+            )
+            .unwrap();
+        let projection = native.projection(
+            json!({"server_epoch":"a".repeat(32),"records":[{
+                "record_id":"b".repeat(64),"provider":"claude","reported_state":"working","age_ms":0
+            }]}),
+            Instant::now(),
+        );
+        native::validate_control_result("observations", &projection).unwrap();
+        let server = thread::spawn(move || {
+            let interrupt = crate::observation_socket::InterruptGuard::install().unwrap();
+            for index in 0..2 {
+                for field in ["prompt", "session_id", "request_id", "unknown"] {
+                    let deadline = Instant::now() + Duration::from_secs(2);
+                    let (mut stream, _) = loop {
+                        match bound.listener.accept() {
+                            Ok(connection) => break connection,
+                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                assert!(Instant::now() < deadline);
+                                thread::sleep(Duration::from_millis(1));
+                            }
+                            Err(e) => panic!("{e}"),
+                        }
+                    };
+                    stream.set_nonblocking(true).unwrap();
+                    let request: Value = serde_json::from_slice(
+                        &receive(&mut stream, deadline, &interrupt).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(request["contract"], native::CONTROL_RPC);
+                    assert_eq!(request["method"], "observations");
+                    let mut forged = projection.clone();
+                    let row = forged["observations"][index].as_object_mut().unwrap();
+                    row.remove("age_ms");
+                    row.insert(field.into(), json!("PRIVATE-PEER-DATA"));
+                    let mut reply = serde_json::to_vec(&json!({"id":request["id"],"contract":native::CONTROL_RPC,"type":"result","result":forged})).unwrap();
+                    reply.push(b'\n');
+                    send(&mut stream, &reply, deadline, &interrupt).unwrap();
+                }
+            }
+        });
+        let results: Vec<_> = (0..8)
+            .map(|_| observations_arguments(path.to_str().unwrap(), true))
+            .collect();
+        server.join().unwrap();
+        for result in results {
+            // No TaskOutput (and hence no stdout) may be constructed from this peer result.
+            assert_eq!(result.err().unwrap().code(), "agent_delivery_uncertain");
+        }
+    }
+
+    #[test]
+    fn provider_and_attention_private_socket_roundtrip_keeps_receipt_bytes_frozen() {
+        if isolated_control_fixture(
+            "provider_and_attention_private_socket_roundtrip_keeps_receipt_bytes_frozen",
+        ) {
+            return;
+        }
+        let root = private_root();
+        fs::write(root.path().join("coven.json"), b"marker").unwrap();
+        let mut store = store::Store::open(root.path()).unwrap();
+        store
+            .report(&json!({"provider":"pi","event":"session_start","session_id":"legacy-private"}))
+            .unwrap();
+        let saved = fs::read(root.path().join("state/agent-management.json")).unwrap();
+        let path = root.path().join("s");
+        let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        let server = thread::spawn(move || {
+            let mut native = native::NativeStore::default();
+            let interrupt = crate::observation_socket::InterruptGuard::install().unwrap();
+            for _ in 0..7 {
+                let deadline = Instant::now() + Duration::from_secs(2);
+                let (mut stream, _) = loop {
+                    match bound.listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline);
+                            thread::sleep(Duration::from_millis(1));
+                        }
+                        Err(e) => panic!("{e}"),
+                    }
+                };
+                stream.set_nonblocking(true).unwrap();
+                let bytes = receive(&mut stream, deadline, &interrupt).unwrap();
+                let reply = handle_normal(&mut store, &mut native, &bytes).unwrap();
+                send(&mut stream, &reply, deadline, &interrupt).unwrap();
+            }
+        });
+        let path = path.to_str().unwrap();
+        for (provider, profile, event) in [
+            ("opencode", "opencode-root.v1", "permission.asked"),
+            ("pi", "pi-context.v1", "session.status"),
+        ] {
+            let mut payload = json!({"contract":native::PROVIDER_RPC,"provider":provider,"profile":profile,"instance_id":"12345678-1234-1234-1234-123456789abc","session_id":"PRIVATE-SID","sequence":1,"event":event});
+            if provider == "pi" {
+                payload["status"] = json!("busy");
+            } else {
+                payload["request_id"] = json!("PRIVATE-REQUEST");
+            }
+            let accepted =
+                native_report_payload(path, payload.to_string().as_bytes(), true).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&accepted.stdout).unwrap(),
+                json!({"type":"accepted","delivery":"volatile"})
+            );
+        }
+        let normal: Value =
+            serde_json::from_str(&observations_arguments(path, true).unwrap().stdout).unwrap();
+        assert_eq!(normal["observations"].as_array().unwrap().len(), 3);
+        assert!(!normal.to_string().contains("PRIVATE"));
+        assert!(!normal.to_string().contains("legacy-private"));
+        let list: Value =
+            serde_json::from_str(&attention_list_arguments(path, true).unwrap().stdout).unwrap();
+        let row = &list["observations"][0];
+        let id = row["observation_id"].as_str().unwrap();
+        let epoch = list["server_epoch"].as_str().unwrap();
+        let revision = row["attention_revision"].as_str().unwrap();
+        let preview: Value = serde_json::from_str(
+            &attention_ack_arguments(path, id, epoch, revision, false, true)
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        assert_eq!(preview["applied"], false);
+        assert_eq!(
+            preview["observations"][0]["unacknowledged_pending_count"],
+            1
+        );
+        let applied: Value = serde_json::from_str(
+            &attention_ack_arguments(path, id, epoch, revision, true, true)
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        assert_eq!(applied["applied"], true);
+        assert_eq!(
+            applied["observations"][0]["unacknowledged_pending_count"],
+            0
+        );
+        let after: Value =
+            serde_json::from_str(&observations_arguments(path, true).unwrap().stdout).unwrap();
+        assert_eq!(after["observations"][0]["reported_state"], "blocked");
+        server.join().unwrap();
+        assert_eq!(
+            saved,
+            fs::read(root.path().join("state/agent-management.json")).unwrap()
+        );
+    }
+
+    #[test]
+    fn normal_control_is_closed_correlated_and_not_available_on_frozen_serve() {
+        let root = private_root();
+        fs::write(root.path().join("coven.json"), b"marker").unwrap();
+        let mut store = store::Store::open(root.path()).unwrap();
+        let mut native = native::NativeStore::default();
+        let request = json!({"id":"a".repeat(32),"contract":native::CONTROL_RPC,"method":"attention.list","params":{}});
+        let bytes = serde_json::to_vec(&request).unwrap();
+        let normal: Value =
+            serde_json::from_slice(&handle_normal(&mut store, &mut native, &bytes).unwrap())
+                .unwrap();
+        assert_eq!(normal["id"], request["id"]);
+        assert_eq!(normal["contract"], native::CONTROL_RPC);
+        assert_eq!(normal["type"], "result");
+        let frozen: Value = serde_json::from_slice(&handle(&mut store, &bytes).unwrap()).unwrap();
+        assert_eq!(frozen["type"], "error");
+        for (field, value) in [
+            ("params", json!({"prompt":"PRIVATE"})),
+            ("method", json!("attention.execute")),
+            ("extra", json!(true)),
+        ] {
+            let mut bad = request.clone();
+            bad[field] = value;
+            let reply: Value = serde_json::from_slice(
+                &handle_normal(&mut store, &mut native, &serde_json::to_vec(&bad).unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(reply["type"], "error");
+            assert_eq!(reply["id"], request["id"]);
+            assert!(!reply.to_string().contains("PRIVATE"));
+        }
+    }
 
     type Checkpoint = Box<dyn FnMut(&str)>;
 

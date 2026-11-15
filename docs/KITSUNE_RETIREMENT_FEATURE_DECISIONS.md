@@ -2,8 +2,8 @@
 
 ## Scope and status
 
-Reviewed 2026-11-14. These are **recommendations**, not implemented capabilities or
-approved implementation commitments. Retirement may proceed independently of
+Reviewed 2026-11-14. The user approved adoption A1-A5. This backlog contains only
+remaining residuals, not all approved work. Retirement may proceed independently of
 feature parity; useful outcomes can move to Coven while unwanted behaviors retire.
 
 Only user-facing residuals **not already provided by Coven** are listed. For a
@@ -12,47 +12,31 @@ Generic multiplexer features staying in Kitsune are not Coven adoption work.
 Remove or narrow entries when Coven ships them; do not keep completed work in a
 permanent "missing features" backlog.
 
-## Recommend adopting in Coven
+## Remaining Approved Adoption Work
 
-- **A1 — Guarded interactive launch/resume adapters beyond Djinn.** Add actual
-  provider execution support with explicit consent and unsupported results where
-  necessary, not another discovery interface or resume-argv preview.
-  Evidence: Kitsune's [`App::start_agent`](../../kitsune/src/app/agents.rs) submits
-  provider commands; Coven's [interactive adapter](../src/interactive_sessions.rs)
-  restricts executable interactive sessions to Djinn.
-- **A2 — Reliable native-session-to-terminal association.** Let users identify the
-  current terminal hosting a reported session. Independently establish the mapping
-  and invalidate it on replacement, exit or stale evidence. Never treat a label or
-  PID hint as authenticated native identity or execution permission.
-  Evidence: Kitsune's [agent API](../../kitsune/src/app/api/agents.rs) targets panes
-  and checks foreground runtime; Coven's [normal observations](NORMAL_AGENT_WORKFLOW.md)
-  remain unbound.
-- **A3 — Native activity/decision coverage for reference-only integrations.**
-  Investigate genuine events for Codex, Copilot, Pi and OpenCode. Report working,
-  waiting or idle only where native interfaces support those facts, with bounded
-  freshness and explicit unknown states. No screen-guess fallback.
-  Evidence: legacy [Pi](../../kitsune/src/integration/assets/pi/kitsune-agent-state.ts)
-  and [OpenCode](../../kitsune/src/integration/assets/opencode/kitsune-agent-state.js)
-  report richer activity/decisions; the [current migration contract](AGENT_MANAGEMENT_MIGRATION.md)
-  limits these Coven integrations to references. This is not a promise of every
-  provider's lifecycle capabilities.
-- **A4 — Actionable cross-session attention navigation.** Prioritize waiting
-  sessions, acknowledge attention and deliberately jump to their terminals.
-  Coven owns interpretation; use generic Kitsune focus/presentation operations.
-  Terminal jumps depend on A2. Acknowledgement is not job completion.
-  Evidence: Kitsune's [agent view](../../kitsune/src/app/agent_view.rs) orders by
-  priority/seen state and its [agent API](../../kitsune/src/app/api/agents.rs)
-  focuses targets; Coven's [group-view selections](GROUP_PRESENTATION_CONTRACT.md)
-  supply read-only details, not this workflow.
-- **A5 — Opt-in restart recovery of selected saved native sessions.** Include
-  duplicate suppression, imported-running-session precedence, deferred launches,
-  reservation rollback and command-enqueue failure handling. Historical references
-  alone never authorize execution; consent belongs to the recovery operation.
-  Evidence: Kitsune's [restore](../../kitsune/src/persist/restore.rs) and
-  [resume](../../kitsune/src/app/agent_resume.rs) state machines; broader transfer
-  remains open in the [migration contract](AGENT_MANAGEMENT_MIGRATION.md).
+- **A2: Producer-backed actual native hosting and lifetime qualification.**
+  Independently establish that a reported native session is hosted by the exact
+  current terminal/runtime, beyond the already-delivered explicit 30-second
+  user assertion and its CAS/nonreviving invalidation. No automatic PID/label
+  inference or execution authority. See [navigation limits](AGENT_NAVIGATION_CONTRACT.md).
+- **A3: Remaining qualified native activity/decision coverage.** Investigate
+  supported native activity for Codex/Copilot, which remain reference-only and
+  unsupported for activity. Pi decision correlation remains possible work only
+  where actual native APIs
+  supply suitable request identity; today's APIs do not. No invented blocked bus,
+  screen guessing or inferred completion. See [native profile limits](NATIVE_PROVIDER_EVENTS_CONTRACT.md).
 
-## Recommend deliberately dropping
+## Delivered Implementation Record
+
+A1's 16 explicit interactive adapters, A4 attention/acknowledgement/checked CLI
+focus, and bounded A5 selected recovery are delivered, not missing capabilities.
+A2 temporary asserted navigation and A3 independent Pi/OpenCode native profiles
+are also delivered within their partial scope. See the separate
+[A1-A5 status record](FEATURE_ADOPTION_STATUS.md) and its contract links for
+commands, durability, skip-only reference vetoes and evidence limits. This does
+not mark all adoption fully done or certify installed providers/platforms.
+
+## Deliberately Excluded
 
 - **D1 — Authoritative state from screen patterns or generic terminal activity.**
   Prompts, spinners and text cannot establish native lifecycle, readiness, success
@@ -87,7 +71,8 @@ Native qualification and the supported OS matrix remain separate in the
 The first bounded cut rejects legacy `agent.start` under external ownership,
 before validation, terminal input or managed-state mutation. It returns
 `external_agent_management` even if the Coven helper is unavailable. This closes
-competing authority; it neither implements A1 nor removes standalone legacy start.
+competing authority; that cut itself neither implemented A1 nor removed standalone
+legacy start. The later Coven A1 adapters are recorded separately above.
 
 Subsequent cuts should retire agent-specific producers and consumers together.
 Keep generic PTY/process/terminal/session operations and integration transport in

@@ -8,6 +8,13 @@ explicit environment route. The CLI selects `--from-kitsune`, optionally with
 automatically. Executable paths must still be valid absolute paths in library
 requests; only the CLI may explicitly choose its validated current executable.
 
+This document describes the five historical hook/reference installers. Separate
+[native Pi/OpenCode profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md) now use
+`agent native-extensions` with explicit route selection and independent managed
+assets, policies and journals. They do not replace/update old reference bytes or
+receipts. Both support `--from-kitsune` or an exact `--socket`; the normal receiver
+is required for native events. See [current adoption status](FEATURE_ADOPTION_STATUS.md).
+
 ## API / Interfaces
 
 The crate exports `pub mod integration_route;`. Existing provider
@@ -56,7 +63,7 @@ remain in force. Pending operations must resume using the same recorded route.
 Placement is not native activation, hook approval, trust or consent. There are
 no changes to legacy Kit fingerprints, settings migration consent, native event
 allowlists, unknown-state behavior or payload privacy. Codex/Copilot still emit
-only their supported native events. Pi/OpenCode remain reference-only reporters
+only their supported native events. Historical `agent extensions` Pi/OpenCode assets remain reference-only reporters
 with the same eligibility checks, bounded child ownership and best-effort loss
 behavior. Providers must restart in new panes after a Kit server restart;
 environment routing does not add process/native-session identity joins.

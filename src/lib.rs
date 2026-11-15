@@ -5,6 +5,7 @@ pub mod agent_discovery;
 pub mod agent_discovery_watch;
 pub mod agent_management;
 pub mod agent_management_presentation;
+pub mod agent_navigation;
 mod agent_processes;
 pub mod archive;
 mod canonical;
@@ -39,6 +40,9 @@ pub mod integration_setup;
 #[cfg(not(unix))]
 #[path = "integration_setup/unsupported.rs"]
 pub mod integration_setup;
+#[cfg(all(test, unix))]
+#[path = "../tests/support/interactive_session_server.rs"]
+mod interactive_session_fixture;
 pub mod interactive_sessions;
 pub mod kitsune_comparison;
 pub mod kitsune_observation;
@@ -46,6 +50,7 @@ mod launch;
 pub mod lead;
 pub mod ledger;
 mod logs;
+pub mod native_extensions;
 mod observation_socket;
 mod observation_time;
 mod observation_wire;
@@ -65,6 +70,7 @@ mod runtime_command;
 mod runtime_foreground;
 pub mod session_inspection;
 pub mod session_prompts;
+pub mod session_recovery;
 pub mod session_resume_plans;
 mod session_support;
 pub mod session_views;

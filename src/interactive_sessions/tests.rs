@@ -10,6 +10,7 @@ fn request() -> Request {
         pane: "w1:p1".into(),
         expected_terminal: "terminal-1".into(),
         session: None,
+        session_kind: None,
         timeout: 3.0,
         execute: false,
     }
@@ -129,8 +130,7 @@ fn interrupt_exit_preserves_recorded_queue_receipt() {
 }
 
 #[cfg(unix)]
-#[path = "../../tests/support/interactive_session_server.rs"]
-mod fixture;
+use crate::interactive_session_fixture as fixture;
 
 #[cfg(unix)]
 #[test]
@@ -168,15 +168,14 @@ fn gate_is_required_and_held_without_workspace_lock_during_io() {
         .to_str()
         .unwrap()
         .into();
-    let plan = Plan::new(&request).unwrap();
     let other = temporary.path().join("other");
     std::fs::create_dir_all(other.join("state")).unwrap();
     let wrong_gate = TransportGuard::shared(&other, Duration::ZERO).unwrap();
-    assert!(execute(&plan, &wrong_gate, &wire::NoCancel).is_err());
+    assert!(execute_with_guard(&request, &wrong_gate, &wire::NoCancel, &mut || Ok(())).is_err());
     assert!(server.requests().is_empty());
     let gate = crate::session_support::admit(&root).unwrap();
     assert_eq!(
-        execute(&plan, &gate, &wire::NoCancel).unwrap()["outcome"],
+        execute_with_guard(&request, &gate, &wire::NoCancel, &mut || Ok(())).unwrap()["outcome"],
         "input_queued"
     );
     assert_eq!(inspected.load(std::sync::atomic::Ordering::SeqCst), 3);
@@ -221,6 +220,7 @@ fn cancellation_before_io_and_after_possible_send_are_not_replayed() {
             Instant::now() + Duration::from_secs(1),
             &mut ReadBudget::new(1_048_576),
             &Flag(flag),
+            &mut || Ok(()),
         )
         .unwrap_err();
         assert!(failure.interrupted);
@@ -245,9 +245,9 @@ fn failure_at_first_send_is_conservatively_uncertain_even_without_a_complete_fra
         fn interrupted(&self) -> bool {
             let checks = self.0.get() + 1;
             self.0.set(checks);
-            // Immediate local connect: submit check, three connect checks, final
-            // pre-send check, then Socket::send's first check after possible_send.
-            checks >= 6
+            // Immediate local connect: submit check, three connect checks, two
+            // pre-send checks, then Socket::send's first check after possible_send.
+            checks >= 7
         }
     }
     let server = fixture::Server::new(|_, _| panic!("no complete command may arrive"));
@@ -261,6 +261,7 @@ fn failure_at_first_send_is_conservatively_uncertain_even_without_a_complete_fra
         Instant::now() + Duration::from_secs(1),
         &mut ReadBudget::new(1_048_576),
         &FirstSend(Cell::new(0)),
+        &mut || Ok(()),
     )
     .unwrap_err();
     assert!(failure.interrupted);
@@ -286,4 +287,246 @@ fn metadata_follows_symlinks_and_checks_execute_permission_without_launching() {
         "executable_unavailable"
     );
     assert!(executable(temp.path().to_str().unwrap()).is_err());
+}
+
+#[test]
+fn all_paired_adapters_have_exact_start_and_literal_resume_arguments() {
+    let selector = "  saved; $(literal) 'quoted'  ";
+    for (runtime, flag, joined) in [
+        ("djinn", "--session", false),
+        ("claude", "--resume", false),
+        ("codex", "resume", false),
+        ("copilot", "--resume=", true),
+        ("devin", "--resume", false),
+        ("droid", "--resume", false),
+        ("kimi", "--session", false),
+        ("mastracode", "--thread", false),
+        ("pi", "--session", false),
+        ("omp", "--resume=", true),
+        ("hermes", "--resume", false),
+        ("opencode", "--session", false),
+        ("qodercli", "--resume", false),
+        ("kilo", "--session", false),
+        ("cursor", "--resume", false),
+        ("grok", "--resume", false),
+    ] {
+        let mut request = request();
+        request.runtime = runtime.into();
+        let start = preview(&request).unwrap();
+        assert_eq!(
+            start["argv"],
+            if runtime == "djinn" {
+                json!([request.executable, "--ui"])
+            } else {
+                json!([request.executable])
+            },
+            "{runtime}"
+        );
+        assert_eq!(start["native_cli_compatibility"], "unverified");
+        assert_eq!(start["argv_evidence"], "characterized_legacy_policy");
+        request.operation = Operation::Resume;
+        request.session = Some(selector.into());
+        let resume = preview(&request).unwrap();
+        assert_eq!(resume["session_kind"], "id");
+        assert_eq!(
+            resume["argv"],
+            if joined {
+                json!([request.executable, format!("{flag}{selector}")])
+            } else {
+                json!([request.executable, flag, selector])
+            },
+            "{runtime}"
+        );
+        request.session_kind = Some(SessionKind::Id);
+        assert_eq!(preview(&request).unwrap(), resume);
+        let payload = serde_json::to_vec(&json!({"id":"id","result":{
+            "type":"pane_command_submitted","pane_id":request.pane,
+            "terminal_id":request.expected_terminal,"argv":resume["argv"]}}))
+        .unwrap();
+        acknowledgement(&payload, "id", &resume).unwrap();
+        let mut wrong = resume.clone();
+        wrong["argv"][0] = json!("/different");
+        assert!(acknowledgement(&payload, "id", &wrong).is_err());
+    }
+}
+
+#[test]
+fn selector_kinds_bounds_and_start_exclusions() {
+    let mut request = request();
+    request.session_kind = Some(SessionKind::Id);
+    assert!(preview(&request).is_err());
+    request.session_kind = None;
+    request.session = Some("saved".into());
+    assert!(preview(&request).is_err());
+    request.operation = Operation::Resume;
+    for selector in ["", " ", "  --help", "bad\n", "bad\u{85}", &"x".repeat(513)] {
+        request.session = Some(selector.into());
+        assert!(preview(&request).is_err(), "{selector:?}");
+    }
+    request.session = Some("x".repeat(512));
+    preview(&request).unwrap();
+    request.session_kind = Some(SessionKind::Path);
+    for runtime in ["pi", "omp", "djinn", "claude", "copilot", "cursor"] {
+        request.runtime = runtime.into();
+        request.session = Some(format!("/{}", "x".repeat(4095)));
+        if matches!(runtime, "pi" | "omp") {
+            let report = preview(&request).unwrap();
+            assert_eq!(report["session_kind"], "path");
+            assert_eq!(
+                report["argv"],
+                if runtime == "pi" {
+                    json!([request.executable, "--session", request.session])
+                } else {
+                    json!([
+                        request.executable,
+                        format!("--resume={}", request.session.as_ref().unwrap())
+                    ])
+                }
+            );
+            request.session.as_mut().unwrap().push('x');
+            assert!(preview(&request).is_err());
+            for path in ["relative", " /absolute", "  --option"] {
+                request.session = Some(path.into());
+                assert!(preview(&request).is_err());
+            }
+        } else {
+            assert!(preview(&request).is_err());
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn before_send_runs_once_after_preflight_and_failure_prevents_mutation() {
+    use fixture::{Server, ack, frame, inventory, snapshot};
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("workspace");
+    crate::init::arguments(
+        &root,
+        &crate::init::Options {
+            blank: true,
+            agents: "reviewer".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    for mode in ["success", "callback_failure", "preflight_failure"] {
+        let server = Server::new(move |_, req| {
+            if req["method"] == "session.snapshot" {
+                let mut value = inventory();
+                if mode == "preflight_failure" {
+                    value["panes"][0]["terminal_id"] = json!("changed");
+                }
+                snapshot(req, value)
+            } else {
+                frame(ack(req))
+            }
+        });
+        let mut request = request();
+        request.workspace = root.clone();
+        request.runtime = "copilot".into();
+        request.operation = Operation::Resume;
+        request.session = Some("literal; $(data)".into());
+        request.executable = fixture::executable(temp.path()).to_str().unwrap().into();
+        request.socket = server.path.to_str().unwrap().into();
+        let gate = crate::session_support::admit(&root).unwrap();
+        let mut calls = 0;
+        let report = execute_with_guard(&request, &gate, &wire::NoCancel, &mut || {
+            calls += 1;
+            assert_eq!(server.requests().len(), 2);
+            let _workspace_lock =
+                crate::storage::WorkspaceGuard::acquire(&root, Duration::ZERO).unwrap();
+            if mode == "callback_failure" {
+                Err(Error("journal_failed"))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+        assert_eq!(calls, usize::from(mode != "preflight_failure"));
+        assert_eq!(
+            server
+                .requests()
+                .iter()
+                .filter(|req| req["method"] == "pane.submit_command")
+                .count(),
+            usize::from(mode == "success")
+        );
+        assert_eq!(
+            report["delivery"],
+            match mode {
+                "success" => "queued",
+                "callback_failure" => "not_attempted",
+                _ => "unsent",
+            }
+        );
+        if mode == "callback_failure" {
+            assert_eq!(report["diagnostics"], json!(["before_send_failed"]));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn successful_callback_cancellation_or_deadline_exhaustion_is_known_unsent() {
+    use fixture::{Server, inventory, snapshot};
+    use std::cell::Cell;
+    struct Flag(Cell<bool>);
+    impl Cancel for Flag {
+        fn interrupted(&self) -> bool {
+            self.0.get()
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("workspace");
+    crate::init::arguments(
+        &root,
+        &crate::init::Options {
+            blank: true,
+            agents: "reviewer".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    for cancel_after_callback in [true, false] {
+        let server = Server::new(|_, req| {
+            assert_eq!(req["method"], "session.snapshot");
+            snapshot(req, inventory())
+        });
+        let mut request = request();
+        request.workspace = root.clone();
+        request.executable = fixture::executable(temp.path()).to_str().unwrap().into();
+        request.socket = server.path.to_str().unwrap().into();
+        request.timeout = 1.0;
+        let gate = crate::session_support::admit(&root).unwrap();
+        let cancel = Flag(Cell::new(false));
+        let mut calls = 0;
+        let report = execute_with_guard(&request, &gate, &cancel, &mut || {
+            calls += 1;
+            assert_eq!(server.requests().len(), 2);
+            if cancel_after_callback {
+                cancel.0.set(true);
+            } else {
+                // Sleeping a full budget after preflight guarantees deadline expiry.
+                std::thread::sleep(Duration::from_secs_f64(request.timeout));
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(calls, 1);
+        assert_eq!(report["outcome"], "unavailable");
+        assert_eq!(report["delivery"], "unsent");
+        assert_eq!(
+            report["diagnostics"],
+            json!([if cancel_after_callback {
+                "interrupted"
+            } else {
+                "timeout"
+            }])
+        );
+        assert_eq!(server.requests().len(), 2);
+        if cancel_after_callback {
+            assert_eq!(report["interrupted"], true);
+        }
+    }
 }

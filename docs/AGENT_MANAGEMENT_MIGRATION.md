@@ -2,7 +2,27 @@
 
 ## Overview
 
-### Current normal-invocation cut — 2026-11-12
+### Current Adoption Overlay, 2026-11-14
+
+The user approved A1-A5. The [implementation record](FEATURE_ADOPTION_STATUS.md)
+supersedes older capability-absence summaries below: 16 explicit interactive
+adapters (not all 22 discovery families), attention occurrence acknowledgements
+and checked CLI focus, and bounded explicit recovery are delivered. A2 supplies
+30-second volatile user assertions with CAS/invalidation, not producer-proven
+hosting. A3 adds independent explicitly installed Pi/OpenCode native profiles;
+old reference assets/receipts remain frozen and unknown. OpenCode resumed roots
+can be established by bounded, silent native metadata lookup. Codex/Copilot native
+activity and Pi decision correlation retain the
+[documented residuals](KITSUNE_RETIREMENT_FEATURE_DECISIONS.md).
+
+These are reviewed implementation scopes with focused and composed Linux
+validation, not full
+legacy extraction, installed CLI/native loader qualification, Windows support or
+native macOS certification. Historical provider-cut rows below describe their
+named reference/receipt or legacy retirement scope, not absence of the new paths.
+Doctor's existing closed-v1 capabilities remain unchanged.
+
+### Normal-invocation ownership cut, 2026-11-12
 
 [Normal workflow](NORMAL_AGENT_WORKFLOW.md) implements explicit startup opt-in:
 Kit owns a server-only attached helper, Coven owns attributed plain observation
@@ -15,9 +35,11 @@ reload providers for runtime changes/rollback. Each concurrent runtime needs its
 own initialized, dedicated external workspace and receiver socket. Existing hooks'
 explicit socket pins must match the receiver. Installed user config is not rewritten.
 Djinn's updated full-TUI source plugin reports bounded volatile native events;
-Claude has bounded last-reported activity, and Codex/Copilot/Pi/OpenCode remain
-reference-only unknown. Facts expire within 30 seconds independently of the
-five-second presentation lease; no pane/PID binding or native attestation follows.
+Claude has bounded last-reported activity, and Codex/Copilot plus historical
+Pi/OpenCode reference assets remain reference-only unknown. Separate native
+Pi/OpenCode profiles now provide bounded activity within their contracts.
+Facts expire within 30 seconds independently of the five-second presentation
+lease; no automatic pane/PID binding or native attestation follows.
 The matrix below retains legacy/default-mode and platform transfer obligations,
 not a claim that external mode still runs legacy ownership. Full extraction and
 native macOS qualification remain incomplete.
@@ -124,13 +146,19 @@ not full OpenCode management completion.
 | Legacy Claude surfaces on all platforms | Kitsune retains all six `IntegrationTarget::ALL` entries, installation status, uninstall and old hook ingress. Non-Linux new installation also remains. | Retire only after platform-matched compatibility/transition coverage; running sessions are not converted by editing settings. |
 | Generic Linux/macOS foreground-cohort recognition (all 22 literal families) | Coven production `agent discover`, bounded watch and optional generic presentation; ephemeral PID/provider/rule/locator evidence only, no receipt/group join. Linux v1 and provisional macOS v2 with exact `argument_policy: darwin_procargs2_lp64_v1` are admitted; both require `pane_foreground_cohort`/`unclassified`, protocol 18 unchanged. | Partial scope, not detector retirement/full status or native macOS certification. Linux optional argument_policy is ignored; macOS v1 rejects even with the marker. Windows selected_process/legacy_agent_aware rejects. Acquisition completeness stays unknown. See [discovery contract](AGENT_DISCOVERY_CONTRACT.md). |
 | Process/screen fallback, status/attention, navigation, agent APIs and mobile surfaces | Legacy/default-mode compatibility remains. External mode suppresses legacy agent-status authority/detectors; Coven supplies plain integration rows, not the old widgets/focus/mobile model. | Broader adapters and removal gates remain; external mode is implemented, not universal surface replacement. |
-| Interactive start/resume | Coven's explicit Djinn UI start/resume uses generic terminal-pinned submission. Kitsune's legacy provider paths remain. | Coven adapters for remaining supported providers; unsupported capabilities stay explicit. |
+| Interactive start/resume | Coven's 16 paired source-characterized adapters use explicit generic terminal-pinned submission; Djinn argv is preserved. Kitsune's legacy provider paths remain. | Installed CLI/version compatibility is unverified, enqueue is not startup, unsupported runtimes/kinds stay explicit. See [interactive contract](INTERACTIVE_SESSION_CONTRACT.md). |
 | Resume policy | Coven pure planner characterizes 16 historical mappings; no new execution authority. | Coven owns provider policy; pure argv equivalence alone cannot replace restore ownership/history semantics. |
-| Agent-aware persistence/restore, native-reference ownership/deduplication and deferred launch | Legacy/default-mode compatibility remains; external mode retains history/references without automatic agent resume. | Broader Coven restore adapters remain pending; Kitsune retains generic terminal/session persistence and transport. |
+| Agent-aware persistence/restore, native-reference ownership/deduplication and deferred launch | Explicit bounded Coven recovery now uses durable intent, CAS and selected-reference duplicate blocking; imports and actual all-pane snapshot references are skip-only vetoes before mutation. External mode preserves history without automatic resume. | Not global exactly-once or proof of native running; no saved consent/autostart. Broader legacy retirement remains gated. See [recovery contract](SESSION_RECOVERY_CONTRACT.md). |
+| Attention and terminal navigation | Coven occurrence acknowledgements, priority lists and checked CLI focus via generic Kit v1 terminal inspection/focus; temporary asserted associations only. | Producer-backed native hosting remains A2 work; generic row clicks stay read-only, no mobile decision or completion inference. See [navigation contract](AGENT_NAVIGATION_CONTRACT.md). |
+| Independent Pi/OpenCode native profiles | Explicit `agent native-extensions` with separate assets/policies/journals; pinned Pi context activity and OpenCode root-qualified lifecycle/status/decisions through normal receiver, including bounded resumed-root metadata lookup. | Old reference assets unchanged; source/mock-callback roundtrip is not native loader qualification. Codex/Copilot activity unsupported; Pi decisions lack native correlation. See [native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md). |
 | Other hook/provider integrations | Separate built-in Djinn handling and other applicable sources remain pending. Pi full-v7 and OpenCode full-v9 legacy ingress/lifecycle persist until explicit migration. | Coven-owned adapters/configuration with per-source removal gates, not permanent Kit ownership. |
 | Jobs, participant roles and task authority | Coven declarations/task contracts; hook rows have no roles or task authority. | Coven orchestration, separate from native execution and generic presentation. |
 
-### All-source/provider ledger
+### Legacy Transfer Ledger
+
+These rows retain historical reference-installer and legacy-removal obligations.
+They do not negate delivered A1/A4/bounded A5 or independent A3 native profiles;
+use the current adoption overlay above for product capabilities.
 
 Every entry in Kitsune's current 22-kind classifier is in scope. These are coverage
 groups, not promises that each kind has hooks or resume support:
@@ -222,14 +250,17 @@ launch, adoption or role assignment is part of this flow.
    and completed scoped API/UI/compatibility checks, retaining the limits below
     for broader retirement beyond the implemented opt-in external mode.
    Then move remaining status interpretation, process/screen fallback,
-   attention/navigation and mobile agent model into Coven; supply missing generic evidence first,
+    remaining producer-backed hosting and any approved mobile model into Coven;
+    attention/acknowledgement/checked CLI navigation already exist. Mobile L1 is
+    undecided, not a committed transfer. Supply missing generic evidence first,
    especially Windows tree scope/parent relationships. Do not mislabel today's
    agent-selected Windows singleton as neutral complete evidence.
-3. Extend explicit Coven start/resume capabilities per provider using generic
-   multiplexer controls or supported native APIs, with separate execution consent.
-4. Transfer agent restore/reference ownership and dedupe/deferred-start policy,
-   preserving generic Kitsune restoration. Characterize actual runtime import,
-   duplicate traversal, rollback and spawn/send failures before retiring those paths.
+3. Qualify installed native CLI/version behavior separately from the delivered 16
+   explicit start/resume adapters; do not list those adapters as missing features.
+4. Build legacy retirement gates on bounded explicit recovery's delivered journal,
+   all-pane skip inventory and failure handling, preserving generic Kit restoration.
+   Point-in-time reference hints and workspace blockers are not global native identity
+   or running proof; no automatic layout-triggered execution is adopted.
 5. Retire matching legacy ingress/APIs/UI/configuration only as replacements and
    compatibility gates are satisfied; validate supported platforms separately.
 
@@ -293,7 +324,8 @@ is needed; the generic view adds no native-effects ownership.
 #### Private storage and endpoint validation
 
 The [private storage contract](AGENT_PRIVATE_STORAGE_CONTRACT.md#validation-and-gates)
-records final parent evidence, not tests rerun by this documentation update:
+records historical parent evidence, not current aggregate adoption counts or tests
+rerun by this documentation update:
 
 | Focused Linux Rust Scope | Distinct Passed Checks |
 | --- | --- |
@@ -380,7 +412,7 @@ results and are not added to this cut, nor are historical Coven 201/236 totals.
 
 #### State-seam validation table
 
-Current uncommitted Kit source includes `src/terminal/evidence.rs`,
+That historical uncommitted Kit cut included `src/terminal/evidence.rs`,
 `src/terminal/state/evidence.rs`, pane producer/helpers, App API/actions/headless
 gates and both restore branches. These verified scoped agent/parent results were
 not rerun by this docs-only update. Listed Kit module filters are disjoint.
@@ -462,7 +494,7 @@ provider, full readiness or cross-platform certification follows from these chec
 
 #### Discovery validation table
 
-The current composed cut source-enables generic macOS acquisition and Coven
+That historical composed cut source-enabled generic macOS acquisition and Coven
 discovery admission; it does not certify native runtime behavior. Earlier Linux
 discovery and evidence-seam counts are historical, not current composed totals.
 

@@ -17,7 +17,10 @@ After that opt-in and explicit native hook/extension configuration, users still
 type `djinn`, `codex`, `copilot`, etc. unchanged. Coven supplies attributed plain
 rows under the explicitly selected **Coven** integration source, not the old Kit
 agent-status widgets, pane-focus/sidebar agent model or mobile completion cues.
-Sessions remain unbound: no PID association or authenticated native attestation.
+No automatic session binding, PID association or authenticated native attestation
+follows. [Checked CLI navigation](AGENT_NAVIGATION_CONTRACT.md) separately permits
+temporary explicit user assertions, not independently proven native hosting.
+See the [approved adoption record](FEATURE_ADOPTION_STATUS.md) for current scope.
 
 ## API / Interfaces
 
@@ -108,6 +111,18 @@ installation or an override of native allowed/disable/trust/approval settings
 Codex/Copilot startup references and Pi/OpenCode reference events remain **unknown
 even when configured and fresh**. Claude activity is only last-reported evidence,
 bounded to 30 seconds in this normal view; legacy v1 inventory/serve is unchanged.
+
+Independent `agent native-extensions` profiles now support pinned Pi context
+metadata/busy/settled-idle and OpenCode known-root lifecycle/status/permission/
+question observations. They require separate explicit installation, use separate
+policies/journals, and do not update historical `agent extensions` reference
+assets or receipts. Codex/Copilot native activity remains unsupported. Unknown
+resumed OpenCode roots use bounded on-demand native metadata lookup, with silent
+eligibility registration and the original observation-age budget; missing or
+invalid root DTOs fail closed. Pi makes no root or
+decision-correlation claim. See [native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md)
+for exact source/API and loader/macOS qualification limits. Doctor's existing
+closed-v1 capabilities are unchanged; it does not discover these new profiles.
 
 ## Djinn native capture boundary
 
@@ -207,8 +222,12 @@ All native state is lost on restart. Replay/revival protection is consequently
 bounded by retention and restart, not unlimited.
 
 `coven.normal-observations.v1` includes `omitted_observations` and the cumulative
-`retired_native_observations` count. The view prioritizes fresh evidence, then
-native evidence, with stable observation-ID ordering. If rows are omitted or
+`retired_native_observations` count. The view prioritizes unacknowledged fresh
+attention, then acknowledged fresh attention, then existing fresh/native evidence
+priority, with stable observation-ID ties, not oldest-first ordering. Occurrence
+acknowledgement changes no pending/native facts; expiry is unknown, not done.
+See [attention and checked CLI focus](AGENT_NAVIGATION_CONTRACT.md); generic row
+clicks remain read-only. If rows are omitted or
 native history has been retired, at most 127 observation rows plus one explicit
 limits/omissions summary row are shown. Native facts without a retained clock
 have `freshness: "unknown"`; expired clocks yield unknown state. Historical v1
@@ -272,12 +291,15 @@ inspected absolute existing provider roots; review each preview before applying:
 ```text
 coven agent hooks plan --provider claude --config-root ABS_CLAUDE_ROOT --from-kitsune
 coven agent hooks install --provider claude --config-root ABS_CLAUDE_ROOT --from-kitsune --apply
-coven agent extensions plan --provider pi --extension-root ABS_PI_EXTENSION_ROOT --from-kitsune
-coven agent extensions install --provider pi --extension-root ABS_PI_EXTENSION_ROOT --from-kitsune --apply
+coven agent native-extensions plan --provider pi --extension-root ABS_PI_EXTENSION_ROOT --from-kitsune
+coven agent native-extensions install --provider pi --extension-root ABS_PI_EXTENSION_ROOT --from-kitsune --apply
 ```
 
-The hook form also supports `codex`/`copilot`; the extension form supports
-`opencode`. No automatic provider install, native approval or trust override
+The hook form also supports `codex`/`copilot`; the native extension form supports
+`opencode`. Historical `agent extensions` remains reference-only; choose this
+independent `native-extensions` workflow for bounded activity, not an in-place upgrade.
+Review old reference uninstall pins and coexistence limits before installing.
+No automatic provider install, native approval or trust override
 occurs. Existing Kit assets require the provider's verified migration and explicit
 `--migrate-kitsune` consent, not blind replacement. Stop providers/watchers before
 mutation; restart the native OpenCode server, not just its attached TUI.

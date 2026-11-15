@@ -177,9 +177,10 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
             return Err(invalid());
         }
         let mut rows = Vec::new();
+        let mut ids = std::collections::BTreeSet::new();
         for observation in observations {
             let id = observation["observation_id"].as_str().ok_or_else(invalid)?;
-            if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) || !ids.insert(id) {
                 return Err(invalid());
             }
             let provider = observation["provider"].as_str().ok_or_else(invalid)?;
@@ -187,14 +188,36 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
             let origin = observation["origin"].as_str().ok_or_else(invalid)?;
             let freshness = observation["freshness"].as_str().ok_or_else(invalid)?;
             let capability = observation["capability"].as_str().ok_or_else(invalid)?;
-            if !matches!(
-                provider,
-                "claude" | "codex" | "copilot" | "pi" | "opencode" | "djinn"
-            ) || !matches!(state, "unknown" | "working" | "blocked" | "idle" | "ended")
-                || !matches!(origin, "v1_receipt" | "djinn_native_event")
+            let profile = observation
+                .get("profile")
+                .map(|v| v.as_str().ok_or_else(invalid))
+                .transpose()?;
+            let provenance = matches!(
+                (provider, origin, profile),
+                ("djinn", "djinn_native_event", None)
+                    | (
+                        "opencode",
+                        "provider_native_event",
+                        Some("opencode-root.v1")
+                    )
+                    | ("pi", "provider_native_event", Some("pi-context.v1"))
+                    | (
+                        "claude" | "codex" | "copilot" | "pi" | "opencode",
+                        "v1_receipt",
+                        None
+                    )
+            );
+            if !provenance
+                || !matches!(state, "unknown" | "working" | "blocked" | "idle" | "ended")
                 || !matches!(freshness, "fresh" | "expired" | "historical" | "unknown")
                 || !matches!(capability, "activity" | "reference_only")
-                || (origin == "djinn_native_event") != (provider == "djinn")
+                || capability
+                    != if origin != "v1_receipt" || provider == "claude" {
+                        "activity"
+                    } else {
+                        "reference_only"
+                    }
+                || (profile == Some("pi-context.v1") && matches!(state, "blocked" | "ended"))
             {
                 return Err(invalid());
             }
@@ -203,6 +226,25 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
                 "Coven: last-reported {} ({freshness}); {origin}; {capability}; caller unverified; no pane binding or success claim",
                 state.to_ascii_uppercase()
             );
+            if let Some(profile) = profile {
+                detail.push_str(if profile == "pi-context.v1" {
+                    "; pi-context.v1; UI/RPC context only, root unestablished"
+                } else {
+                    "; opencode-root.v1; producer-qualified root, not receiver authenticated"
+                });
+            }
+            if observation.get("fresh_pending_count").is_some() {
+                let count = observation["fresh_pending_count"]
+                    .as_u64()
+                    .ok_or_else(invalid)?;
+                let unacked = observation["unacknowledged_pending_count"]
+                    .as_u64()
+                    .ok_or_else(invalid)?;
+                if count > 128 || unacked > count {
+                    return Err(invalid());
+                }
+                detail.push_str(&format!("; pending {count}, unacknowledged {unacked}"));
+            }
             if selected == Some(item_id.as_str()) {
                 detail.push_str("; selected (read-only)");
             }
@@ -216,10 +258,6 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
         if summary {
             rows.push(json!({"id":"normal:limits","label":"Coven / Evidence limits",
                 "detail":format!("{omitted} observations omitted from this view; {retired} native observations retired; bounded volatile history and replay protection")}));
-        }
-        rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
-        if rows.windows(2).any(|p| p[0]["id"] == p[1]["id"]) {
-            return Err(invalid());
         }
         return Ok(Some(Model {
             epoch: epoch.into(),
@@ -448,6 +486,36 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_profiles_preserve_receiver_priority_and_strip_private_details() {
+        let first = json!({"observation_id":"f".repeat(64),"provider":"opencode","origin":"provider_native_event","profile":"opencode-root.v1","capability":"activity","freshness":"fresh","reported_state":"blocked","fresh_pending_count":2,"unacknowledged_pending_count":1,"request_id":"PRIVATE","cwd":"/PRIVATE"});
+        let second = json!({"observation_id":"a".repeat(64),"provider":"pi","origin":"provider_native_event","profile":"pi-context.v1","capability":"activity","freshness":"fresh","reported_state":"working","prompt":"PRIVATE","session_id":"PRIVATE"});
+        let value = json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch","authorization":"none","omitted_observations":0,"retired_native_observations":0,"observations":[first,second]});
+        let model = snapshot(&Mutex::new(value.clone()), None).unwrap().unwrap();
+        assert_eq!(
+            model.rows[0]["id"],
+            format!("observation:{}", "f".repeat(64))
+        );
+        let text = serde_json::to_string(&model.rows).unwrap();
+        assert!(text.contains("pending 2, unacknowledged 1"));
+        assert!(text.contains("UI/RPC context only, root unestablished"));
+        assert!(!text.contains("PRIVATE"));
+        for (field, bad) in [
+            ("provider", json!("pi")),
+            ("profile", json!("pi-context.v1")),
+            ("profile", Value::Null),
+            ("origin", json!("v1_receipt")),
+        ] {
+            let mut invalid = value.clone();
+            invalid["observations"][0][field] = bad;
+            assert!(snapshot(&Mutex::new(invalid), None).is_err());
+        }
+        let mut duplicate = value.clone();
+        duplicate["observations"][1]["observation_id"] =
+            duplicate["observations"][0]["observation_id"].clone();
+        assert!(snapshot(&Mutex::new(duplicate), None).is_err());
+    }
 
     #[test]
     fn normal_view_is_attributed_and_strips_all_native_details() {

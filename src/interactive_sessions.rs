@@ -10,6 +10,8 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+pub use crate::session_resume_plans::SessionKind;
+
 const LIMITATIONS: [&str; 6] = [
     "Input queued is not native startup, session identity, readiness, worker acceptance or completion.",
     "Select a quiescent empty shell prompt; other writers and post-check foreground changes remain possible.",
@@ -34,6 +36,7 @@ pub struct Request {
     pub pane: String,
     pub expected_terminal: String,
     pub session: Option<String>,
+    pub session_kind: Option<SessionKind>,
     pub timeout: f64,
     pub execute: bool,
 }
@@ -70,10 +73,17 @@ impl Plan {
         let workspace = crate::session_support::absolute(&request.workspace)?;
         let root = workspace.to_str().ok_or(Error("invalid_workspace_path"))?;
         require(absolute(root), "invalid_workspace_path")?;
-        require(
-            request.runtime == "djinn",
-            "unsupported_interactive_runtime",
-        )?;
+        // Closed, source-characterized policy, not installed CLI certification.
+        let (flag, joined) = match request.runtime.as_str() {
+            "djinn" | "kimi" | "pi" | "opencode" | "kilo" => ("--session", false),
+            "claude" | "devin" | "droid" | "hermes" | "qodercli" | "cursor" | "grok" => {
+                ("--resume", false)
+            }
+            "codex" => ("resume", false),
+            "copilot" | "omp" => ("--resume=", true),
+            "mastracode" => ("--thread", false),
+            _ => return Err(Error("unsupported_interactive_runtime")),
+        };
         require(absolute(&request.executable), "invalid_executable_path")?;
         require(absolute(&request.socket), "invalid_socket_path")?;
         for value in [&request.pane, &request.expected_terminal] {
@@ -85,10 +95,14 @@ impl Plan {
         let (operation, argv) = match request.operation {
             Operation::Start => {
                 require(
-                    request.session.is_none(),
+                    request.session.is_none() && request.session_kind.is_none(),
                     "start_session_selector_forbidden",
                 )?;
-                ("start", vec![request.executable.clone(), "--ui".into()])
+                let mut argv = vec![request.executable.clone()];
+                if request.runtime == "djinn" {
+                    argv.push("--ui".into());
+                }
+                ("start", argv)
             }
             Operation::Resume => {
                 let selector = request
@@ -96,22 +110,37 @@ impl Plan {
                     .as_deref()
                     .ok_or(Error("missing_session_selector"))?;
                 require(
-                    text(selector) && !selector.starts_with('-'),
+                    text(selector)
+                        && !selector.trim_start().starts_with('-')
+                        && selector.len()
+                            <= if request.session_kind == Some(SessionKind::Path) {
+                                4096
+                            } else {
+                                512
+                            },
                     "invalid_session_selector",
                 )?;
-                (
-                    "resume",
-                    vec![
-                        request.executable.clone(),
-                        "--session".into(),
-                        selector.into(),
-                    ],
-                )
+                if request.session_kind == Some(SessionKind::Path) {
+                    require(
+                        matches!(request.runtime.as_str(), "pi" | "omp"),
+                        "unsupported_interactive_session_kind",
+                    )?;
+                    require(selector.starts_with('/'), "invalid_session_selector")?;
+                }
+                let mut argv = vec![request.executable.clone()];
+                if joined {
+                    argv.push(format!("{flag}{selector}"));
+                } else {
+                    argv.extend([flag.into(), selector.into()]);
+                }
+                ("resume", argv)
             }
         };
         Ok(Self {
             report: json!({"schema_version":1,"contract":"coven.interactive-session.v1",
-                "workspace":root,"operation":operation,"runtime":"djinn",
+                "workspace":root,"operation":operation,"runtime":request.runtime,
+                "session_kind": if request.operation == Operation::Resume { Some(match request.session_kind.unwrap_or(SessionKind::Id) { SessionKind::Id => "id", SessionKind::Path => "path" }) } else { None },
+                "native_cli_compatibility":"unverified","argv_evidence":"characterized_legacy_policy",
                 "executable":request.executable,"socket":request.socket,"pane_id":request.pane,
                 "expected_terminal_id":request.expected_terminal,"session_selector":request.session,
                 "argv":argv,"outcome":"preview","delivery":"not_attempted","authorization":"none",
@@ -123,12 +152,30 @@ impl Plan {
     }
 }
 
+/// Validate without target metadata checks or socket contact; no execution authority.
+pub(crate) fn preview(request: &Request) -> Result<Value> {
+    Ok(Plan::new(request)?.report)
+}
+
+/// Revalidate under caller-owned admission/cancellation. The callback runs once,
+/// after preflight and immediately before possible delivery, never for previews.
+/// Callback failure prevents delivery; callback success is not a queue receipt.
+pub(crate) fn execute_with_guard(
+    request: &Request,
+    gate: &TransportGuard,
+    cancel: &impl Cancel,
+    before_send: &mut dyn FnMut() -> Result<()>,
+) -> Result<Value> {
+    execute(&Plan::new(request)?, gate, cancel, before_send)
+}
+
 pub fn arguments(request: &Request, json_output: bool) -> Result<TaskOutput> {
-    let plan = Plan::new(request)?;
+    let validated = preview(request)?;
     let report = if request.execute {
-        let gate = crate::session_support::admit(&plan.workspace)?;
+        let gate =
+            crate::session_support::admit(&crate::session_support::absolute(&request.workspace)?)?;
         let interrupt = wire::InterruptGuard::install()?;
-        let mut report = execute(&plan, &gate, &interrupt)?;
+        let mut report = execute_with_guard(request, &gate, &interrupt, &mut || Ok(()))?;
         // A late interrupt must not erase an already recorded queue acknowledgement.
         if interrupt.interrupted() {
             report["interrupted"] = json!(true);
@@ -138,7 +185,7 @@ pub fn arguments(request: &Request, json_output: bool) -> Result<TaskOutput> {
         }
         report
     } else {
-        plan.report
+        validated
     };
     render(&report, json_output)
 }
@@ -160,9 +207,14 @@ fn render(report: &Value, json_output: bool) -> Result<TaskOutput> {
             .collect::<Result<Vec<_>>>()?
             .join(" ");
         let mut stdout = format!(
-            "{}: {} Djinn UI in {}\nCommand: {}\n{}",
+            "{}: {} {} UI in {}\nCommand: {}\n{}",
             report["outcome"].as_str().unwrap_or_default(),
             report["operation"].as_str().unwrap_or_default(),
+            if report["runtime"] == "djinn" {
+                "Djinn"
+            } else {
+                report["runtime"].as_str().unwrap_or_default()
+            },
             report["pane_id"].as_str().unwrap_or_default(),
             command,
             if report["outcome"] == "preview" {
@@ -258,13 +310,19 @@ fn selected_mapping(plan: &Plan, reply: &Reply) -> WireResult<Value> {
     Ok(pane.clone())
 }
 
-fn execute(plan: &Plan, gate: &TransportGuard, cancel: &dyn Cancel) -> Result<Value> {
+fn execute(
+    plan: &Plan,
+    gate: &TransportGuard,
+    cancel: &dyn Cancel,
+    before_send: &mut dyn FnMut() -> Result<()>,
+) -> Result<Value> {
     crate::session_support::validate_admission(&plan.workspace, gate)?;
     let mut report = plan.report.clone();
     report["authorization"] = json!("interactive_terminal_submission_only");
     report["outcome"] = json!("unavailable");
     report["delivery"] = json!("unsent");
     let deadline = Instant::now() + Duration::from_secs_f64(plan.timeout);
+    let mut callback_failed = false;
     let outcome = (|| {
         wire::check(deadline, cancel)?;
         let path = plan.report["executable"].as_str().unwrap();
@@ -279,7 +337,12 @@ fn execute(plan: &Plan, gate: &TransportGuard, cancel: &dyn Cancel) -> Result<Va
         if executable(path)? != original {
             return Err(Failure::new("executable_changed"));
         }
-        submit(plan, &endpoint, deadline, &mut budget, cancel)
+        submit(plan, &endpoint, deadline, &mut budget, cancel, &mut || {
+            before_send().map_err(|_| {
+                callback_failed = true;
+                Error("before_send_failed")
+            })
+        })
     })();
     match outcome {
         Ok(()) => {
@@ -293,7 +356,11 @@ fn execute(plan: &Plan, gate: &TransportGuard, cancel: &dyn Cancel) -> Result<Va
                 Delivery::Uncertain => ("uncertain", "uncertain"),
             };
             report["outcome"] = json!(outcome);
-            report["delivery"] = json!(delivery);
+            report["delivery"] = json!(if callback_failed {
+                "not_attempted"
+            } else {
+                delivery
+            });
             report["diagnostics"] = json!([failure.code]);
             if failure.interrupted {
                 report["interrupted"] = json!(true);
@@ -312,6 +379,7 @@ fn submit(
     deadline: Instant,
     budget: &mut ReadBudget,
     cancel: &dyn Cancel,
+    before_send: &mut dyn FnMut() -> Result<()>,
 ) -> WireResult<()> {
     let mut possible_send = false;
     let outcome = (|| {
@@ -328,6 +396,8 @@ fn submit(
         frame.push(b'\n');
         let socket = Socket::connect(endpoint, deadline, cancel)?;
         fence(endpoint)?;
+        wire::check(deadline, cancel)?;
+        before_send().map_err(|_| Failure::new("before_send_failed"))?;
         wire::check(deadline, cancel)?;
         // The first send can partially deliver even when it returns an error.
         possible_send = true;

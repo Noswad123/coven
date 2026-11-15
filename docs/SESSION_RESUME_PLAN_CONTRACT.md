@@ -61,10 +61,12 @@ The table is a historical source-policy contract, not verification that an
 installed provider version accepts these arguments or that a session exists.
 Default binary tokens remain unresolved. Explicit absolute overrides are unchecked.
 
-The existing execution-capable **`session resume` remains Djinn-only**, with its
-separate `--session VALUE` UI contract. This new historical planner's Djinn `-s`
-mapping is intentionally not substituted into that command. Neither command
-accepts saved planner reports as execution inputs.
+The separate execution-capable [interactive `session resume`](INTERACTIVE_SESSION_CONTRACT.md)
+now supports 16 paired source-characterized adapters with explicit `--execute`.
+Its Djinn `--session VALUE` UI argv is preserved: this unchanged historical
+planner's Djinn `-s` mapping is intentionally not substituted into that command.
+Neither command accepts saved planner reports as execution inputs. Installed
+CLI/version compatibility remains unverified; queued input is not native resume.
 
 ## Validation and outcomes
 
