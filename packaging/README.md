@@ -14,7 +14,7 @@ the local formula remains a candidate. No merge, source push or promotion is aut
 Build explicitly in the canonical checkout (requires cached locked dependencies):
 
 ```sh
-cd /home/jdawson/Projects/coven-rust-migration
+cd /home/jdawson/Projects/coven
 cargo build --offline --locked --release --bin coven
 bin/coven --help
 COVEN_NATIVE_BIN=/abs/prebuilt/coven /abs/checkout/bin/coven --help
@@ -25,6 +25,47 @@ when set, otherwise only the normal checkout's `target/release/coven`. Missing
 selection fails with explicit build guidance; no Cargo, Python, debug-binary or
 PATH fallback exists. Symlinked/relocated launchers require explicit absolute
 native selection. Help is titled `Manage multi-agent coven workspaces`.
+
+### Install the Development Checkout
+
+Run `just install` with **no arguments** to build this checkout's locked release
+binary and atomically upgrade the development selection at
+`~/.local/libexec/arcana-dev/coven`. Override the full application prefix with
+`INSTALL_PREFIX=/absolute/application/prefix just install`; its trusted user-owned
+parent must already exist. Paths must be absolute without `..`, and ancestors must
+be stable and not symlinks. The default parent is created if needed; a missing
+`HOME` requires an explicit prefix.
+
+The checkout-only `scripts/install_dev.py` uses Python at build time, not at native
+runtime. It consumes Cargo's reported executable, honoring target configuration
+and `CARGO_TARGET_DIR`, rather than guessing `target/release/coven`. It does not
+download toolchains; locked dependencies may resolve through Cargo's shared cache
+and normal network access.
+
+Each install creates a unique sibling `coven-native-*` containing only the native
+`bin/coven` and complete `share/coven/examples`, then atomically replaces a selected
+symlink. Recognized native-prefix links (including older non-sibling targets) can
+be upgraded. Existing real directories, broken links and unrelated entries are
+refused without migration or deletion: use another `INSTALL_PREFIX` or arrange a
+manual handoff. Previous generations remain byte-for-byte unchanged indefinitely,
+without pruning, preserving Kit's canonical executable pins and matching assets.
+Failures clean only newly owned unpublished files; interrupted build children are
+stopped before cleanup. Published generations intentionally persist.
+
+Final revalidation and publication are serialized for cooperating installers by
+`flock` on a persistent `.<prefix-name>.install.lock` in the trusted parent.
+The lock must be a user-owned regular file, not a symlink, and is retained even
+after failure to avoid splitting lockers across inodes. Stale snapshots fail.
+Fresh selection uses no-clobber symlink creation, so a racing unrelated entry
+is never overwritten. Recognized symlink updates still rely on a trusted stable
+directory without noncooperating mutations during atomic rename; this is not a
+hostile compare-and-swap guarantee. Do not remove the lock while installers may run.
+
+The public `~/.local/bin/coven`, checkout launcher, Arcana registry/selection,
+configuration and running processes are not changed. Success prints both selection
+and actual payload. `just test-dev-install` runs focused fake-Cargo tests. This dev
+upgrade mechanism is separate from the strict staged installer below and does not
+promote an external release.
 
 ### Install a Prebuilt Binary
 

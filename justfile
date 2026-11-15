@@ -26,6 +26,13 @@ test: test-rust test-python
 
 check: fmt lint test
 
+# Build this checkout and atomically select a fresh immutable dev payload.
+install:
+    PYTHONDONTWRITEBYTECODE=1 python3 scripts/install_dev.py
+
+test-dev-install:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_dev_install.py -q
+
 # Staged path only: never changes bin/coven or installs over an existing prefix.
 install-native binary prefix:
     sh scripts/install-native.sh --binary {{quote(binary)}} --prefix {{quote(prefix)}}

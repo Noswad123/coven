@@ -25,6 +25,10 @@ production Coven-owned Linux and provisional source-enabled macOS all-22-family 
 native lifecycle/scheduling, automatic following, complete extraction, and workspace
 annotations remain open**.
 Keep three independently useful apps, not one tightly coupled agent stack.
+The [remaining feature-adoption decisions](KITSUNE_RETIREMENT_FEATURE_DECISIONS.md)
+list only unimplemented residual outcomes to adopt, drop or decide later as
+Kitsune's legacy agent features retire; already-shipped Coven capabilities are
+excluded from that backlog.
 The confirmed scope includes all agent management, including hooks and agent-aware
 restore, not only discovery/status/start/resume. The first targeted retirement is
 Kitsune's new Claude hook installer on Linux only, followed by Codex, Copilot, Pi and OpenCode on Linux. The ultimate target covers all

@@ -779,6 +779,50 @@ and the linked Session contracts above. Independent fixtures cover **11 reader,
 15 prompt and one multi-scenario start/resume integration tests**, plus **nine new
 parser unit tests**; these are layers within, not additions to, the full totals.
 
+### Development installation
+
+From this checkout, the normal command takes no arguments:
+
+```sh
+just install
+```
+
+It builds the current checkout with `cargo build --locked --release --bin coven`,
+using Cargo's reported executable (including custom target directories/targets),
+then atomically selects a fresh native payload at
+`~/.local/libexec/arcana-dev/coven`. Python is needed only by this checkout's
+build-time helper, never by the installed native runtime. No toolchain is downloaded;
+normal locked dependency resolution may use the shared Cargo cache/network.
+
+To select another **full application prefix**, with an existing trusted user-owned
+parent directory:
+
+```sh
+INSTALL_PREFIX=/absolute/application/prefix just install
+```
+
+Only `bin/coven` and the complete `share/coven/examples` are installed into a unique
+sibling `coven-native-*` generation. The selected prefix is a symlink, replaced
+atomically so the canonical executable and its assets stay paired. Prior generations
+are retained unchanged, without pruning, because Kit may pin canonical executable
+identities. Existing recognized native-prefix symlinks can be upgraded, including
+older targets outside the sibling directory. Real directories, broken links and
+unmanaged entries are refused: use another `INSTALL_PREFIX` or arrange a manual
+directory handoff. Failed unpublished generations are cleaned up.
+
+This does not change `~/.local/bin/coven`, the checkout launcher, Arcana selection
+or registry, user configuration, or running processes. The helper prints the selected
+prefix and actual new payload. Explicit paths must be absolute without `..`;
+installation ancestors must be trusted and stable, not symlinks.
+
+Cooperating installers lock final validation/publication using a persistent
+user-owned regular `.<prefix-name>.install.lock` beside the prefix. A stale
+selection snapshot fails rather than overwriting another install. Fresh selection
+uses no-clobber symlink creation. Updates to recognized symlinks use atomic rename
+and assume no noncooperating mutations of the trusted directory during publication;
+this is not hostile compare-and-swap protection. The lock is install metadata,
+not part of the native payload, and must not be removed while installers may run.
+
 ### Native-only staged installation (not cutover)
 
 This stages the native payload; it does not promote an external release or upgrade
@@ -807,7 +851,7 @@ is implied. See [pending retirement gates](RUST_RETIREMENT.md).
 Build explicitly in this canonical checkout (offline requires cached locked dependencies):
 
 ```sh
-cd /home/jdawson/Projects/coven-rust-migration
+cd /home/jdawson/Projects/coven
 cargo build --offline --locked --release --bin coven
 bin/coven --help
 COVEN_NATIVE_BIN=/abs/prebuilt/coven /abs/checkout/bin/coven --help
