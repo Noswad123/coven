@@ -4,6 +4,11 @@
 
 ### Normal native-agent invocation (opt-in)
 
+Codex/Copilot also have separate, unordered
+[native hook facts](docs/NATIVE_HOOK_FACTS_CONTRACT.md) via `agent report-fact`
+and inert `agent native-hooks plan` snippets. Activity state stays unknown;
+configuration is a manual handoff, not managed native-hook installation.
+
 The [normal workflow](docs/NORMAL_AGENT_WORKFLOW.md) keeps ordinary `djinn`,
 `codex`, `copilot`, etc. invocation unchanged. Enable Coven in a compatible
 Kitsune build's TOML configuration:
@@ -28,9 +33,13 @@ Coven supplies attributed plain rows, not legacy widgets or implicit row-click
 focus. External mode suppresses legacy status/detectors and automatic resume even on helper
 failure; helpers never auto-restart. Reference-only providers remain unknown;
 Claude/Djinn and independent Pi/OpenCode native-profile facts expire within 30
-seconds independently of the five-second view lease. No automatic binding or native
-attestation follows; checked CLI focus uses temporary user assertions, not proven
-hosting. Disable is guarded and requires a restart handoff; helper crash recovery
+seconds independently of the five-second view lease. Source-qualified local Djinn
+[selected-root attachment](docs/NATIVE_ATTACHMENT_CONTRACT.md) now supports checked
+CLI focus through a separate five-second producer lease, renewed by mounted-view
+observations every second. Existing 30-second user assertions remain available.
+No PID inference, authentication or provider execution ownership follows. Quiet
+attachment stays UNKNOWN with null activity age; heartbeats never refresh activity.
+Disable is guarded and requires a restart handoff; helper crash recovery
 is manual. Complete migration and native macOS
 qualification remain open; setup is not proof of real provider event delivery.
 
@@ -40,10 +49,16 @@ delivered commands and limits separately from the
 Attention lists/occurrence acknowledgements and checked CLI focus are available;
 generic row clicks remain read-only. Explicit selected-session recovery adds
 durable before-send intent and conservative duplicate/reference vetoes, not
-autostart, saved consent or global exactly-once. A2 producer-backed hosting and
-A3 residual native coverage remain partial. New opt-in `agent native-extensions`
-Pi/OpenCode assets are separate from unchanged reference assets; Codex/Copilot
-remain reference-only. Doctor's closed-v1 capabilities are unchanged.
+autostart, saved consent or global exactly-once. A2 is delivered for normal local
+Djinn full TUI/default worker/implicit-local selected roots, not other clients or
+remote hosting. A3 adds unordered Codex/Copilot facts, never current-state or paired
+decision inference. Opt-in `agent native-extensions` Pi/OpenCode assets and native
+hook facts are separate from unchanged reference assets/journals. Doctor's closed-v1
+capabilities are unchanged. These are source changes, not installed activation:
+all three apps need rebuilds and an explicit server restart/new-pane/provider
+handoff when ready; no provider configuration is auto-edited. See the status record
+for the full native Coven green suite and seven-scenario source interop proof,
+including its non-rendered-TUI/non-separate-worker-handshake limits.
 
 `coven` is a personal, magic-themed multi-agent workspace command for creating,
 tracking, and running local multi-agent workspaces.

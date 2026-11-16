@@ -16,12 +16,85 @@ use std::{
 pub const RPC: &str = "coven.native-events.v1";
 pub const PROVIDER_RPC: &str = "coven.provider-events.v1";
 pub const CONTROL_RPC: &str = "coven.observation-control.v1";
+pub const ATTACHMENT_RPC: &str = "coven.client-attachments.v1";
 pub const ATTENTION_VIEW: &str = "coven.attention.v1";
 pub const VIEW: &str = "coven.normal-observations.v1";
 const ENVELOPE: &str = "djinn.native-events.v1";
 const EVIDENCE_TTL: Duration = Duration::from_secs(30);
 const RETENTION_TTL: Duration = Duration::from_secs(600);
 const MAX_RETAINED: usize = 512;
+const ATTACHMENT_TTL: Duration = Duration::from_secs(5);
+
+pub(crate) fn uuid(s: &str) -> bool {
+    s.len() == 36
+        && s.bytes().enumerate().all(|(i, b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                b == b'-'
+            } else {
+                b.is_ascii_digit() || (b'a'..=b'f').contains(&b)
+            }
+        })
+}
+
+pub fn attachment_params(value: &Value, envelope: bool) -> Result<Value> {
+    let object = value.as_object().ok_or(Error("agent_invalid_schema"))?;
+    if envelope {
+        require(
+            value["contract"] == "djinn.client-attachment.v1",
+            "agent_contract_mismatch",
+        )?;
+    }
+    require(
+        hex(text(value, "expected_epoch")?, 32) && uuid(text(value, "client_id")?),
+        "agent_invalid_schema",
+    )?;
+    require(
+        value["revision"]
+            .as_u64()
+            .is_some_and(|n| (1..=9_007_199_254_740_991).contains(&n)),
+        "agent_invalid_schema",
+    )?;
+    let attach = match text(value, "operation")? {
+        "attach" => true,
+        "detach" => false,
+        _ => return Err(Error("agent_invalid_schema")),
+    };
+    let mut p = json!({"expected_epoch":value["expected_epoch"],"client_id":value["client_id"],"revision":value["revision"],"operation":value["operation"]});
+    if attach {
+        require(
+            uuid(text(value, "instance_id")?) && value["scope"] == "local_full_tui_root",
+            "agent_invalid_schema",
+        )?;
+        identifier(text(value, "session_id")?)?;
+        crate::agent_navigation::validate_target(&value["target"])?;
+        require(
+            uuid(text(&value["target"], "runtime_generation")?),
+            "agent_invalid_schema",
+        )?;
+        for k in ["instance_id", "session_id", "scope", "target"] {
+            p[k] = value[k].clone();
+        }
+    }
+    require(
+        object.len() == 4 + usize::from(envelope) + if attach { 4 } else { 0 }
+            && object
+                .keys()
+                .all(|k| k == "contract" && envelope || p.get(k).is_some()),
+        "agent_invalid_schema",
+    )?;
+    Ok(p)
+}
+
+struct ClientLease {
+    revision: u64,
+    seen: Instant,
+    selection: Option<Selection>,
+}
+struct Selection {
+    key: (String, String),
+    target: Value,
+    incarnation: u64,
+}
 
 fn identifier(value: &str) -> Result<&str> {
     require(
@@ -160,6 +233,7 @@ struct Observation {
     pending: BTreeMap<(String, String), Pending>,
     ended: Option<Instant>,
     first_seen: Instant,
+    attachment_only: bool,
 }
 
 struct Pending {
@@ -222,6 +296,9 @@ impl Observation {
 
 #[derive(Default)]
 pub(super) struct NativeStore {
+    pub(super) facts: super::facts::FactsStore,
+    clients: BTreeMap<String, ClientLease>,
+    attachment_incarnation: u64,
     navigation_generation: u64,
     sequences: BTreeMap<String, (u64, Instant)>,
     tombstones: BTreeMap<(String, String), Instant>,
@@ -231,6 +308,200 @@ pub(super) struct NativeStore {
 }
 
 impl NativeStore {
+    fn revoke_selections(&mut self, key: &(String, String)) {
+        for c in self.clients.values_mut() {
+            if c.selection.as_ref().is_some_and(|s| &s.key == key) {
+                c.selection = None;
+            }
+        }
+    }
+
+    fn remove_observation(&mut self, key: &(String, String)) {
+        self.revoke_selections(key);
+        if self.observations.remove(key).is_some() {
+            self.retired = self.retired.saturating_add(1);
+        }
+    }
+
+    fn reclaim_inactive(&mut self, now: Instant) -> bool {
+        let retired = self
+            .observations
+            .iter()
+            .filter(|(_, o)| !o.active(now))
+            // Conflicting live targets are still leased, even without a focusable association.
+            .filter(|(key, _)| {
+                !self.clients.values().any(|c| {
+                    now.saturating_duration_since(c.seen) < ATTACHMENT_TTL
+                        && c.selection.as_ref().is_some_and(|s| &s.key == *key)
+                })
+            })
+            .min_by_key(|(_, o)| o.first_seen)
+            .map(|(key, _)| key.clone());
+        let Some(retired) = retired else { return false };
+        self.remove_observation(&retired);
+        true
+    }
+
+    fn rotate_selection(&mut self, key: &(String, String)) {
+        self.attachment_incarnation = self.attachment_incarnation.saturating_add(1);
+        for c in self.clients.values_mut() {
+            if let Some(s) = c.selection.as_mut().filter(|s| &s.key == key) {
+                s.incarnation = self.attachment_incarnation;
+            }
+        }
+    }
+    pub(super) fn producer_association(&self, id: &str, now: Instant) -> Option<(String, Value)> {
+        let (key, _) = self
+            .observations
+            .iter()
+            .find(|(_, o)| o.id == id && o.ended.is_none())?;
+        let mut selected = self
+            .clients
+            .iter()
+            .filter(|(_, c)| now.saturating_duration_since(c.seen) < ATTACHMENT_TTL)
+            .filter_map(|(client, c)| {
+                c.selection
+                    .as_ref()
+                    .filter(|s| &s.key == key)
+                    .map(|s| (client, s))
+            });
+        let (client, first) = selected.next()?;
+        let mut hash = Sha256::new();
+        hash.update(b"coven.producer-association.v1\0");
+        hash.update(client.as_bytes());
+        hash.update(first.incarnation.to_be_bytes());
+        for (client, s) in selected {
+            if s.target != first.target {
+                return None;
+            }
+            hash.update(client.as_bytes());
+            hash.update(s.incarnation.to_be_bytes());
+        }
+        Some((
+            format!("{:x}", hash.finalize())[..32].to_owned(),
+            first.target.clone(),
+        ))
+    }
+
+    pub(super) fn report_attachment(
+        &mut self,
+        value: &Value,
+        epoch: &str,
+        now: Instant,
+    ) -> Result<Value> {
+        let p = attachment_params(value, false)?;
+        require(p["expected_epoch"] == epoch, "agent_stale_epoch")?;
+        self.retire(now);
+        let client = text(&p, "client_id")?.to_owned();
+        let revision = p["revision"].as_u64().unwrap();
+        require(
+            self.clients
+                .get(&client)
+                .is_none_or(|c| revision > c.revision),
+            "agent_stale_revision",
+        )?;
+        require(
+            self.clients.contains_key(&client) || self.clients.len() < MAX_RETAINED,
+            "agent_capacity",
+        )?;
+        // Consume every admitted higher revision before qualification. A rejected new
+        // selection must not leave an older selection focusable or replayable.
+        let old = self.clients.remove(&client).and_then(|c| c.selection);
+        let unchanged = old.as_ref().is_some_and(|s| {
+            p["operation"] == "attach"
+                && p["instance_id"] == s.key.0
+                && p["session_id"] == s.key.1
+                && p["target"] == s.target
+        });
+        if let Some(s) = old.as_ref().filter(|_| !unchanged) {
+            self.rotate_selection(&s.key);
+        }
+        self.clients.insert(
+            client.clone(),
+            ClientLease {
+                revision,
+                seen: now,
+                selection: None,
+            },
+        );
+        if p["operation"] == "attach" {
+            require(
+                self.clients
+                    .values()
+                    .filter(|c| c.selection.is_some())
+                    .count()
+                    < 128,
+                "agent_capacity",
+            )?;
+            let key = (
+                text(&p, "instance_id")?.to_owned(),
+                text(&p, "session_id")?.to_owned(),
+            );
+            require(
+                !self.tombstones.contains_key(&key)
+                    && self
+                        .observations
+                        .get(&key)
+                        .is_none_or(|o| o.ended.is_none()),
+                "agent_session_ended",
+            )?;
+            if !self.observations.contains_key(&key) {
+                require(
+                    self.observations.len() < MAX_RECORDS || self.reclaim_inactive(now),
+                    "agent_capacity",
+                )?;
+                self.observations.insert(
+                    key.clone(),
+                    Observation {
+                        id: format!(
+                            "{:x}",
+                            Sha256::digest(
+                                [
+                                    b"native\0".as_slice(),
+                                    key.0.as_bytes(),
+                                    b"\0",
+                                    key.1.as_bytes()
+                                ]
+                                .concat()
+                            )
+                        ),
+                        provider: "djinn".into(),
+                        profile: None,
+                        status: None,
+                        pending: BTreeMap::new(),
+                        ended: None,
+                        first_seen: now,
+                        attachment_only: true,
+                    },
+                );
+            }
+            let incarnation =
+                if let Some(old) = old.filter(|s| s.key == key && s.target == p["target"]) {
+                    old.incarnation
+                } else {
+                    self.attachment_incarnation = self
+                        .attachment_incarnation
+                        .checked_add(1)
+                        .ok_or(Error("agent_capacity"))?;
+                    self.attachment_incarnation
+                };
+            self.clients.get_mut(&client).unwrap().selection = Some(Selection {
+                key,
+                target: p["target"].clone(),
+                incarnation,
+            });
+            if !unchanged {
+                let key = self.clients[&client]
+                    .selection
+                    .as_ref()
+                    .unwrap()
+                    .key
+                    .clone();
+                self.rotate_selection(&key);
+            }
+        }
+        Ok(json!({"type":"accepted","delivery":"volatile"}))
+    }
     pub(super) fn navigation_fact(&self, id: &str, now: Instant) -> Option<u64> {
         self.observations
             .values()
@@ -320,6 +591,15 @@ impl NativeStore {
     }
 
     fn invalidate(&mut self, instance: &str) {
+        for client in self.clients.values_mut() {
+            if client
+                .selection
+                .as_ref()
+                .is_some_and(|s| s.key.0 == instance)
+            {
+                client.selection = None;
+            }
+        }
         self.navigation_generation = self.navigation_generation.saturating_add(1);
         for ((owner, _), observation) in &mut self.observations {
             if owner == instance {
@@ -336,12 +616,27 @@ impl NativeStore {
             .get(key)
             .is_some_and(|o| o.ended.is_some())
         {
-            self.observations.remove(key);
-            self.retired = self.retired.saturating_add(1);
+            self.remove_observation(key);
         }
     }
 
     fn retire(&mut self, now: Instant) {
+        let expired_keys: Vec<_> = self
+            .clients
+            .values()
+            .filter(|c| now.saturating_duration_since(c.seen) >= ATTACHMENT_TTL)
+            .filter_map(|c| c.selection.as_ref().map(|s| s.key.clone()))
+            .collect();
+        self.clients
+            .retain(|_, c| now.saturating_duration_since(c.seen) < RETENTION_TTL);
+        for c in self.clients.values_mut() {
+            if now.saturating_duration_since(c.seen) >= ATTACHMENT_TTL {
+                c.selection = None;
+            }
+        }
+        for key in expired_keys {
+            self.rotate_selection(&key);
+        }
         let expired: Vec<_> = self
             .tombstones
             .iter()
@@ -417,6 +712,10 @@ impl NativeStore {
         // the event. Neither rejection renews an evidence or tombstone clock.
         self.sequences.insert(instance.to_owned(), (sequence, now));
         let event = text(&p, "event")?;
+        if event == "session.deleted" {
+            // End is irreversible for every current lease, even after bounded tombstones leave history.
+            self.revoke_selections(&key);
+        }
         if self.tombstones.contains_key(&key) {
             require(event == "session.deleted", "agent_session_ended")?;
             return Ok(json!({"type":"accepted","delivery":"volatile"}));
@@ -434,24 +733,17 @@ impl NativeStore {
             }
             self.tombstones.insert(key.clone(), now);
         }
-        if !self.observations.contains_key(&key) && self.observations.len() == MAX_RECORDS {
-            let retired = self
-                .observations
-                .iter()
-                .filter(|(_, o)| !o.active(now))
-                .min_by_key(|(_, o)| o.first_seen)
-                .map(|(key, _)| key.clone());
-            if let Some(retired) = retired {
-                self.observations.remove(&retired);
-                self.retired = self.retired.saturating_add(1);
-            } else if event == "session.deleted" {
-                // The terminal safety fact is retained even if all display slots
-                // contain live activity. There is no extra hidden active slot.
-                self.retired = self.retired.saturating_add(1);
-                return Ok(json!({"type":"accepted","delivery":"volatile"}));
-            } else {
+        if !self.observations.contains_key(&key)
+            && self.observations.len() == MAX_RECORDS
+            && !self.reclaim_inactive(now)
+        {
+            if event != "session.deleted" {
                 return Err(Error("agent_capacity"));
             }
+            // The terminal safety fact is retained even if all display slots
+            // contain live activity. There is no extra hidden active slot.
+            self.retired = self.retired.saturating_add(1);
+            return Ok(json!({"type":"accepted","delivery":"volatile"}));
         }
         let kind = event.split('.').next().unwrap();
         let request = p
@@ -484,7 +776,9 @@ impl NativeStore {
                 pending: BTreeMap::new(),
                 ended: None,
                 first_seen: now,
+                attachment_only: false,
             });
+        observation.attachment_only = false;
         match event {
             "session.deleted" => {
                 observation.ended = Some(now);
@@ -563,7 +857,11 @@ impl NativeStore {
                 if observation.profile.is_some() {
                     "provider_native_event"
                 } else {
-                    "djinn_native_event"
+                    if observation.attachment_only {
+                        "djinn_client_attachment"
+                    } else {
+                        "djinn_native_event"
+                    }
                 },
                 "activity",
                 fact.map_or("unknown", |(state, _)| state),
@@ -585,8 +883,17 @@ impl NativeStore {
             for (key, value) in attention.as_object().unwrap() {
                 native[key] = value.clone();
             }
+            let association = self.producer_association(&observation.id, now);
+            native["hosting_state"] = json!(if association.is_some() {
+                "local_full_tui_root"
+            } else {
+                "none"
+            });
+            native["association_revision"] =
+                association.map(|(r, _)| json!(r)).unwrap_or(Value::Null);
             observations.push(native);
         }
+        observations.extend(self.facts.rows(now));
         observations.sort_by_key(|o| {
             (
                 if o["unacknowledged_pending_count"].as_u64().unwrap_or(0) > 0 {
@@ -697,13 +1004,15 @@ fn validate_attention(row: &Value) -> Result<()> {
 fn valid_provenance(provider: &str, origin: &str, profile: Option<&str>) -> bool {
     matches!(
         (provider, origin, profile),
-        ("djinn", "djinn_native_event", None)
-            | (
-                "opencode",
-                "provider_native_event",
-                Some("opencode-root.v1")
-            )
-            | ("pi", "provider_native_event", Some("pi-context.v1"))
+        (
+            "djinn",
+            "djinn_native_event" | "djinn_client_attachment",
+            None
+        ) | (
+            "opencode",
+            "provider_native_event",
+            Some("opencode-root.v1")
+        ) | ("pi", "provider_native_event", Some("pi-context.v1"))
             | (
                 "claude" | "codex" | "copilot" | "pi" | "opencode",
                 "v1_receipt",
@@ -713,6 +1022,9 @@ fn valid_provenance(provider: &str, origin: &str, profile: Option<&str>) -> bool
 }
 
 fn validate_observation(row: &Value) -> Result<()> {
+    if row["origin"] == "provider_native_fact" {
+        return super::facts::validate_row(row);
+    }
     let provider = text(row, "provider")?;
     let origin = text(row, "origin")?;
     let profile = row
@@ -723,7 +1035,7 @@ fn validate_observation(row: &Value) -> Result<()> {
     require(
         valid_provenance(provider, origin, profile)
             && row.as_object().is_some_and(|o| {
-                o.len() == 13 + if native { 3 } else { 0 } + usize::from(profile.is_some())
+                o.len() == 13 + if native { 5 } else { 0 } + usize::from(profile.is_some())
                     && o.keys().all(|key| match key.as_str() {
                         "observation_id" | "provider" | "origin" | "capability"
                         | "reported_state" | "age_ms" | "freshness" | "reference_trust"
@@ -732,6 +1044,7 @@ fn validate_observation(row: &Value) -> Result<()> {
                         "fresh_pending_count"
                         | "unacknowledged_pending_count"
                         | "attention_revision" => native,
+                        "hosting_state" | "association_revision" => native,
                         "profile" => profile.is_some(),
                         _ => false,
                     })
@@ -742,7 +1055,9 @@ fn validate_observation(row: &Value) -> Result<()> {
             && row["binding"] == "none"
             && row["attribution"] == "Coven"
             && row["root_eligibility"]
-                == if origin == "djinn_native_event" || profile == Some("opencode-root.v1") {
+                == if matches!(origin, "djinn_native_event" | "djinn_client_attachment")
+                    || profile == Some("opencode-root.v1")
+                {
                     "producer_checked"
                 } else if profile == Some("pi-context.v1") {
                     "ui_rpc_context"
@@ -774,6 +1089,17 @@ fn validate_observation(row: &Value) -> Result<()> {
     )?;
     if native {
         validate_attention(row)?;
+        require(
+            matches!(text(row, "hosting_state")?, "none" | "local_full_tui_root")
+                && row.get("association_revision").is_some_and(|r| {
+                    if row["hosting_state"] == "none" {
+                        r.is_null()
+                    } else {
+                        r.as_str().is_some_and(|s| hex(s, 32))
+                    }
+                }),
+            "agent_invalid_schema",
+        )?;
     }
     Ok(())
 }
@@ -794,7 +1120,7 @@ fn row(
     json!({"observation_id":id,"provider":provider,"origin":origin,"capability":capability,
         "reported_state":if freshness == "fresh" && capability == "activity" {state} else {"unknown"},
         "age_ms":age,"freshness":freshness,"reference_trust":"caller_supplied_unverified",
-        "root_eligibility":if origin == "djinn_native_event" {"producer_checked"} else {"unestablished"},
+        "root_eligibility":if matches!(origin, "djinn_native_event" | "djinn_client_attachment") {"producer_checked"} else {"unestablished"},
         "native_identity":"unestablished","job_completion":"unestablished","binding":"none","attribution":"Coven"})
 }
 
@@ -803,6 +1129,450 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
     use std::time::Duration;
+
+    fn attach(client: u64, revision: u64) -> Value {
+        json!({"expected_epoch":"a".repeat(32),"client_id":format!("12345678-1234-1234-1234-{client:012x}"),
+            "revision":revision,"operation":"attach","instance_id":"12345678-1234-1234-1234-123456789abc",
+            "session_id":"PRIVATE-SID","scope":"local_full_tui_root","target":{"socket":"/not/contacted",
+            "device":1,"inode":2,"terminal_id":"private-term","runtime_generation":"12345678-1234-1234-1234-123456789abc"}})
+    }
+    fn detach(client: u64, revision: u64) -> Value {
+        json!({"expected_epoch":"a".repeat(32),"client_id":format!("12345678-1234-1234-1234-{client:012x}"),
+            "revision":revision,"operation":"detach"})
+    }
+    fn attachment(store: &mut NativeStore, p: Value, now: Instant) -> Result<Value> {
+        store.report_attachment(&p, &"a".repeat(32), now)
+    }
+
+    #[test]
+    fn attachment_deletion_revokes_all_matching_selections_but_retains_watermarks() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        let mut conflict = attach(2, 1);
+        conflict["target"]["terminal_id"] = json!("different");
+        attachment(&mut store, conflict, now).unwrap();
+        let mut other = attach(3, 1);
+        other["session_id"] = json!("other");
+        attachment(&mut store, other, now).unwrap();
+        store
+            .report(&event(1, "session.deleted"), now + Duration::from_micros(1))
+            .unwrap();
+        for client in 1..=3 {
+            let lease = &store.clients[text(&attach(client, 1), "client_id").unwrap()];
+            assert_eq!(lease.selection.is_some(), client == 3);
+            assert_eq!(lease.revision, 1);
+            assert_eq!(lease.seen, now);
+        }
+        assert_eq!(
+            attachment(&mut store, attach(1, 1), now + Duration::from_micros(2))
+                .unwrap_err()
+                .code(),
+            "agent_stale_revision"
+        );
+        assert_eq!(
+            attachment(&mut store, attach(1, 2), now + Duration::from_micros(3))
+                .unwrap_err()
+                .code(),
+            "agent_session_ended"
+        );
+        assert_eq!(
+            store.clients[text(&attach(1, 1), "client_id").unwrap()].revision,
+            2
+        );
+    }
+
+    #[test]
+    fn attachment_deletion_forgetting_ended_row_clears_selections_and_counts_retirement_once() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        for client in 1..=2 {
+            attachment(&mut store, attach(client, 1), now).unwrap();
+        }
+        let key = (
+            text(&attach(1, 1), "instance_id").unwrap().to_owned(),
+            "PRIVATE-SID".to_owned(),
+        );
+        // Exercise removal independently of report-time deletion revocation.
+        store.observations.get_mut(&key).unwrap().ended = Some(now);
+        store.tombstones.insert(key.clone(), now);
+        store.forget_tombstone(&key);
+        assert!(!store.observations.contains_key(&key));
+        assert!(!store.tombstones.contains_key(&key));
+        assert_eq!(store.retired, 1);
+        assert!(
+            store
+                .clients
+                .values()
+                .all(|c| c.selection.is_none() && c.revision == 1 && c.seen == now)
+        );
+        store.forget_tombstone(&key);
+        assert_eq!(store.retired, 1);
+    }
+
+    #[test]
+    fn attachment_schema_is_closed_for_both_operations_and_bounded_before_transport() {
+        for mut p in [attach(1, 1), detach(1, 1)] {
+            p["contract"] = json!("djinn.client-attachment.v1");
+            let valid = attachment_params(&p, true).unwrap();
+            assert!(valid.get("contract").is_none());
+            for k in [
+                "client_id",
+                "expected_epoch",
+                "revision",
+                "operation",
+                "contract",
+            ] {
+                let mut bad = p.clone();
+                bad.as_object_mut().unwrap().remove(k);
+                assert!(attachment_params(&bad, true).is_err());
+            }
+            for field in ["prompt", "sessionID", "scoop", "parent_id"] {
+                let mut bad = p.clone();
+                bad[field] = json!("PRIVATE");
+                assert!(attachment_params(&bad, true).is_err());
+            }
+            for revision in [
+                json!(0),
+                json!(-1),
+                json!(1.5),
+                json!(9_007_199_254_740_992u64),
+            ] {
+                let mut bad = p.clone();
+                bad["revision"] = revision;
+                assert!(attachment_params(&bad, true).is_err());
+            }
+        }
+        let mut p = detach(1, 2);
+        p["scope"] = json!("local_full_tui_root");
+        assert!(attachment_params(&p, false).is_err());
+        let mut p = attach(1, 1);
+        p["session_id"] = json!("x".repeat(513));
+        assert!(attachment_params(&p, false).is_err());
+        p = attach(1, 1);
+        p["target"]["runtime_generation"] = json!("generation");
+        assert!(attachment_params(&p, false).is_err());
+        assert!(super::super::attachment_report_payload(None, &vec![b' '; 8193], true).is_err());
+    }
+
+    #[test]
+    fn quiet_attachment_joins_exact_instance_without_native_clock_or_sequence_fabrication() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        let mut other = status(1, "busy");
+        other["instance_id"] = json!("12345678-1234-1234-1234-123456789abd");
+        store.report(&other, now).unwrap();
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        assert_eq!(store.sequences.len(), 1);
+        let normal = control(&mut store, "observations", json!({}), now).unwrap();
+        validate_control_result("observations", &normal).unwrap();
+        let quiet = normal["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["origin"] == "djinn_client_attachment")
+            .unwrap();
+        assert_eq!(quiet["reported_state"], "unknown");
+        assert_eq!(quiet["age_ms"], Value::Null);
+        assert_eq!(quiet["freshness"], "unknown");
+        assert_eq!(quiet["hosting_state"], "local_full_tui_root");
+        let id = quiet["observation_id"].as_str().unwrap().to_owned();
+        let binding = store.producer_association(&id, now).unwrap();
+        assert!(!normal.to_string().contains("PRIVATE"));
+        assert!(!normal.to_string().contains("private-term"));
+        for field in ["age_ms", "association_revision", "hosting_state"] {
+            let mut bad = normal.clone();
+            let row = bad["observations"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|r| r["observation_id"] == id)
+                .unwrap();
+            row.as_object_mut().unwrap().remove(field);
+            row["private"] = json!("SECRET");
+            assert!(validate_control_result("observations", &bad).is_err());
+        }
+        store.report(&status(1, "idle"), now).unwrap();
+        for (rev, secs) in [
+            (2, 4),
+            (3, 8),
+            (4, 12),
+            (5, 16),
+            (6, 20),
+            (7, 24),
+            (8, 28),
+            (9, 32),
+        ] {
+            attachment(&mut store, attach(1, rev), now + Duration::from_secs(secs)).unwrap();
+            assert_eq!(
+                store
+                    .producer_association(&id, now + Duration::from_secs(secs))
+                    .unwrap(),
+                binding
+            );
+        }
+        let normal = control(
+            &mut store,
+            "observations",
+            json!({}),
+            now + Duration::from_secs(32),
+        )
+        .unwrap();
+        let joined = normal["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["observation_id"] == id)
+            .unwrap();
+        assert_eq!(joined["origin"], "djinn_native_event");
+        assert_eq!(joined["reported_state"], "unknown");
+        assert_eq!(joined["age_ms"], 32000);
+        assert_eq!(store.sequences.len(), 2);
+        assert_eq!(normal["observations"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn attachment_selection_cas_ambiguity_expiry_and_watermarks_never_revive_old_binding() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        let id = view(&store, now)["observations"][0]["observation_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let first = store.producer_association(&id, now).unwrap().0;
+        attachment(&mut store, attach(2, 1), now).unwrap();
+        let shared = store.producer_association(&id, now).unwrap().0;
+        assert_ne!(shared, first);
+        attachment(&mut store, attach(2, 2), now).unwrap();
+        assert_eq!(store.producer_association(&id, now).unwrap().0, shared);
+        let mut different = attach(2, 3);
+        different["target"]["terminal_id"] = json!("B");
+        attachment(&mut store, different, now).unwrap();
+        assert!(store.producer_association(&id, now).is_none());
+        assert!(attachment(&mut store, detach(2, 2), now).is_err());
+        assert!(store.producer_association(&id, now).is_none());
+        attachment(&mut store, detach(2, 4), now).unwrap();
+        let after = store.producer_association(&id, now).unwrap().0;
+        assert_ne!(after, first);
+        assert_ne!(after, shared);
+        assert!(attachment(&mut store, attach(2, 3), now).is_err());
+        let expired = now + ATTACHMENT_TTL;
+        assert!(store.producer_association(&id, expired).is_none());
+        assert!(attachment(&mut store, attach(1, 1), expired).is_err());
+        assert!(store.producer_association(&id, expired).is_none());
+        attachment(&mut store, attach(1, 2), expired).unwrap();
+        assert_ne!(store.producer_association(&id, expired).unwrap().0, after);
+        let mut b = attach(1, 3);
+        b["session_id"] = json!("B");
+        attachment(&mut store, b, expired).unwrap();
+        assert!(store.producer_association(&id, expired).is_none());
+        attachment(&mut store, detach(1, 4), expired).unwrap();
+        assert!(store.clients.values().all(|c| c.selection.is_none()));
+    }
+
+    #[test]
+    fn attachment_gaps_end_epochs_retirement_and_capacity_fail_closed() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        store.report(&status(1, "busy"), now).unwrap();
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        let id = view(&store, now)["observations"][0]["observation_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let initial = store.producer_association(&id, now).unwrap().0;
+        store.report(&event(3, "session.updated"), now).unwrap();
+        assert!(store.producer_association(&id, now).is_none());
+        assert!(attachment(&mut store, attach(1, 1), now).is_err());
+        attachment(&mut store, attach(1, 2), now).unwrap();
+        assert_ne!(initial, store.producer_association(&id, now).unwrap().0);
+        store.report(&event(4, "session.deleted"), now).unwrap();
+        assert!(attachment(&mut store, attach(1, 3), now).is_err());
+        assert!(store.producer_association(&id, now).is_none());
+        attachment(&mut store, detach(1, 4), now).unwrap();
+        let mut stale = attach(1, 5);
+        stale["expected_epoch"] = json!("b".repeat(32));
+        assert!(attachment(&mut NativeStore::default(), stale, now).is_err());
+        let mut store = NativeStore::default();
+        for client in 1..=128 {
+            attachment(&mut store, attach(client, 1), now).unwrap();
+        }
+        assert!(attachment(&mut store, attach(129, 1), now).is_err());
+        attachment(&mut store, attach(1, 2), now).unwrap();
+        for client in 1..=128 {
+            attachment(&mut store, detach(client, 3), now).unwrap();
+        }
+        for client in 129..=512 {
+            attachment(&mut store, detach(client, 3), now).unwrap();
+        }
+        assert_eq!(store.clients.len(), 512);
+        assert!(attachment(&mut store, detach(513, 1), now).is_err());
+        attachment(&mut store, detach(513, 1), now + RETENTION_TTL).unwrap();
+        assert_eq!(store.clients.len(), 1);
+        let mut full = NativeStore::default();
+        for n in 0..128 {
+            let mut p = status(n + 1, "busy");
+            p["session_id"] = json!(format!("s{n}"));
+            full.report(&p, now).unwrap();
+        }
+        assert!(attachment(&mut full, attach(1, 1), now).is_err());
+        assert_eq!(full.observations.len(), 128);
+    }
+
+    #[test]
+    fn quiet_attachment_capacity_reclaims_detached_and_expired_rows_not_watermarks() {
+        for delay in [
+            Duration::ZERO,
+            ATTACHMENT_TTL,
+            RETENTION_TTL - Duration::from_millis(1),
+            RETENTION_TTL,
+        ] {
+            let now = Instant::now();
+            let mut store = NativeStore::default();
+            for client in 1..=128 {
+                let mut p = attach(client, 1);
+                p["session_id"] = json!(format!("quiet-{client}"));
+                attachment(&mut store, p, now).unwrap();
+            }
+            assert_eq!(store.observations.len(), 128);
+            if delay.is_zero() {
+                for client in 1..=128 {
+                    attachment(&mut store, detach(client, 2), now).unwrap();
+                }
+            } else {
+                let before_retirement = now + delay - Duration::from_millis(1);
+                let mut stale = attach(1, 1);
+                stale["session_id"] = json!("quiet-1");
+                assert_eq!(
+                    attachment(&mut store, stale, before_retirement)
+                        .unwrap_err()
+                        .code(),
+                    "agent_stale_revision"
+                );
+                // Stale delivery neither advances nor renews retained watermarks.
+                assert_eq!(
+                    store.clients.values().filter(|c| c.seen == now).count(),
+                    128
+                );
+            }
+            let mut next = attach(129, 1);
+            next["session_id"] = json!("quiet-129");
+            attachment(&mut store, next, now + delay).unwrap();
+            assert_eq!(store.observations.len(), 128);
+            assert_eq!(store.retired, 1);
+            assert!(!store.observations.contains_key(&(
+                text(&attach(1, 1), "instance_id").unwrap().into(),
+                "quiet-1".into()
+            )));
+            assert_eq!(
+                store.clients.len(),
+                if delay == RETENTION_TTL { 1 } else { 129 }
+            );
+            let mut old = attach(1, 1);
+            old["session_id"] = json!("quiet-1");
+            if delay == RETENTION_TTL {
+                attachment(&mut store, old, now + delay).unwrap();
+                assert_eq!(store.observations.len(), 128);
+                assert_eq!(store.retired, 2);
+            } else {
+                assert_eq!(
+                    attachment(&mut store, old, now + delay).unwrap_err().code(),
+                    "agent_stale_revision"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn reclamation_preserves_fresh_attention_and_all_live_leases_including_ambiguous() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        for n in 1..=126 {
+            let mut p = decision(n, "permission.asked", "pending");
+            p["session_id"] = json!(format!("fresh-{n}"));
+            store.report(&p, now).unwrap();
+        }
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        let mut conflict = attach(2, 1);
+        conflict["target"]["terminal_id"] = json!("different");
+        attachment(&mut store, conflict, now).unwrap();
+        let mut unleased = attach(3, 1);
+        unleased["session_id"] = json!("unleased");
+        attachment(&mut store, unleased, now).unwrap();
+        attachment(&mut store, detach(3, 2), now).unwrap();
+        let mut next = attach(4, 1);
+        next["session_id"] = json!("new");
+        attachment(&mut store, next, now).unwrap();
+        assert_eq!(store.observations.len(), 128);
+        assert_eq!(store.retired, 1);
+        assert!(
+            store
+                .clients
+                .values()
+                .take(2)
+                .all(|c| c.selection.is_some())
+        );
+        assert_eq!(
+            store
+                .observations
+                .values()
+                .filter(|o| o.active(now))
+                .count(),
+            126
+        );
+        let mut refused = attach(5, 1);
+        refused["session_id"] = json!("refused");
+        assert_eq!(
+            attachment(&mut store, refused, now).unwrap_err().code(),
+            "agent_capacity"
+        );
+        let mut event = status(127, "busy");
+        event["session_id"] = json!("refused-native");
+        assert_eq!(
+            store.report(&event, now).unwrap_err().code(),
+            "agent_capacity"
+        );
+        assert_eq!(store.retired, 1);
+        assert_eq!(store.observations.len(), 128);
+        assert_eq!(
+            store
+                .clients
+                .values()
+                .filter(|c| c.selection.is_some())
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn rejected_higher_selection_releases_old_binding_and_consumes_revision() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        let id = view(&store, now)["observations"][0]["observation_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut ended = event(1, "session.deleted");
+        ended["session_id"] = json!("ended");
+        store.report(&ended, now).unwrap();
+        let mut replacement = attach(1, 2);
+        replacement["session_id"] = json!("ended");
+        assert_eq!(
+            attachment(&mut store, replacement, now).unwrap_err().code(),
+            "agent_session_ended"
+        );
+        assert!(store.producer_association(&id, now).is_none());
+        assert!(store.clients.values().all(|c| c.selection.is_none()));
+        assert_eq!(
+            attachment(&mut store, attach(1, 2), now)
+                .unwrap_err()
+                .code(),
+            "agent_stale_revision"
+        );
+        assert!(store.producer_association(&id, now).is_none());
+    }
 
     fn provider(mut value: Value, name: &str) -> Value {
         value["provider"] = json!(name);

@@ -402,7 +402,11 @@ fn handle_normal_navigation_with_clock(
             request.as_object().is_some_and(|o| o.len() == 4)
                 && matches!(
                     contract,
-                    native::RPC | native::PROVIDER_RPC | native::CONTROL_RPC
+                    native::RPC
+                        | facts::RPC
+                        | native::PROVIDER_RPC
+                        | native::CONTROL_RPC
+                        | native::ATTACHMENT_RPC
                 ),
             "agent_contract_mismatch",
         )?;
@@ -414,14 +418,21 @@ fn handle_normal_navigation_with_clock(
         if contract == native::CONTROL_RPC {
             if matches!(
                 method,
-                "association.assert" | "association.remove" | "focus.prepare"
+                "association.assert"
+                    | "association.remove"
+                    | "focus.prepare"
+                    | "association.inspect"
             ) {
                 return associations.control(method, params, &store.epoch, native, now);
             }
             return native.control(method, params, store.projection(), now);
         }
         require(method == "report", "agent_unknown_method")?;
-        if contract == native::PROVIDER_RPC {
+        if contract == facts::RPC {
+            native.facts.report(params, now, facts::wall_ms())
+        } else if contract == native::ATTACHMENT_RPC {
+            native.report_attachment(params, &store.epoch, now)
+        } else if contract == native::PROVIDER_RPC {
             native.report_provider(params, now)
         } else {
             native.report(params, now)
@@ -429,7 +440,11 @@ fn handle_normal_navigation_with_clock(
     })();
     let contract = if matches!(
         contract,
-        native::RPC | native::PROVIDER_RPC | native::CONTROL_RPC
+        native::RPC
+            | facts::RPC
+            | native::PROVIDER_RPC
+            | native::CONTROL_RPC
+            | native::ATTACHMENT_RPC
     ) {
         contract
     } else {
@@ -690,7 +705,10 @@ pub(crate) fn call_contract(
     let result = reply
         .get("result")
         .ok_or(Error("agent_delivery_uncertain"))?;
-    if matches!(contract, native::RPC | native::PROVIDER_RPC) {
+    if matches!(
+        contract,
+        native::RPC | facts::RPC | native::PROVIDER_RPC | native::ATTACHMENT_RPC
+    ) {
         require(
             *result == json!({"type":"accepted","delivery":"volatile"}),
             "agent_delivery_uncertain",
@@ -698,7 +716,7 @@ pub(crate) fn call_contract(
     } else if contract == native::CONTROL_RPC {
         (if matches!(
             method,
-            "association.assert" | "association.remove" | "focus.prepare"
+            "association.assert" | "association.remove" | "focus.prepare" | "association.inspect"
         ) {
             crate::agent_navigation::validate_control_result(result)
         } else {
@@ -994,13 +1012,15 @@ mod tests {
         let saved = fs::read(root.path().join("state/agent-management.json")).unwrap();
         let path = root.path().join("s");
         let bound = Bound::bind(path.to_str().unwrap()).unwrap();
+        // Retain the bound node through the final client's post-reply fence.
+        let listener = bound.listener.try_clone().unwrap();
         let server = thread::spawn(move || {
             let mut native = native::NativeStore::default();
             let interrupt = crate::observation_socket::InterruptGuard::install().unwrap();
             for _ in 0..7 {
                 let deadline = Instant::now() + Duration::from_secs(2);
                 let (mut stream, _) = loop {
-                    match bound.listener.accept() {
+                    match listener.accept() {
                         Ok(connection) => break connection,
                         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                             assert!(Instant::now() < deadline);

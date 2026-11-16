@@ -923,7 +923,7 @@ def main():
     parser.add_argument("--oracle-only", action="store_true", help="development construction check, NOT acceptance")
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
-    with tempfile.TemporaryDirectory(prefix="cgo-", dir="/tmp") as directory:
+    with tempfile.TemporaryDirectory(prefix="cgo-") as directory:
         suite = Suite(Path(directory), binary, args.oracle_only)
         w = suite.workspace("w")
         try:

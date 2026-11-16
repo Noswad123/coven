@@ -2,18 +2,35 @@
 
 ## Overview
 
-### Current Adoption Overlay, 2026-11-14
+### Current Adoption Overlay, 2026-11-15
 
 The user approved A1-A5. The [implementation record](FEATURE_ADOPTION_STATUS.md)
 supersedes older capability-absence summaries below: 16 explicit interactive
 adapters (not all 22 discovery families), attention occurrence acknowledgements
-and checked CLI focus, and bounded explicit recovery are delivered. A2 supplies
-30-second volatile user assertions with CAS/invalidation, not producer-proven
-hosting. A3 adds independent explicitly installed Pi/OpenCode native profiles;
+and checked CLI focus, and bounded explicit recovery are delivered. A2 now supplies
+source-qualified local Djinn full-TUI/default-worker/implicit-local selected-root
+attachment, exact reporter instance/SID join and checked focus under a five-second
+producer lease. Mounted-only one-second observations do not renew native activity;
+quiet roots remain UNKNOWN with null activity age. Capture pins endpoint, terminal,
+runtime incarnation and receiver epoch once; release/expiry and ambiguity fail
+closed, with no PID/newest-SID inference or auto-rebind. Existing 30-second
+user assertions are unchanged. See [attachment scope](NATIVE_ATTACHMENT_CONTRACT.md).
+A3 adds independent explicitly installed Pi/OpenCode native profiles;
 old reference assets/receipts remain frozen and unknown. OpenCode resumed roots
-can be established by bounded, silent native metadata lookup. Codex/Copilot native
-activity and Pi decision correlation retain the
+can be established by bounded, silent native metadata lookup. Separate unordered
+Codex/Copilot [native hook facts](NATIVE_HOOK_FACTS_CONTRACT.md) are delivered:
+Codex source-qualified, Copilot documentation-qualified, public state always
+UNKNOWN. No synthetic UUID/sequence or tool-name request pairing. Codex source age
+is unknown; Copilot UTC-Z source time anchors monotonic freshness with nonrenewing
+equal timestamps/ambiguity. Current-state/correlated decisions and other-client/
+runtime/remote hosting retain the
 [documented residuals](KITSUNE_RETIREMENT_FEATURE_DECISIONS.md).
+
+Pi paired UI decisions remain NO-GO at the source pin due to fire-and-forget async
+delivery ordering and missing immutable occurrence/session IDs, not a whitelist
+omission. Native-hooks planning is inert manual snippet generation, not managed
+install/uninstall/rollback. Old reference journals and provider approvals/credentials
+are untouched; configuration management is a separate operational follow-up.
 
 These are reviewed implementation scopes with focused and composed Linux
 validation, not full
@@ -21,6 +38,26 @@ legacy extraction, installed CLI/native loader qualification, Windows support or
 native macOS certification. Historical provider-cut rows below describe their
 named reference/receipt or legacy retirement scope, not absence of the new paths.
 Doctor's existing closed-v1 capabilities remain unchanged.
+
+Kitsune's [external agent-control retirement](../../kitsune/AGENT_CONTROL_RETIREMENT.md)
+now covers legacy prompt/key submission, rename, focus, view mutation and effectful
+get reconciliation in addition to start. Public wait wrappers stop on the initial
+get refusal. Generic terminal transport/navigation and old reference readers are
+retained; standalone legacy behavior and list/read/explain facades remain for the
+next cut. Richer Codex/Copilot/Pi support remains user-deferred, not a retirement
+prerequisite.
+
+The [current qualification record](FEATURE_ADOPTION_STATUS.md#recorded-qualification)
+records the full native Coven suite green (71 targets, 1,760 passed, 0 failed,
+7 ignored parent-exercised fixtures), formatting and strict Clippy, and the actual
+Djinn producer -> Coven -> Kit seven-scenario gate. The latter uses actual native
+SDK/plugin factory/load/controller/registry, not a physically rendered TUI or a
+separate Bun Worker/private-RPC handshake. Earlier failure tables below remain
+historical, not a claim that the current native suite failed. Receiver reruns do
+not establish a root-cause fix or all-stress qualification. No overlapping counts
+are aggregated. This documentation update runs no heavy build/provider tests.
+All three apps still need rebuilds and an explicit server/new-pane/provider handoff
+when ready; installed activation and automatic provider-config edits are not claimed.
 
 ### Normal-invocation ownership cut, 2026-11-12
 
@@ -149,8 +186,9 @@ not full OpenCode management completion.
 | Interactive start/resume | Coven's 16 paired source-characterized adapters use explicit generic terminal-pinned submission; Djinn argv is preserved. Kitsune's legacy provider paths remain. | Installed CLI/version compatibility is unverified, enqueue is not startup, unsupported runtimes/kinds stay explicit. See [interactive contract](INTERACTIVE_SESSION_CONTRACT.md). |
 | Resume policy | Coven pure planner characterizes 16 historical mappings; no new execution authority. | Coven owns provider policy; pure argv equivalence alone cannot replace restore ownership/history semantics. |
 | Agent-aware persistence/restore, native-reference ownership/deduplication and deferred launch | Explicit bounded Coven recovery now uses durable intent, CAS and selected-reference duplicate blocking; imports and actual all-pane snapshot references are skip-only vetoes before mutation. External mode preserves history without automatic resume. | Not global exactly-once or proof of native running; no saved consent/autostart. Broader legacy retirement remains gated. See [recovery contract](SESSION_RECOVERY_CONTRACT.md). |
-| Attention and terminal navigation | Coven occurrence acknowledgements, priority lists and checked CLI focus via generic Kit v1 terminal inspection/focus; temporary asserted associations only. | Producer-backed native hosting remains A2 work; generic row clicks stay read-only, no mobile decision or completion inference. See [navigation contract](AGENT_NAVIGATION_CONTRACT.md). |
-| Independent Pi/OpenCode native profiles | Explicit `agent native-extensions` with separate assets/policies/journals; pinned Pi context activity and OpenCode root-qualified lifecycle/status/decisions through normal receiver, including bounded resumed-root metadata lookup. | Old reference assets unchanged; source/mock-callback roundtrip is not native loader qualification. Codex/Copilot activity unsupported; Pi decisions lack native correlation. See [native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md). |
+| Attention and terminal navigation | Coven occurrence acknowledgements, priority lists and checked CLI focus via generic Kit v1 inspection/focus; qualified local Djinn producer associations plus unchanged user assertions. | Other-client/runtime/remote hosting qualification remains; generic row clicks stay read-only, no mobile decision or completion inference. See [navigation contract](AGENT_NAVIGATION_CONTRACT.md). |
+| Independent Pi/OpenCode native profiles | Explicit `agent native-extensions` with separate assets/policies/journals; pinned Pi context activity and OpenCode root-qualified lifecycle/status/decisions through normal receiver, including bounded resumed-root metadata lookup. | Old reference assets unchanged; source/mock-callback roundtrip is not native loader qualification. Pi paired UI decisions remain NO-GO at the source pin. See [native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md). |
+| Codex/Copilot unordered native facts | Separate volatile `coven.provider-facts.v1`, `agent report-fact` and inert `native-hooks plan` manual snippets; public state always UNKNOWN. | Not current-state or correlated-decision support, binary certification or managed native-hook installation. Existing reference receipt/configuration paths are unchanged. See [hook facts](NATIVE_HOOK_FACTS_CONTRACT.md). |
 | Other hook/provider integrations | Separate built-in Djinn handling and other applicable sources remain pending. Pi full-v7 and OpenCode full-v9 legacy ingress/lifecycle persist until explicit migration. | Coven-owned adapters/configuration with per-source removal gates, not permanent Kit ownership. |
 | Jobs, participant roles and task authority | Coven declarations/task contracts; hook rows have no roles or task authority. | Coven orchestration, separate from native execution and generic presentation. |
 
@@ -250,7 +288,8 @@ launch, adoption or role assignment is part of this flow.
    and completed scoped API/UI/compatibility checks, retaining the limits below
     for broader retirement beyond the implemented opt-in external mode.
    Then move remaining status interpretation, process/screen fallback,
-    remaining producer-backed hosting and any approved mobile model into Coven;
+    other-client/runtime/remote hosting qualification and any approved mobile
+    model into Coven;
     attention/acknowledgement/checked CLI navigation already exist. Mobile L1 is
     undecided, not a committed transfer. Supply missing generic evidence first,
    especially Windows tree scope/parent relationships. Do not mislabel today's

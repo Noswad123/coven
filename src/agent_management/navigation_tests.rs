@@ -76,6 +76,178 @@ fn report(native: &mut native::NativeStore, seq: u64, event: &str, now: Instant)
 }
 
 #[test]
+fn attachment_deletion_tombstone_pressure_cannot_revive_old_focus_revision() {
+    let now = Instant::now();
+    let epoch = "a".repeat(32);
+    let instance = "12345678-1234-1234-1234-123456789abc";
+    let mut native = native::NativeStore::default();
+    for sequence in 1..=127 {
+        native
+            .report(
+                &json!({"instance_id":instance,"session_id":format!("fresh-{sequence}"),
+            "sequence":sequence,"event":"session.status","status":"busy"}),
+                now + Duration::from_micros(sequence),
+            )
+            .unwrap();
+    }
+    let mut attachment = json!({"expected_epoch":epoch,"client_id":"12345678-1234-1234-1234-123456789abd",
+        "revision":1,"operation":"attach","instance_id":instance,"session_id":"PRIVATE",
+        "scope":"local_full_tui_root","target":{"socket":"/not/contacted","device":1,"inode":2,
+            "terminal_id":"producer","runtime_generation":instance}});
+    let captured = now + Duration::from_micros(127);
+    native
+        .report_attachment(&attachment, &epoch, captured)
+        .unwrap();
+    let view = native.projection(json!({"server_epoch":epoch,"records":[]}), captured);
+    assert_eq!(view["observations"].as_array().unwrap().len(), 128);
+    let id = view["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["origin"] == "djinn_client_attachment")
+        .unwrap()["observation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let revision = native.producer_association(&id, captured).unwrap().0;
+    let focus = json!({"observation_id":id,"expected_epoch":epoch,"expected_revision":revision});
+    let mut associations = Associations::default();
+    associations
+        .control("focus.prepare", &focus, &epoch, &native, captured)
+        .unwrap();
+    let deleted = now + Duration::from_micros(128);
+    report(&mut native, 128, "session.deleted", deleted);
+    assert!(
+        associations
+            .control("focus.prepare", &focus, &epoch, &native, deleted)
+            .is_err()
+    );
+    for n in 1..=512 {
+        let sequence = 128 + n;
+        native
+            .report(
+                &json!({"instance_id":instance,"session_id":format!("deleted-{n}"),
+            "sequence":sequence,"event":"session.deleted"}),
+                now + Duration::from_micros(sequence),
+            )
+            .unwrap();
+    }
+    let recreated = now + Duration::from_micros(641);
+    // The oldest tombstone has left bounded history, with no sequence gap or lease expiry.
+    report(&mut native, 641, "session.updated", recreated);
+    assert!(
+        native.producer_association(&id, recreated).is_none(),
+        "old lease must not revive after tombstone pressure"
+    );
+    assert!(
+        associations
+            .control("focus.prepare", &focus, &epoch, &native, recreated)
+            .is_err()
+    );
+    assert_eq!(
+        native
+            .report_attachment(&attachment, &epoch, recreated)
+            .unwrap_err()
+            .code(),
+        "agent_stale_revision"
+    );
+    attachment["revision"] = json!(2);
+    native
+        .report_attachment(&attachment, &epoch, recreated)
+        .unwrap();
+    let next = native.producer_association(&id, recreated).unwrap().0;
+    assert_ne!(next, revision);
+    assert!(
+        associations
+            .control("focus.prepare", &focus, &epoch, &native, recreated)
+            .is_err()
+    );
+    let mut current = focus;
+    current["expected_revision"] = json!(next);
+    associations
+        .control("focus.prepare", &current, &epoch, &native, recreated)
+        .unwrap();
+    let view = native.projection(json!({"server_epoch":epoch,"records":[]}), recreated);
+    let rows = view["observations"].as_array().unwrap();
+    assert!(rows.len() <= 128);
+    assert_eq!(
+        rows.iter()
+            .filter(|o| o["reported_state"] == "working")
+            .count(),
+        127
+    );
+    assert_eq!(view["omitted_observations"], 1);
+}
+
+#[test]
+fn explicit_user_assertion_precedes_producer_without_relabeling_or_renewal() {
+    let now = Instant::now();
+    let epoch = "a".repeat(32);
+    let mut native = native::NativeStore::default();
+    report(&mut native, 1, "session.status", now);
+    let id = native.projection(json!({"server_epoch":epoch,"records":[]}), now)["observations"][0]
+        ["observation_id"]
+        .clone();
+    let target = json!({"socket":"/not/contacted","device":1,"inode":2,"terminal_id":"producer",
+        "runtime_generation":"12345678-1234-1234-1234-123456789abc"});
+    let mut attachment = json!({"expected_epoch":epoch,"client_id":"12345678-1234-1234-1234-123456789abd",
+        "revision":1,"operation":"attach","instance_id":"12345678-1234-1234-1234-123456789abc",
+        "session_id":"PRIVATE","scope":"local_full_tui_root","target":target});
+    native.report_attachment(&attachment, &epoch, now).unwrap();
+    let mut store = Associations::default();
+    let inspection = json!({"observation_id":id,"expected_epoch":epoch,"expected_revision":null});
+    let producer = store
+        .control("association.inspect", &inspection, &epoch, &native, now)
+        .unwrap();
+    assert_eq!(producer["provenance"], "producer_reported");
+    let mut assertion = json!({"observation_id":id,"expected_epoch":epoch,"expected_revision":null,
+        "provenance":"user_asserted","apply":true,"target":target});
+    assertion["target"]["terminal_id"] = json!("user");
+    let applied = store
+        .control("association.assert", &assertion, &epoch, &native, now)
+        .unwrap();
+    let mut focus = inspection.clone();
+    focus["expected_revision"] = producer["association_revision"].clone();
+    assert!(
+        store
+            .control("focus.prepare", &focus, &epoch, &native, now)
+            .is_err()
+    );
+    focus["expected_revision"] = applied["association_revision"].clone();
+    assert_eq!(
+        store
+            .control("focus.prepare", &focus, &epoch, &native, now)
+            .unwrap()["provenance"],
+        "user_asserted"
+    );
+    for rev in 2..=9 {
+        attachment["revision"] = json!(rev);
+        native
+            .report_attachment(
+                &attachment,
+                &epoch,
+                now + Duration::from_secs((rev - 1) * 4),
+            )
+            .unwrap();
+    }
+    let later = now + Duration::from_secs(32);
+    assert!(
+        store
+            .control("focus.prepare", &focus, &epoch, &native, later)
+            .is_err()
+    );
+    let next = store
+        .control("association.inspect", &inspection, &epoch, &native, later)
+        .unwrap();
+    assert_eq!(next["provenance"], "producer_reported");
+    assert_eq!(
+        next["association_revision"],
+        producer["association_revision"]
+    );
+    assert!(!store.0[id.as_str().unwrap()].valid);
+}
+
+#[test]
 fn assertions_preview_cas_ttl_and_invalidation_are_receiver_owned() {
     let now = Instant::now();
     let mut native = native::NativeStore::default();
@@ -360,18 +532,44 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
         "error_message_limit",
         "error_wrong_id",
         "valid_error",
+        "membership_before_final_prepare",
+        "detach_before_final_prepare",
     ];
     let Ok(mode) = std::env::var("COVEN_NAVIGATION_TEST_SCENARIO") else {
         for mode in MODES {
-            isolated_navigation_scenario(mode);
+            if !mode.ends_with("before_final_prepare") {
+                isolated_navigation_scenario(mode);
+            }
+        }
+        for mode in [
+            "success",
+            "uncertain",
+            "timeout",
+            "generation",
+            "exited",
+            "detached",
+            "unsupported",
+            "endpoint",
+            "membership_before_final_prepare",
+            "detach_before_final_prepare",
+        ] {
+            isolated_navigation_scenario(&format!("producer_{mode}"));
         }
         return;
     };
+    let producer = mode.starts_with("producer_");
+    let mode = mode.strip_prefix("producer_").unwrap_or(&mode);
     let mode = *MODES
         .iter()
         .find(|&&candidate| candidate == mode)
         .unwrap_or_else(|| panic!("unknown navigation scenario: {mode}"));
     {
+        let final_race = mode.ends_with("before_final_prepare");
+        let generation = if producer {
+            "12345678-1234-1234-1234-123456789abc"
+        } else {
+            "gen"
+        };
         let rejected = matches!(
             mode,
             "generation" | "exited" | "detached" | "unsupported" | "endpoint"
@@ -394,7 +592,7 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
                 2
             } else if mode == "unsupported" {
                 3
-            } else if rejected {
+            } else if rejected || final_race {
                 4
             } else {
                 5
@@ -432,14 +630,14 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
                     }
                     "terminal.inspect" => {
                         json!({"type":"terminal_inspected","terminal_id":"term",
-                        "runtime_generation":if index > 1 && mode == "generation" {"new"} else {"gen"},
+                        "runtime_generation":if index > 1 && mode == "generation" {"new"} else {generation},
                         "availability":if index > 1 && matches!(mode,"exited" | "detached") {mode} else {"live"},
                         "workspace_id":"w","tab_id":"t","pane_id":"old"})
                     }
                     "terminal.focus" => {
                         assert_eq!(
                             request["params"],
-                            json!({"terminal_id":"term","expected_runtime_generation":"gen"})
+                            json!({"terminal_id":"term","expected_runtime_generation":generation})
                         );
                         if mode == "timeout" {
                             thread::sleep(Duration::from_millis(1100));
@@ -478,7 +676,7 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
                             writeln!(socket, "{raw}").unwrap();
                             break;
                         }
-                        json!({"type":"terminal_focused","terminal_id":"term","runtime_generation":"gen",
+                        json!({"type":"terminal_focused","terminal_id":"term","runtime_generation":generation,
                             "workspace_id":"w","tab_id":"t","pane_id":"moved"})
                     }
                     _ => panic!("unexpected method {method}"),
@@ -497,10 +695,14 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
                 .as_str()
                 .unwrap()
                 .to_owned();
+        if producer {
+            native = native::NativeStore::default();
+        }
         let receiver = thread::spawn(move || {
             let interrupt = crate::observation_socket::InterruptGuard::install().unwrap();
             let mut associations = Associations::default();
-            for _ in 0..if rejected { 2 } else { 3 } {
+            let mut attachment = Value::Null;
+            for index in 0..(if rejected { 2 } else { 3 }) + usize::from(producer) {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 let mut stream = loop {
                     match receiver_listener.accept() {
@@ -514,6 +716,26 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
                 };
                 stream.set_nonblocking(true).unwrap();
                 let bytes = receive(&mut stream, deadline, &interrupt).unwrap();
+                if final_race {
+                    let request: Value = serde_json::from_slice(&bytes).unwrap();
+                    if index == 0 {
+                        attachment = request["params"].clone();
+                    }
+                    if index == 3 {
+                        assert_eq!(request["method"], "focus.prepare");
+                        let changed = if mode == "detach_before_final_prepare" {
+                            json!({"expected_epoch":persistent.epoch,"client_id":attachment["client_id"],
+                                "revision":2,"operation":"detach"})
+                        } else {
+                            let mut added = attachment.clone();
+                            added["client_id"] = json!("12345678-1234-1234-1234-123456789abe");
+                            added
+                        };
+                        native
+                            .report_attachment(&changed, &persistent.epoch, Instant::now())
+                            .unwrap();
+                    }
+                }
                 let reply = handle_normal_navigation(
                     &mut persistent,
                     &mut native,
@@ -531,15 +753,33 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
             expected_epoch: &epoch,
             expected_revision: None,
         };
-        let result = crate::agent_navigation::associate_arguments(
+        let result = if producer {
+            let endpoint = crate::observation_socket::select(kit_path.to_str().unwrap()).unwrap();
+            let target = json!({"socket":endpoint.resolved,"device":endpoint.device,"inode":endpoint.inode,
+                "terminal_id":"term","runtime_generation":generation});
+            crate::agent_navigation::check_attachment_target(kit_path.to_str().unwrap(), &target).unwrap();
+            call_contract(selection.socket, native::ATTACHMENT_RPC, "report", json!({
+                "expected_epoch":epoch,"client_id":"12345678-1234-1234-1234-123456789abd","revision":1,
+                "operation":"attach","instance_id":"12345678-1234-1234-1234-123456789abc",
+                "session_id":"PRIVATE","scope":"local_full_tui_root","target":target})).unwrap();
+            crate::agent_navigation::association_arguments(&selection, true)
+        } else { crate::agent_navigation::associate_arguments(
             &selection,
             kit_path.to_str().unwrap(),
             "term",
             true,
             true,
-        )
+        ) }
         .unwrap();
         let applied: Value = serde_json::from_str(&result.stdout).unwrap();
+        assert_eq!(
+            applied["provenance"],
+            if producer {
+                "producer_reported"
+            } else {
+                "user_asserted"
+            }
+        );
         selection.expected_revision = applied["association_revision"].as_str();
         let _replacement = if mode == "endpoint" {
             std::fs::remove_file(&kit_path).unwrap();
@@ -565,7 +805,9 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
             if !rejected {
                 assert_eq!(
                     error.code(),
-                    if mode == "valid_error" {
+                    if final_race {
+                        "agent_report_rejected"
+                    } else if mode == "valid_error" {
                         "agent_navigation_rejected"
                     } else {
                         "agent_delivery_uncertain"
@@ -591,7 +833,7 @@ fn real_receiver_and_fake_kit_focus_one_frame_and_follow_movement() {
                 2
             } else if mode == "unsupported" {
                 3
-            } else if rejected {
+            } else if rejected || final_race {
                 4
             } else {
                 5

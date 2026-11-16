@@ -95,6 +95,159 @@ No build, install, live config mutation, or 30-second expiry test runs here.
 
 ## Assertions
 
+### A2 Source-Native Interop
+
+The independent A2 gate uses the **actual Djinn source producer**, not handwritten
+attachment frames, against current-source Coven and Kit. Run from this checkout:
+
+```sh
+python3 -B tools/normal-workflow-check/build-hosting.py \
+  --coven-source /home/jdawson/Projects/coven \
+  --kitsune-source /home/jdawson/Projects/kitsune \
+  --djinn-source /home/jdawson/Projects/djinn \
+  --bun /home/linuxbrew/.linuxbrew/bin/bun \
+  --zig /home/linuxbrew/.linuxbrew/opt/zig@0.15/bin/zig \
+  --zig-package-cache /home/jdawson/.cache/zig/p
+```
+
+`build-hosting.py` builds both working trees with Rust 1.96.1, `--locked --offline
+-j 1`, one shared run-owned short target, debug info/incremental disabled, private
+TMPDIR and Zig local cache, and existing package/toolchain/Zig global caches.
+It checks Zig 0.15.2, prints binary SHA-256 identities, and installs nothing.
+Existing Kit vendor Zig output is reused, not removed. After interop it retains
+the target only long enough to run focused Coven native/attachment/facts/navigation/
+recovery, Kit navigation/env/helper lifecycle, and Bun attachment/SDK/transport/
+selected-session regressions. Runtime and log limits/cleanup match the other runners.
+
+For existing binaries, use `hosting.py --coven-bin /absolute/coven --kitsune-bin
+/absolute/kitsune --djinn-source /absolute/djinn --bun /absolute/bun`.
+
+`hosting.py` reuses `check.owned_run`, environment isolation, the actual new-pane
+environment probe and Kit API helpers. Only an owned `bin/coven` is added to PATH;
+Kit is headless with `sources = ["coven"]`, its default actual Coven helper and a
+private short `XDG_STATE_HOME=RUN/v`. The producer is
+Djinn `test/coven/hosting-interop.test.ts`, executed by Bun in its opencode package
+using existing dependencies and the shared-effect/instance SDK test pattern.
+The fixture is skipped unless explicitly enabled by this runner.
+
+Before starting Djinn, an external-ownership preflight sends **32 typed requests**
+to the actual Kit API: `agent.start`, `agent.get`, `agent.focus`, `agent.rename`,
+`agent.prompt`, `agent.send_keys`, `agent.view.set`, `agent.view.clear` (both
+source-scoped and default/global), `agent.wait`, and prompt-with-wait. Targeted
+controls use the real pane ID, terminal ID, an unknown selector and an empty
+selector. Every response must be correlated and return exactly the
+`external_agent_management` error path, not target/argument errors or a default
+target fallback. All focus IDs and pane-to-terminal mappings are compared after
+each refusal. No `MUST_NOT_ENQUEUE` prompt sentinel may appear in either shell's
+recent unwrapped PTY output; real shell file canaries before/after confirm generic
+`pane.send_input` still works. The fixture has no managed agent or provider.
+
+`agent.list` must still succeed with an empty inventory; `agent.read` and
+`agent.explain` must retain their ordinary correlated `agent_not_found` result for
+the non-agent shell, not become blanket ownership refusals. Successful seeded-agent
+read facades and stronger input-queue/state/event invariance remain covered by
+Kit's seeded unit tests. This production check proves the refusal/wrapper path,
+not the existence of managed state in the shell fixture. Read APIs may perform
+ordinary headless housekeeping; the controlled shell fixture has no agent timers.
+
+The seven following source-native hosting scenarios assert:
+
+1. Two roots are created by the actual session service through the actual SDK and
+   in-process server fetch, in an isolated local test database. Only A is loaded
+   via `createSelectedSessionLoad`, with actual metadata and messages hydration.
+   The load callback selects the actual attachment observer/controller, using the
+   actual native plugin factory/registry/SDK qualification. The real factory UUID
+   and root ID hash to Coven's one quiet observation: attachment origin, UNKNOWN,
+   null activity age, selected local-root hosting, private `producer_reported`
+   exact-target binding. B remains unselected and absent. Raw native IDs/targets
+   are absent from observations, generic projection and an actual semantic frame.
+2. Real one-second observer heartbeats keep the real five-second lease alive for
+   more than six seconds; quiet activity stays null and association revision stable.
+3. Actual Coven CLI focus executes against the producer association without any
+   user assertion, moving actual Kit focus to the captured terminal generation.
+   A direct Kit wrong-generation focus refuses without moving focus.
+4. Status/decision inputs through the actual native adapter/reporter and built
+   `report-native` join the same observation, changing origin without an identity
+   fork. These event inputs are synthetic; actual provider emission is not claimed.
+5. Actual load disposal/reload switches A to B; leaving Chat via load disposal
+   releases B. Obsolete association revisions refuse focus; A's native pending
+   decision and blocked state are preserved, not acknowledged or fabricated.
+6. A test-only pause of the observer's real-cadence callback simulates lost renewal
+   without detach. After the actual five-second TTL, hosting disappears, old focus
+   refuses, and replay of the saved old frontend callback cannot revive the lease.
+   No backend/provider restart is performed.
+7. A new loaded selection requalifies; actual plugin disposal triggers the worker's
+   higher-revision detach while preserving native pending decisions.
+
+Capture and all attachment/native reporting use the **actual built Coven commands
+with the actual pane environment**, never a fake process transport/receiver or
+fabricated registry UUID/session-get result. Default internal plugins are disabled
+and the native factory is registered exactly once manually. Local fixture config
+has no external plugins, formatters or LSP. File control is private, bounded and
+atomically published; only sanitized assertion patterns are evidence output.
+
+The qualified producer seam is the attachment worker **controller**, not a separate
+Bun Worker/private-RPC handshake. The selected-load callbacks are composed directly
+as the main TUI composes them, with no Numen state. No physically rendered Djinn Chat,
+provider app/model, full UI bundle/install, live endpoint, user API or user config is
+used. Hydration uses actual session messages, not the full TUI sync store. Plugin
+reload ambiguity, multiple conflicting frontend targets and physical process death
+remain separate unit tests; this gate covers actual plugin disposal and renewal
+loss instead. Kit's semantic frame is real headless rendering, not physical pixels.
+Focus acceptance makes no provider-liveness claim.
+
+Successful shutdown requires actual Kit `server.stop`, the same receipt generation
+released, actual helper reaped and receiver removed, then zero owned descendants.
+The subreaper stops/reaps every owned child before exact run-directory removal on
+success, failure and catchable interruption. No bulk artifacts use `/tmp` or RAM.
+
+Recorded control-retirement qualification of the current working-tree sources:
+**8/8 composed scenarios** (32 correlated legacy refusals plus the seven hosting
+scenarios), 1/1 Bun interop fixture, 75 Coven regressions, 59 Kit regressions and
+39 Bun producer/selected-load regressions passed. The Coven subset includes the
+new deleted-attachment selection/retirement bookkeeping regressions. Three
+fixture-only Rust tests were ignored by their normal test annotations. No full
+repository suite, Clippy run or forced serial test runner was used. The actual
+binary SHA-256 identities were:
+
+```text
+coven   679b9ff73f4001c01889c9d1e8ea995aab0b579fee2ed41ae0baa51c2a88c34b
+kitsune d08205be7476adc04f4612462b18934592677ca00522735d9abddb109ff02e32
+SUMMARY 8 A2 composed scenarios passed
+SHUTDOWN verified: actual server.stop, helper reaped, same receipt generation released, no owned descendants
+CLEANUP confirmed: all owned children stopped/reaped; run directory removed
+```
+
+The builder file was unchanged. A one-off Python launcher ran the actual
+`build-hosting.py` and appended the following filters to its existing retained Kit
+test-binary invocation (alongside `terminal_navigation`, `integration::env::tests`
+and `server::integration_runtime::tests`):
+
+```text
+app::api::ownership_tests
+external_agent_focus_dispatch
+external_agent_management_headless_boundary
+headless_cwd_forwarding
+api::server::tests::external_wait_wrappers
+api::wait::tests::agent_wait_probe_only_translates_agent_disappearance
+app::api::command_submission::tests
+integration_views::tests
+api::schema::tests::agent_start_and_prompt_requests_round_trip
+```
+
+This includes direct-helper/seeded-state refusal, standalone reconciliation,
+read-facade availability, actual API-server wait-wrapper dispatch, headless focus
+and queued-evidence boundaries, and generic command submission/navigation/view/
+environment/helper behavior. The standard command above always includes the
+production 32-refusal preflight and seven hosting scenarios; its unextended Kit
+unit filter list is smaller than this recorded retirement run.
+
+These identities qualify that dirty-source build, not subsequent concurrent edits.
+The owned btrfs run, including its retained target, was removed after all children
+stopped/reaped; no build/test artifacts were retained. No production bug surfaced
+and no production module, Kit source, Djinn fixture, or other agent's documentation
+was edited for this retirement qualification.
+
 ### Composed Adoption Runner
 
 `adoption.py` is the small, independent acceptance gate for the current A1/A4/A5

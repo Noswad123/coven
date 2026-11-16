@@ -161,7 +161,11 @@ reports deletion. Session replacement clears prior-session pending reports;
 quit/reload permanently stop that factory. No producer-checked root claim,
 custom `kitsune:blocked` bus, raw UI prompts, UI decision correlation,
 completion event, retry state, permission events or question events is claimed.
-Pi UI prompt events have no request IDs suitable for this contract.
+Paired Pi UI decisions remain **NO-GO at this source pin**. Fire-and-forget async
+handler delivery does not establish ask/reply ordering, and UI prompt events lack
+immutable occurrence/session IDs suitable for this contract. This is not merely
+a whitelist omission; do not invent IDs or promise correlation without new native
+guarantees and source qualification.
 
 ## Validation Limits
 

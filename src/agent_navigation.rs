@@ -1,4 +1,5 @@
-//! Checked navigation to temporary user assertions, never proof of native hosting.
+//! Checked navigation to user assertions or producer-declared display leases.
+//! Neither source authenticates the caller or proves native identity.
 use crate::{Error, Result, error::require, task_mutation::TaskOutput};
 use serde_json::{Value, json};
 
@@ -43,8 +44,9 @@ pub(crate) fn validate_control_result(v: &Value) -> Result<()> {
             .iter()
             .all(|k| v.get(*k).is_some())
             && v["contract"] == "coven.agent-navigation.v1"
-            && v["provenance"] == "user_asserted"
-            && v["native_hosting"] == "unestablished"
+            && ((v["provenance"] == "user_asserted" && v["native_hosting"] == "unestablished")
+                || (v["provenance"] == "producer_reported"
+                    && v["native_hosting"] == "local_full_tui_root"))
             && v["valid"].is_boolean()
             && v["applied"].is_boolean(),
         "agent_invalid_schema",
@@ -112,8 +114,13 @@ mod unix {
             result["server_epoch"] == s.expected_epoch
                 && result["observation_id"] == s.observation
                 && result["applied"] == p.get("apply").cloned().unwrap_or(json!(false))
+                && (!matches!(method, "association.assert" | "association.remove")
+                    || (result["provenance"] == "user_asserted"
+                        && result["native_hosting"] == "unestablished"))
                 && (method != "association.assert" || result["target"] == p["target"])
-                && (p["apply"] == true || result["association_revision"] == p["expected_revision"]),
+                && (method == "association.inspect" && p["expected_revision"].is_null()
+                    || p["apply"] == true
+                    || result["association_revision"] == p["expected_revision"]),
             "agent_delivery_uncertain",
         )?;
         Ok(result)
@@ -183,6 +190,54 @@ mod unix {
             "agent_target_not_live",
         )?;
         Ok(v)
+    }
+    pub(super) fn association(s: &Selection<'_>) -> Result<Value> {
+        call(s, "association.inspect", s.params()?)
+    }
+    pub(super) fn attachment_target(socket: &str, pane: &str) -> Result<Value> {
+        require(opaque(&json!(pane)), "agent_invalid_schema")?;
+        let e = wire::select(socket).map_err(|_| Error("agent_unsafe_socket"))?;
+        let snapshot = kit(&e, "session.snapshot", json!({}))?;
+        require(
+            snapshot["snapshot"]["terminal_navigation"]["version"] == 1,
+            "agent_navigation_unsupported",
+        )?;
+        let panes = snapshot["snapshot"]["panes"]
+            .as_array()
+            .ok_or(Error("agent_invalid_schema"))?;
+        let mut matched = panes.iter().filter(|p| p["pane_id"] == pane);
+        let selected = matched.next().ok_or(Error("agent_target_not_live"))?;
+        require(matched.next().is_none(), "agent_invalid_schema")?;
+        let terminal = selected["terminal_id"]
+            .as_str()
+            .ok_or(Error("agent_invalid_schema"))?;
+        let inspected = inspect(&e, terminal)?;
+        require(inspected["pane_id"] == pane, "agent_target_not_live")?;
+        let target = json!({"socket":e.resolved,"device":e.device,"inode":e.inode,
+            "terminal_id":terminal,"runtime_generation":inspected["runtime_generation"]});
+        validate_target(&target)?;
+        require(
+            crate::agent_management::native::uuid(target["runtime_generation"].as_str().unwrap()),
+            "agent_invalid_schema",
+        )?;
+        fence(&e)?;
+        Ok(target)
+    }
+    pub(super) fn check_attachment_target(socket: &str, target: &Value) -> Result<()> {
+        validate_target(target)?;
+        let e = wire::select(socket).map_err(|_| Error("agent_unsafe_socket"))?;
+        require(
+            target["socket"] == e.resolved
+                && target["device"] == e.device
+                && target["inode"] == e.inode,
+            "agent_endpoint_replaced",
+        )?;
+        let inspected = inspect(&e, target["terminal_id"].as_str().unwrap())?;
+        require(
+            inspected["runtime_generation"] == target["runtime_generation"],
+            "agent_runtime_changed",
+        )?;
+        fence(&e)
     }
     pub(super) fn associate(
         s: &Selection<'_>,
@@ -254,11 +309,32 @@ mod unix {
             "agent_delivery_uncertain",
         )?;
         Ok(
-            json!({"outcome":"focus_accepted","provenance":"user_asserted","native_hosting":"unestablished",
+            json!({"outcome":"focus_accepted","provenance":prepared["provenance"],"native_hosting":prepared["native_hosting"],
             "terminal_id":terminal,"runtime_generation":focused["runtime_generation"],
             "workspace_id":focused["workspace_id"],"tab_id":focused["tab_id"],"pane_id":focused["pane_id"]}),
         )
     }
+}
+
+pub fn association_arguments(s: &Selection<'_>, json: bool) -> Result<TaskOutput> {
+    #[cfg(unix)]
+    {
+        crate::session_support::output(&unix::association(s)?, !json)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (s, json);
+        Err(Error("agent_unsupported_platform"))
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn attachment_target(socket: &str, pane: &str) -> Result<Value> {
+    unix::attachment_target(socket, pane)
+}
+#[cfg(unix)]
+pub(crate) fn check_attachment_target(socket: &str, target: &Value) -> Result<()> {
+    unix::check_attachment_target(socket, target)
 }
 
 pub fn associate_arguments(

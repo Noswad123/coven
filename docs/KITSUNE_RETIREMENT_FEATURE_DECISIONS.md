@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Reviewed 2026-11-14. The user approved adoption A1-A5. This backlog contains only
+Reviewed 2026-11-15. The user approved adoption A1-A5. This backlog contains only
 remaining residuals, not all approved work. Retirement may proceed independently of
 feature parity; useful outcomes can move to Coven while unwanted behaviors retire.
 
@@ -14,24 +14,51 @@ permanent "missing features" backlog.
 
 ## Remaining Approved Adoption Work
 
-- **A2: Producer-backed actual native hosting and lifetime qualification.**
-  Independently establish that a reported native session is hosted by the exact
-  current terminal/runtime, beyond the already-delivered explicit 30-second
-  user assertion and its CAS/nonreviving invalidation. No automatic PID/label
-  inference or execution authority. See [navigation limits](AGENT_NAVIGATION_CONTRACT.md).
-- **A3: Remaining qualified native activity/decision coverage.** Investigate
-  supported native activity for Codex/Copilot, which remain reference-only and
-  unsupported for activity. Pi decision correlation remains possible work only
-  where actual native APIs
-  supply suitable request identity; today's APIs do not. No invented blocked bus,
-  screen guessing or inferred completion. See [native profile limits](NATIVE_PROVIDER_EVENTS_CONTRACT.md).
+- **A2: Other-client/runtime and remote-hosting qualification.** The qualified
+  normal local Djinn full-TUI/default-worker/implicit-local selected-root producer
+  is delivered, not remaining work. Other clients/runtimes, mini/external attach,
+  remote/explicit workspaces and HTTP transports need their own source/lifetime
+  qualification. No PID/newest-SID inference, automatic rebind or execution
+  authority. See [attachment scope](NATIVE_ATTACHMENT_CONTRACT.md).
+
+These attachment modes are not merely missing test runs. The current Djinn
+producer deliberately excludes them; support requires an additional producer or
+routing implementation, followed by qualification. "Explicit workspace" here
+means Djinn's native workspace-placement/routing identifier, not ordinary project
+directories, Coven control workspaces, or Kitsune workspaces/tabs.
+
+## Accepted Provider Limitations — Deferred
+
+The user accepts current Codex, Copilot and Pi limitations and wants richer/full
+support revisited if those providers enter the actual workflow. This work is
+deferred, not a blocker for the current Djinn workflow or Kitsune retirement.
+
+- **A3: Current-state and correlated-decision coverage beyond unordered facts.**
+  Codex/Copilot unordered native hook facts are delivered; current working/idle/
+  blocked/ended state and paired decisions are not. Pi paired UI decisions remain
+  NO-GO at its source pin: fire-and-forget async delivery lacks ordering guarantees
+  and immutable occurrence/session IDs are missing. Requalification needs actual
+  native guarantees, not invented IDs, tool-name pairing or a whitelist change.
+  No screen guessing or inferred completion. See [hook facts](NATIVE_HOOK_FACTS_CONTRACT.md)
+  and [native profile limits](NATIVE_PROVIDER_EVENTS_CONTRACT.md).
+
+## Operational Follow-Up
+
+Managed native-hooks configuration (install/uninstall/rollback) is not implemented.
+Today's deterministic `agent native-hooks plan` snippets require deliberate manual
+review/merge with exact-image reference-journal ownership respected. This is a
+configuration follow-up, not missing Codex/Copilot fact-capture capability. Native
+approvals, credentials and provider configuration are never auto-edited.
+It is not required for the current Djinn workflow; revisit it with provider
+adoption rather than expanding that scope now.
 
 ## Delivered Implementation Record
 
 A1's 16 explicit interactive adapters, A4 attention/acknowledgement/checked CLI
 focus, and bounded A5 selected recovery are delivered, not missing capabilities.
-A2 temporary asserted navigation and A3 independent Pi/OpenCode native profiles
-are also delivered within their partial scope. See the separate
+A2 qualified local Djinn producer attachment and unchanged temporary asserted
+navigation, plus A3 independent Pi/OpenCode profiles and unordered Codex/Copilot
+native hook facts, are also delivered within their stated scopes. See the separate
 [A1-A5 status record](FEATURE_ADOPTION_STATUS.md) and its contract links for
 commands, durability, skip-only reference vetoes and evidence limits. This does
 not mark all adoption fully done or certify installed providers/platforms.
@@ -73,6 +100,13 @@ before validation, terminal input or managed-state mutation. It returns
 `external_agent_management` even if the Coven helper is unavailable. This closes
 competing authority; that cut itself neither implemented A1 nor removed standalone
 legacy start. The later Coven A1 adapters are recorded separately above.
+
+The [next Kitsune control-surface cut](../../kitsune/AGENT_CONTROL_RETIREMENT.md)
+refuses prompt/key input, rename, focus, legacy view mutation and effectful get
+reconciliation under external ownership. Wait and prompt-with-wait stop at their
+initial guarded get. Generic terminal controls and historical data remain; the
+standalone implementation and transitional list/read/explain facades are not
+deleted yet. This does not expand the deferred provider-support scope.
 
 Subsequent cuts should retire agent-specific producers and consumers together.
 Keep generic PTY/process/terminal/session operations and integration transport in

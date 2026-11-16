@@ -18,6 +18,46 @@ mod group_socket;
 mod init;
 #[path = "tests/native_extensions.rs"]
 mod native_extensions;
+
+#[test]
+fn report_fact_negative_prefix_operands_and_exact_flags() {
+    for negative in ["-1event", "-\u{0661}event"] {
+        let (_, matches) = parse(&args(&[
+            "coven",
+            "agent",
+            "report-fact",
+            "--provider",
+            "codex",
+            "--event",
+            negative,
+            "--socket",
+            "-1socket",
+            "--best-effort",
+        ]))
+        .unwrap();
+        let leaf = matches
+            .subcommand_matches("agent")
+            .unwrap()
+            .subcommand_matches("report-fact")
+            .unwrap();
+        assert_eq!(leaf.get_one::<String>("event").unwrap(), negative);
+        assert_eq!(leaf.get_one::<String>("socket").unwrap(), "-1socket");
+        assert!(leaf.get_flag("best_effort"));
+    }
+    assert!(
+        parse(&args(&[
+            "coven",
+            "agent",
+            "report-fact",
+            "--provider",
+            "codex",
+            "--event",
+            "--json",
+            "--from-kitsune"
+        ]))
+        .is_err()
+    );
+}
 #[path = "tests/navigation.rs"]
 mod navigation;
 #[path = "tests/session.rs"]

@@ -2,12 +2,14 @@
 
 ## Overview
 
-**Current adoption (2026-11-14):** the [A1-A5 implementation record](FEATURE_ADOPTION_STATUS.md)
+**Current adoption (2026-11-15):** the [A1-A5 implementation record](FEATURE_ADOPTION_STATUS.md)
 tracks delivered 16-adapter interactive submission, attention/checked CLI navigation
-and bounded explicit recovery, plus partial asserted association and independent
-Pi/OpenCode native profiles. It supersedes capability-absence summaries in the
-historical transfer detail below, not legacy retirement or platform gates. A2
-producer-proven hosting and A3 residuals remain; all 22 interactive families,
+and bounded explicit recovery, plus source-qualified local Djinn selected-root
+producer attachment, unchanged manual assertions, independent Pi/OpenCode profiles
+and unordered Codex/Copilot native facts. It supersedes capability-absence summaries
+in the historical transfer detail below, not legacy retirement or platform gates.
+A2 other-client/runtime/remote hosting and A3 current-state/correlated-decision
+residuals remain; all 22 interactive families,
 Windows support and native macOS qualification are not claimed.
 
 **Normal ownership cut (2026-11-12):** [normal invocation](NORMAL_AGENT_WORKFLOW.md)
@@ -15,13 +17,25 @@ keeps native commands unchanged after explicit startup/runtime and provider setu
 Kit starts a generic server-only helper; Coven owns attributed plain rows under
 the Coven source, not legacy status widgets, focus/sidebar agents or mobile
 completion behavior. No launcher, group/artifact join, automatic install or
-automatic pane/PID binding or native attestation follows. Temporary explicit
-user-asserted CLI navigation is separate, not independently proven hosting.
+PID inference or native attestation follows. [Local Djinn attachment](NATIVE_ATTACHMENT_CONTRACT.md)
+is selected loaded/mounted root display observation under a five-second producer
+lease, not authentication, physical pixels or execution ownership. One-second
+observations never refresh activity; quiet roots remain UNKNOWN with null age.
+Other clients/remote hosting are not qualified. Explicit 30-second user assertions
+are unchanged. [Codex/Copilot facts](NATIVE_HOOK_FACTS_CONTRACT.md) always project
+UNKNOWN state; manual snippet planning is not managed native-hook installation.
 External mode suppresses legacy status,
 detectors and automatic agent resume even on helper failure or fail-closed invalid/
 unreadable startup config. Runtime/rollback handoff needs restart, new panes and
 provider reload; no automatic helper restart. Default-mode compatibility below
 remains, and full extraction/native macOS qualification are not claimed.
+
+The [qualification record](FEATURE_ADOPTION_STATUS.md#recorded-qualification) includes
+the green full native Coven suite and seven actual-source producer/Coven/Kit
+scenarios, not physically rendered Djinn Chat or a separate Bun Worker/private-RPC
+handshake. Source implementation is not installed activation: all three apps need
+rebuilds and an explicit server restart/new-pane/provider handoff when ready.
+Provider configuration is never auto-edited.
 
 Decision date: **2026-10-22**. Status: **accepted target; initial read-only
 observation implemented in Coven; production opt-in terminal-border annotations

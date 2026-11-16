@@ -5,16 +5,39 @@
 For ordinary native invocation after one-time opt-in, use the
 [normal workflow and managed setup](NORMAL_AGENT_WORKFLOW.md). Its attached
 `agent run` accepts existing five-provider receipts plus separate volatile Djinn
-and explicitly installed Pi/OpenCode native-profile events and publishes
+and explicitly installed Pi/OpenCode native-profile events, separate unordered
+Codex/Copilot hook facts and local Djinn producer attachments, and publishes
 Coven-attributed plain rows. External Kit ownership
 suppresses legacy status/detectors and automatic resume even on helper failure;
 runtime changes/rollback require restart, new panes and provider reload. No launcher,
-group/artifact join, automatic installation, automatic pane/PID binding or native
-attestation is required or claimed. Separate [temporary asserted CLI navigation](AGENT_NAVIGATION_CONTRACT.md)
-is not independently proven hosting. [Native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md)
+group/artifact join, automatic installation, PID inference or native
+attestation is required or claimed. [Checked CLI navigation](AGENT_NAVIGATION_CONTRACT.md)
+supports unchanged temporary user assertions and source-qualified local Djinn
+selected-root producer associations. [Native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md)
 do not change old reference assets/receipts or the doctor's closed-v1 capabilities.
 See the [adoption status](FEATURE_ADOPTION_STATUS.md); full migration/macOS native qualification remain open.
 The v1 receipt/inventory and bounded `serve` contract below is unchanged.
+
+[Native attachment](NATIVE_ATTACHMENT_CONTRACT.md) defines the closed capture/report
+frames, fixed Kit endpoint/terminal/incarnation and receiver epoch, exact reporter
+instance/SID join and five-second producer lease with mounted-only one-second
+observations. Quiet roots are metadata-only UNKNOWN with null activity age;
+attachment never renews native status/decision clocks. Conflicting targets refuse,
+releases/expiry invalidate navigation, and replacement targets are never auto-bound.
+This is normal local Djinn full-TUI/default-worker/implicit-local scope, not remote
+hosting, caller authentication, physical display or provider execution ownership.
+
+[Native hook facts](NATIVE_HOOK_FACTS_CONTRACT.md) defines `coven.provider-facts.v1`
+and `agent report-fact`: Codex source-qualified and Copilot documentation-qualified
+unordered facts with public state always UNKNOWN. Codex source age is unknown;
+Copilot UTC-Z source time anchors monotonic freshness, equal timestamps never
+renew and conflicting equal-time events are ambiguous. No fake ordered UUID/
+sequence, current-state inference or tool-name decision pairing. Bounded volatile
+facts are separate from old reference journals, native profiles and attachment
+clocks. Best-effort native hooks emit zero stdout and exit zero on report failure.
+`agent native-hooks plan` generates inert manual snippets only: managed native-hook
+install/uninstall/rollback is not implemented. Exact-image journals, approvals and
+credentials are untouched. Frozen `agent serve` accepts neither new contract.
 
 Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi/OpenCode
 extension-envelope receiver and redacted inventory.

@@ -261,6 +261,25 @@ enum Doctor {
 
 #[derive(Subcommand)]
 enum Agent {
+    /// Inert native fact configuration snippets; no automatic adoption or writes.
+    NativeHooks {
+        #[command(subcommand)]
+        command: NativeHooks,
+    },
+    /// Capture one unordered native hook fact, never current activity state.
+    ReportFact {
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
+        #[arg(long, value_parser = ["codex", "copilot"])]
+        provider: String,
+        #[arg(long)]
+        event: String,
+        #[arg(long)]
+        json: bool,
+        /// Hook mode: empty stdout and exit zero even on reporting failure.
+        #[arg(long, conflicts_with = "json")]
+        best_effort: bool,
+    },
     /// Read normal observations; opaque IDs never establish native hosting.
     Observations {
         #[command(flatten)]
@@ -310,6 +329,20 @@ enum Agent {
     },
     /// Read a closed Djinn native event envelope from bounded stdin.
     ReportNative {
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read-only initial local full-TUI display target capture.
+    AttachmentTarget {
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Report one bounded producer-declared selected-root attachment frame.
+    ReportAttachment {
         #[command(flatten)]
         endpoint: AgentReportEndpoint,
         #[arg(long)]
@@ -581,6 +614,23 @@ enum AgentHooks {
     Install(ProviderHookOptions),
     Uninstall(ProviderHookOptions),
     Rollback(ProviderHookOptions),
+}
+
+#[derive(Subcommand)]
+enum NativeHooks {
+    /// Generate a snippet for explicit manual handoff, not an installation preview.
+    Plan {
+        #[arg(long, value_parser = ["codex", "copilot"])]
+        provider: String,
+        #[arg(long, allow_negative_numbers = true)]
+        executable: String,
+        #[arg(long, allow_negative_numbers = true)]
+        config_root: PathBuf,
+        #[command(flatten)]
+        endpoint: AgentReportEndpoint,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(clap::Args)]
@@ -1837,6 +1887,118 @@ fn run(cli: Cli) -> Result<TaskOutput> {
             command: Agent::ReportNative { endpoint, json },
         } => {
             return coven::agent_management::native_report_arguments(&endpoint.resolve()?, json);
+        }
+        Command::Agent {
+            command:
+                Agent::ReportFact {
+                    endpoint,
+                    provider,
+                    event,
+                    json,
+                    best_effort,
+                },
+        } => {
+            #[cfg(unix)]
+            let result = endpoint.resolve().and_then(|socket| {
+                coven::agent_management::facts::report_arguments(&socket, &provider, &event, json)
+            });
+            #[cfg(not(unix))]
+            let result: Result<TaskOutput> = {
+                let _ = (endpoint, provider, event, json);
+                Err(coven::Error::invalid_cli_arguments())
+            };
+            if best_effort {
+                if result.is_err() {
+                    eprintln!("coven: native hook fact report failed; not retried");
+                }
+                return Ok(TaskOutput {
+                    stdout: String::new(),
+                    warnings: Vec::new(),
+                    exit_code: 0,
+                });
+            }
+            if json {
+                return match result {
+                    Ok(output) => Ok(output),
+                    Err(error) => Ok(TaskOutput {
+                        stdout: serde_json::json!({"type":"error","contract":"coven.provider-facts.v1","error":{"code":error.code()}}).to_string(),
+                        warnings: Vec::new(),
+                        exit_code: 1,
+                    }),
+                };
+            }
+            return result;
+        }
+        Command::Agent {
+            command:
+                Agent::NativeHooks {
+                    command:
+                        NativeHooks::Plan {
+                            provider,
+                            executable,
+                            config_root,
+                            endpoint,
+                            json,
+                        },
+                },
+        } => {
+            #[cfg(unix)]
+            {
+                // A generated --from-kitsune handler must resolve its route at invocation.
+                let route = if endpoint.from_kitsune {
+                    let mut args = vec!["--from-kitsune".to_owned()];
+                    if let Some(root) = endpoint.state_root {
+                        args.extend([
+                            "--state-root".into(),
+                            root.to_str()
+                                .ok_or_else(coven::Error::invalid_cli_arguments)?
+                                .into(),
+                        ]);
+                    }
+                    args
+                } else {
+                    vec![
+                        "--socket".into(),
+                        endpoint
+                            .socket
+                            .ok_or_else(coven::Error::invalid_cli_arguments)?,
+                    ]
+                };
+                return coven::agent_management::facts::plan(
+                    &provider,
+                    &executable,
+                    &config_root,
+                    &route,
+                    json,
+                );
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = (provider, executable, config_root, endpoint, json);
+                return Err(coven::Error::invalid_cli_arguments());
+            }
+        }
+        Command::Agent {
+            command: Agent::AttachmentTarget { endpoint, json },
+        } => {
+            if !endpoint.from_kitsune {
+                return Err(coven::Error::invalid_cli_arguments());
+            }
+            return coven::agent_management::attachment_target_arguments(
+                endpoint.state_root.as_deref(),
+                json,
+            );
+        }
+        Command::Agent {
+            command: Agent::ReportAttachment { endpoint, json },
+        } => {
+            if !endpoint.from_kitsune {
+                return Err(coven::Error::invalid_cli_arguments());
+            }
+            return coven::agent_management::attachment_report_arguments(
+                endpoint.state_root.as_deref(),
+                json,
+            );
         }
         Command::Agent {
             command: Agent::Observations { endpoint, json },

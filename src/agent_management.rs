@@ -8,6 +8,9 @@ use std::{
 };
 
 #[cfg(unix)]
+#[path = "agent_management/facts.rs"]
+pub mod facts;
+#[cfg(unix)]
 #[path = "agent_management/files.rs"]
 mod files;
 #[cfg(unix)]
@@ -72,6 +75,79 @@ pub fn native_report_arguments(socket: &str, json: bool) -> Result<TaskOutput> {
         .take(8193)
         .read_to_end(&mut payload)?;
     native_report_payload(socket, &payload, json)
+}
+
+/// Read-only initial capture. The inherited pane is a locator, not hosting proof.
+pub fn attachment_target_arguments(
+    state_root: Option<&std::path::Path>,
+    json: bool,
+) -> Result<TaskOutput> {
+    #[cfg(unix)]
+    {
+        let socket = crate::integration_runtime::reporter_socket(state_root)?;
+        let observations =
+            unix::call_contract(&socket, native::CONTROL_RPC, "observations", json!({}))?;
+        let api = std::env::var("KITSUNE_SOCKET_PATH")
+            .map_err(|_| Error("integration_context_required"))?;
+        let pane =
+            std::env::var("KITSUNE_PANE_ID").map_err(|_| Error("integration_context_required"))?;
+        let target = crate::agent_navigation::attachment_target(&api, &pane)?;
+        require(
+            crate::integration_runtime::reporter_socket(state_root)? == socket,
+            "agent_endpoint_replaced",
+        )?;
+        output(
+            json!({"contract":"coven.attachment-target.v1","server_epoch":observations["server_epoch"],"target":target}),
+            json,
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (state_root, json);
+        Err(Error("agent_unsupported_platform"))
+    }
+}
+
+pub fn attachment_report_arguments(
+    state_root: Option<&std::path::Path>,
+    json: bool,
+) -> Result<TaskOutput> {
+    let mut payload = Vec::new();
+    std::io::stdin()
+        .lock()
+        .take(8193)
+        .read_to_end(&mut payload)?;
+    attachment_report_payload(state_root, &payload, json)
+}
+
+pub fn attachment_report_payload(
+    state_root: Option<&std::path::Path>,
+    payload: &[u8],
+    json: bool,
+) -> Result<TaskOutput> {
+    #[cfg(unix)]
+    {
+        let p = native::attachment_params(&decode(payload, 8192)?, true)?;
+        let socket = crate::integration_runtime::reporter_socket(state_root)?;
+        if p["operation"] == "attach" {
+            let api = std::env::var("KITSUNE_SOCKET_PATH")
+                .map_err(|_| Error("integration_context_required"))?;
+            crate::agent_navigation::check_attachment_target(&api, &p["target"])?;
+        }
+        require(
+            crate::integration_runtime::reporter_socket(state_root)? == socket,
+            "agent_endpoint_replaced",
+        )?;
+        output(
+            unix::call_contract(&socket, native::ATTACHMENT_RPC, "report", p)?,
+            json,
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (state_root, payload, json);
+        Err(Error("agent_unsupported_platform"))
+    }
 }
 
 pub fn native_report_payload(socket: &str, payload: &[u8], json: bool) -> Result<TaskOutput> {

@@ -183,6 +183,25 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
             if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) || !ids.insert(id) {
                 return Err(invalid());
             }
+            if observation["origin"] == "provider_native_fact" {
+                #[cfg(unix)]
+                agent_management::facts::validate_row(observation).map_err(|_| invalid())?;
+                #[cfg(not(unix))]
+                return Err(invalid());
+                let event = observation["last_received_event"]
+                    .as_str()
+                    .ok_or_else(invalid)?;
+                let timing = if observation["source_time"] == "unknown" {
+                    "source age unknown".to_owned()
+                } else {
+                    format!(
+                        "caller-supplied source time; {}; unordered, not current state",
+                        observation["freshness"].as_str().ok_or_else(invalid)?
+                    )
+                };
+                rows.push(json!({"id":format!("observation:{id}"),"label":format!("Coven / {} / {}",observation["provider"].as_str().ok_or_else(invalid)?,&id[..12]),"detail":format!("Coven: last received native hook fact: {event}; {timing}; UNKNOWN; {}; caller unverified; root, native identity and job completion unestablished",observation["profile"].as_str().ok_or_else(invalid)?)}));
+                continue;
+            }
             let provider = observation["provider"].as_str().ok_or_else(invalid)?;
             let state = observation["reported_state"].as_str().ok_or_else(invalid)?;
             let origin = observation["origin"].as_str().ok_or_else(invalid)?;
@@ -194,13 +213,15 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
                 .transpose()?;
             let provenance = matches!(
                 (provider, origin, profile),
-                ("djinn", "djinn_native_event", None)
-                    | (
-                        "opencode",
-                        "provider_native_event",
-                        Some("opencode-root.v1")
-                    )
-                    | ("pi", "provider_native_event", Some("pi-context.v1"))
+                (
+                    "djinn",
+                    "djinn_native_event" | "djinn_client_attachment",
+                    None
+                ) | (
+                    "opencode",
+                    "provider_native_event",
+                    Some("opencode-root.v1")
+                ) | ("pi", "provider_native_event", Some("pi-context.v1"))
                     | (
                         "claude" | "codex" | "copilot" | "pi" | "opencode",
                         "v1_receipt",
@@ -232,6 +253,11 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
                 } else {
                     "; opencode-root.v1; producer-qualified root, not receiver authenticated"
                 });
+            }
+            if observation["hosting_state"] == "local_full_tui_root" {
+                detail.push_str(
+                    "; producer-reported selected local full-TUI root; caller unverified",
+                );
             }
             if observation.get("fresh_pending_count").is_some() {
                 let count = observation["fresh_pending_count"]
@@ -515,6 +541,23 @@ mod tests {
         duplicate["observations"][1]["observation_id"] =
             duplicate["observations"][0]["observation_id"].clone();
         assert!(snapshot(&Mutex::new(duplicate), None).is_err());
+    }
+
+    #[test]
+    fn attachment_only_ui_is_unknown_source_qualified_and_identity_free() {
+        let value = json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch","authorization":"none",
+            "omitted_observations":0,"retired_native_observations":0,"observations":[{
+                "observation_id":"b".repeat(64),"provider":"djinn","origin":"djinn_client_attachment",
+                "reported_state":"unknown","freshness":"unknown","capability":"activity",
+                "hosting_state":"local_full_tui_root","association_revision":"PRIVATE-REVISION",
+                "client_id":"PRIVATE-CLIENT","instance_id":"PRIVATE-INSTANCE","session_id":"PRIVATE-SID",
+                "target":{"socket":"/PRIVATE-SOCKET","terminal_id":"PRIVATE-TERMINAL"}}]});
+        let model = snapshot(&Mutex::new(value), None).unwrap().unwrap();
+        let text = serde_json::to_string(&model.rows).unwrap();
+        assert!(text.contains("UNKNOWN"));
+        assert!(text.contains("producer-reported selected local full-TUI root"));
+        assert!(!text.contains("PRIVATE"));
+        assert_eq!(model.rows[0].as_object().unwrap().len(), 3);
     }
 
     #[test]

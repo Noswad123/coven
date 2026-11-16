@@ -17,9 +17,10 @@ After that opt-in and explicit native hook/extension configuration, users still
 type `djinn`, `codex`, `copilot`, etc. unchanged. Coven supplies attributed plain
 rows under the explicitly selected **Coven** integration source, not the old Kit
 agent-status widgets, pane-focus/sidebar agent model or mobile completion cues.
-No automatic session binding, PID association or authenticated native attestation
-follows. [Checked CLI navigation](AGENT_NAVIGATION_CONTRACT.md) separately permits
-temporary explicit user assertions, not independently proven native hosting.
+No PID association or authenticated native attestation follows.
+[Checked CLI navigation](AGENT_NAVIGATION_CONTRACT.md) permits source-qualified
+local Djinn selected-root producer associations as well as unchanged temporary
+explicit user assertions. Producer display attachment is not execution ownership.
 See the [approved adoption record](FEATURE_ADOPTION_STATUS.md) for current scope.
 
 ## API / Interfaces
@@ -116,7 +117,8 @@ Independent `agent native-extensions` profiles now support pinned Pi context
 metadata/busy/settled-idle and OpenCode known-root lifecycle/status/permission/
 question observations. They require separate explicit installation, use separate
 policies/journals, and do not update historical `agent extensions` reference
-assets or receipts. Codex/Copilot native activity remains unsupported. Unknown
+assets or receipts. Codex/Copilot current-state inference remains unsupported;
+their separate unordered native hook facts are described below. Unknown
 resumed OpenCode roots use bounded on-demand native metadata lookup, with silent
 eligibility registration and the original observation-age budget; missing or
 invalid root DTOs fail closed. Pi makes no root or
@@ -124,10 +126,38 @@ decision-correlation claim. See [native profiles](NATIVE_PROVIDER_EVENTS_CONTRAC
 for exact source/API and loader/macOS qualification limits. Doctor's existing
 closed-v1 capabilities are unchanged; it does not discover these new profiles.
 
+### Codex/Copilot Native Facts
+
+[Native hook facts](NATIVE_HOOK_FACTS_CONTRACT.md) adds `coven.provider-facts.v1`,
+source-qualified `codex-hook-facts.v1` and documentation-qualified
+`copilot-hook-facts.v1`. These are actual fact displays, never working/idle/blocked/
+ended/done state or paired decisions inferred from tool names. Public state is
+always UNKNOWN; no shared fake instance UUID or sequence is synthesized. Codex
+has local receipt age only, with source age unknown. Copilot UTC-Z source time
+anchors monotonic freshness; equal timestamps cannot renew and differing equal-time
+events are ambiguous. Facts are bounded and volatile, separate from reference
+journals, ordered native profiles and attachment leases.
+
+Generate a deterministic inert snippet for deliberate manual review/merge:
+
+```text
+coven agent native-hooks plan --provider codex --config-root ABS_CODEX_ROOT --executable ABS_COVEN --from-kitsune --json
+coven agent native-hooks plan --provider copilot --config-root ABS_COPILOT_ROOT --executable ABS_COVEN --from-kitsune --json
+```
+
+Generated commands use `agent report-fact --provider PROVIDER --event EVENT
+--from-kitsune --best-effort`: zero stdout and exit zero even on reporting failure,
+not native hook decisions. Managed native-hooks install/uninstall/rollback is
+**not implemented**. Do not manually edit an image owned by existing `agent hooks`
+exact-image receipts: use its unchanged explicit uninstall/rollback workflow first
+and inspect the handoff, or select a fresh explicit trusted root. Never delete its
+journal. Preserve unrelated hooks/settings and native disable/trust/approval policy;
+no credentials or provider configuration are automatically edited.
+
 ## Djinn native capture boundary
 
-Ordinary Djinn invocation uses the native legacy full-TUI path. Only its source
-plugin has changed: use an updated UI build containing the reporter. Updating the
+Ordinary Djinn invocation uses the native legacy full-TUI path. Its source plugin
+and optional frontend attachment path require an updated UI build. Updating the
 Rust CLI alone is insufficient if `DJINN_UI_BIN`, a saved runtime binding or the
 wrapper's `DJINN_UI_TARGET` still selects an old UI build. Restart/reload that
 provider in a new eligible pane. Mini, external attach, remote and v2 paths are
@@ -179,8 +209,43 @@ Existing v1 inventory/receipts are not reinterpreted as native events.
 Coven maps native busy/retry to last-reported working, idle to last-reported idle,
 pending native decisions to blocked, and deletion to ended. Duplicate/out-of-order
 sequences do not refresh evidence. These are neither task success nor readiness,
-and no pane binding or authenticated native origin is claimed. Multiple sessions
-remain separate observations.
+and events alone establish no pane binding or authenticated native origin.
+Multiple sessions remain separate observations.
+
+### Local Selected-Root Attachment
+
+[Native attachment](NATIVE_ATTACHMENT_CONTRACT.md) and Djinn's
+[producer contract](../../djinn/docs/local-native-attachment.md) define the delivered
+A2 scope: normal local full TUI, default integrated worker/local RPC and implicit
+local workspace. The existing selected-load callback observes only a loaded,
+mounted Chat root. The frontend captures `agent attachment-target --from-kitsune
+--json` once, then uses its own lifetime UUID/revisions and mounted-only one-second
+observations. Generation-fenced worker RPC revalidates actual native SDK root
+metadata and the actual reporter UUID registry before `report-attachment` frames.
+Coven joins exact instance/SID and pins the Kit API device/inode, terminal and
+runtime incarnation under the captured receiver epoch.
+
+Only the selected root hosts, not other roots in the backend. Quiet root
+qualification is read-only, consumes no entries in the 256-entry native event map
+and emits no native event. Its observation remains UNKNOWN with null activity age.
+The five-second producer lease is independent of the 30-second native evidence
+clocks and five-second generic view lease. Heartbeats never renew activity or
+pending decisions. Chat leave, selection change and plugin disposal release;
+lost release expires. Conflicting targets are ambiguous, with no newest-PID/SID
+inference. Transient work is bounded and capture is never automatically rebound
+after endpoint/runtime/epoch replacement. The revocation owner token is cleared
+before awaiting release, fencing concurrent disposal.
+
+Private CLI observations expose sanitized `hosting_state` and
+`association_revision` for deliberate checked focus. Generic rows may label a
+producer-selected root but omit raw targets/IDs/revisions and add no automatic click
+action or acknowledgement. Existing 30-second user assertions are unchanged.
+Source-qualified root/display origin remains caller-unverified, not authentication,
+physical-pixel proof or provider execution ownership. Mini, external attach,
+remote/explicit workspaces, HTTP transport and other clients/runtimes remain
+unqualified. The seven-scenario [source interop gate](../tools/normal-workflow-check/README.md#a2-source-native-interop)
+uses actual SDK/plugin factory/load/controller/registry and actual Coven/Kit, not
+a physically rendered Djinn TUI or separate Bun Worker/private-RPC handshake.
 
 ### Receiver freshness and retention
 
@@ -210,9 +275,9 @@ is refused for a retained tombstone or active capacity.
 Native storage is independent of the 128-record persisted v1 store. It retains
 at most 128 native observation rows, 128 pending decisions per observation,
 512 instance high-water marks and 512 terminal tombstones. On observation
-pressure, the oldest first-observed ended, expired or fact-less observation is
-retired; 128 genuinely active observations cause capacity refusal until facts
-expire or end. Deletion still retains its tombstone when no display slot can be
+pressure, the oldest inactive, unleased observation is retired; fresh native facts
+and live producer leases, including conflicting leases, are protected. At capacity,
+admission refuses until a row is reclaimable. Deletion still retains its tombstone when no display slot can be
 reclaimed. Instance high-water marks expire 10 minutes after the last consumed
 sequence, and tombstones expire 10 minutes after the first deletion. Each table
 also evicts its oldest entry on count pressure. Forgetting a high-water mark
@@ -260,6 +325,10 @@ their closed-envelope contract and validate actual native cancellation delivery.
 ## Example usage
 
 With compatible Coven/Kit builds and an updated Djinn native full-TUI build:
+
+These source changes are not installed activation. Rebuild all three apps first
+when ready, then perform the explicit server restart/new-pane/provider handoff.
+Provider configuration is never automatically edited.
 
 ```toml
 [integrations]

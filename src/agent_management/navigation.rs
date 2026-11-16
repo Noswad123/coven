@@ -27,6 +27,39 @@ impl Associations {
         now: Instant,
     ) -> Result<Value> {
         self.refresh(native, now);
+        if matches!(method, "focus.prepare" | "association.inspect")
+            && !self
+                .0
+                .get(text(p, "observation_id")?)
+                .is_some_and(|e| e.valid)
+        {
+            require(
+                p.as_object().is_some_and(|o| {
+                    o.len() == 3
+                        && ["observation_id", "expected_epoch", "expected_revision"]
+                            .iter()
+                            .all(|k| o.contains_key(*k))
+                }),
+                "agent_invalid_schema",
+            )?;
+            let id = text(p, "observation_id")?;
+            crate::agent_navigation::hex(id, 64)?;
+            crate::agent_navigation::hex(text(p, "expected_epoch")?, 32)?;
+            require(p["expected_epoch"] == epoch, "agent_stale_epoch")?;
+            let (revision, target) = native
+                .producer_association(id, now)
+                .ok_or(Error("agent_association_unknown"))?;
+            require(
+                (method == "association.inspect" && p["expected_revision"].is_null())
+                    || p["expected_revision"] == revision,
+                "agent_stale_revision",
+            )?;
+            return Ok(
+                json!({"contract":"coven.agent-navigation.v1","server_epoch":epoch,
+                "observation_id":id,"association_revision":revision,"provenance":"producer_reported",
+                "native_hosting":"local_full_tui_root","valid":true,"applied":false,"target":target}),
+            );
+        }
         let keys = if method == "association.assert" {
             6
         } else if method == "association.remove" {
@@ -54,13 +87,14 @@ impl Associations {
         )?;
         let current = self.0.get(id);
         require(
-            current.map(|e| json!(e.revision)).unwrap_or(Value::Null) == *expected,
+            (method == "association.inspect" && expected.is_null())
+                || current.map(|e| json!(e.revision)).unwrap_or(Value::Null) == *expected,
             "agent_stale_revision",
         )?;
         let mut revision = current.map(|e| e.revision.clone());
         let mut target = current.map(|e| e.target.clone());
         let mut valid = current.is_some_and(|e| e.valid);
-        let apply = if method == "focus.prepare" {
+        let apply = if matches!(method, "focus.prepare" | "association.inspect") {
             false
         } else {
             p["apply"].as_bool().ok_or(Error("agent_invalid_schema"))?
@@ -106,7 +140,7 @@ impl Associations {
             }
         } else {
             require(
-                method == "focus.prepare" && valid,
+                matches!(method, "focus.prepare" | "association.inspect") && valid,
                 "agent_association_unknown",
             )?;
         }
