@@ -47,6 +47,14 @@ retained; standalone legacy behavior and list/read/explain facades remain for th
 next cut. Richer Codex/Copilot/Pi support remains user-deferred, not a retirement
 prerequisite.
 
+The subsequent read/detector retirement refuses Kitsune's live list/read/explain
+and manifest status/reload APIs under external ownership. `session.snapshot`
+retains `agents: []` and historical `panes[].agent_session` hints needed by recovery.
+Startup, scheduled, direct and CLI updater admission is guarded before detector
+I/O, with selected-server CLI preflight and ignored late update events. Generic
+terminal/process operations, standalone implementations and explicitly offline
+file diagnostics remain; full source removal is still separate.
+
 The [current qualification record](FEATURE_ADOPTION_STATUS.md#recorded-qualification)
 records the full native Coven suite green (71 targets, 1,760 passed, 0 failed,
 7 ignored parent-exercised fixtures), formatting and strict Clippy, and the actual

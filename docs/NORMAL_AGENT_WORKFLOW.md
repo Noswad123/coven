@@ -71,6 +71,16 @@ malformed startup TOML or unreadable startup config also retains external owners
 fail-closed, without authorizing legacy restore. A missing config uses ordinary defaults.
 The generic helper is server-only; `--no-session` refuses runtime/external mode.
 
+Kitsune's legacy live agent controls/reads and detector-manifest status/reload APIs
+return `external_agent_management` in this mode; they are not aliases for Coven
+observations. Generic `session.snapshot` still succeeds with `agents: []`, while
+historical pane session references remain available for conservative recovery
+vetoes. Generic pane reads/process observations and checked terminal navigation
+remain available. The manifest updater does not load, fetch or write detector
+state under external ownership; a server-directed CLI update preflights that
+server before local work. Explicit offline file diagnostics remain a separate
+compatibility path.
+
 ## Data Flow
 
 The selected `coven integration runtime` helper reads Kit's actual API address

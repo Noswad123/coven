@@ -142,13 +142,42 @@ each refusal. No `MUST_NOT_ENQUEUE` prompt sentinel may appear in either shell's
 recent unwrapped PTY output; real shell file canaries before/after confirm generic
 `pane.send_input` still works. The fixture has no managed agent or provider.
 
-`agent.list` must still succeed with an empty inventory; `agent.read` and
-`agent.explain` must retain their ordinary correlated `agent_not_found` result for
-the non-agent shell, not become blanket ownership refusals. Successful seeded-agent
-read facades and stronger input-queue/state/event invariance remain covered by
-Kit's seeded unit tests. This production check proves the refusal/wrapper path,
-not the existence of managed state in the shell fixture. Read APIs may perform
-ordinary headless housekeeping; the controlled shell fixture has no agent timers.
+The next retirement scenario sends **13 additional typed API requests**:
+`agent.list`, `agent.read`, `agent.explain`, `server.agent_manifests`, and
+`server.reload_agent_manifests`. Read/explain cover the actual pane and terminal,
+unknown, empty, and private selectors. All now require correlated
+`external_agent_management` errors with static guidance and no selector echo,
+before legacy lookup/cache access. This intentionally replaces the previous
+list/read/explain facade compatibility assertions. `session.snapshot` remains
+valid with `agents = []`; focus IDs, pane-to-terminal mappings and any historical
+`panes[].agent_session` fields must remain unchanged. No synthetic historical
+agent session is injected into the real shell fixture; preservation of nonempty
+history is covered by the seeded Kit snapshot/recovery-facing unit tests.
+
+The actual built Kit CLI runs `server update-agent-manifests --json` once against
+the owned server, with separate CLI-only HOME/XDG roots and
+`KITSUNE_AGENT_DETECTION_MANIFEST_CATALOG_URL=interop-invalid://MUST_NOT_FETCH/catalog.toml`.
+It must exit 1 with the correlated `cli:server:agent-manifests` ownership error,
+not a local update/fetch error, and leave its entire local directory tree
+unchanged (bytes, modes, inodes and modification times, excluding access times).
+The invalid scheme has no external fetch endpoint; this run does not use an HTTP
+canary or claim a measured zero-hit socket count. Fake-closure Kit unit tests
+separately prove that the updater/catalog callbacks are never invoked before a
+successful selected-server preflight, including when CLI-global ownership is unset.
+
+Generic `pane.read` still returns actual shell text for visible, recent, recent
+unwrapped and detection sources. Generic `pane.process_info` returns only the
+owned shell's process observation and the snapshot retains the supported Linux
+unclassified foreground-cohort descriptor plus `terminal_navigation.v1`. The
+following actual producer-backed focus scenario proves generic navigation still
+executes successfully. Read APIs may perform ordinary headless housekeeping; the
+controlled shell fixture has no agent timers or active provider. Explicit offline
+`agent explain --file` is not a live facade and is unchanged, not exercised here.
+
+`check.py`'s helper-loss phase now expects the explicit `agent.list` ownership
+refusal alongside an empty snapshot inventory. Its native-facts and 30-second
+activity-evidence-expiry behavior is unchanged. Running the shorter hosting gate
+does **not** qualify or claim execution of that separate full 30-second gate.
 
 The seven following source-native hosting scenarios assert:
 
@@ -201,9 +230,10 @@ released, actual helper reaped and receiver removed, then zero owned descendants
 The subreaper stops/reaps every owned child before exact run-directory removal on
 success, failure and catchable interruption. No bulk artifacts use `/tmp` or RAM.
 
-Recorded control-retirement qualification of the current working-tree sources:
-**8/8 composed scenarios** (32 correlated legacy refusals plus the seven hosting
-scenarios), 1/1 Bun interop fixture, 75 Coven regressions, 59 Kit regressions and
+Recorded read/manifest-retirement qualification on **2026-11-16**, using the current
+working-tree sources: **9/9 composed scenarios** (32 control refusals, 13 additional
+read/manifest refusals plus the built CLI preflight/cache check, and seven hosting
+scenarios), 1/1 Bun interop fixture, 75 Coven regressions, 106 Kit regressions and
 39 Bun producer/selected-load regressions passed. The Coven subset includes the
 new deleted-attachment selection/retirement bookkeeping regressions. Three
 fixture-only Rust tests were ignored by their normal test annotations. No full
@@ -212,8 +242,8 @@ binary SHA-256 identities were:
 
 ```text
 coven   679b9ff73f4001c01889c9d1e8ea995aab0b579fee2ed41ae0baa51c2a88c34b
-kitsune d08205be7476adc04f4612462b18934592677ca00522735d9abddb109ff02e32
-SUMMARY 8 A2 composed scenarios passed
+kitsune 61811bce0bf0cd2dfc1eaf59404787e7556e8e981ee88fc6f23f8c9b29511e9b
+SUMMARY 9 A2 composed scenarios passed
 SHUTDOWN verified: actual server.stop, helper reaped, same receipt generation released, no owned descendants
 CLEANUP confirmed: all owned children stopped/reaped; run directory removed
 ```
@@ -225,26 +255,41 @@ and `server::integration_runtime::tests`):
 
 ```text
 app::api::ownership_tests
+app::api::agents::tests
+app::api::agent_view::tests
+app::api::manifest_ownership_tests
+detect::manifest_update::tests
+cli::server::tests
+external_manifest
+agent_manifest
 external_agent_focus_dispatch
 external_agent_management_headless_boundary
 headless_cwd_forwarding
 api::server::tests::external_wait_wrappers
-api::wait::tests::agent_wait_probe_only_translates_agent_disappearance
+api::wait::tests
 app::api::command_submission::tests
 integration_views::tests
 api::schema::tests::agent_start_and_prompt_requests_round_trip
+app::agent_resume::guard_tests
+process_info
 ```
 
-This includes direct-helper/seeded-state refusal, standalone reconciliation,
-read-facade availability, actual API-server wait-wrapper dispatch, headless focus
-and queued-evidence boundaries, and generic command submission/navigation/view/
-environment/helper behavior. The standard command above always includes the
-production 32-refusal preflight and seven hosting scenarios; its unextended Kit
+This single union of filters counts each Rust test once; it is not the sum of
+earlier overlapping 83/105-test gates. It includes direct-helper/seeded-state
+refusals, standalone behavior, historical snapshot preservation, manifest startup/
+background/reload/deadline/queued-event/reset suppression, CLI preflight/update
+ordering, actual API-server wait-wrapper dispatch, headless boundaries, and generic
+command submission/navigation/process/view/environment/helper behavior. Catalog
+unit tests use fake callbacks or owned `file://` fixtures under the run's TMPDIR,
+never real remote URLs. The standard command above always includes the 45 API
+refusals, built CLI/cache check and seven hosting scenarios; its unextended Kit
 unit filter list is smaller than this recorded retirement run.
 
 These identities qualify that dirty-source build, not subsequent concurrent edits.
-The owned btrfs run, including its retained target, was removed after all children
-stopped/reaped; no build/test artifacts were retained. No production bug surfaced
+The owned btrfs runs, including retained targets, were removed after all children
+stopped/reaped; no build/test artifacts were retained. An initial harness-only
+visible-text marker failure was corrected by establishing semantic-client geometry
+before shell canaries and reads. The rerun passed; no production bug surfaced
 and no production module, Kit source, Djinn fixture, or other agent's documentation
 was edited for this retirement qualification.
 

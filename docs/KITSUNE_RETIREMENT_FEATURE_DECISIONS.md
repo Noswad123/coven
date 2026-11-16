@@ -108,6 +108,13 @@ initial guarded get. Generic terminal controls and historical data remain; the
 standalone implementation and transitional list/read/explain facades are not
 deleted yet. This does not expand the deferred provider-support scope.
 
+The subsequent read/detector cut refuses the live list/read/explain facades and
+manifest status/reload APIs externally. Generic snapshots still succeed with an
+empty agent inventory and intact historical pane references. Background and CLI
+updater admission stops before detector I/O, and queued updates cannot reset
+runtimes. Explicit offline file explanation and standalone implementations remain
+until their source-removal cut; they are not reasons to resume richer providers.
+
 Subsequent cuts should retire agent-specific producers and consumers together.
 Keep generic PTY/process/terminal/session operations and integration transport in
 Kitsune. Preserve old snapshot readers and required migration/uninstall material

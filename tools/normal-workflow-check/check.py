@@ -487,7 +487,11 @@ def native_checks(args, root, kit, receiver, server, helper, pane_id, pane_env, 
             failed.close()
         rejected = rpc(kit, 'pane.report_agent', {**legacy, 'seq': 2})
         require(rejected.get('error', {}).get('code') == 'external_agent_management', 'legacy authority revived')
-        require(not api(kit, 'session.snapshot')['snapshot']['agents'], 'legacy agent appeared after transport loss')
+        rejected = rpc(kit, 'agent.list')
+        require(set(rejected) == {'id', 'error'} and
+                rejected['error'].get('code') == 'external_agent_management',
+                'legacy read facade revived after transport loss')
+        require(api(kit, 'session.snapshot')['snapshot']['agents'] == [], 'legacy agent appeared after transport loss')
         for pid in descendants():
             try:
                 argv = Path(f'/proc/{pid}/cmdline').read_bytes()

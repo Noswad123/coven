@@ -13,7 +13,7 @@ import time
 
 sys.dont_write_bytecode = True
 import check
-from bootstrap import helper_for, instance
+from bootstrap import helper_for, instance, tree
 
 
 def spawn_bun(argv, env, root, tag, package):
@@ -55,6 +55,9 @@ def run(args, root):
         check.require(json.loads(pane_env['KITSUNE_INTEGRATION_REPORT_COMMAND']) ==
                       [args.coven_bin, 'agent', 'report-native', '--from-kitsune', '--state-root', str(state)],
                       'actual pane report route mismatch')
+        # Establish deterministic headless geometry before asserting visible PTY content.
+        view = check.ViewClient(root / 'k-client.sock')
+        view.expect('Integrations', 'coven')
 
         def pane_text(pane_id):
             return check.api(kit, 'pane.read', dict(pane_id=pane_id, source='recent_unwrapped',
@@ -63,19 +66,20 @@ def run(args, root):
         def generic_canary(name):
             marker = root / name
             check.api(kit, 'pane.send_input', dict(pane_id=pane,
-                      text=': > ' + shlex.quote(str(marker)), keys=['enter']))
+                      text='printf "READ_OK\\n"; : > ' + shlex.quote(str(marker)), keys=['enter']))
             check.wait_for(marker.exists, 'generic shell ' + name)
 
         def navigation_state():
             snapshot = check.api(kit, 'session.snapshot')['snapshot']
+            check.require(snapshot['agents'] == [], 'external snapshot exposed legacy agent inventory')
             return {key: snapshot.get(key) for key in
                     ('focused_workspace_id', 'focused_tab_id', 'focused_pane_id')} | {
-                        'terminals': sorted((p['pane_id'], p['terminal_id']) for p in snapshot['panes'])}
+                        'terminals': sorted((p['pane_id'], p['terminal_id']) for p in snapshot['panes']),
+                        'history': sorted((p['pane_id'], p.get('agent_session')) for p in snapshot['panes'])}
 
         generic_canary('before-refusals')
         before = navigation_state()
         terminal = dict(before['terminals'])[pane]
-        check.require(check.api(kit, 'agent.list')['agents'] == [], 'fixture must have only generic shells')
         sentinel = 'MUST_NOT_ENQUEUE'
         controls = [
             ('agent.start', dict(name='gate-agent', kind='djinn', pane_id=pane,
@@ -103,21 +107,66 @@ def run(args, root):
                           sentinel not in json.dumps(response),
                           method + ' did not return a correlated private external-ownership refusal')
             check.require(navigation_state() == before, method + ' refusal changed focus/terminal mappings')
-        # Read facades are intentionally not blanket-refused; a shell is not an agent target.
-        check.require(check.api(kit, 'agent.list')['agents'] == [], 'legacy controls created an agent')
-        for method, params in [
-            ('agent.read', dict(target=pane, source='recent_unwrapped', format='text', lines=20, strip_ansi=True)),
-            ('agent.explain', dict(target=pane)),
-        ]:
-            response = check.rpc(kit, method, params)
-            check.require(response.get('error', {}).get('code') == 'agent_not_found',
-                          method + ' read facade did not preserve its ordinary non-agent result')
         generic_canary('after-refusals')
         for pane_id, _ in before['terminals']:
             check.require(sentinel not in pane_text(pane_id), 'refused prompt reached a generic PTY')
         check.require(navigation_state() == before, 'refusals/read facades changed focus/terminal mappings')
         check.passed(f'Kit external ownership: {len(controls)} correlated legacy-control refusals including wait/prompt-wait; '
-                     'no target fallback, focus/terminal changes or prompt sentinel; generic shell and read facades retained')
+                     'no target fallback, focus/terminal changes or prompt sentinel; generic shell retained')
+
+        reads = [('agent.list', {}), ('server.agent_manifests', {}), ('server.reload_agent_manifests', {})]
+        private_selector = 'PRIVATE-MUST-NOT-ECHO-SELECTOR'
+        for selector in (pane, terminal, 'gate-missing-agent', '', private_selector):
+            reads.extend([
+                ('agent.read', dict(target=selector, source='detection', format='text', lines=20, strip_ansi=True)),
+                ('agent.explain', dict(target=selector)),
+            ])
+        for method, params in reads:
+            response = check.rpc(kit, method, params)
+            check.require(set(response) == {'id', 'error'} and
+                          response['error'].get('code') == 'external_agent_management',
+                          method + ' did not refuse before legacy lookup/cache access')
+            # Static ownership guidance must not expose even a real pane/terminal selector.
+            check.require(all(value not in json.dumps(response['error']) for value in
+                              (pane, terminal, 'gate-missing-agent', private_selector)),
+                          method + ' echoed a private selector')
+            check.require(navigation_state() == before, method + ' refusal changed topology/history/focus')
+
+        cli_root = root / 'cli'
+        cli_root.mkdir(mode=0o700)
+        cli_env = check.environment(cli_root)
+        cli_env.update(KITSUNE_SOCKET_PATH=str(kit), KITSUNE_SESSION=env['KITSUNE_SESSION'],
+                       KITSUNE_AGENT_DETECTION_MANIFEST_CATALOG_URL='interop-invalid://MUST_NOT_FETCH/catalog.toml')
+        cache_before = tree(cli_root)
+        result = subprocess.run([args.kitsune_bin, 'server', 'update-agent-manifests', '--json'],
+                                env=cli_env, cwd=cli_root, capture_output=True, text=True,
+                                timeout=10, preexec_fn=check.limits)
+        check.require(result.returncode == 1 and not result.stdout and len(result.stderr) < 16384,
+                      'built manifest-update CLI did not return its bounded JSON error')
+        response = json.loads(result.stderr)
+        check.require(set(response) == {'id', 'error'} and response['id'] == 'cli:server:agent-manifests' and
+                      response['error'].get('code') == 'external_agent_management' and
+                      'MUST_NOT_FETCH' not in result.stderr,
+                      'built CLI did not propagate selected-server preflight refusal before local update')
+        check.require(tree(cli_root) == cache_before, 'manifest-update CLI mutated isolated cache/status/config tree')
+        check.require(navigation_state() == before, 'manifest-update CLI changed topology/history/focus')
+        snapshot = check.api(kit, 'session.snapshot')['snapshot']
+        check.require(snapshot['terminal_navigation'] == {'version': 1} and
+                      snapshot['process_observation'] == dict(version=1, platform='linux',
+                                                              scope='pane_foreground_cohort', selection='unclassified'),
+                      'generic navigation/process descriptor unavailable')
+        for source in ('visible', 'recent', 'recent_unwrapped', 'detection'):
+            read = check.api(kit, 'pane.read', dict(pane_id=pane, source=source, format='text',
+                                                   lines=200, strip_ansi=True))['read']
+            check.require(read['pane_id'] == pane and isinstance(read['text'], str) and
+                          'READ_OK' in read['text'], 'generic ' + source + ' text read unavailable')
+        process = check.api(kit, 'pane.process_info', dict(pane_id=pane))['process_info']
+        check.require(process['pane_id'] == pane and process.get('shell_pid') in check.descendants(),
+                      'generic process inspection did not identify an owned fixture shell')
+        check.require(navigation_state() == before, 'generic read/process inspection changed topology/history/focus')
+        check.passed(f'Kit read/manifest retirement: {len(reads)} correlated typed refusals without selector echo; '
+                     'built CLI preflight refused before invalid catalog/update with unchanged cache/status tree; '
+                     'snapshot agents empty, generic text/detection/process and navigation.v1 retained')
 
         package = args.djinn_source.resolve() / 'clients/djinn-ui/packages/opencode'
         benv = {**env, 'COVEN_HOSTING_INTEROP': str(root), 'OPENCODE_DISABLE_DEFAULT_PLUGINS': 'true',
@@ -198,7 +247,6 @@ def run(args, root):
         binding = reply.get('result', {})
         check.require(binding.get('provenance') == 'producer_reported' and binding.get('native_hosting') == 'local_full_tui_root'
                       and binding.get('target') == target, 'private producer binding mismatch')
-        view = check.ViewClient(root / 'k-client.sock')
         view.expect('Djinn', 'UNKNOWN')
 
         def privacy():
