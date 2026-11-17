@@ -1,5 +1,47 @@
 # App boundaries: Coven, Kitsune, and Djinn
 
+## Current Retirement Overlay, 2026-11-16
+
+The [Kit global live retirement](../../kitsune/AGENT_CONTROL_RETIREMENT.md)
+supersedes conditional read/control retirement and legacy/platform availability
+claims in the historical detail below. Normal/handoff detector loops, screen/PTY/
+OSC and foreground-hint status policy, live evidence consumers, managed
+reconciliation and provider-resume execution are deleted with or without Coven.
+All 12 live agent methods return `feature_retired` before lookup/validation/
+housekeeping; convenience and raw API CLI refuse locally before socket access.
+AgentStatus subscriptions and agent wait matchers retire; mixed requests reject
+atomically before patterns/probes/streams. Generic event streaming/output waits
+remain, not newly supported generic `events.wait` matchers. Four old pane hooks
+alone retain the external-mode error precedence; standalone they are retired.
+Metadata is token-only, with atomic rejection of mixed retired fields/tokens.
+
+Snapshots return `agents: []` globally while preserving old references/names/argv
+as data, including Coven recovery's skip-only veto. Handoff primary history is not
+suppressed by old references. Optional generic `respawn_shell_on_exit` imports only
+true without argv/FD inference; cold restore is false. Protocol 18 is unchanged.
+Generic UUID/process/PTY/title/CWD/clipboard/child-exit/EOF operations, labels,
+explicit notifications and Integrations sources/leases/views remain; idle-finished
+cues, mobile agent counts and historical navigator agent aliases do not.
+
+All six fresh legacy installers retire on every platform before discovery/probes/
+writes, and recommendation/update policy is removed. Status/uninstall/frozen
+assets/fingerprints/licenses are explicit cleanup only, never automatic migration
+or Coven macOS/Windows qualification. Static local/bundled offline evaluation,
+`agent explain --file`, old DTO decoding and inert Agent-named residue remain.
+Windows' known legacy-agent-aware generic acquisition is unchanged and rejected by
+Coven, not a lifecycle producer. No native runtime-manager fallback remains.
+External ownership is reporting-route intent/hook error compatibility, not a
+built-in enablement switch. No Coven means ordinary multiplexing. Richer providers
+and remote hosting remain user-deferred, mobile adoption unapproved; this cut adds
+no native A3 features. See [status](FEATURE_ADOPTION_STATUS.md#global-retirement-record)
+for latest supplied validation and cleaned-artifact status.
+
+## Historical Adoption And Boundary Detail
+
+The remainder preserves earlier provider/acquisition decisions and scoped
+qualification evidence. Legacy availability/future-retirement language is
+historical, superseded by the overlay above, not current runtime instructions.
+
 ## Overview
 
 **Current adoption (2026-11-15):** the [A1-A5 implementation record](FEATURE_ADOPTION_STATUS.md)

@@ -318,8 +318,7 @@ def startup_modes(args, root):
         workspace.mkdir(mode=0o700)
         (workspace / 'coven.json').write_text('{}\n')
         config = phase / 'kit.toml'
-        text = ('onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n'
-                '[session]\nresume_agents_on_restore = false\n[agent_detection]\nmanifest_check = false\n')
+        text = 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n'
         if mode != 'default':
             text += '[integrations]\nsources = ["coven"]\n'
         if mode == 'presentation-only':
@@ -489,7 +488,7 @@ def native_checks(args, root, kit, receiver, server, helper, pane_id, pane_env, 
         require(rejected.get('error', {}).get('code') == 'external_agent_management', 'legacy authority revived')
         rejected = rpc(kit, 'agent.list')
         require(set(rejected) == {'id', 'error'} and
-                rejected['error'].get('code') == 'external_agent_management',
+                rejected['error'].get('code') == 'feature_retired',
                 'legacy read facade revived after transport loss')
         require(api(kit, 'session.snapshot')['snapshot']['agents'] == [], 'legacy agent appeared after transport loss')
         for pid in descendants():

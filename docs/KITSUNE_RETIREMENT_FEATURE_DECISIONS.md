@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Reviewed 2026-11-15. The user approved adoption A1-A5. This backlog contains only
+Reviewed 2026-11-16. The user approved adoption A1-A5. This backlog contains only
 remaining residuals, not all approved work. Retirement may proceed independently of
 feature parity; useful outcomes can move to Coven while unwanted behaviors retire.
 
@@ -12,7 +12,11 @@ Generic multiplexer features staying in Kitsune are not Coven adoption work.
 Remove or narrow entries when Coven ships them; do not keep completed work in a
 permanent "missing features" backlog.
 
-## Remaining Approved Adoption Work
+Remote/other-runtime work below is user-deferred, not an instruction to implement
+it now or a prerequisite for retirement. No plain-multiplexer replacement belongs
+in Coven. Kit without Coven remains the generic multiplexer.
+
+## Deferred Approved Adoption Work
 
 - **A2: Other-client/runtime and remote-hosting qualification.** The qualified
   normal local Djinn full-TUI/default-worker/implicit-local selected-root producer
@@ -93,7 +97,34 @@ not mark all adoption fully done or certify installed providers/platforms.
 Native qualification and the supported OS matrix remain separate in the
 [migration contract](AGENT_MANAGEMENT_MIGRATION.md), not extra feature-list entries.
 
-## First retirement cut and remaining boundaries
+## Global Retirement And Remaining Cleanup
+
+The [current global cut](../../kitsune/AGENT_CONTROL_RETIREMENT.md) has deleted
+normal/handoff live detector producers and live evidence consumers, managed
+reconciliation, provider autoresume and idle-finished cues. All 12 live agent APIs
+and local CLI controls/read facades retire with `feature_retired` in both modes,
+not only under external ownership. Agent subscriptions/wait matching also retire
+atomically, including mixed generic requests before patterns/probes/streams. The
+four old pane hooks keep external error precedence only externally; generic
+metadata is token-only with atomic mixed-field rejection. Snapshots expose empty
+agent inventory while preserving references/history as data and recovery skip
+vetoes. All six fresh legacy installers retire globally before discovery/probes/
+writes; recommendation/update policy is gone. No automatic uninstall occurs.
+
+D1-D3 are implemented retirement decisions, not pending feature adoption. Mobile
+L1 remains unapproved, not a replacement requirement. Remaining source cleanup is
+offline static local/bundled rules and file explanation, historical DTO decoding,
+frozen cleanup assets/status/uninstall and compatibility-inert naming. Windows'
+known agent-aware generic process acquisition remains separate and rejected by
+Coven, not live lifecycle production. No runtime agent-manager fallback remains.
+No new native A3 capability or macOS/Windows qualification follows from deletion.
+Richer provider/remote work stays deferred. Latest supplied qualification and
+artifact cleanup are [recorded separately](FEATURE_ADOPTION_STATUS.md#global-retirement-record).
+
+## Historical Retirement Sequence
+
+The following records earlier conditional cuts. Its remaining-live/next-cut
+statements are superseded by global source removal above, not active instructions.
 
 The first bounded cut rejects legacy `agent.start` under external ownership,
 before validation, terminal input or managed-state mutation. It returns
@@ -114,6 +145,15 @@ empty agent inventory and intact historical pane references. Background and CLI
 updater admission stops before detector I/O, and queued updates cannot reset
 runtimes. Explicit offline file explanation and standalone implementations remain
 until their source-removal cut; they are not reasons to resume richer providers.
+
+The first global source-removal cut supersedes those manifest-specific guards:
+remote acquisition, cache/status consumption, scheduling and update events are
+deleted, not merely disabled externally. Retained manifest methods/commands now
+return `feature_retired` in either ownership mode, and the CLI fails locally with
+no probe. Old remote files are ignored and untouched; static rules are local
+override then bundled only. The next physical boundary is the ordinary/handoff
+live pane detector producer pipeline and its status consumers, not another mode
+flag or a reason to expand deferred provider work.
 
 Subsequent cuts should retire agent-specific producers and consumers together.
 Keep generic PTY/process/terminal/session operations and integration transport in

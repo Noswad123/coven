@@ -156,7 +156,6 @@ def check_setup(args, root):
     config.parent.mkdir(mode=0o700)
     original = (b'# unrelated settings stay byte-exact on disable\nonboarding = false\n'
                 b'[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n'
-                b'[session]\nresume_agents_on_restore = false\n[agent_detection]\nmanifest_check = false\n'
                 b'[ui]\nsidebar_width = 160\nsidebar_min_width = 160\nsidebar_max_width = 160\n'
                 b'[integrations]\n# existing source comment\nsources = ["coven", "build"] # keep this comment\n')
     config.write_bytes(original)

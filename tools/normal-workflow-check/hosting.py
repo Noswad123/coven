@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Actual source-native A2 producer -> Coven -> Kit, offline and opt-in."""
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 from pathlib import Path
 import shlex
+import select
 import socket
 import subprocess
 import sys
@@ -14,6 +16,16 @@ import time
 sys.dont_write_bytecode = True
 import check
 from bootstrap import helper_for, instance, tree
+
+
+MANIFEST_RETIREMENT_MESSAGE = ('Built-in detector-manifest management has been retired; Kitsune no longer '
+                               'downloads or reloads agent-detection manifests. Generic pane/process operations remain available.')
+
+
+def retirement_error(method):
+    return dict(code='feature_retired', message=f'Legacy agent operation {method} is retired; Kitsune no longer '
+                'provides built-in agent lifecycle, readiness, or status. Use generic terminal/pane operations, '
+                'or an external agent manager.')
 
 
 def spawn_bun(argv, env, root, tag, package):
@@ -33,7 +45,6 @@ def run(args, root):
     env['PATH'] = str(bindir) + ':/usr/bin:/bin'
     config = root / 'kit.toml'
     config.write_text('onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n'
-                      '[session]\nresume_agents_on_restore = false\n[agent_detection]\nmanifest_check = false\n'
                       '[ui]\nsidebar_width = 160\nsidebar_min_width = 160\nsidebar_max_width = 160\n'
                       '[integrations]\nsources = ["coven"]\n')
     kit = root / 'k.sock'
@@ -41,6 +52,16 @@ def run(args, root):
                KITSUNE_SESSION='a2-interop', KITSUNE_LOG='warn')
     workspace = root / 'w'
     check.command([args.coven_bin, 'init', str(workspace), '--blank'], env, root)
+    # Actual dev-build legacy paths: positive stale inputs must survive startup and shutdown untouched.
+    retired_cache = root / 'v/kitsune-dev/agent-detection'
+    (retired_cache / 'remote').mkdir(parents=True, mode=0o700)
+    (retired_cache / 'remote/codex.toml').write_text('id = "codex"\nversion = "9999.1"\n'
+                                                  'min_engine_version = 1\nupdated_at = "2026-06-10T12:00:00Z"\n'
+                                                  '[[rules]]\nid = "stale-remote"\nstate = "blocked"\n'
+                                                  'contains = ["STALE_REMOTE_MUST_NOT_LOAD"]\n')
+    (retired_cache / 'status.toml').write_text('last_check_unix = 123\nlast_result = "stale-status"\n'
+                                            '[agents.codex]\ncached_version = "9999.1"\nlast_result = "updated"\n')
+    retired_before = tree(retired_cache)
     server = check.spawn([args.kitsune_bin, 'server'], env, root, 'kit', stdin=subprocess.DEVNULL)
     producer = view = None
     try:
@@ -103,7 +124,7 @@ def run(args, root):
         for method, params in controls:
             response = check.rpc(kit, method, params)
             check.require(set(response) == {'id', 'error'} and
-                          response['error'].get('code') == 'external_agent_management' and
+                          response['error'] == retirement_error(method) and
                           sentinel not in json.dumps(response),
                           method + ' did not return a correlated private external-ownership refusal')
             check.require(navigation_state() == before, method + ' refusal changed focus/terminal mappings')
@@ -111,7 +132,7 @@ def run(args, root):
         for pane_id, _ in before['terminals']:
             check.require(sentinel not in pane_text(pane_id), 'refused prompt reached a generic PTY')
         check.require(navigation_state() == before, 'refusals/read facades changed focus/terminal mappings')
-        check.passed(f'Kit external ownership: {len(controls)} correlated legacy-control refusals including wait/prompt-wait; '
+        check.passed(f'Kit global Agent retirement: {len(controls)} correlated feature_retired refusals including wait/prompt-wait; '
                      'no target fallback, focus/terminal changes or prompt sentinel; generic shell retained')
 
         reads = [('agent.list', {}), ('server.agent_manifests', {}), ('server.reload_agent_manifests', {})]
@@ -123,9 +144,14 @@ def run(args, root):
             ])
         for method, params in reads:
             response = check.rpc(kit, method, params)
+            manifest = method.startswith('server.')
             check.require(set(response) == {'id', 'error'} and
-                          response['error'].get('code') == 'external_agent_management',
-                          method + ' did not refuse before legacy lookup/cache access')
+                          response['error'] == (dict(code='feature_retired', message=MANIFEST_RETIREMENT_MESSAGE)
+                                                if manifest else retirement_error(method)),
+                          method + ' did not return its exact retirement/ownership error')
+            if manifest:
+                check.require(response['error'] == dict(code='feature_retired', message=MANIFEST_RETIREMENT_MESSAGE),
+                              method + ' did not return the fixed global retirement message')
             # Static ownership guidance must not expose even a real pane/terminal selector.
             check.require(all(value not in json.dumps(response['error']) for value in
                               (pane, terminal, 'gate-missing-agent', private_selector)),
@@ -135,21 +161,70 @@ def run(args, root):
         cli_root = root / 'cli'
         cli_root.mkdir(mode=0o700)
         cli_env = check.environment(cli_root)
-        cli_env.update(KITSUNE_SOCKET_PATH=str(kit), KITSUNE_SESSION=env['KITSUNE_SESSION'],
-                       KITSUNE_AGENT_DETECTION_MANIFEST_CATALOG_URL='interop-invalid://MUST_NOT_FETCH/catalog.toml')
-        cache_before = tree(cli_root)
-        result = subprocess.run([args.kitsune_bin, 'server', 'update-agent-manifests', '--json'],
-                                env=cli_env, cwd=cli_root, capture_output=True, text=True,
-                                timeout=10, preexec_fn=check.limits)
-        check.require(result.returncode == 1 and not result.stdout and len(result.stderr) < 16384,
-                      'built manifest-update CLI did not return its bounded JSON error')
-        response = json.loads(result.stderr)
-        check.require(set(response) == {'id', 'error'} and response['id'] == 'cli:server:agent-manifests' and
-                      response['error'].get('code') == 'external_agent_management' and
-                      'MUST_NOT_FETCH' not in result.stderr,
-                      'built CLI did not propagate selected-server preflight refusal before local update')
-        check.require(tree(cli_root) == cache_before, 'manifest-update CLI mutated isolated cache/status/config tree')
-        check.require(navigation_state() == before, 'manifest-update CLI changed topology/history/focus')
+        # Listen without serving: even a protocol ping must be observable and must fail this gate.
+        with contextlib.ExitStack() as stack:
+            canaries = []
+            for name in ('m.sock', 'm-client.sock', 'n.sock'):
+                listener = stack.enter_context(socket.socket(socket.AF_UNIX))
+                listener.bind(str(root / name))
+                (root / name).chmod(0o600)
+                listener.listen(16)
+                canaries.append(listener)
+            cli_env.update(KITSUNE_SOCKET_PATH=str(root / 'm.sock'),
+                           KITSUNE_CLIENT_SOCKET_PATH=str(root / 'n.sock'),
+                           KITSUNE_AGENT_DETECTION_MANIFEST_CATALOG_URL='interop-invalid://MUST_NOT_FETCH/catalog.toml')
+            cache_before = tree(cli_root)
+            valid_forms = [('agent-manifests', []), ('agent-manifests', ['--json']),
+                           ('update-agent-manifests', []), ('update-agent-manifests', ['--json']),
+                           ('reload-agent-manifests', [])]
+            invalid_forms = [(name, ['--invalid']) for name in
+                             ('agent-manifests', 'update-agent-manifests', 'reload-agent-manifests')]
+            invalid_forms.append(('reload-agent-manifests', ['--json']))
+            for index, (name, flags) in enumerate(valid_forms + invalid_forms):
+                result = subprocess.run([args.kitsune_bin, 'server', name, *flags],
+                                        env=cli_env, cwd=cli_root, capture_output=True, text=True,
+                                        timeout=10, preexec_fn=check.limits)
+                check.require(not select.select(canaries, [], [], 0)[0], 'retired CLI contacted an API/client canary')
+                check.require(not result.stdout and len(result.stderr) < 16384, 'retired CLI output unbounded/unexpected')
+                if index >= len(valid_forms):
+                    check.require(result.returncode == 2 and result.stderr.startswith('usage: kitsune server ' + name),
+                                  'invalid retired CLI syntax did not remain usage exit 2')
+                else:
+                    check.require(result.returncode == 1, 'retired CLI did not fail locally')
+                    if flags:
+                        check.require(json.loads(result.stderr) == dict(id='cli:server:' + name,
+                                      error=dict(code='feature_retired', message=MANIFEST_RETIREMENT_MESSAGE)),
+                                      'retired CLI JSON error/command ID mismatch')
+                    else:
+                        check.require(result.stderr == 'feature_retired: ' + MANIFEST_RETIREMENT_MESSAGE + '\n',
+                                      'retired CLI text error mismatch')
+                check.require(tree(cli_root) == cache_before, 'retired CLI mutated isolated HOME/cache/status/config tree')
+            agent_forms = [(['list'], 'agent.list'), (['get', 'PRIVATE-CLI'], 'agent.get'),
+                           (['read', 'PRIVATE-CLI'], 'agent.read'), (['explain', 'PRIVATE-CLI', '--json'], 'agent.explain'),
+                           (['send-keys', 'PRIVATE-CLI', 'enter'], 'agent.send_keys'),
+                           (['rename', 'PRIVATE-CLI', 'gate-name'], 'agent.rename'),
+                           (['focus', 'PRIVATE-CLI'], 'agent.focus'),
+                           (['start', 'gate-name', '--kind', 'djinn', '--pane', pane], 'agent.start'),
+                           (['prompt', 'PRIVATE-CLI', sentinel, '--wait', '--until', 'idle', '--timeout', '0'], 'agent.prompt'),
+                           (['wait', 'PRIVATE-CLI'], 'agent.wait'), (['attach', 'PRIVATE-CLI', '--takeover'], 'agent.get')]
+            targets = ('pi', 'claude', 'codex', 'copilot', 'opencode', 'djinn')
+            for argv, method in [(['agent', *argv], method) for argv, method in agent_forms] + [
+                    (['integration', 'install', target], 'integration.install') for target in targets]:
+                result = subprocess.run([args.kitsune_bin, *argv], env=cli_env, cwd=cli_root,
+                                        capture_output=True, text=True, timeout=10, preexec_fn=check.limits)
+                check.require(result.returncode == 1 and not result.stdout and len(result.stderr) < 16384,
+                              'retired Agent/install CLI did not fail locally')
+                if method == 'integration.install':
+                    check.require(result.stderr.startswith('feature_retired: integration.install:'),
+                                  'installer CLI lost its human-text retirement error')
+                else:
+                    check.require(json.loads(result.stderr) == dict(id='cli:agent:retired', error=retirement_error(method)),
+                                  'Agent CLI local retirement error mismatch')
+                check.require(not select.select(canaries, [], [], 0)[0], 'Agent/install CLI contacted an API/client canary')
+                check.require(tree(cli_root) == cache_before, 'Agent/install CLI changed HOME/config/cache tree')
+            check.require(not select.select(canaries, [], [], 0)[0], 'late retired CLI socket connection')
+        check.require(tree(retired_cache) == retired_before, 'startup/API/CLI changed stale remote cache/status inputs')
+        check.require(navigation_state() == before, 'retired CLI changed topology/history/focus')
         snapshot = check.api(kit, 'session.snapshot')['snapshot']
         check.require(snapshot['terminal_navigation'] == {'version': 1} and
                       snapshot['process_observation'] == dict(version=1, platform='linux',
@@ -164,9 +239,99 @@ def run(args, root):
         check.require(process['pane_id'] == pane and process.get('shell_pid') in check.descendants(),
                       'generic process inspection did not identify an owned fixture shell')
         check.require(navigation_state() == before, 'generic read/process inspection changed topology/history/focus')
-        check.passed(f'Kit read/manifest retirement: {len(reads)} correlated typed refusals without selector echo; '
-                     'built CLI preflight refused before invalid catalog/update with unchanged cache/status tree; '
+        check.passed(f'Kit read/global-manifest retirement: {len(reads)} exact feature_retired API refusals; '
+                     '22 local CLI refusals + 4 usage errors, zero API/client canary connections; '
+                     'CLI tree and seeded stale remote cache/status unchanged; '
                      'snapshot agents empty, generic text/detection/process and navigation.v1 retained')
+
+        hooks = [('pane.report_agent', dict(pane_id=pane, source='kitsune:djinn', agent='djinn', state='working', seq=1)),
+                 ('pane.report_agent_session', dict(pane_id=pane, source='kitsune:djinn', agent='djinn', seq=1)),
+                 ('pane.clear_agent_authority', dict(pane_id=pane, source='kitsune:djinn', seq=1)),
+                 ('pane.release_agent', dict(pane_id=pane, source='kitsune:djinn', agent='djinn', seq=1))]
+        for method, params in hooks:
+            response = check.rpc(kit, method, params)
+            check.require(set(response) == {'id', 'error'} and response['error']['code'] == 'external_agent_management',
+                          'external pane hook lost its distinct ownership error')
+        compound = [('integration.install', dict(target=target)) for target in targets]
+        for matcher in (dict(type='substring', value='READ_OK'), dict(type='regex', value='[')):
+            generic = dict(type='pane.output_matched', pane_id='PRIVATE-OUTPUT', source='recent', match=matcher)
+            retired = dict(type='pane.agent_status_changed', pane_id='PRIVATE-STATUS', agent_status='unknown')
+            for subscriptions in ([generic, retired], [retired, generic]):
+                compound.append(('events.subscribe', dict(subscriptions=subscriptions)))
+        for selector in (pane, 'PRIVATE-STATUS', ''):
+            for status in ('unknown', 'working'):
+                compound.append(('events.wait', dict(match_event=dict(event='pane_agent_status_changed',
+                                pane_id=selector, agent_status=status), timeout_ms=0)))
+        for method, params in compound:
+            if method.startswith('events.'):
+                with socket.socket(socket.AF_UNIX) as stream:
+                    stream.settimeout(2)
+                    stream.connect(str(kit))
+                    stream.sendall((json.dumps(dict(id='retirement-stream', method=method, params=params)) + '\n').encode())
+                    data = bytearray()
+                    while block := stream.recv(16384):
+                        data.extend(block)
+                        check.require(len(data) < 16384, 'retired event request initialized an unexpected stream')
+                    check.require(len(data.splitlines()) == 1, 'retired event request returned stream data')
+                    response = json.loads(data)
+                    check.require(response.get('id') == 'retirement-stream', 'retired stream reply was uncorrelated')
+            else:
+                response = check.rpc(kit, method, params)
+            check.require(set(response) == {'id', 'error'} and response['error'] == retirement_error(method),
+                          method + ' did not retire atomically before semantic validation/probes')
+            check.require(navigation_state() == before, 'retired compound/install request changed topology/history')
+        check.passed(f'Kit compound retirement: {len(compound)} exact feature_retired event/install requests, '
+                     'closed single-frame event refusals; 4 pane hooks retain external_agent_management')
+
+        def tokens():
+            return next(p.get('tokens', {}) for p in check.api(kit, 'session.snapshot')['snapshot']['panes'] if p['pane_id'] == pane)
+
+        with socket.socket(socket.AF_UNIX) as stream:
+            stream.settimeout(3)
+            stream.connect(str(kit))
+            stream.sendall((json.dumps(dict(id='tokens', method='events.subscribe',
+                            params=dict(subscriptions=[dict(type='pane.updated')]))) + '\n').encode())
+            with stream.makefile('r') as reader:
+                check.require(json.loads(reader.readline(16384)) == dict(id='tokens', result=dict(type='subscription_started')),
+                              'generic metadata event subscription failed')
+
+                def token_event(key, expected):
+                    for _ in range(64):
+                        value = json.loads(reader.readline(65536))
+                        item = value.get('data', {}).get('pane', {})
+                        if item.get('pane_id') == pane and item.get('tokens', {}).get(key) == expected:
+                            return
+                    raise AssertionError('generic metadata token event not observed')
+
+                base = dict(pane_id=pane, source='gate.tokens')
+                check.api(kit, 'pane.report_metadata', {**base, 'seq': 1, 'ttl_ms': 60000, 'tokens': {'gate': 'kept'}})
+                token_event('gate', 'kept')
+                for field in [dict(agent='djinn'), dict(title='retired'), dict(display_agent='retired'),
+                              dict(applies_to_source='kitsune:djinn'), dict(state_labels={'working': 'retired'}),
+                              dict(clear_title=True), dict(clear_display_agent=True), dict(clear_state_labels=True)]:
+                    response = check.rpc(kit, 'pane.report_metadata', {**base, **field, 'seq': 100,
+                                         'tokens': {'gate': 'MUST_NOT_PATCH'}})
+                    check.require(response.get('error') == retirement_error('pane.report_metadata') and tokens()['gate'] == 'kept',
+                                  'retired presentation field patched tokens or lost its exact error')
+                check.api(kit, 'pane.report_metadata', {**base, 'seq': 1, 'tokens': {'gate': 'stale'}})
+                check.require(tokens()['gate'] == 'kept', 'duplicate metadata sequence changed token')
+                check.api(kit, 'pane.report_metadata', {**base, 'seq': 2, 'ttl_ms': 400, 'tokens': {'short': 'expires'}})
+                check.require(tokens().get('short') == 'expires', 'new metadata sequence was consumed by a refused mixed frame')
+                check.wait_for(lambda: 'short' not in tokens() and tokens().get('gate') == 'kept', 'generic token TTL expiry')
+                token_event('short', None)
+                check.api(kit, 'pane.report_metadata', {**base, 'seq': 3, 'tokens': {'gate': 'fresh'}})
+                token_event('gate', 'fresh')
+                check.api(kit, 'pane.report_metadata', {**base, 'seq': 4, 'tokens': {'gate': None}})
+                check.require('gate' not in tokens(), 'generic token clear failed')
+        matched = check.api(kit, 'pane.wait_for_output', dict(pane_id=pane, source='recent',
+                            match=dict(type='substring', value='READ_OK'), timeout_ms=1000))
+        check.require(matched['type'] == 'output_matched' and matched['pane_id'] == pane, 'generic output wait failed')
+        unsupported = check.rpc(kit, 'events.wait', dict(match_event=dict(event='workspace_created'), timeout_ms=0))
+        check.require(unsupported.get('error', {}).get('code') == 'unsupported_event_wait_match',
+                      'unsupported generic events.wait was incorrectly claimed as supported')
+        check.require(navigation_state() == before, 'generic metadata/waits changed topology/history')
+        check.passed('Kit generic metadata: 8 mixed-presentation refusals atomic; token sequence/TTL/clear and pane.updated '
+                     'events work; pane.wait_for_output succeeds; unsupported generic events.wait stays explicit')
 
         package = args.djinn_source.resolve() / 'clients/djinn-ui/packages/opencode'
         benv = {**env, 'COVEN_HOSTING_INTEROP': str(root), 'OPENCODE_DISABLE_DEFAULT_PLUGINS': 'true',
@@ -321,9 +486,67 @@ def run(args, root):
     released = json.loads((directory / 'receipt.json').read_text())
     check.require(released['released'] and released['nonce'] == receipt['nonce'] and
                   not receiver.exists() and not Path(f'/proc/{helper}').exists(), 'helper/receipt shutdown failed')
+    check.require(tree(retired_cache) == retired_before, 'hosting/shutdown changed stale remote cache/status inputs')
     check.stop_children()
     check.require(not check.descendants(), 'owned descendants remain')
     print('SHUTDOWN verified: actual server.stop, helper reaped, same receipt generation released, no owned descendants', flush=True)
+
+    phase = root / 'solo'
+    phase.mkdir(mode=0o700)
+    solo_env = check.environment(phase)
+    solo_config = phase / 'kit.toml'
+    solo_config.write_text('onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n'
+                           '[integrations]\nsources = []\n')
+    solo_socket = phase / 'k.sock'
+    solo_env.update(KITSUNE_CONFIG_PATH=str(solo_config), KITSUNE_SOCKET_PATH=str(solo_socket),
+                    KITSUNE_SESSION='standalone-retirement', KITSUNE_LOG='warn')
+    solo = check.spawn([args.kitsune_bin, 'server'], solo_env, root, 'solo-kit', stdin=subprocess.DEVNULL)
+    try:
+        check.wait_for(lambda: check.api(solo_socket, 'session.snapshot'), 'owned standalone Kit startup')
+        solo_pane, solo_pane_env = check.pane_environment(solo_socket, phase, workspace)
+        check.require(all(key not in solo_pane_env for key in ('KITSUNE_INTEGRATION_SOURCE',
+                      'KITSUNE_INTEGRATION_REPORT_COMMAND', 'KITSUNE_AGENT_MANAGEMENT')), 'standalone inherited an external route')
+        snapshot = check.api(solo_socket, 'session.snapshot')['snapshot']
+        check.require(snapshot['agents'] == [] and snapshot['integration_views']['sources'] == [],
+                      'standalone restored a built-in agent manager or external integration')
+        cases = [('agent.list', {}), ('agent.get', dict(target=solo_pane)),
+                 ('agent.start', dict(name='inert', kind='djinn', pane_id=solo_pane)),
+                 ('agent.prompt', dict(target=solo_pane, text=sentinel, wait=dict(until=['idle'], timeout_ms=0))),
+                 ('agent.read', dict(target=solo_pane, source='detection')),
+                 ('server.agent_manifests', {}), ('server.reload_agent_manifests', {}),
+                 ('integration.install', dict(target='djinn')),
+                 ('events.wait', dict(match_event=dict(event='pane_agent_status_changed', pane_id=solo_pane, agent_status='unknown'))),
+                 ('events.subscribe', dict(subscriptions=[dict(type='workspace.created'),
+                  dict(type='pane.agent_status_changed', pane_id=solo_pane)]))]
+        cases.extend((method, {**params, 'pane_id': solo_pane}) for method, params in hooks)
+        for method, params in cases:
+            response = check.rpc(solo_socket, method, params)
+            expected = dict(code='feature_retired', message=MANIFEST_RETIREMENT_MESSAGE) if method.startswith('server.') else retirement_error(method)
+            # Pane ingress guidance is handler-specific; its code must still retire globally.
+            check.require(set(response) == {'id', 'error'} and response['error'].get('code') == 'feature_retired' and
+                          (method.startswith('pane.') or response['error'] == expected), 'standalone legacy operation was not retired')
+        marker = phase / 'quiet'
+        check.api(solo_socket, 'pane.send_input', dict(pane_id=solo_pane,
+                  text='printf "SOLO_OK\\n"; : > ' + shlex.quote(str(marker)), keys=['enter']))
+        check.wait_for(marker.exists, 'standalone generic shell input')
+        read = check.api(solo_socket, 'pane.read', dict(pane_id=solo_pane, source='recent_unwrapped', format='text'))['read']
+        process = check.api(solo_socket, 'pane.process_info', dict(pane_id=solo_pane))['process_info']
+        terminal = next(p['terminal_id'] for p in snapshot['panes'] if p['pane_id'] == solo_pane)
+        info = check.api(solo_socket, 'terminal.inspect', dict(terminal_id=terminal))
+        focused = check.api(solo_socket, 'terminal.focus', dict(terminal_id=terminal,
+                            expected_runtime_generation=info['runtime_generation']))
+        check.require('SOLO_OK' in read['text'] and sentinel not in read['text'] and
+                      process.get('shell_pid') in check.descendants() and focused['type'] == 'terminal_focused',
+                      'standalone generic shell/read/process/generation focus failed')
+        check.require(check.api(solo_socket, 'session.snapshot')['snapshot']['agents'] == [] and
+                      not (phase / 'state/coven').exists(), 'standalone retirement acquired hidden Coven state')
+        check.passed(f'Kit without Coven: {len(cases)} exact feature_retired refusals including four pane hooks; '
+                     'no external route/state, empty agent inventory; generic shell/read/process/exact-generation focus works')
+    finally:
+        if solo.poll() is None:
+            check.api(solo_socket, 'server.stop')
+        check.require(solo.wait(timeout=10) == 0, 'standalone Kit shutdown failed')
+    check.stop_children()
     print(f'SUMMARY {check.PASS_COUNT} A2 composed scenarios passed', flush=True)
 
 

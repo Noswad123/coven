@@ -130,13 +130,13 @@ Djinn `test/coven/hosting-interop.test.ts`, executed by Bun in its opencode pack
 using existing dependencies and the shared-effect/instance SDK test pattern.
 The fixture is skipped unless explicitly enabled by this runner.
 
-Before starting Djinn, an external-ownership preflight sends **32 typed requests**
+Before starting Djinn, a global-retirement preflight sends **32 typed requests**
 to the actual Kit API: `agent.start`, `agent.get`, `agent.focus`, `agent.rename`,
 `agent.prompt`, `agent.send_keys`, `agent.view.set`, `agent.view.clear` (both
 source-scoped and default/global), `agent.wait`, and prompt-with-wait. Targeted
 controls use the real pane ID, terminal ID, an unknown selector and an empty
 selector. Every response must be correlated and return exactly the
-`external_agent_management` error path, not target/argument errors or a default
+`feature_retired` error path with the fixed method-specific guidance, not target/argument errors or a default
 target fallback. All focus IDs and pane-to-terminal mappings are compared after
 each refusal. No `MUST_NOT_ENQUEUE` prompt sentinel may appear in either shell's
 recent unwrapped PTY output; real shell file canaries before/after confirm generic
@@ -145,25 +145,62 @@ recent unwrapped PTY output; real shell file canaries before/after confirm gener
 The next retirement scenario sends **13 additional typed API requests**:
 `agent.list`, `agent.read`, `agent.explain`, `server.agent_manifests`, and
 `server.reload_agent_manifests`. Read/explain cover the actual pane and terminal,
-unknown, empty, and private selectors. All now require correlated
-`external_agent_management` errors with static guidance and no selector echo,
-before legacy lookup/cache access. This intentionally replaces the previous
-list/read/explain facade compatibility assertions. `session.snapshot` remains
+unknown, empty, and private selectors. The eleven agent requests require exactly
+`feature_retired` with method-specific guidance; the two server manifest methods require exactly
+`feature_retired` and the fixed `DETECTOR_MANIFEST_RETIREMENT_MESSAGE`, not either
+error interchangeably. Every reply is correlated, with no selector echo. The
+Agent and manifest API retirement is global, not dependent on external ownership;
+both actual owned server modes and focused Kit tests exercise that distinction. This
+intentionally replaces the earlier read-facade and ownership-only manifest
+compatibility assertions. `session.snapshot` remains
 valid with `agents = []`; focus IDs, pane-to-terminal mappings and any historical
 `panes[].agent_session` fields must remain unchanged. No synthetic historical
 agent session is injected into the real shell fixture; preservation of nonempty
 history is covered by the seeded Kit snapshot/recovery-facing unit tests.
 
-The actual built Kit CLI runs `server update-agent-manifests --json` once against
-the owned server, with separate CLI-only HOME/XDG roots and
-`KITSUNE_AGENT_DETECTION_MANIFEST_CATALOG_URL=interop-invalid://MUST_NOT_FETCH/catalog.toml`.
-It must exit 1 with the correlated `cli:server:agent-manifests` ownership error,
-not a local update/fetch error, and leave its entire local directory tree
-unchanged (bytes, modes, inodes and modification times, excluding access times).
-The invalid scheme has no external fetch endpoint; this run does not use an HTTP
-canary or claim a measured zero-hit socket count. Fake-closure Kit unit tests
-separately prove that the updater/catalog callbacks are never invoked before a
-successful selected-server preflight, including when CLI-global ownership is unset.
+The actual built Kit CLI now refuses **locally**, without probing any server.
+The five valid forms are `server agent-manifests`, `server agent-manifests --json`,
+`server update-agent-manifests`, `server update-agent-manifests --json`, and
+`server reload-agent-manifests`. All must exit 1 with the exact global retirement
+message; JSON forms retain their command-specific `cli:server:COMMAND` IDs. Three
+`--invalid` forms and `reload-agent-manifests --json` separately remain usage exit 2.
+No success/refusal from a real API server is accepted as evidence of local refusal.
+
+The canaries also cover eleven valid Agent CLI forms: list, get, read, live explain,
+send-keys, rename, focus, start, prompt-with-wait, wait without a timeout, and attach
+with takeover. They require exact local JSON retirement errors and never launch,
+attach, resolve readiness or submit input. All six `integration install` target
+forms require the existing local human-text `feature_retired` error, not invented
+JSON output. Status/uninstall are cleanup-only and are not executed by this gate.
+
+All **26 CLI invocations** (22 retirement refusals plus four usage errors) use
+separate CLI-only HOME/XDG roots. Listening Unix
+canaries occupy the explicit `KITSUNE_SOCKET_PATH`, its derived `-client.sock`
+address, and explicit fallback `KITSUNE_CLIENT_SOCKET_PATH`. They accept/serve
+nothing: even a protocol probe queues a connection and fails the check. The gate
+requires **zero connections** after each exited command and at the end, plus an
+unchanged complete CLI directory tree (bytes, modes, inodes and modification times,
+excluding access times). A stale CLI-only catalog environment variable contains an
+invalid scheme, with no TCP/HTTP endpoint. Its production consumer no longer exists;
+this is no longer a catalog preflight or update-callback-order test.
+
+Before starting actual Kit, the gate positively seeds the dev build's old
+`XDG_STATE_HOME/kitsune-dev/agent-detection/remote/codex.toml` and `status.toml`.
+Their complete trees must remain unchanged through startup, API/CLI refusals,
+source-native hosting and final server shutdown. Static-loader unit tests separately
+prove the old cache/status are ignored, local overrides take priority over bundled
+rules, and legacy explain fields remain null/false. The composed external shell
+fixture does not infer static-rule selection from provider activity. Static rules
+remain for explicit offline diagnostics; normal/handoff live detector producers,
+inference loops and Agent workflow execution are now deleted in the qualified Kit
+source. The gate validates resulting runtime contracts, not a negative inference
+from the absence of producer messages in bounded warning-level logs.
+
+The normal hosting, `check.py` startup-mode and `bootstrap.py` setup fixtures no
+longer advertise obsolete `[agent_detection] manifest_check = false` or
+`[session] resume_agents_on_restore = false` settings. Retired manifest, resume and
+CJK agent-filter compatibility diagnostics are covered by focused Kit config tests,
+not by writing obsolete knobs into the normal source-native workflow.
 
 Generic `pane.read` still returns actual shell text for visible, recent, recent
 unwrapped and detection sources. Generic `pane.process_info` returns only the
@@ -174,10 +211,38 @@ executes successfully. Read APIs may perform ordinary headless housekeeping; the
 controlled shell fixture has no agent timers or active provider. Explicit offline
 `agent explain --file` is not a live facade and is unchanged, not exercised here.
 
-`check.py`'s helper-loss phase now expects the explicit `agent.list` ownership
+`check.py`'s helper-loss phase now expects the explicit `agent.list` `feature_retired`
 refusal alongside an empty snapshot inventory. Its native-facts and 30-second
 activity-evidence-expiry behavior is unchanged. Running the shorter hosting gate
 does **not** qualify or claim execution of that separate full 30-second gate.
+
+Another preflight checks **16 event/installer retirement requests**: six installer
+targets, four mixed subscriptions (retired status first/last, valid substring or
+semantically invalid regex), and six status waits across real/private/empty pane
+selectors. Event requests must return one correlated refusal frame and close,
+without initializing a stream or allowing generic-probe errors to win. The four
+pane-hook ingress methods alone retain `external_agent_management` with Coven:
+report-agent, report-agent-session, clear-authority and release-agent. There is no
+either-code acceptance.
+
+The generic metadata scenario subscribes successfully to `pane.updated`, sets a
+token, and checks **eight atomic mixed-frame refusals** for retired presentation
+fields. Tokens stay unchanged and the refused high sequence cannot consume the
+next generic sequence. Duplicate-sequence suppression, an actual short token TTL,
+replacement, clear and generic update events remain functional. The supported
+`pane.wait_for_output` substring matcher succeeds. A generic `events.wait`
+workspace-created matcher explicitly remains `unsupported_event_wait_match`, not
+silently counted as working. No retired metadata is used to render agent identity.
+
+After the Coven-hosted scenarios shut down cleanly, a second actual owned Kit
+server starts with `sources = []`, no Coven PATH route, no helper and no integration
+state. **Fourteen typed requests** cover global Agent/manifest/status/install
+retirement plus all four pane hooks, which return `feature_retired` in this mode.
+Its generic PTY canary, text read, process inspection and exact-generation focus
+work, with an empty agent inventory. It is stopped through its own API before
+subreaping/cleanup. No historical native identity or provider process is fabricated
+to seed this case; positive history and handoff-reference retention remain focused
+Kit tests.
 
 The seven following source-native hosting scenarios assert:
 
@@ -230,10 +295,13 @@ released, actual helper reaped and receiver removed, then zero owned descendants
 The subreaper stops/reaps every owned child before exact run-directory removal on
 success, failure and catchable interruption. No bulk artifacts use `/tmp` or RAM.
 
-Recorded read/manifest-retirement qualification on **2026-11-16**, using the current
-working-tree sources: **9/9 composed scenarios** (32 control refusals, 13 additional
-read/manifest refusals plus the built CLI preflight/cache check, and seven hosting
-scenarios), 1/1 Bun interop fixture, 75 Coven regressions, 106 Kit regressions and
+Recorded global live-detector/Agent-workflow source-deletion qualification on
+**2026-11-16**, using Kit HEAD `92ce12d2` plus the uncommitted deletion diff and
+current Coven/Djinn sources: **12/12 composed scenarios**, including all seven
+hosting cases. Main-server refusals were **69 `feature_retired` plus four pane-hook
+`external_agent_management`**; the no-Coven server added **14 `feature_retired`**.
+The 26 local CLI cases made zero canary connections. The composed Bun fixture
+passed 1/1, as did 75 Coven regressions, 185 Kit regressions and
 39 Bun producer/selected-load regressions passed. The Coven subset includes the
 new deleted-attachment selection/retirement bookkeeping regressions. Three
 fixture-only Rust tests were ignored by their normal test annotations. No full
@@ -242,8 +310,8 @@ binary SHA-256 identities were:
 
 ```text
 coven   679b9ff73f4001c01889c9d1e8ea995aab0b579fee2ed41ae0baa51c2a88c34b
-kitsune 61811bce0bf0cd2dfc1eaf59404787e7556e8e981ee88fc6f23f8c9b29511e9b
-SUMMARY 9 A2 composed scenarios passed
+kitsune 37be98c3f095532ce98a1fd910c435bcee03b9310760b9938c6b36f3abf46922
+SUMMARY 12 A2 composed scenarios passed
 SHUTDOWN verified: actual server.stop, helper reaped, same receipt generation released, no owned descendants
 CLEANUP confirmed: all owned children stopped/reaped; run directory removed
 ```
@@ -254,42 +322,45 @@ test-binary invocation (alongside `terminal_navigation`, `integration::env::test
 and `server::integration_runtime::tests`):
 
 ```text
+retir
 app::api::ownership_tests
-app::api::agents::tests
-app::api::agent_view::tests
 app::api::manifest_ownership_tests
-detect::manifest_update::tests
+api::server::tests
+api::subscriptions::tests
+api::schema::tests
+cli::retirement_tests
+cli::agent::
 cli::server::tests
-external_manifest
-agent_manifest
-external_agent_focus_dispatch
-external_agent_management_headless_boundary
-headless_cwd_forwarding
-api::server::tests::external_wait_wrappers
+integration::tests
 api::wait::tests
 app::api::command_submission::tests
 integration_views::tests
-api::schema::tests::agent_start_and_prompt_requests_round_trip
-app::agent_resume::guard_tests
 process_info
+metadata_tokens
+pane_report_metadata
+mixed_retired_metadata
+terminal_maintenance
+handoff
 ```
 
-This single union of filters counts each Rust test once; it is not the sum of
-earlier overlapping 83/105-test gates. It includes direct-helper/seeded-state
-refusals, standalone behavior, historical snapshot preservation, manifest startup/
-background/reload/deadline/queued-event/reset suppression, CLI preflight/update
-ordering, actual API-server wait-wrapper dispatch, headless boundaries, and generic
-command submission/navigation/process/view/environment/helper behavior. Catalog
-unit tests use fake callbacks or owned `file://` fixtures under the run's TMPDIR,
-never real remote URLs. The standard command above always includes the 45 API
-refusals, built CLI/cache check and seven hosting scenarios; its unextended Kit
-unit filter list is smaller than this recorded retirement run.
+This single union counts each Rust test once; it is not added to earlier
+overlapping retirement gates or the separately reported full-native 2739 executions
+and five ignored fixtures. It includes global Agent/event/installer retirement,
+typed CLI-helper no-contact guards, all-platform install refusal and explicit
+cleanup fixtures, decode-only legacy DTOs, generic output/event subscriptions,
+token metadata sequencing/TTL, history/reference and handoff respawn-policy data,
+normal/handoff generic terminal maintenance and shutdown, config diagnostics,
+and held navigation/integration APIs. The deleted detector/updater/readiness
+engines are not selected or claimed as still running. All fixtures use owned
+local resources, not remote services or installed providers. The standard command
+above always runs the 12 composed scenarios; its unextended Kit unit filter list
+is smaller than this recorded retirement run.
 
 These identities qualify that dirty-source build, not subsequent concurrent edits.
-The owned btrfs runs, including retained targets, were removed after all children
-stopped/reaped; no build/test artifacts were retained. An initial harness-only
-visible-text marker failure was corrected by establishing semantic-client geometry
-before shell canaries and reads. The rerun passed; no production bug surfaced
+The owned btrfs run, including its retained target, was removed after all children
+stopped/reaped; no build/test artifacts were retained. The seeded retired-cache tree
+was checked unchanged after actual server shutdown as well as after the API/CLI
+cases. This source-deletion gate passed on its first run; no production bug surfaced
 and no production module, Kit source, Djinn fixture, or other agent's documentation
 was edited for this retirement qualification.
 

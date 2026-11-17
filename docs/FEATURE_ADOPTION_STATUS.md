@@ -19,6 +19,46 @@ and its safety limits are unchanged.
 | A4 | Fresh attention lists, occurrence acknowledgements and deliberate checked CLI focus through generic Kit terminal navigation, using an explicit assertion or qualified producer association. | Acknowledgement does not clear decisions/native facts. Generic row clicks remain read-only; expiry means unknown, not done. Focus acceptance is not physical display or native execution proof. |
 | A5, bounded | Explicit selected-session recovery with whole-batch CAS/capacity, durable before-send intent, duplicate blockers and imported/snapshot-reference skip vetoes. | Per-workspace journal plus one point-in-time endpoint inventory, not global exactly-once. No scheduler, autostart or saved consent; queued input is not native resume proof. |
 
+## Global Retirement Record
+
+Updated 2026-11-16 for retirement progress only, not new A1-A5/native A3 features.
+Kit's [current source boundary](../../kitsune/AGENT_CONTROL_RETIREMENT.md) deletes
+normal/handoff live detectors and evidence consumers, managed reconciliation,
+provider autoresume and idle-finished cues. All 12 live agent APIs, CLI controls/
+reads and agent subscriptions/wait matching retire globally, including standalone;
+snapshots preserve references/history as data with empty agent inventory. Generic
+metadata is token-only with atomic mixed-field rejection. All six fresh legacy
+installers retire on every platform before discovery/probes/writes; recommendation/
+update policy is removed. Generic terminal/PTY/process/session operations, explicit
+notifications and Integrations transport remain. Historical-reference recovery
+vetoes are preserved, not promoted into resume consent.
+
+Remaining compatibility is static offline local/bundled evaluation and file
+explanation, old DTO decoding, explicit cleanup assets/status/uninstall and inert
+Agent-named residue. Windows' separate legacy-agent-aware generic process selector
+is unchanged and rejected by Coven; no live agent runtime-manager fallback exists.
+External ownership expresses reporting-route intent and the old hook-error
+distinction, not built-in enablement. Richer providers/remote hosting remain
+user-deferred; mobile adoption is unapproved. No plain multiplexer is added to
+Coven, no native provider execution or platform qualification is claimed.
+
+Latest supplied validation, not rerun by this documentation refresh:
+
+| Scope | Recorded Result |
+| --- | --- |
+| Full Kit Linux suite | 2,739 passed executions, 5 intentional ignores, 0 failures; one job/two threads. 2,546 unit + 193 integration executions (157 target-specific + 36 shared-support, 4 x 9). Deduplicated integration: 161, combined with units: 2,707. All 11 integration targets, including 14 generic server-autospawn `auto_detect` checks; no doctest targets. |
+| Fresh Coven -> Kit -> Djinn gate | 12 scenarios across primary Coven server and standalone NoCoven. Primary: 69 feature-retired requests plus four hooks with old external error. Standalone: 14 feature-retired requests including four hooks. 22 local CLI refusals + four usage errors, zero API/client canary connections, unchanged HOME/XDG. Source SDK/plugin/controller fixture, not rendered UI or separate Worker handshake. |
+| Focused gates | Kit 185, Coven 75, Bun 39, fixture 1 passed; overlapping, not additive to full/composed counts. Generic metadata TTL/events and historical handoff references preserved, no input/native execution. |
+| Other checks | Python maintenance 77 + capture 6 passed separately from Rust. Prior 15 frozen JS asset tests passed, not rerun in latest full gate (source unchanged). Formatting/test-target checks compiled warning-free. Strict Clippy has five unchanged baseline findings, no new retirement lint; not green full CI. |
+
+Native Rust was 1.99.1, not the repo's 1.96.1 pin; no pinned-toolchain/cross-OS
+qualification follows. No real providers/models/user endpoints/installs were used.
+All owned artifacts were cleaned and the latest cache check was empty; no retained
+build/log artifact exists to link. Durable validation description:
+[source hosting harness](../tools/normal-workflow-check/README.md#a2-source-native-interop)
+and [full retirement limits](../../kitsune/AGENT_CONTROL_RETIREMENT.md#latest-recorded-validation).
+Earlier qualification tables below remain historical and non-additive.
+
 ## Commands And Contracts
 
 These are reference forms; uppercase values must be explicitly selected. Mutations

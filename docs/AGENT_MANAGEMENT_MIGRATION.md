@@ -1,5 +1,51 @@
 # Agent management migration: ownership and implementation record
 
+## Current Global Retirement Overlay, 2026-11-16
+
+Kit's [global live detector/consumer retirement](../../kitsune/AGENT_CONTROL_RETIREMENT.md)
+supersedes the conditional controls/reads and standalone/non-Linux availability
+in the earlier ledger below. Both normal and handoff producers and live evidence
+arbitration are deleted; no screen/PTY/OSC or foreground-hint native status,
+managed reconciliation, provider autoresume or idle-finished notifications remain.
+All 12 live agent methods return `feature_retired` before lookup/validation/
+housekeeping in both modes, with local convenience/raw API CLI refusal before
+socket access. AgentStatus subscriptions and agent wait matchers retire; mixed
+requests reject before pattern compilation/probes/streams. Generic output/scroll/
+workspace subscriptions, event streaming and pane output waits remain; unsupported
+generic `events.wait` matchers remain unsupported. Four legacy pane hooks alone
+retain external-mode error precedence; standalone they return `feature_retired`.
+Token-only metadata preserves sequence/TTL/events/revision and atomically rejects
+any mixed retired presentation fields/tokens.
+
+Snapshots preserve old pane references/names/argv and bounded generic history with
+`agents: []` globally, never readiness, aliases or autostart. Primary-screen handoff
+history is independent of old references; alternate-screen policy is unchanged.
+Optional JSON `respawn_shell_on_exit` captures actual generic policy: import honors
+only true without argv/FD inference, cold restore is false. Protocol 18/binary DTOs
+remain. Coven recovery's historical-reference skip veto is preserved. Generic
+terminal UUID/process/PTY/title/CWD/clipboard/child wait/EOF, labels and explicit
+notifications remain, not idle-completion/mobile agent counts or historical aliases.
+
+All six fresh legacy target installers retire on all platforms before discovery,
+version probes or writes. Recommendations/update policy and associated default-app
+discovery/version modules are removed. Status/uninstall/frozen migration assets,
+fingerprints/licenses remain explicit cleanup, not automatic uninstall or qualified
+Coven macOS/Windows replacement. Generic Integrations sources/leases/views remain
+independent. Old resume/CJK-agent config is inert with diagnostics even for wrong
+legacy types; explicit generic CJK reveal remains. Offline static rules/file
+explanation, old DTO decoding and compatibility-inert naming remain for cleanup.
+Windows `identify_agent_in_job`/`legacy_agent_aware` acquisition is separately known,
+unchanged and rejected by Coven; it produces no agent lifecycle. No global native
+runtime-manager fallback remains. External ownership is reporting-route intent
+and hook-error compatibility, not built-in enablement. Without Coven Kit remains
+a multiplexer. Richer provider and remote work stay deferred; mobile unapproved.
+This retirement adds no native A3 capability or new adoption backlog.
+
+See [latest validation/artifact record](FEATURE_ADOPTION_STATUS.md#global-retirement-record).
+All later provider-cut tables are historical scopes, not current legacy runtime
+or installer availability. They retain useful frozen-asset/cleanup and Coven
+qualification evidence; they do not require resurrecting Kit's retired producers.
+
 ## Overview
 
 ### Current Adoption Overlay, 2026-11-15
@@ -54,6 +100,16 @@ Startup, scheduled, direct and CLI updater admission is guarded before detector
 I/O, with selected-server CLI preflight and ignored late update events. Generic
 terminal/process operations, standalone implementations and explicitly offline
 file diagnostics remain; full source removal is still separate.
+
+The first global source-removal cut now supersedes the manifest-specific guards
+and CLI preflight: Kitsune's remote updater module and remote cache/status readers,
+schedulers, management state and update event/toast pipeline are physically gone.
+Both manifest APIs and three CLI spellings return `feature_retired` independently
+of ownership/Coven availability; CLI refusal is local, without a socket probe.
+Retired config sections are inert with diagnostics. Static rules are local
+override then bundled, never cached remote rules; existing files remain untouched.
+Live pane screen/status detectors and other standalone agent behavior still exist.
+The global cut is not full detector retirement or a new permanent legacy mode.
 
 The [current qualification record](FEATURE_ADOPTION_STATUS.md#recorded-qualification)
 records the full native Coven suite green (71 targets, 1,760 passed, 0 failed,

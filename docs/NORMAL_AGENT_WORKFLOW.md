@@ -61,25 +61,52 @@ New eligible panes receive `KITSUNE_INTEGRATION_SOURCE`, JSON-encoded literal ar
 Activation requires a server restart, new panes, and reloading native providers
 that already loaded their plugins/hooks. Existing processes are not retrofitted.
 
-In external mode Kit does not accept legacy agent-status authority, run agent
-detectors, or execute agent-aware restore policy. Historical resume references
-are not fresh status and must not cause automatic execution.
-This suppression covers all legacy agent-status and automatic-resume paths even
-if helper startup/reporting fails. A requested external ownership mode survives
+Kit's live agent detector/consumer and automatic provider-resume paths are now
+deleted globally, not merely suppressed in external mode. Historical references,
+names/argv and history are data only, not readiness or execution consent. The
+generic 100 ms maintenance tick, OSC titles/CWD/clipboard, terminal UUID, actual
+child wait/import EOF, manual labels and explicit notifications remain without
+agent meaning. Idle-inferred finished sounds/toasts and mobile agent counts are
+removed. A requested external ownership mode survives
 rejection of its runtime route; an undecodable runtime ownership request,
 malformed startup TOML or unreadable startup config also retains external ownership
 fail-closed, without authorizing legacy restore. A missing config uses ordinary defaults.
 The generic helper is server-only; `--no-session` refuses runtime/external mode.
 
-Kitsune's legacy live agent controls/reads and detector-manifest status/reload APIs
-return `external_agent_management` in this mode; they are not aliases for Coven
-observations. Generic `session.snapshot` still succeeds with `agents: []`, while
-historical pane session references remain available for conservative recovery
-vetoes. Generic pane reads/process observations and checked terminal navigation
-remain available. The manifest updater does not load, fetch or write detector
-state under external ownership; a server-directed CLI update preflights that
-server before local work. Explicit offline file diagnostics remain a separate
-compatibility path.
+All 12 live Kitsune `agent.*` methods now return correlated `feature_retired` in
+both ownership modes before target/input validation, lookup or housekeeping;
+convenience and raw API CLI fail locally before socket/protocol/native execution.
+They are not aliases for Coven observations. AgentStatus subscriptions and agent
+wait matchers retire, with mixed generic/agent requests rejected atomically before
+patterns/probes/streams. Generic output/scroll/workspace subscriptions, event
+streams and `pane.wait_for_output` remain; previously unsupported generic
+`events.wait` matchers are still unsupported.
+
+The four legacy pane hook methods retain `external_agent_management` precedence
+externally, but return `feature_retired` standalone. Generic metadata reporting is
+token-only; any retired presentation field mixed with tokens rejects the whole
+request, without partial writes. Snapshots expose `agents: []` in both modes,
+preserving historical pane references for conservative recovery skip vetoes.
+Handoff primary-screen history is preserved independently of those references;
+alternate-screen behavior follows generic policy. Optional JSON snapshot
+`respawn_shell_on_exit` captures actual generic shell policy: import honors only
+true without argv/FD inference; cold restore is false even if saved true. Binary
+DTOs/client protocol remain 18. Launch metadata never authorizes provider restore.
+
+Fresh legacy installation for all six Kit targets on all platforms returns
+`feature_retired` before discovery/version probes/writes; recommendation/update
+policy is deleted. Status/uninstall and frozen assets/fingerprints/licenses remain
+for explicit cleanup, never automatic uninstall. Generic Integrations sources/
+leases/views are separate. Coven macOS/Windows replacements are not thereby
+qualified. Old remote files/config are ignored with diagnostics and untouched;
+old resume/CJK-agent config is likewise inert even with wrong legacy field types.
+Explicit generic CJK reveal remains. Offline static local/bundled evaluation and
+`agent explain --file` plus old DTO decoding remain compatibility maintenance only.
+Windows legacy-agent-aware process acquisition remains a separate known contract
+rejected by Coven, not a lifecycle producer. No runtime agent-manager fallback
+exists. External ownership is reporting-route intent plus the hook error
+distinction, not a switch to restore built-ins. See
+[global retirement, validation and artifact cleanup](../../kitsune/AGENT_CONTROL_RETIREMENT.md).
 
 ## Data Flow
 
