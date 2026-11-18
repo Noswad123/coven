@@ -508,6 +508,28 @@ impl NativeStore {
             .find(|o| o.id == id && o.active(now))
             .map(|_| self.navigation_generation)
     }
+    pub(super) fn naming_deadline(
+        &self,
+        id: &str,
+        now: Instant,
+        producer: bool,
+    ) -> Option<Instant> {
+        let (key, observation) = self.observations.iter().find(|(_, o)| o.id == id)?;
+        if producer {
+            self.producer_association(id, now)?;
+            self.clients
+                .values()
+                .filter(|c| {
+                    now.saturating_duration_since(c.seen) < ATTACHMENT_TTL
+                        && c.selection.as_ref().is_some_and(|s| &s.key == key)
+                })
+                .map(|c| c.seen + ATTACHMENT_TTL)
+                .min()
+        } else {
+            self.navigation_fact(id, now)?;
+            observation.fact(now).map(|(_, at)| at + EVIDENCE_TTL)
+        }
+    }
     pub(super) fn control(
         &mut self,
         method: &str,

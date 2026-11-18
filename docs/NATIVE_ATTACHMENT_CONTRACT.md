@@ -107,7 +107,26 @@ target for the same observation refuses as ambiguous. There is no newest-client,
 newest-SID or PID heuristic. A lease's clock is independent of native status and
 decision clocks. Heartbeats change no busy/idle state, native evidence age,
 sequence, pending occurrence or acknowledgement. Quiet roots can host with
-reported state UNKNOWN, freshness unknown and null activity age.
+reported state UNKNOWN, freshness unknown and null activity age when no fresh
+native status evidence exists. Attachment heartbeat alone is never activity.
+
+The quiet-root increment keeps `qualify` pure, then separately samples the selected
+root's actual local `Session.Service.get` and `SessionStatus.Service.get` via
+`src/plugin/native-status-snapshot.ts`. Explicit busy/retry/idle readings are
+independent native evidence, not hosting inference. The closed native service's
+canonical idle default is native-owned semantics, not process liveness; sparse SDK
+status-list absence is not a fallback. Sampling is at most once/second within
+one total 1,900 ms query/queue/IPC budget, preserving immutable query-start time
+rather than restamping completion or replaying a sample as fresh. Native status
+setters commit and publish under a per-instance/per-session semaphore; unlocked
+`get`/`list` support callback reads. This orders concurrent setters and protects
+initial samples against newer callbacks. Selection change/unmount, deletion, reporter replacement/ambiguity and
+newer native callbacks cancel or fence stale results. Only a successful fresh
+query renews activity through the existing native event contract, not permission/
+question pending occurrences, acknowledgements or outcomes. Failure updates no
+activity; the 30-second ceiling still yields Unknown. This recovers quiet mounted
+normal full-TUI roots, not all live Unknown causes. Unmounted/event-only/remote/
+unavailable profiles have no automatic status heartbeat; alive never implies idle.
 
 The exact `(instance_id, session_id)` lookup uses the existing Djinn observation
 hash `SHA256("native\0" + instance + "\0" + session)` (the separators are NUL
@@ -160,8 +179,44 @@ receiver CAS and one checked `terminal.focus`. No acknowledgement, retry, native
 input, legacy agent focus or pane-focus fallback occurs. Acceptance means a focus
 update was accepted, not pixels displayed or an OS window raised.
 
-The generic view can label a producer-reported selected local full-TUI root. It
+The generic view uses a human name only: provider default (e.g. Djinn), preferring
+a valid associated explicit generic `pane.manual_label`, already set or renamed
+now. OSC title/CWD/old `agent_name` are not manual identity. Fresh association,
+exact endpoint binding and live terminal runtime generation must pass; failure
+uses the provider default. Duplicate names have no ID/suffix disambiguation.
+Stable opaque row IDs remain internal selection identity, not session IDs or
+display labels. Normal v1 is exactly `{id,label,detail}`; v2 adds blank
+`presentation.label` and unchanged status enum for icon/animation-only sidebar
+status. Idle/Ended intentionally share the neutral icon; detailed states and full
+`Status: running`/`Status: neutral` remain in the `prefix+a` inspector. Nonempty
+generic third-party captions still render.
+
+Publisher-only private hints are not public raw targets. Name lookup is a bounded
+300 ms read with no blocking receiver mutex; it creates no association/focus/input/
+acknowledgement and refreshes no activity or evidence authority. The generic view
 never forwards raw identities, target pins or association revisions into generic
 UI rows and adds no automatic click action. The receiver does no socket I/O while
 holding its presentation projection lock. Frontend lifecycle/worker-root source
 qualification is a separate Djinn responsibility, not proven by receiver tests.
+
+## Current Increment Record
+
+Name/icon/quiet-root review and qualification are **QUALIFIED**. Final Kit passed
+2,578 binary tests (five ignored), 193 integration tests across 11 targets and one
+explicit real-Coven roundtrip. Separately, the latest unified run passed 19 sidebar,
+32 normal, four adoption, 16 hosting/status-sampling gates, six Coven presentation
+integration tests, 127 filtered agent-management units, 26 Djinn tests in three files
+and one actual-source interop fixture. After the subsequent type-binding-only fix,
+full-package installed tsgo exited 0 with zero errors and broader Djinn validation
+passed 84 tests in nine files. Independent review confirmed no P1/P2 after the
+semaphore race fix. The unified pipeline was not rerun after the binding fix;
+see the [gate record](../tools/normal-workflow-check/README.md#sidebar-qualification)
+for separate results and bootstrap/interop limits.
+
+Owned children stopped/reaped; cached runs were empty and no artifacts retained.
+No full CI/full Coven suite, new provider/mobile/remote or actual model qualification.
+The source addresses quiet/resumed selected-root initial and expiry gaps, but the
+two existing user Djinn instances were not live-inspected; their current Unknown
+cause and resolution are not established. No binary/wire version change, install
+or configuration edit; activation still requires new Djinn/Coven/Kit builds and
+explicit user approval for restart/new-pane/provider handoff.

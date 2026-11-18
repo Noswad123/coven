@@ -76,6 +76,70 @@ fn report(native: &mut native::NativeStore, seq: u64, event: &str, now: Instant)
 }
 
 #[test]
+fn private_naming_hints_follow_manual_and_producer_expiry_without_public_fields() {
+    let now = Instant::now();
+    let epoch = "a".repeat(32);
+    let mut native = native::NativeStore::default();
+    report(&mut native, 1, "session.status", now);
+    let legacy = json!({"server_epoch":epoch,"records":[]});
+    let view = native.projection(legacy.clone(), now);
+    let id = view["observations"][0]["observation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let target = json!({"socket":"/PRIVATE-SOCKET","device":1,"inode":2,
+        "terminal_id":"PRIVATE-TERMINAL","runtime_generation":"12345678-1234-1234-1234-123456789abc"});
+    let mut associations = Associations::default();
+    assert_eq!(associations.naming_hints(&view, &native, now), json!([]));
+    associations
+        .control(
+            "association.assert",
+            &json!({"observation_id":id,"expected_epoch":epoch,
+        "expected_revision":null,"provenance":"user_asserted","target":target,"apply":true}),
+            &epoch,
+            &native,
+            now,
+        )
+        .unwrap();
+    let hints = associations.naming_hints(&view, &native, now);
+    assert_eq!(hints[0]["target"], target);
+    assert_eq!(hints[0]["id"], format!("observation:{id}"));
+    assert!(
+        !native
+            .projection(legacy.clone(), now)
+            .to_string()
+            .contains("PRIVATE")
+    );
+    assert_eq!(
+        associations.naming_hints(&view, &native, now + Duration::from_secs(30)),
+        json!([])
+    );
+    associations.0.clear();
+    let mut attachment = json!({"expected_epoch":epoch,"client_id":"12345678-1234-1234-1234-123456789abd",
+        "revision":1,"operation":"attach","instance_id":"12345678-1234-1234-1234-123456789abc",
+        "session_id":"PRIVATE","scope":"local_full_tui_root","target":target});
+    native.report_attachment(&attachment, &epoch, now).unwrap();
+    assert_eq!(
+        associations.naming_hints(&view, &native, now)[0]["target"],
+        target
+    );
+    assert_eq!(
+        associations.naming_hints(&view, &native, now + Duration::from_secs(5)),
+        json!([])
+    );
+    attachment["client_id"] = json!("12345678-1234-1234-1234-123456789abe");
+    attachment["target"]["terminal_id"] = json!("PRIVATE-CONFLICT");
+    native.report_attachment(&attachment, &epoch, now).unwrap();
+    assert_eq!(associations.naming_hints(&view, &native, now), json!([]));
+    assert!(
+        !native
+            .projection(legacy, now)
+            .to_string()
+            .contains("PRIVATE")
+    );
+}
+
+#[test]
 fn attachment_deletion_tombstone_pressure_cannot_revive_old_focus_revision() {
     let now = Instant::now();
     let epoch = "a".repeat(32);

@@ -77,7 +77,7 @@ def ready(args, root, state, tag, server, kit):
     directory, receipt = wait_for(lambda: instance(state, kit), tag + ' bootstrap active receipt')
     helper = wait_for(lambda: helper_for(args, server), tag + ' direct bootstrap child')
     view = ViewClient(root / (tag + '-client.sock'))
-    view.expect('Integrations', 'coven')
+    view.expect('▾ Coven')
     probe_dir = root / (tag + '-probe')
     probe_dir.mkdir(mode=0o700, exist_ok=True)
     probe = probe_dir / 'pane-env.json'
@@ -126,8 +126,7 @@ def provider_routes(args, root, context, other):
             payload = {'hook_event_name': 'SessionStart', 'session_id': 'PRIVATE-' + provider}
         command([args.coven_bin, *argv, '--from-kitsune', '--json'], context['pane_env'], root, json.dumps(payload))
         context['view'].expect_row(provider, 'UNKNOWN')
-        other['view'].poll()
-        require(f'Coven / {provider} /' not in other['view'].text, 'provider receipt crossed Kit instance')
+        require(not other['view'].compact_rows(provider), 'provider receipt crossed Kit instance')
     passed('all five actual provider CLI reporters resolve pane-selected --from-kitsune route without state override')
 
 
@@ -207,7 +206,8 @@ def check_setup(args, root):
     pb.event('session.status', sessionID='PRIVATE-B', status={'type': 'idle'})
     b['view'].expect_row('Djinn', 'IDLE (fresh)')
     a['view'].expect_row('Djinn', 'WORKING (fresh)')
-    require('IDLE (fresh)' not in a['view'].text and 'WORKING (fresh)' not in b['view'].text, 'events crossed instances')
+    require(not a['view'].compact_rows('Djinn', 'Idle') and not b['view'].compact_rows('Djinn', 'Working'),
+            'events crossed instances')
     passed('actual Djinn plugin events through each real pane environment remain isolated across simultaneous Kit servers')
     provider_routes(args, phase, a, b)
     native = json.dumps({'contract': 'djinn.native-events.v1', 'instance_id': '11111111-1111-4111-8111-111111111111',
@@ -251,7 +251,7 @@ def check_setup(args, root):
     refused(route, a['pane_env'], phase, 'integration_inactive_generation', native)
     require(tree(a['directory']) == stale, 'stale reporter repaired state')
     b2['view'].expect('No items')
-    require('Coven / Djinn /' not in b2['view'].text and tree(b2['directory']) == sibling and
+    require(not b2['view'].compact_rows('Djinn') and tree(b2['directory']) == sibling and
             next(s for s in api(b2['kit'], 'session.snapshot')['snapshot']['integration_views']['sources']
                  if s['id'] == 'coven')['epoch'] is not None, 'failed route fell back to or damaged live sibling')
     stop(b2)

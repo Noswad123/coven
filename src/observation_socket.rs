@@ -145,27 +145,93 @@ pub(crate) fn read(
     budget: &mut ReadBudget,
     cancel: &dyn Cancel,
 ) -> WireResult<Reply> {
+    read_method(
+        path,
+        match method {
+            ReadMethod::Snapshot => "session.snapshot",
+            ReadMethod::ProcessInfo => "pane.process_info",
+        },
+        params,
+        deadline,
+        budget,
+        cancel,
+    )
+}
+
+/// Scoped naming read, not an extension of the public observer method set.
+pub(crate) fn naming_inspect(
+    endpoint: &Endpoint,
+    terminal: &str,
+    deadline: Instant,
+    budget: &mut ReadBudget,
+    cancel: &dyn Cancel,
+) -> WireResult<Reply> {
+    read_endpoint(
+        endpoint,
+        "terminal.inspect",
+        &json!({"terminal_id":terminal}),
+        deadline,
+        budget,
+        cancel,
+    )
+}
+
+pub(crate) fn naming_snapshot(
+    endpoint: &Endpoint,
+    deadline: Instant,
+    budget: &mut ReadBudget,
+    cancel: &dyn Cancel,
+) -> WireResult<Reply> {
+    read_endpoint(
+        endpoint,
+        "session.snapshot",
+        &json!({}),
+        deadline,
+        budget,
+        cancel,
+    )
+}
+
+fn read_method(
+    path: &str,
+    method: &str,
+    params: &Value,
+    deadline: Instant,
+    budget: &mut ReadBudget,
+    cancel: &dyn Cancel,
+) -> WireResult<Reply> {
     check(deadline, cancel)?;
     if budget.remaining() == 0 {
         return Err(Failure::new("response_limit"));
     }
-    let endpoint = select(path)?;
+    read_endpoint(&select(path)?, method, params, deadline, budget, cancel)
+}
+
+fn read_endpoint(
+    endpoint: &Endpoint,
+    method: &str,
+    params: &Value,
+    deadline: Instant,
+    budget: &mut ReadBudget,
+    cancel: &dyn Cancel,
+) -> WireResult<Reply> {
+    check(deadline, cancel)?;
+    if budget.remaining() == 0 {
+        return Err(Failure::new("response_limit"));
+    }
     let request_id = crate::platform::random_uuid_hex().map_err(|_| Failure::new("io_error"))?;
-    let method = match method {
-        ReadMethod::Snapshot => "session.snapshot",
-        ReadMethod::ProcessInfo => "pane.process_info",
-    };
     let request = frame(&request_id, method, params)?;
-    let socket = crate::platform::observation_socket::Socket::connect(&endpoint, deadline, cancel)?;
+    let socket = crate::platform::observation_socket::Socket::connect(endpoint, deadline, cancel)?;
+    crate::platform::observation_socket::fence(endpoint)?;
     socket.send(&request, deadline, cancel)?;
-    crate::platform::observation_socket::fence(&endpoint)?;
+    crate::platform::observation_socket::fence(endpoint)?;
     let payload = socket.receive(deadline, budget, cancel)?;
-    crate::platform::observation_socket::fence(&endpoint)?;
+    crate::platform::observation_socket::fence(endpoint)?;
     check(deadline, cancel)?;
     Ok(Reply {
         payload,
         request_id,
-        endpoint,
+        endpoint: endpoint.clone(),
     })
 }
 

@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import resource
+import re
+import secrets
 import select
 import shutil
 import signal
@@ -77,7 +79,7 @@ def stop_children():
 
 
 @contextlib.contextmanager
-def owned_run():
+def owned_run(short=False):
     require(sys.platform == 'linux', 'this harness currently qualifies Linux only')
     require(ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) == 0, 'cannot enable child subreaper')
     base = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'agent-test-runs'
@@ -87,7 +89,18 @@ def owned_run():
     mount = subprocess.check_output(['findmnt', '-n', '-T', str(base), '-o', 'FSTYPE'], text=True).strip()
     require(mount not in ('tmpfs', 'ramfs', 'devtmpfs'), 'artifact directory is RAM-backed')
     require(shutil.disk_usage(base).free > 12 * 1024**3, 'need at least 12 GiB free disk')
-    root = Path(tempfile.mkdtemp(prefix='nw-', dir=base))
+    if short:
+        for _ in range(100):
+            root = base / secrets.token_hex(2)[:3]
+            try:
+                root.mkdir(mode=0o700)
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise AssertionError('cannot allocate short owned run')
+    else:
+        root = Path(tempfile.mkdtemp(prefix='nw-', dir=base))
     root.chmod(0o700)
     print(f'Owned disk-backed run: {root} ({mount})', flush=True)
     old = {}
@@ -188,20 +201,55 @@ class Decoder:
         return self.raw(self.uint()).decode('utf-8')
 
 
+def uint(value):
+    require(0 <= value < 2**64, 'invalid unsigned bincode integer')
+    if value < 251:
+        return bytes([value])
+    size, tag = (2, 251) if value < 2**16 else (4, 252) if value < 2**32 else (8, 253)
+    return bytes([tag]) + value.to_bytes(size, 'little')
+
+
 class ViewClient:
     """Real semantic-frame app client, no local terminal or GUI."""
-    def __init__(self, path):
+    def __init__(self, path, width=200, height=60):
         self.sock = socket.socket(socket.AF_UNIX)
         self.sock.settimeout(2)
         self.sock.connect(str(path))
         self.pending = bytearray()
         self.text = ''
         self.generation = 0
+        self.width, self.height = width, height
         # ClientMessage::Hello, protocol 18, 200x60, no graphics, semantic,
         # server keys, app launch. All fields fit bincode's single-byte encoding.
-        payload = bytes([0, 18, 200, 60, 0, 0, 0, 0, 0])
-        self.sock.sendall(struct.pack('<I', len(payload)) + payload)
+        self.send(b''.join(uint(n) for n in (0, 18, width, height, 0, 0, 0, 0, 0)))
         self.welcome = False
+
+    def send(self, payload):
+        self.sock.sendall(struct.pack('<I', len(payload)) + payload)
+
+    def resize(self, width, height):
+        require(1 <= width <= 500 and 1 <= height <= 200, 'invalid requested size')
+        self.width, self.height = width, height
+        self.send(b''.join(uint(n) for n in (3, width, height, 0, 0)))
+
+    def mouse(self, column, row, kind='click'):
+        require(0 <= column < self.width and 0 <= row < self.height, 'mouse outside client')
+        kinds = {'click': [b'\x00\x00', b'\x01\x00'], 'up': [b'\x04'], 'down': [b'\x05']}
+        events = [b'\x02' + k + uint(column) + uint(row) + b'\x00' for k in kinds[kind]]
+        self.send(b'\x07' + uint(len(events)) + b''.join(events))
+
+    def key(self, text):
+        data = text.encode('utf-8')
+        self.send(b'\x01' + uint(len(data)) + data)
+
+    def press(self, key, modifiers=0):
+        """Protocol-18 InputEvents key press/release, not escape decoding."""
+        codes = {'enter': 1, 'up': 4, 'down': 5, 'pageup': 8, 'pagedown': 9,
+                 'tab': 10, 'backtab': 11, 'esc': 14}
+        code = uint(codes[key]) if key in codes else uint(15) + key.encode('utf-8')
+        require(key in codes or len(key) == 1, 'expected named key or one character')
+        event = b'\x00' + code + uint(modifiers)
+        self.send(b'\x07\x02' + event + b'\x00' + event + b'\x02')
 
     def poll(self):
         if select.select([self.sock], [], [], .05)[0]:
@@ -221,7 +269,7 @@ class ViewClient:
                 self.welcome = True
             elif kind == 1:
                 count = d.uint()
-                require(count <= 200 * 60, 'unexpected frame dimensions')
+                require(count <= 500 * 200, 'unexpected frame dimensions')
                 cells = []
                 for _ in range(count):
                     cells.append(d.string())
@@ -230,7 +278,10 @@ class ViewClient:
                     if d.raw(1)[0]:
                         d.uint()
                 width, height = d.uint(), d.uint()
-                require(width == 200 and height == 60 and count == width * height, 'invalid frame')
+                require(1 <= width <= 500 and 1 <= height <= 200 and count == width * height, 'invalid frame')
+                # Queued frames at the preceding size may arrive after Resize.
+                if (width, height) != (self.width, self.height):
+                    continue
                 self.text = '\n'.join(''.join(cells[y * width:(y + 1) * width]) for y in range(height))
                 self.generation += 1
         return self.text
@@ -247,19 +298,75 @@ class ViewClient:
         require('PRIVATE-' not in text, 'native identifiers leaked to rendered generic view')
         return text
 
-    def expect_row(self, provider, *facts, timeout=10):
-        def matches():
-            lines = self.poll().splitlines()
-            for label, detail in zip(lines, lines[1:]):
-                if f'Coven / {provider} /' in label[:160] and all(fact in detail[:160] for fact in facts):
-                    require('PRIVATE-' not in label[:160] + detail[:160], 'native identifier leaked into view row')
-                    return True
-            return False
+    def compact_rows(self, provider, state=None, name=None):
+        provider = {'opencode': 'OpenCode', 'copilot': 'Copilot', 'codex': 'Codex',
+                    'claude': 'Claude', 'djinn': 'Djinn', 'pi': 'Pi'}[provider.lower()]
+        glyphs = {'Working': '[\u2800-\u28ff◌]', 'Blocked': '!', 'Idle': '·', 'Ended': '·', 'Unknown': r'\?'}
+        icon = '|'.join(glyphs[s] for s in (state or '|'.join(glyphs)).split('|'))
+        pattern = rf'^({icon}) ({re.escape(name or provider)})\s*$'
+        return [match.groups() for line in self.poll().splitlines()
+                if (match := re.fullmatch(pattern, line.split('│', 1)[0].strip()))]
+
+    def expect_row(self, provider, *facts, timeout=10, name=None):
+        """Check the actual summary and its read-only inspector, never RPC models."""
+        state = next((m.group().title() for fact in facts
+                      if (m := re.match(r'WORKING|BLOCKED|IDLE|ENDED|UNKNOWN', fact))), None)
+        opened = searching = False
         try:
-            wait_for(matches, f'actual {provider} row {facts}', timeout)
+            rows = wait_for(lambda: self.compact_rows(provider, state, name), f'actual {provider} icon/name summary {state}', timeout)
+            name = rows[0][1]
+            self.press('b', 2)
+            self.press('a')
+            opened = True
+            self.expect('Integration details', timeout=timeout)
+            width, height = min(self.width, 100), min(self.height, 32)
+            left, top = (self.width - width) // 2, (self.height - height) // 2
+
+            def panel():
+                return [line[left + 1:left + width - 1] for line in self.poll().splitlines()[top + 1:top + height - 1]]
+
+            source_y = wait_for(lambda: next((top + 1 + n for n, line in enumerate(panel())
+                                              if line.strip() in ('coven', '> coven')), None), 'inspector Coven source')
+            self.mouse(left + 3, source_y)
+            self.press('/')
+            searching = True
+            for char in name:
+                self.press(char)
+            self.expect('/ ' + name)
+            self.press('enter')  # Ends search only; never activate a row.
+            searching = False
+            self.expect('Filter: ' + name)
+            available = height - 4
+            detail_start = 2 + min(available // 4, 8) + available // 3
+
+            def matches():
+                # Duplicate names are intentional. Inspect each rendered hit;
+                # identities stay in the owner protocol, never in the sidebar.
+                hits = [top + 1 + n for n, line in enumerate(panel())
+                        if re.fullmatch(rf'[ >]*\S {re.escape(name)}\s*', line)]
+                for y in hits:
+                    generation = self.generation
+                    self.mouse(left + 3, y)
+                    wait_for(lambda: self.poll() and self.generation > generation, 'selected inspector frame')
+                    detail = ''.join(panel()[detail_start:]).rstrip()
+                    if name in detail and 'Status: ' in detail and all(fact in detail for fact in facts):
+                        return True
+                return False
+
+            wait_for(matches, f'actual {provider} full inspector detail {facts}', timeout)
+            require('PRIVATE-' not in self.text, 'native identifier leaked into generic inspector')
         except AssertionError:
             print('Last actual frame:\n' + self.text, file=sys.stderr)
             raise
+        finally:
+            try:
+                if searching:
+                    self.press('esc')
+                    self.expect('Filter:')
+            finally:
+                if opened:
+                    self.press('esc')
+                    wait_for(lambda: 'Integration details' not in self.poll(), 'inspector closed after row check')
 
     def close(self):
         self.sock.close()
@@ -442,16 +549,15 @@ def native_checks(args, root, kit, receiver, server, helper, pane_id, pane_env, 
             passed(f'native {kind} ask -> BLOCKED; actual cancellation delivery -> WORKING')
         event('session.status', sessionID=sid, status={'type': 'idle'})
         view.expect_row('Djinn', 'IDLE (fresh)')
-        passed('native idle rendered as Coven / Djinn IDLE')
+        passed('native idle rendered as neutral icon + Djinn only, with full inspector IDLE facts')
         event('session.created', info={'id': 'PRIVATE-CHILD', 'parentID': sid})
         event('session.status', sessionID='PRIVATE-CHILD', status={'type': 'busy'})
         event('permission.asked', sessionID='PRIVATE-CHILD', id='PRIVATE-CHILD-REQUEST')
         event('session.status', sessionID='PRIVATE-UNKNOWN', status={'type': 'busy'})
         end = time.monotonic() + 1
         while time.monotonic() < end:
-            view.poll()
-            section = '\n'.join(line[:160] for line in view.text.splitlines()[30:])
-            require('BLOCKED' not in section and 'WORKING' not in section, 'child/unestablished-root status changed root')
+            require(view.compact_rows('Djinn', 'Idle') and not view.compact_rows('Djinn', 'Blocked|Working'),
+                    'child/unestablished-root status changed root')
         view.expect_row('Djinn', 'IDLE (fresh)')
         passed('child and unestablished-root input cannot change root idle state')
         command([args.coven_bin, 'agent', 'report', '--from-kitsune', '--provider', 'codex', '--json'],
@@ -468,7 +574,7 @@ def native_checks(args, root, kit, receiver, server, helper, pane_id, pane_env, 
                               if s['id'] == 'coven')['epoch'] is None,
                  'helper-loss five-second lease expiry', 8)
         view.expect('Unavailable')
-        require('Coven / Djinn' not in view.text, 'stale generic rows survived helper loss')
+        require(not view.compact_rows('Djinn'), 'stale generic rows survived helper loss')
         event('session.status', sessionID=sid, status={'type': 'idle'})
         time.sleep(1)
         # A separate invalid-API route checks no legacy socket attempt. The main
@@ -527,7 +633,7 @@ def arguments():
 if __name__ == '__main__':
     try:
         args = arguments()
-        with owned_run() as root:
+        with owned_run(short=True) as root:
             check(args, root)
     except (Exception, KeyboardInterrupt) as exc:
         print(f'FAIL {exc}', file=sys.stderr)

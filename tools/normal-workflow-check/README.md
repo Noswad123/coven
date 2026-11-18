@@ -95,6 +95,288 @@ No build, install, live config mutation, or 30-second expiry test runs here.
 
 ## Assertions
 
+### Sidebar Qualification
+
+Current contract: Spaces/Coven/other sources are persisted, independently
+collapsible equal-height peers with one-line item summaries. `prefix+a`, via the
+existing customizable `agent_selector`, opens generic local Integration details
+with source/item/search/wrapped detail scrolling. Tab/Shift+Tab cycles focus;
+arrows/`j`/`k`/PageUp/PageDown navigate or scroll; `/` searches; Esc first blurs
+search, then closes. Source/item clicks inspect only; Items Enter explicitly
+sends the existing publisher selection intent, while Details Enter activates
+nothing. No native focus/acknowledgement/input/start/resume/cancel or old agent
+navigator follows. Shared server facts and client inspector focus/scroll differ.
+
+Coven normal `item.label` is human-name-only: provider default (e.g. Djinn),
+preferring a valid associated explicit manual pane name. V2 has blank
+`presentation.label`; sidebar status is icon/animation only, no words/hashes.
+Stable opaque IDs remain internal selection identity, not native session IDs or
+display labels; duplicate labels have no ID/suffix disambiguation. Normal v1 is
+name-only, exactly `{id,label,detail}` with no metadata. Generic third-party
+nonempty captions remain supported. The `prefix+a` inspector retains full
+`Status: running`/`Status: neutral` for blank captions and detailed state text.
+Fresh Working/running and Blocked/attention are distinct from
+neutral Idle/Ended (intentionally identical icons) and expired/history/unordered Unknown. Idle is never success;
+generic success/error require explicit source assertions, not normal Coven job
+proof. Optional `ui.integration_animations` defaults true; local working spinners
+do not refresh facts. See the [wire contract](../../../kitsune/INTEGRATION_VIEWS.md)
+for additive descriptor-v1 `supported_versions: [1,2]`, lease-pinned strict v1/v2
+profiles, limits, null/duplicate/unknown-field rejection, whole-advertisement
+validation before open and no uncertain-mutation downgrade. Protocol 18 and binary
+wire structs are unchanged. Successful-frame fences include identity/query/focus/
+layout/scroll, not animation phase; evidence age remains independent.
+
+**Current name/icon/quiet-root increment: QUALIFIED.** Supplied final results are
+all green. These are separate qualifications, not one all-tests command:
+
+| Qualification | Final Result |
+| --- | --- |
+| Kit native validation, including duplicate/icon/name changes | 2,578 binary tests passed, five ignored; 193 integration tests in 11 targets; one explicitly invoked real-Coven roundtrip passed |
+| Latest unified actual-server run | 19 sidebar, 32 normal, four adoption and 16 hosting/status-sampling gates passed |
+| Coven checks in that unified run | Six presentation integration tests and 127 filtered agent-management units passed |
+| Djinn checks in that unified run | 26 sampling/contract/publication tests across three files and one actual-source interop fixture passed |
+| Post-binding-fix full-package typecheck | Installed `tsgo --noEmit --incremental false --pretty false`: exit 0, zero errors |
+| Post-binding-fix broader Djinn run | 84 tests across nine files passed, including the added bootstrap test (previous broader count: 83) |
+| Independent final review | No P1/P2 findings after the semaphore race fix |
+
+The later compiled Kit hash matched the last unified run. After that unified run,
+the only feature change was Djinn type binding: capture Session/Status services
+outside, provide them inside `InstanceState`, and explicitly annotate the optional-
+signal `NativeStatusSnapshot`. Snapshot creation remains per instance, avoiding an
+Effect environment leak. The actual two-instance `Plugin.init/list` bootstrap test
+passed with default and external plugins disabled to avoid auth. This qualifies
+bootstrap isolation, not live Kitsune-plugin initialization; wiring is typechecked
+and the service contract is tested separately. The full unified pipeline was not
+rerun after this fix; direct full-package typecheck and targeted/broader Bun tests
+qualify that follow-up. The corrected builder's `--typecheck` is a recipe, not a
+claim that its full pipeline was rerun after the binding fix.
+
+The Coven frame-budget regression is fixed: independently serialized v1/v2 frames
+fit the bound, with all 127 filtered units passing. Qualification used cached Rust
+1.96.1, Zig 0.15.2 and Bun 1.4.4, offline builds with one job. All owned children
+stopped/reaped; cached run directories were empty after cleanup, no retained artifacts.
+Clippy was not run this increment; the prior `src/platform/linux.rs`
+`items_after_test_module` finding is unchanged. No full CI/full Coven suite is claimed.
+
+Interop qualifies bounded source callbacks, not a full physical native frontend,
+remote support or actual provider/model execution. Other provider profiles and
+mobile qualification are unchanged. The source addresses known quiet/resumed
+selected-root initial/30-second expiry gaps; the user's two existing Djinn instances
+(one Unknown) were not live-inspected and are not claimed fixed or already activated.
+Unknown remains valid on failed queries, unmount, references or missing activity
+evidence. This documentation update runs no builds, tests or live commands,
+installs nothing and edits no configuration. Activation still needs all new Djinn,
+Coven and Kit builds, then explicit user approval for restart/new-pane/provider
+handoff. Historical counts below remain prior baselines, not these final results.
+
+Qualified name-check coverage preserves fresh association, terminal runtime generation
+and endpoint binding, already-set/renamed explicit `pane.manual_label`, provider
+fallback on failure, duplicate-name ID-based selection, and no OSC title/CWD/old
+`agent_name` identity. Publisher-only private hints must not expose raw targets;
+read lookup is bounded to 300 ms without blocking the receiver mutex or creating
+associations/focus/input/acks. Name refresh changes no activity or authority.
+
+Qualified quiet-root coverage distinguishes pure qualification and attachment heartbeat
+from the separate fresh selected-root query of actual local `Session.Service.get`
+and `SessionStatus.Service.get` (`src/plugin/native-status-snapshot.ts`). Explicit
+busy/retry/idle, max once/second and 1,900 ms bounds, plus selection/unmount/deletion/
+reporter-replacement/ambiguity/new-callback fences are required. Canonical native
+idle is native-owned state semantics, not process liveness or sparse SDK absence.
+Native status setters commit and publish in per-instance/per-session semaphore order,
+protecting initial samples against newer callbacks and concurrent ordering; `get`/
+`list` stay unlocked for callback reads. Immutable query-start time is preserved
+through query/queue/IPC within one total 1,900 ms budget, not reset at completion,
+replayed or aged twice. Only successful fresh native queries renew activity via the existing event contract,
+never pending occurrences/acks/outcomes. Failures leave clocks unchanged and Unknown
+after 30 seconds. Quiet mounted normal full-TUI recovery does not guarantee every
+live Unknown disappears; unmounted/event-only/remote/unavailable profiles still
+have no automatic status heartbeat.
+
+**Historical prior status/inspector baseline: PASS (2026-11-17).** Fresh actual Kit
+and Coven builds passed **16 composed sidebar gates, 32 normal-workflow gates,
+four adoption scenarios, 12 hosting scenarios, five Coven CLI/presentation tests
+and 14 presentation-module unit tests**. The hosting run also passed its actual-source
+Bun interop test. Inputs were native-shaped fixtures and actual-source adapters,
+not authenticated provider/model lifecycle execution. No additional provider/mobile
+qualification follows.
+
+Separate final Kit validation passed **2,575 binary tests and all 193 tests across
+11 integration targets** (five normally ignored binary fixtures); the opt-in
+real-Coven roundtrip passed **1/1 separately**. Regression tests cover held-key
+isolation, identical-pixel semantic capture changes, failed frame queues, visible
+sidebar animation beside the inspector, and animation stopping on last-App-client
+detach and restarting on reattach. All 15 failures from the initial contaminated
+run passed with inherited startup settings removed and a sufficiently short
+disk-backed temporary root. Kit Clippy still reports the pre-existing
+`items_after_test_module` finding in `src/platform/linux.rs`; full CI and the full
+Coven suite are not implied. Owned children and build/runtime roots were cleaned.
+
+Build and qualify the **current working-tree** Coven and Kit sources, without
+installed apps, providers, user configuration, or user sockets:
+
+```sh
+python3 -B tools/normal-workflow-check/build-sidebar.py \
+  --coven-source /home/jdawson/Projects/coven \
+  --kitsune-source /home/jdawson/Projects/kitsune \
+  --zig /home/linuxbrew/.linuxbrew/opt/zig@0.15/bin/zig \
+  --zig-package-cache /home/jdawson/.cache/zig/p \
+  --sidebar-only
+```
+
+To exercise the existing normal-workflow, adoption and hosting gates using the
+same owned build, append these optional cached-tool/source arguments:
+
+```sh
+  --bun /home/linuxbrew/.linuxbrew/bin/bun \
+  --djinn-plugin /home/jdawson/Projects/djinn/clients/djinn-ui/packages/opencode/src/plugin/kitsune-agent-state.ts \
+  --djinn-source /home/jdawson/Projects/djinn
+```
+
+Optionally append `--typecheck` with `--djinn-source` to use the already installed
+full-package tsgo without emit or incremental output. It installs no checker; the
+post-binding-fix green typecheck above was invoked directly, separately from the
+unified pipeline.
+
+For explicit already-built binaries, run `sidebar.py --coven-bin /absolute/coven
+--kitsune-bin /absolute/kitsune` in a dedicated Python process. The builder uses
+cached Rust 1.96.1 and Zig 0.15.2, `--locked --offline -j 1`, one short owned target,
+private TMPDIR/Zig local cache and existing Cargo/Rustup/Zig global/package caches.
+It preserves existing vendor Zig outputs and prints binary SHA-256 identities.
+Sources are read directly, not atomically snapshotted against concurrent edits.
+
+`--sidebar-only` still builds actual Kit/Coven and runs the composed sidebar gates,
+Coven presentation compatibility/module tests, and any optional suites selected
+above. It skips Kit unit/native test builds
+and runs, including the ignored real-Coven roundtrip and handoff integration tests.
+It is a focused check, not full CI. Omit the flag to request the broader runner.
+Legacy two-line coordinate descriptions and captures below record historical
+expectations, not the current human-name/icon-only contract. The shared row checker
+asserts the compact summary, then uses read-only local inspector navigation to
+verify full provenance/freshness details; it closes the inspector afterward.
+
+The independent runtime process uses `check.owned_run` subreaping and fresh
+HOME/XDG/config, a private API/client socket pair, and only an owned `bin/coven`
+symlink. `sources = ["coven", "build"]` exercises normal actual Coven auto-start,
+default receiver discovery and the actual pane reporting environment. Seven
+synthetic, inert native Djinn roots pass through the actual reporter CLI and Coven
+receiver; no Djinn worker/provider/model lifecycle is claimed. Only `build` is
+fixture-published through `integration.view.open/replace/poll`; poll explicitly
+renews its lease. No fixture opens or steals the actual Coven publisher's lease.
+
+Protocol-18 semantic frames and structured mouse packets exercise simultaneous
+Spaces/Coven/build sections, named Atlas/Birch workspaces, fair body allocation,
+independent collapse/re-expansion, source-local wheel scrolling, source scroll
+retention, and exact label/detail intent routing using an item ID identical to an
+actual Coven row. Coordinates come from the latest rendered frame, not old
+selector positions or private App state. Healthy bodies have no status wrapper;
+empty live bodies contain only `No items` and otherwise blank cells. Blank/header
+clicks cannot activate items. Native IDs remain private. Actual resize checks use
+heights 9/12/36; exhaustive 0..30 geometry and up to nine sections remain unit tests.
+Compact mode checks numbers, its `m` global launcher, and its bottom toggle, and
+requires the exact ordered three-cell headers `▾Sp`, `▾Co`, `▾bu`, not merely
+different strings or arbitrary non-ellipsis labels. An actual compact Coven header
+click must yield only `▸Co`, free its body, preserve native navigation and the
+Coven lease, queue no build intent, and restore the original headers on re-expand.
+
+A clean API `server.stop` and actual restart of only the owned server must preserve
+Spaces/Coven collapse preferences, native workspace/focus/history data, and a fresh
+Coven receipt generation. Volatile native rows and the old build lease must not
+survive. Shutdown verifies the helper is reaped, receiver removed and the exact
+receipt generation released before descendant cleanup and exact run deletion.
+
+Without `--sidebar-only`, the builder explicitly executes the normally ignored
+`integration_views_real_coven_roundtrip` with `COVEN_TEST_BIN` pointing to its own
+new binary. It then executes the full Kit binary suite and all 11 native integration
+binaries at two test threads, even if sidebar qualification fails. The ignored
+opt-in result is reported separately, never counted as a normal-suite pass. No full
+Coven suite or Clippy run is implied. Runtime/build logs and deadlines are bounded.
+The outer subreaper reaps exited orphan PTY children during native tests so process
+existence assertions do not mistake zombies for live processes.
+
+**Historical peer-sidebar qualification: PASS.** The earlier 2026-11-17 source rebuild and
+native execution used cached Rust **1.96.1**, Zig **0.15.2**, `--locked --offline
+-j 1`, one owned short target and two Rust test threads. All **nine sidebar
+scenarios** passed, including exact compact identities and independent compact
+Coven collapse. Expanded body heights were **[11, 10, 10]**, with exact `Coven`
+header text and no healthy `Available`/selector preamble. The explicit normally
+ignored real-Coven roundtrip passed **1/1 separately**. The full native Kit suite
+passed **2,556 binary tests plus 193 tests in all 11 integration binaries**, zero
+failures, with five normally ignored binary fixtures. Both binary builds emitted
+no warnings; this runner did not execute Clippy or the full Coven suite.
+
+The historical peer-sidebar binary SHA-256 identities were:
+
+```text
+coven   679b9ff73f4001c01889c9d1e8ea995aab0b579fee2ed41ae0baa51c2a88c34b
+kitsune de00b67eeff68262517f9a686bb78419ec7d32b6029789f7f20103b3be9251e2
+SUMMARY 9 sidebar gates passed; compact naming passed
+```
+
+Bounded ASCII transcriptions of actual semantic frames follow. Blank/repeated
+body rows are omitted, and public opaque row prefixes are elided. `v`/`>` represent
+expanded/collapsed carets; `<<`/`>>` represent the bottom chrome toggle. All data
+is synthetic; no raw native identities or user data appear.
+
+```text
+Expanded                         Compact
+menu                             m
+v Spaces                  new    vSp
+ . w                              1
+ . Atlas                         >2
+ . Birch                          3
+[remaining Spaces body]          [remaining Spaces body]
+v Coven                          vCo
+Coven / Djinn / [opaque]          Co...
+Coven: last-reported WORKING ...  Co...
+[remaining Coven rows]           [remaining Coven rows]
+v build                          vbu
+Build task 0                     No
+Build detail 0                   [remaining empty body]
+[remaining build rows]
+                           <<     >>
+```
+
+The expanded sample is taken before the empty-build check; compact mode is
+captured after the build publisher has explicitly replaced its rows with `[]`.
+`No` is the clipped body-only `No items` message, not a header/status selector.
+The compact headers themselves have no ellipsis. Exact frame checks occur before
+ASCII conversion and retain all original protocol cells.
+
+The build root `~/.cache/agent-test-runs/8582` and independent runtime root
+`~/.cache/agent-test-runs/nw-wn01wd_y` were verified btrfs and removed after all
+owned children stopped/reaped. Normal shutdown verified receiver removal and
+receipt release; clean restart reused the instance with a fresh receipt generation
+and preserved only the intended visual preferences alongside native navigation.
+No production code, installed app, user endpoint/config, provider or model was
+changed or invoked by this rerun. No commits were made.
+
+Historical bug note: the earlier 2026-11-17 run passed eight sidebar scenarios, the explicit
+real-Coven roundtrip (1/1), and the full native Kit suite (2,553 binary tests plus
+193 integration tests; five normally ignored binary fixtures). That overall sidebar
+qualification failed on actual compact naming: at the four-column compact width,
+Spaces, Coven and build all render as the identical `▾ …`. Workspace numbers
+`1`, `>2`, `3`, the `m` menu launcher and bottom toggle worked. This was reported to
+the Kit coordinator without changing production code. The coordinator's subsequent
+`sections::compact_labels` fix is qualified by the green run above. Initial driver
+failures were fixture sequence reuse, overlong socket paths and deferred orphan
+reaping, not production regressions. The handoff fixture uses a short `c` config
+directory to retain its unchanged named-session assertions under disk-backed
+TMPDIR. Native resizes at heights 9/12/36 and clean restart/persistence all passed.
+That earlier Kit build also reported an unused `workspace_drop_indicator_row`
+import at `src/ui.rs:84`; the coordinator subsequently made it test-only. No
+production fix was made by this harness.
+
+The earlier, failing compact qualification used these binaries:
+
+```text
+coven   679b9ff73f4001c01889c9d1e8ea995aab0b579fee2ed41ae0baa51c2a88c34b
+kitsune 202c36e791b679334f0c0b8187f9a0d104be8a0c6d6f7eb6dc08d5eb5a52eef3
+```
+
+All owned runtime/build trees were removed after every run, including the failing
+compact qualification. Actual helper EOF shutdown, receipt release and reaping
+were verified before deletion. No binaries were installed and no commits made.
+
 ### A2 Source-Native Interop
 
 The independent A2 gate uses the **actual Djinn source producer**, not handwritten
@@ -244,7 +526,12 @@ subreaping/cleanup. No historical native identity or provider process is fabrica
 to seed this case; positive history and handoff-reference retention remain focused
 Kit tests.
 
-The seven following source-native hosting scenarios assert:
+The seven following source-native hosting scenarios describe the historical
+qualified attachment baseline, not completed qualification of the new status
+sampler. In particular, quiet UNKNOWN/null-age captures below predate fresh native
+query sampling; attachment-only renewal still cannot refresh activity. Harness
+updates are qualified by the separate final 16 hosting/status-sampling gates above;
+the historical captures are preserved, not current icon/name/status expectations.
 
 1. Two roots are created by the actual session service through the actual SDK and
    in-process server fetch, in an isolated local test database. Only A is loaded

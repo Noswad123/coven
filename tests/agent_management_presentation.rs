@@ -48,13 +48,286 @@ fn receiver_child() {
 
 struct Receiver(Child);
 
+fn native_call(path: &std::path::Path, contract: &str, method: &str, params: Value) -> Value {
+    let mut stream = UnixStream::connect(path).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    let request = json!({"id":"a".repeat(32),"contract":contract,"method":method,"params":params});
+    writeln!(stream, "{request}").unwrap();
+    let mut line = String::new();
+    BufReader::new(stream).read_line(&mut line).unwrap();
+    let reply: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(reply["type"], "result", "{reply}");
+    reply["result"].clone()
+}
+
+fn wait_name(kit: &Kit, expected: &str) -> Value {
+    let end = Instant::now() + Duration::from_secs(3);
+    loop {
+        let items = kit.providers.lock().unwrap()["queueSource2"]["items"].clone();
+        if let Some(row) = items
+            .as_array()
+            .and_then(|rows| rows.iter().find(|r| r["label"] == expected))
+        {
+            return row.clone();
+        }
+        assert!(
+            Instant::now() < end,
+            "name not published: {expected}; {items}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn normal_names_follow_manual_pane_rename_movement_and_fail_closed_without_refreshing_facts() {
+    let root = physical_temp::tempdir();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(root.path().join("coven.json"), "{}").unwrap();
+    let kit = Kit::start(root.path(), "names");
+    let generation = "12345678-1234-1234-1234-123456789abc";
+    let pane = json!({"pane_id":"pane","terminal_id":"terminal","tab_id":"tab","workspace_id":"workspace",
+        "label":"Review pane","title":"PRIVATE-OSC","agent_name":"PRIVATE-RETIRED"});
+    let inspection = json!({"type":"terminal_inspected","terminal_id":"terminal","runtime_generation":generation,
+        "availability":"live","pane_id":"pane","tab_id":"tab","workspace_id":"workspace"});
+    kit.providers.lock().unwrap()["_naming"] =
+        json!({"panes":[pane],"inspection":inspection,"hung":false});
+    let path = root.path().join("native.sock");
+    let mut receiver = Receiver(
+        Command::new(env!("CARGO_BIN_EXE_coven"))
+            .args(["agent", "run"])
+            .arg(root.path())
+            .arg("--socket")
+            .arg(&path)
+            .arg("--kitsune-socket")
+            .arg(root.path().join("kit.sock"))
+            .args(["--source", "queueSource2", "--json"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
+    );
+    let end = Instant::now() + Duration::from_secs(5);
+    let initial = loop {
+        if let Ok(output) = agent_management::observations_arguments(path.to_str().unwrap(), true) {
+            break serde_json::from_str::<Value>(&output.stdout).unwrap();
+        }
+        assert!(Instant::now() < end);
+        thread::sleep(Duration::from_millis(5));
+    };
+    agent_management::native_report_payload(path.to_str().unwrap(), json!({"contract":"djinn.native-events.v1",
+        "instance_id":generation,"session_id":"PRIVATE-SESSION","sequence":1,"event":"session.status","status":"busy"})
+        .to_string().as_bytes(), true).unwrap();
+    let default = wait_name(&kit, "Djinn");
+    let id = default["id"]
+        .as_str()
+        .unwrap()
+        .strip_prefix("observation:")
+        .unwrap();
+    let metadata = fs::metadata(root.path().join("kit.sock")).unwrap();
+    let target = json!({"socket":root.path().join("kit.sock").canonicalize().unwrap(),"device":metadata.dev(),
+        "inode":metadata.ino(),"terminal_id":"terminal","runtime_generation":generation});
+    let asserted = native_call(
+        &path,
+        "coven.observation-control.v1",
+        "association.assert",
+        json!({"observation_id":id,"expected_epoch":initial["server_epoch"],"expected_revision":null,
+            "provenance":"user_asserted","target":target,"apply":true}),
+    );
+    let named = wait_name(&kit, "Review pane");
+    assert_eq!(named["id"], default["id"]);
+    assert_eq!(named["presentation"]["label"], "");
+    assert_eq!(named["presentation"]["status"], "running");
+    // Model the generic snapshot after pane.rename and a same-runtime move.
+    {
+        let mut state = kit.providers.lock().unwrap();
+        state["_naming"]["panes"][0]["label"] = json!("\u{65e5}\u{672c}\u{8a9e} renamed");
+        state["_naming"]["panes"][0]["pane_id"] = json!("moved");
+        state["_naming"]["inspection"]["pane_id"] = json!("moved");
+    }
+    let renamed = wait_name(&kit, "\u{65e5}\u{672c}\u{8a9e} renamed");
+    assert_eq!(renamed["id"], named["id"]);
+    // Selection may add its existing read-only annotation; facts are otherwise unchanged.
+    assert_eq!(
+        renamed["detail"]
+            .as_str()
+            .unwrap()
+            .split("; selected")
+            .next(),
+        named["detail"].as_str().unwrap().split("; selected").next()
+    );
+    for invalid in [
+        Value::Null,
+        json!(""),
+        json!("\u{1b}[31munsafe"),
+        json!("x".repeat(161)),
+    ] {
+        kit.providers.lock().unwrap()["_naming"]["panes"][0]["label"] = invalid;
+        assert_eq!(wait_name(&kit, "Djinn")["id"], named["id"]);
+        kit.providers.lock().unwrap()["_naming"]["panes"][0]["label"] = json!("Review pane");
+        wait_name(&kit, "Review pane");
+    }
+    kit.providers.lock().unwrap()["_naming"]["inspection"]["runtime_generation"] =
+        json!("restarted");
+    wait_name(&kit, "Djinn");
+    kit.providers.lock().unwrap()["_naming"]["inspection"]["runtime_generation"] =
+        json!(generation);
+    wait_name(&kit, "Review pane");
+    let before: Value = serde_json::from_str(
+        &agent_management::observations_arguments(path.to_str().unwrap(), true)
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    assert!(before.get("_publisher_names").is_none());
+    assert!(!before.to_string().contains("Review pane"));
+    let removed = native_call(
+        &path,
+        "coven.observation-control.v1",
+        "association.remove",
+        json!({"observation_id":id,
+        "expected_epoch":initial["server_epoch"],"expected_revision":asserted["association_revision"],
+        "provenance":"user_asserted","apply":true}),
+    );
+    wait_name(&kit, "Djinn");
+    // A foreign socket must not even be contacted. Binding a listener makes any
+    // accidental connection observable without touching a live endpoint.
+    let foreign_listener = UnixListener::bind(root.path().join("foreign.sock")).unwrap();
+    foreign_listener.set_nonblocking(true).unwrap();
+    let mut foreign = target.clone();
+    foreign["socket"] = json!(root.path().join("foreign.sock"));
+    let foreign_asserted = native_call(
+        &path,
+        "coven.observation-control.v1",
+        "association.assert",
+        json!({"observation_id":id,
+        "expected_epoch":initial["server_epoch"],"expected_revision":removed["association_revision"],
+        "provenance":"user_asserted","target":foreign,"apply":true}),
+    );
+    thread::sleep(Duration::from_millis(600));
+    assert_eq!(
+        foreign_listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    wait_name(&kit, "Djinn");
+    let local_asserted = native_call(
+        &path,
+        "coven.observation-control.v1",
+        "association.assert",
+        json!({"observation_id":id,
+        "expected_epoch":initial["server_epoch"],"expected_revision":foreign_asserted["association_revision"],
+        "provenance":"user_asserted","target":target,"apply":true}),
+    );
+    wait_name(&kit, "Review pane");
+    native_call(
+        &path,
+        "coven.observation-control.v1",
+        "association.remove",
+        json!({"observation_id":id,
+        "expected_epoch":initial["server_epoch"],"expected_revision":local_asserted["association_revision"],
+        "provenance":"user_asserted","apply":true}),
+    );
+    let attachment = json!({"expected_epoch":initial["server_epoch"],"client_id":"12345678-1234-1234-1234-123456789abd",
+        "revision":1,"operation":"attach","instance_id":generation,"session_id":"PRIVATE-SESSION",
+        "scope":"local_full_tui_root","target":target});
+    native_call(
+        &path,
+        "coven.client-attachments.v1",
+        "report",
+        attachment.clone(),
+    );
+    wait_name(&kit, "Review pane");
+    let expiry = Instant::now() + Duration::from_secs(7);
+    loop {
+        if kit.providers.lock().unwrap()["queueSource2"]["items"][0]["label"] == "Djinn" {
+            break;
+        }
+        assert!(
+            Instant::now() < expiry,
+            "publisher extended the producer display lease"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut renewed = attachment;
+    renewed["revision"] = json!(2);
+    native_call(&path, "coven.client-attachments.v1", "report", renewed);
+    wait_name(&kit, "Review pane");
+    let serial = kit
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|c| c["method"] == "terminal.inspect")
+        .count();
+    kit.providers.lock().unwrap()["_naming"]["hung"] = json!(true);
+    let end = Instant::now() + Duration::from_secs(2);
+    while kit
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|c| c["method"] == "terminal.inspect")
+        .count()
+        == serial
+    {
+        assert!(Instant::now() < end);
+        thread::sleep(Duration::from_millis(5));
+    }
+    let started = Instant::now();
+    let after: Value = serde_json::from_str(
+        &agent_management::observations_arguments(path.to_str().unwrap(), true)
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_millis(200),
+        "hung Kit starved receiver admission"
+    );
+    assert_eq!(
+        before["observations"][0]["reported_state"],
+        after["observations"][0]["reported_state"]
+    );
+    assert!(
+        after["observations"][0]["age_ms"].as_u64().unwrap()
+            >= before["observations"][0]["age_ms"].as_u64().unwrap()
+    );
+    drop(receiver.0.stdin.take());
+    receiver.finish();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "naming IO prevented bounded shutdown"
+    );
+    let calls = kit.calls.lock().unwrap();
+    assert!(calls.iter().all(|c| matches!(
+        c["method"].as_str(),
+        Some(
+            "session.snapshot"
+                | "terminal.inspect"
+                | "integration.view.open"
+                | "integration.view.replace"
+                | "integration.view.poll"
+                | "integration.view.close"
+        )
+    )));
+    assert!(
+        !calls
+            .iter()
+            .filter(|c| c["method"] == "integration.view.replace")
+            .any(|c| c.to_string().contains("PRIVATE"))
+    );
+}
+
 #[test]
 fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
     for ending in [0, libc::SIGINT, libc::SIGTERM] {
         let root = physical_temp::tempdir();
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::write(root.path().join("coven.json"), "{}").unwrap();
-        let kit = Kit::start(root.path(), "success");
+        let version = if ending == libc::SIGINT { 2 } else { 1 };
+        let kit = Kit::start(root.path(), if version == 2 { "v2" } else { "success" });
         let path = root.path().join("native.sock");
         let mut receiver = Receiver(
             Command::new(env!("CARGO_BIN_EXE_coven"))
@@ -72,7 +345,9 @@ fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
                 .unwrap(),
         );
         let end = Instant::now() + Duration::from_secs(5);
-        while !path.exists() {
+        // A bound socket is not receiver readiness. Probe only the read path;
+        // the native mutation below is still sent exactly once.
+        while agent_management::observations_arguments(path.to_str().unwrap(), true).is_err() {
             assert!(Instant::now() < end);
             thread::sleep(Duration::from_millis(5));
         }
@@ -114,6 +389,53 @@ fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
         }
         assert!(receiver.0.try_wait().unwrap().is_none());
         let calls = kit.calls.lock().unwrap().clone();
+        let working = calls
+            .iter()
+            .find(|call| {
+                call["method"] == "integration.view.replace"
+                    && call["params"]["items"].to_string().contains("WORKING")
+            })
+            .unwrap();
+        let row = &working["params"]["items"][0];
+        assert_eq!(row["label"], "Djinn");
+        assert!(!row["label"].as_str().unwrap().contains("Coven /"));
+        if version == 2 {
+            assert_eq!(row["presentation"]["status"], "running");
+            assert_eq!(row["presentation"]["label"], "");
+            let sidebar = format!(
+                "{} {}",
+                row["label"].as_str().unwrap(),
+                row["presentation"]["label"].as_str().unwrap()
+            );
+            assert_eq!(sidebar.matches("Djinn").count(), 1);
+            agent_management::native_report_payload(
+                path.to_str().unwrap(),
+                json!({"contract":"djinn.native-events.v1","instance_id":"12345678-1234-1234-1234-123456789abc",
+                    "session_id":"PRIVATE-SECOND-SESSION","sequence":2,"event":"session.created"})
+                    .to_string().as_bytes(),
+                true,
+            ).unwrap();
+            let end = Instant::now() + Duration::from_secs(3);
+            loop {
+                let items = kit.providers.lock().unwrap()["queueSource2"]["items"].clone();
+                if items.as_array().is_some_and(|rows| rows.len() == 2) {
+                    assert_eq!(items[0]["label"], "Djinn");
+                    assert_eq!(items[1]["label"], "Djinn");
+                    assert_ne!(items[0]["id"], items[1]["id"]);
+                    assert_eq!(items[0]["presentation"]["label"], "");
+                    assert_eq!(items[1]["presentation"]["label"], "");
+                    assert_eq!(items[0]["presentation"]["status"], "running");
+                    assert_eq!(items[1]["presentation"]["status"], "unknown");
+                    assert!(!items.to_string().contains("PRIVATE"));
+                    break;
+                }
+                assert!(Instant::now() < end, "second Djinn was not presented");
+                thread::sleep(Duration::from_millis(10));
+            }
+        } else {
+            assert!(row.get("presentation").is_none());
+            assert_eq!(row.as_object().unwrap().len(), 3);
+        }
         assert!(!json!(calls).to_string().contains("PRIVATE-NATIVE-ID"));
         assert!(
             calls
@@ -365,28 +687,77 @@ impl Kit {
                 seen.lock().unwrap().push(request.clone());
                 let method = request["method"].as_str().unwrap();
                 let params = &request["params"];
-                if method != "session.snapshot" {
+                if method.starts_with("integration.view.") {
                     assert_eq!(params["source"], "queueSource2");
                     if method != "integration.view.open" {
                         assert_eq!(params["lease"], "queue-lease");
                         assert_eq!(params["epoch"], "queue-epoch");
                     }
                 }
-                if mode == "busy" && method == "integration.view.open" {
-                    let reply = json!({"id":request["id"],"error":{"code":"sourceBusy","message":"PRIVATE MESSAGE"}});
+                if matches!(mode, "busy" | "reject_v2") && method == "integration.view.open" {
+                    if mode == "reject_v2" {
+                        assert_eq!(params["version"], 2);
+                    }
+                    let reply = json!({"id":request["id"],"error":{"code":if mode == "reject_v2" {"unsupportedVersion"} else {"sourceBusy"},"message":"PRIVATE MESSAGE"}});
                     writeln!(stream, "{reply}").unwrap();
                     continue;
                 }
                 let result = match method {
-                    "session.snapshot" => json!({"type":"session_snapshot","snapshot":{
+                    "session.snapshot" => {
+                        let mut reply = json!({"type":"session_snapshot","snapshot":{
                         "version":"fixture","protocol":18,"selected_integration_source":"build",
                         "integration_views":{"version":if mode == "unsupported" {2} else {1},
-                            "sources":[{"id":"build","epoch":"build-epoch"},{"id":"queueSource2","epoch":null}]}}}),
+                            "sources":[{"id":"build","epoch":"build-epoch"},{"id":"queueSource2","epoch":null}]}}});
+                        if matches!(
+                            mode,
+                            "v2" | "lost_open_v2" | "reject_v2" | "bad_sources" | "names"
+                        ) {
+                            reply["snapshot"]["integration_views"]["supported_versions"] =
+                                json!([1, 2]);
+                        }
+                        if mode == "advertised_v1" {
+                            reply["snapshot"]["integration_views"]["supported_versions"] =
+                                json!([1, 3]);
+                        }
+                        if mode == "bad_versions" {
+                            reply["snapshot"]["integration_views"]["supported_versions"] =
+                                json!([1, 2, 2]);
+                        }
+                        if mode == "bad_sources" {
+                            reply["snapshot"]["integration_views"]["sources"]
+                                .as_array_mut()
+                                .unwrap()
+                                .push(json!({"id":"build","epoch":null}));
+                        }
+                        if mode == "names" {
+                            reply["snapshot"]["terminal_navigation"] = json!({"version":1});
+                            reply["snapshot"]["panes"] =
+                                state.lock().unwrap()["_naming"]["panes"].clone();
+                        }
+                        reply
+                    }
+                    "terminal.inspect" if mode == "names" => {
+                        let hung = state.lock().unwrap()["_naming"]["hung"] == true;
+                        if hung {
+                            while !done.load(Ordering::Acquire) {
+                                thread::sleep(Duration::from_millis(5));
+                            }
+                            continue;
+                        }
+                        state.lock().unwrap()["_naming"]["inspection"].clone()
+                    }
                     "integration.view.open" => {
                         revision = 0;
-                        assert_eq!(params["version"], 1);
+                        assert_eq!(
+                            params["version"],
+                            if matches!(mode, "v2" | "lost_open_v2" | "names") {
+                                2
+                            } else {
+                                1
+                            }
+                        );
                         state.lock().unwrap()["queueSource2"] = json!({"items":[],"intents":[]});
-                        if mode == "lost_open" {
+                        if matches!(mode, "lost_open" | "lost_open_v2") {
                             continue;
                         }
                         json!({"type":"view_opened","lease":"queue-lease","epoch":"queue-epoch","revision":0,"ttl_ms":5000})
@@ -396,6 +767,20 @@ impl Kit {
                         revision += 1;
                         assert!(serde_json::to_vec(params).unwrap().len() <= 96 * 1024);
                         assert!(params["items"].as_array().unwrap().len() <= 128);
+                        for row in params["items"].as_array().unwrap() {
+                            assert_eq!(
+                                row.as_object().unwrap().len(),
+                                if matches!(mode, "v2" | "names") { 4 } else { 3 }
+                            );
+                            assert!(row["detail"].as_str().unwrap().len() <= 512);
+                            if mode == "v2" {
+                                assert!(row["presentation"]["label"].as_str().unwrap().len() <= 48);
+                                assert!(!matches!(
+                                    row["presentation"]["status"].as_str(),
+                                    Some("success" | "error")
+                                ));
+                            }
+                        }
                         state.lock().unwrap()["queueSource2"]["items"] = params["items"].clone();
                         json!({"type":"view_replaced","epoch":"queue-epoch","revision":revision})
                     }
@@ -460,6 +845,12 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
         "unsupported",
         "busy",
         "success",
+        "v2",
+        "advertised_v1",
+        "bad_versions",
+        "bad_sources",
+        "reject_v2",
+        "lost_open_v2",
         "codex",
         "lost_open",
         "lost_poll",
@@ -685,13 +1076,32 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
             ] {
                 assert!(!serialized.contains(private));
             }
-            if matches!(mode, "success" | "ctrl_c" | "codex") {
+            if matches!(mode, "bad_versions" | "bad_sources" | "unsupported") {
+                assert!(
+                    calls
+                        .iter()
+                        .all(|call| call["method"] == "session.snapshot")
+                );
+            }
+            if mode == "reject_v2" {
+                assert_eq!(
+                    calls.len(),
+                    2,
+                    "a rejected open must not trigger a downgrade or mutation"
+                );
+                assert_eq!(calls[1]["method"], "integration.view.open");
+                assert_eq!(calls[1]["params"]["version"], 2);
+            }
+            if matches!(
+                mode,
+                "success" | "ctrl_c" | "codex" | "v2" | "advertised_v1"
+            ) {
                 assert_eq!(ui["cleanup"], "closed");
                 assert!(calls.iter().any(|c| {
                     c["method"] == "integration.view.replace"
                         && c["params"]["items"][0]["label"]
                             .as_str()
-                            .is_some_and(|s| s.starts_with(provider))
+                            .is_some_and(|s| s.to_ascii_lowercase().starts_with(provider))
                         && c["params"]["items"][0]["detail"].as_str().is_some_and(|s| {
                             s.starts_with(&format!("Last report: {}", state.to_ascii_uppercase()))
                                 && s.contains("Selected (read-only)")
@@ -705,7 +1115,10 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
                     1
                 );
                 assert!(kit.providers.lock().unwrap().get("queueSource2").is_none());
-            } else if matches!(mode, "lost_open" | "lost_poll" | "blocked_poll") {
+            } else if matches!(
+                mode,
+                "lost_open" | "lost_open_v2" | "lost_poll" | "blocked_poll"
+            ) {
                 assert_eq!(ui["outcome"], "uncertain");
                 assert!(
                     calls

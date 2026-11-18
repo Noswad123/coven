@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use std::{
     sync::{
         Arc, Mutex, TryLockError,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread,
@@ -41,6 +41,8 @@ pub fn run_arguments_with_cancel(
     socket::validate_path(&presentation.socket)?;
     crate::groups::source(&presentation.source)?;
     let projection = Arc::new(Mutex::new(Value::Null));
+    let naming = Arc::new(AtomicU64::new(0));
+    let worker_naming = naming.clone();
     let stop = Arc::new(Stop(AtomicBool::new(false)));
     let model = projection.clone();
     let cancel = stop.clone();
@@ -50,7 +52,11 @@ pub fn run_arguments_with_cancel(
     };
     let worker = thread::Builder::new()
         .name("coven-normal-view".into())
-        .spawn(move || worker_report(&request, &model, &cancel));
+        .spawn(move || worker_report(&request, &model, &cancel, Some(&worker_naming)));
+    #[cfg(unix)]
+    let result =
+        agent_management::unix::run_presentation(core, projection, cancel_receiver, naming);
+    #[cfg(not(unix))]
     let result =
         agent_management::run_with_projection_and_cancel(core, projection, cancel_receiver);
     stop.0.store(true, Ordering::Release);
@@ -96,7 +102,7 @@ pub fn serve_arguments(
     let worker = thread::Builder::new()
         .name("coven-agent-view".into())
         .spawn(move || {
-            let report = worker_report(&request, &model, &cancel);
+            let report = worker_report(&request, &model, &cancel, None);
             let _ = send.send(report);
         });
     // Always obtain structured core output, then retain its status and warnings verbatim.
@@ -126,11 +132,16 @@ pub fn serve_arguments(
     Ok(output)
 }
 
-fn worker_report(request: &PresentationRequest, model: &Mutex<Value>, stop: &Stop) -> Value {
+fn worker_report(
+    request: &PresentationRequest,
+    model: &Mutex<Value>,
+    stop: &Stop,
+    naming: Option<&AtomicU64>,
+) -> Value {
     let mut report = json!({"outcome":"completed","authorization":"none",
         "selection":"read_only_reported_record_details","frames":0,"polls":0,
         "cleanup":"not_opened","diagnostics":[]});
-    if let Err(error) = run(request, model, stop, &mut report) {
+    if let Err(error) = run(request, model, stop, &mut report, naming) {
         report["outcome"] = json!(if error.delivery == Delivery::Uncertain {
             "uncertain"
         } else if error.interrupted {
@@ -146,7 +157,93 @@ fn worker_report(request: &PresentationRequest, model: &Mutex<Value>, stop: &Sto
 #[derive(Debug, PartialEq)]
 struct Model {
     epoch: String,
-    rows: Vec<Value>,
+    rows: Vec<DisplayRow>,
+}
+
+#[derive(Debug, PartialEq)]
+struct DisplayRow {
+    id: String,
+    label: String,
+    fallback: &'static str,
+    detail: String,
+    state: &'static str,
+    status: Option<&'static str>,
+}
+
+// Called only after provenance/state validation. A received event is not an
+// explicit job outcome; ended and idle deliberately carry no success status.
+fn display_state(state: &str, current: bool) -> (&'static str, Option<&'static str>) {
+    match (current, state) {
+        (true, "working") => ("Working", Some("running")),
+        (true, "blocked") => ("Blocked", Some("attention")),
+        (true, "idle") => ("Idle", None),
+        (true, "ended") => ("Ended", None),
+        _ => ("Unknown", Some("unknown")),
+    }
+}
+
+fn display_row(
+    id: String,
+    provider: &str,
+    detail: String,
+    state: &str,
+    current: bool,
+) -> DisplayRow {
+    let provider = match provider {
+        "djinn" => "Djinn",
+        "claude" => "Claude",
+        "codex" => "Codex",
+        "copilot" => "Copilot",
+        "pi" => "Pi",
+        "opencode" => "OpenCode",
+        _ => unreachable!("validated provider"),
+    };
+    let (state, status) = display_state(state, current);
+    DisplayRow {
+        id,
+        label: provider.into(),
+        fallback: provider,
+        detail,
+        state,
+        status,
+    }
+}
+
+impl Model {
+    fn items(&self, version: u64) -> WireResult<Value> {
+        let mut items = Vec::with_capacity(self.rows.len());
+        for row in &self.rows {
+            if row.id.len() > 128
+                || row.label.len() > 160
+                || row.detail.len() > 512
+                || row.state.is_empty()
+                || row.state.len() > 48
+                || self.rows.len() > 128
+            {
+                return Err(Failure::new("integration_view_invalid_frame"));
+            }
+            let mut item = json!({"id":row.id,"label":row.label,"detail":row.detail});
+            if version == 2 {
+                item["presentation"] = json!({"label":""});
+                if let Some(status) = row.status {
+                    item["presentation"]["status"] = json!(status);
+                }
+            }
+            items.push(item);
+        }
+        // Explicit names must not crowd bounded inspector facts out of the
+        // frame. Reserve the maximum owner/revision envelope before encoding.
+        if serde_json::to_vec(&items)
+            .map_err(|_| Failure::new("integration_view_invalid_frame"))?
+            .len()
+            > 96 * 1024 - 512
+        {
+            for (item, row) in items.iter_mut().zip(&self.rows) {
+                item["label"] = json!(row.fallback);
+            }
+        }
+        Ok(json!(items))
+    }
 }
 
 // Project only bounded display fields while holding a try-lock. Never copy native
@@ -163,6 +260,9 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
         return Ok(None);
     };
     let invalid = || Failure::new("presentation_projection_error");
+    if epoch.is_empty() || epoch.len() > 128 || epoch.chars().any(char::is_control) {
+        return Err(invalid());
+    }
     if value["contract"] == "coven.normal-observations.v1" {
         if value["authorization"] != "none" {
             return Err(invalid());
@@ -199,7 +299,21 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
                         observation["freshness"].as_str().ok_or_else(invalid)?
                     )
                 };
-                rows.push(json!({"id":format!("observation:{id}"),"label":format!("Coven / {} / {}",observation["provider"].as_str().ok_or_else(invalid)?,&id[..12]),"detail":format!("Coven: last received native hook fact: {event}; {timing}; UNKNOWN; {}; caller unverified; root, native identity and job completion unestablished",observation["profile"].as_str().ok_or_else(invalid)?)}));
+                let item_id = format!("observation:{id}");
+                let mut detail = format!(
+                    "Coven: last received native hook fact: {event}; {timing}; UNKNOWN; {}; caller unverified; root, native identity and job completion unestablished",
+                    observation["profile"].as_str().ok_or_else(invalid)?
+                );
+                if selected == Some(item_id.as_str()) {
+                    detail.push_str("; selected (read-only)");
+                }
+                rows.push(display_row(
+                    item_id,
+                    observation["provider"].as_str().ok_or_else(invalid)?,
+                    detail,
+                    "unknown",
+                    false,
+                ));
                 continue;
             }
             let provider = observation["provider"].as_str().ok_or_else(invalid)?;
@@ -274,28 +388,27 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
             if selected == Some(item_id.as_str()) {
                 detail.push_str("; selected (read-only)");
             }
-            let label = if provider == "djinn" {
-                "Djinn"
-            } else {
-                provider
-            };
-            rows.push(json!({"id":item_id,"label":format!("Coven / {label} / {}",&id[..12]),"detail":detail}));
+            rows.push(display_row(
+                item_id,
+                provider,
+                detail,
+                state,
+                freshness == "fresh"
+                    && capability == "activity"
+                    && origin != "djinn_client_attachment",
+            ));
         }
         if summary {
-            rows.push(json!({"id":"normal:limits","label":"Coven / Evidence limits",
-                "detail":format!("{omitted} observations omitted from this view; {retired} native observations retired; bounded volatile history and replay protection")}));
+            rows.push(DisplayRow { id: "normal:limits".into(), label: "Evidence limits".into(), fallback: "Evidence limits",
+                detail: format!("{omitted} observations omitted from this view; {retired} native observations retired; bounded volatile history and replay protection"),
+                state: "Notice", status: None });
         }
         return Ok(Some(Model {
             epoch: epoch.into(),
             rows,
         }));
     }
-    if epoch.is_empty()
-        || epoch.len() > 128
-        || epoch.chars().any(char::is_control)
-        || value["contract"] != "coven.agent-management.v1"
-        || value["authorization"] != "none"
-    {
+    if value["contract"] != "coven.agent-management.v1" || value["authorization"] != "none" {
         return Err(invalid());
     }
     let records = value["records"].as_array().ok_or_else(invalid)?;
@@ -333,17 +446,16 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
         if selected == Some(item_id.as_str()) {
             detail.push_str(" \u{b7} Selected (read-only); reference: caller supplied, unverified; native identity and job completion: unestablished");
         }
-        let label = match provider {
-            "pi" => "Pi",
-            "opencode" => "OpenCode",
-            _ => provider,
-        };
-        rows.push(
-            json!({"id":item_id,"label":format!("{label} \u{b7} {}", &id[..12]),"detail":detail}),
-        );
+        rows.push(display_row(
+            item_id,
+            provider,
+            detail,
+            &state.to_ascii_lowercase(),
+            !record["age_ms"].is_null(),
+        ));
     }
-    rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
-    if rows.windows(2).any(|pair| pair[0]["id"] == pair[1]["id"]) {
+    rows.sort_by(|a, b| a.id.cmp(&b.id));
+    if rows.windows(2).any(|pair| pair[0].id == pair[1].id) {
         return Err(invalid());
     }
     Ok(Some(Model {
@@ -354,6 +466,175 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
 
 fn deadline() -> Instant {
     Instant::now() + Duration::from_secs(3)
+}
+
+// Monotonic deadlines belong only to the in-process publisher projection.
+pub(crate) fn naming_tick(at: Instant) -> u64 {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    let start = *START.get_or_init(Instant::now);
+    at.saturating_duration_since(start)
+        .as_millis()
+        .min(u64::MAX as u128) as u64
+}
+
+fn explicit_name(value: &Value) -> Option<&str> {
+    let text = value.as_str()?;
+    // Reject rather than truncate: never split UTF-8, ANSI, or multiline content.
+    (!text.trim().is_empty() && text.len() <= 160 && !text.chars().any(|c|
+        c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{2028}' | '\u{2029}')))
+        .then_some(text)
+}
+
+fn naming_result(reply: &socket::Reply) -> Option<Value> {
+    crate::strict_json::check_depth(&reply.payload, 32).ok()?;
+    let native = crate::values::parse(&reply.payload, crate::values::Profile::Authority).ok()?;
+    let value: Value = serde_json::from_slice(&native.compact().ok()?).ok()?;
+    if value.as_object()?.len() != 2 || value["id"] != reply.request_id {
+        return None;
+    }
+    value.get("result").cloned()
+}
+
+fn named_pane<'a>(panes: &'a [Value], target: &Value, inspected: &Value) -> Option<&'a str> {
+    if inspected.as_object()?.len() != 7
+        || inspected["type"] != "terminal_inspected"
+        || inspected["availability"] != "live"
+        || inspected["terminal_id"] != target["terminal_id"]
+        || inspected["runtime_generation"] != target["runtime_generation"]
+    {
+        return None;
+    }
+    let mut terminals = panes
+        .iter()
+        .filter(|p| p["terminal_id"] == target["terminal_id"]);
+    let pane = terminals.next()?;
+    if terminals.next().is_some()
+        || pane["pane_id"].as_str()?.is_empty()
+        || panes
+            .iter()
+            .filter(|p| p["pane_id"] == pane["pane_id"])
+            .count()
+            != 1
+        || ["pane_id", "tab_id", "workspace_id"]
+            .iter()
+            .any(|k| pane[*k].as_str().is_none_or(str::is_empty) || pane[*k] != inspected[*k])
+    {
+        return None;
+    }
+    explicit_name(&pane["label"])
+}
+
+fn resolve_names(
+    shared: &Mutex<Value>,
+    current: &mut Model,
+    endpoint: &socket::Endpoint,
+    stop: &Stop,
+    naming: Option<&AtomicU64>,
+) {
+    let Some(naming) = naming else { return };
+    let revision = naming.load(Ordering::Acquire);
+    if revision & 1 != 0 {
+        return;
+    }
+    let end = Instant::now() + Duration::from_millis(300);
+    let hints = match shared.try_lock() {
+        Ok(value) if value["server_epoch"] == current.epoch => value["_publisher_names"].clone(),
+        _ => return,
+    };
+    if naming.load(Ordering::Acquire) != revision {
+        return;
+    }
+    let Some(hints) = hints.as_array().filter(|h| h.len() <= 128) else {
+        return;
+    };
+    let eligible = |hint: &&Value| {
+        let t = &hint["target"];
+        crate::agent_navigation::validate_target(t).is_ok()
+            && t["socket"] == endpoint.resolved
+            && t["device"] == endpoint.device
+            && t["inode"] == endpoint.inode
+            && hint["until"]
+                .as_u64()
+                .is_some_and(|until| naming_tick(Instant::now()) < until)
+            && current.rows.iter().any(|r| hint["id"] == r.id)
+    };
+    let candidates: Vec<_> = hints.iter().filter(eligible).collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let mut budget = socket::ReadBudget::new(1024 * 1024);
+    let Some(snapshot) = socket::naming_snapshot(endpoint, end, &mut budget, stop)
+        .ok()
+        .filter(|r| r.endpoint == *endpoint)
+        .and_then(|r| naming_result(&r))
+    else {
+        return;
+    };
+    if snapshot["type"] != "session_snapshot"
+        || snapshot["snapshot"]["terminal_navigation"]["version"] != 1
+    {
+        return;
+    }
+    let Some(panes) = snapshot["snapshot"]["panes"]
+        .as_array()
+        .filter(|p| p.len() <= 4096)
+    else {
+        return;
+    };
+    let mut names = Vec::new();
+    for hint in candidates {
+        if socket::check(end, stop).is_err() {
+            break;
+        }
+        let target = &hint["target"];
+        let Some(inspected) = socket::naming_inspect(
+            endpoint,
+            target["terminal_id"].as_str().unwrap(),
+            end,
+            &mut budget,
+            stop,
+        )
+        .ok()
+        .and_then(|r| naming_result(&r)) else {
+            continue;
+        };
+        if let Some(name) = named_pane(panes, target, &inspected) {
+            names.push((hint, name));
+        }
+    }
+    if socket::check(end, stop).is_err()
+        || socket::select(&endpoint.selected).ok().as_ref() != Some(endpoint)
+    {
+        return;
+    }
+    // Requalify against the receiver's latest epoch, association revision/target and
+    // actual lease deadline after IO. No successful name survives a failed refresh.
+    let Ok(latest) = shared.try_lock() else {
+        return;
+    };
+    if latest["server_epoch"] != current.epoch || naming.load(Ordering::Acquire) != revision {
+        return;
+    }
+    for (hint, name) in names {
+        if hint["until"]
+            .as_u64()
+            .is_some_and(|until| naming_tick(Instant::now()) < until)
+            && latest["_publisher_names"].as_array().is_some_and(|all| {
+                all.iter().any(|h| {
+                    h["id"] == hint["id"]
+                        && h["revision"] == hint["revision"]
+                        && h["target"] == hint["target"]
+                        && h["until"]
+                            .as_u64()
+                            .is_some_and(|until| naming_tick(Instant::now()) < until)
+                })
+            })
+        {
+            if let Some(row) = current.rows.iter_mut().find(|r| hint["id"] == r.id) {
+                row.label = name.into();
+            }
+        }
+    }
 }
 fn pause(stop: &Stop, duration: Duration) {
     let end = Instant::now() + duration;
@@ -367,6 +648,7 @@ fn run(
     model: &Mutex<Value>,
     stop: &Stop,
     report: &mut Value,
+    naming: Option<&AtomicU64>,
 ) -> WireResult<()> {
     let initial = loop {
         if stop.interrupted() {
@@ -391,11 +673,11 @@ fn run(
     if reply.endpoint != endpoint {
         return Err(Failure::new("endpoint_replaced"));
     }
-    wire::snapshot(&reply, &request.source)?;
+    let version = wire::presentation_version(&reply, &request.source)?;
     let opened = socket::view_call(
         &endpoint,
         "integration.view.open",
-        &json!({"source":request.source,"version":1}),
+        &json!({"source":request.source,"version":version}),
         deadline(),
         stop,
         &wire::opened,
@@ -418,13 +700,19 @@ fn run(
             if stop.interrupted() {
                 return Ok(());
             }
-            if let Some(next) = snapshot(model, selected.as_deref())? {
+            if let Some(mut next) = snapshot(model, selected.as_deref())? {
                 if next.epoch != server_epoch {
                     return Err(Failure::new("presentation_server_epoch_changed"));
                 }
+                resolve_names(model, &mut next, &endpoint, stop, naming);
                 current = next;
+            } else {
+                // Contention cannot retain a previously qualified name.
+                for row in &mut current.rows {
+                    row.label = row.fallback.into();
+                }
             }
-            let items = json!(current.rows);
+            let items = current.items(version)?;
             if items != shown {
                 revision = revision
                     .checked_add(1)
@@ -469,7 +757,7 @@ fn run(
                     && current
                         .rows
                         .iter()
-                        .any(|row| row["id"] == intent["item_id"])
+                        .any(|row| Some(row.id.as_str()) == intent["item_id"].as_str())
                 {
                     selected = intent["item_id"].as_str().map(str::to_owned);
                 }
@@ -512,6 +800,222 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn naming_refresh_rechecks_epoch_revision_lease_endpoint_and_total_cancel_budget() {
+        use std::{
+            io::{BufRead, BufReader, Write},
+            os::unix::{fs::PermissionsExt, net::UnixListener},
+        };
+        for mode in [
+            "success",
+            "epoch",
+            "revision",
+            "removed",
+            "expiry",
+            "endpoint",
+            "admission",
+            "hung",
+            "cancel",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            let path = root.path().canonicalize().unwrap().join("kit.sock");
+            let listener = UnixListener::bind(&path).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let endpoint = socket::select(path.to_str().unwrap()).unwrap();
+            let target = json!({"socket":endpoint.resolved,"device":endpoint.device,"inode":endpoint.inode,
+                "terminal_id":"terminal","runtime_generation":"generation"});
+            let hint = json!({"id":"observation:opaque","revision":"revision","target":target,
+                "until":naming_tick(Instant::now() + Duration::from_secs(2))});
+            let count = if mode == "hung" { 128 } else { 1 };
+            let shared = Arc::new(Mutex::new(
+                json!({"server_epoch":"epoch","_publisher_names":vec![hint; count]}),
+            ));
+            let fence = Arc::new(AtomicU64::new(0));
+            let stop = Arc::new(Stop(AtomicBool::new(false)));
+            let mut current = Model {
+                epoch: "epoch".into(),
+                rows: vec![display_row(
+                    "observation:opaque".into(),
+                    "djinn",
+                    "unchanged fact".into(),
+                    "working",
+                    true,
+                )],
+            };
+            let model = shared.clone();
+            let revision = fence.clone();
+            let cancel = stop.clone();
+            let started = Instant::now();
+            let worker = thread::spawn(move || {
+                let mut replacement = None;
+                for step in 0..2 {
+                    let end = Instant::now() + Duration::from_secs(1);
+                    let mut stream = loop {
+                        match listener.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                assert!(
+                                    Instant::now() < end,
+                                    "missing naming request: {mode}/{step}"
+                                );
+                                thread::sleep(Duration::from_millis(1));
+                            }
+                            Err(e) => panic!("{e}"),
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(1)))
+                        .unwrap();
+                    let mut line = String::new();
+                    BufReader::new(stream.try_clone().unwrap())
+                        .read_line(&mut line)
+                        .unwrap();
+                    let request: Value = serde_json::from_str(&line).unwrap();
+                    let result = if step == 0 {
+                        assert_eq!(request["method"], "session.snapshot");
+                        json!({"type":"session_snapshot","snapshot":{"terminal_navigation":{"version":1},
+                            "panes":[{"terminal_id":"terminal","pane_id":"pane","tab_id":"tab","workspace_id":"workspace","label":"Manual name"}]}})
+                    } else {
+                        assert_eq!(request["method"], "terminal.inspect");
+                        // Receiver mutation while the worker is in IO must acquire
+                        // the model immediately, not wait on a lookup-held mutex.
+                        match mode {
+                            "epoch" => model.try_lock().unwrap()["server_epoch"] = json!("new"),
+                            "revision" => {
+                                model.try_lock().unwrap()["_publisher_names"][0]["revision"] =
+                                    json!("new")
+                            }
+                            "removed" => model.try_lock().unwrap()["_publisher_names"] = json!([]),
+                            "expiry" => {
+                                model.try_lock().unwrap()["_publisher_names"][0]["until"] =
+                                    json!(0);
+                            }
+                            "admission" => {
+                                revision.fetch_or(1, Ordering::AcqRel);
+                            }
+                            "endpoint" => {
+                                std::fs::remove_file(&path).unwrap();
+                                replacement = Some(UnixListener::bind(&path).unwrap());
+                                std::fs::set_permissions(
+                                    &path,
+                                    std::fs::Permissions::from_mode(0o600),
+                                )
+                                .unwrap();
+                            }
+                            "hung" => {
+                                thread::sleep(Duration::from_millis(400));
+                            }
+                            "cancel" => cancel.0.store(true, Ordering::Release),
+                            _ => {}
+                        }
+                        json!({"type":"terminal_inspected","terminal_id":"terminal","availability":"live",
+                            "runtime_generation":"generation","pane_id":"pane","tab_id":"tab","workspace_id":"workspace"})
+                    };
+                    let _ = writeln!(stream, "{}", json!({"id":request["id"],"result":result}));
+                }
+                drop(replacement);
+            });
+            resolve_names(&shared, &mut current, &endpoint, &stop, Some(&fence));
+            let elapsed = started.elapsed();
+            worker.join().unwrap();
+            assert!(
+                elapsed < Duration::from_millis(500),
+                "total naming budget exceeded: {mode}: {elapsed:?}"
+            );
+            assert_eq!(
+                current.rows[0].label,
+                if mode == "success" {
+                    "Manual name"
+                } else {
+                    "Djinn"
+                },
+                "{mode}"
+            );
+            assert_eq!(current.rows[0].detail, "unchanged fact");
+            assert_eq!(current.rows[0].id, "observation:opaque");
+        }
+    }
+
+    #[test]
+    fn explicit_names_reject_unsafe_or_oversize_without_stripping_utf8() {
+        for bad in [
+            Value::Null,
+            json!(""),
+            json!(" \t"),
+            json!("line\nname"),
+            json!("\u{1b}[31mname"),
+            json!("name\u{7f}"),
+            json!("\u{202e}name"),
+            json!("x".repeat(161)),
+            json!("\u{754c}".repeat(54)),
+        ] {
+            assert_eq!(explicit_name(&bad), None);
+        }
+        for good in ["User / pane", "\u{65e5}\u{672c}\u{8a9e}", " name "] {
+            let value = json!(good);
+            assert_eq!(explicit_name(&value), Some(good));
+        }
+        let value = json!("\u{754c}".repeat(53));
+        assert_eq!(explicit_name(&value).unwrap().len(), 159);
+    }
+
+    #[test]
+    fn pane_names_require_unique_current_mapping_and_exact_live_generation() {
+        let target = json!({"terminal_id":"terminal","runtime_generation":"generation"});
+        let inspected = json!({"type":"terminal_inspected","terminal_id":"terminal",
+            "runtime_generation":"generation","availability":"live","pane_id":"moved",
+            "tab_id":"tab","workspace_id":"workspace"});
+        let pane = json!({"terminal_id":"terminal","pane_id":"moved","tab_id":"tab",
+            "workspace_id":"workspace","label":"Manual name","title":"PRIVATE-OSC",
+            "agent_name":"PRIVATE-RETIRED","effective_agent_label":"PRIVATE-RETIRED"});
+        assert_eq!(
+            named_pane(&[pane.clone()], &target, &inspected),
+            Some("Manual name")
+        );
+        for (key, value) in [
+            ("runtime_generation", json!("restarted")),
+            ("availability", json!("ended")),
+            ("terminal_id", json!("other")),
+            ("pane_id", json!("old")),
+            ("workspace_id", json!("other")),
+        ] {
+            let mut invalid = inspected.clone();
+            invalid[key] = value;
+            assert_eq!(named_pane(&[pane.clone()], &target, &invalid), None);
+        }
+        assert_eq!(
+            named_pane(&[pane.clone(), pane.clone()], &target, &inspected),
+            None
+        );
+        let mut alias = pane.clone();
+        alias["terminal_id"] = json!("other");
+        assert_eq!(
+            named_pane(&[pane.clone(), alias], &target, &inspected),
+            None
+        );
+        let mut missing = pane.clone();
+        missing.as_object_mut().unwrap().remove("label");
+        assert_eq!(named_pane(&[missing], &target, &inspected), None);
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct EncodedModel {
+        rows: Vec<Value>,
+    }
+
+    fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<EncodedModel>> {
+        super::snapshot(model, selected)?
+            .map(|model| {
+                Ok(EncodedModel {
+                    rows: model.items(1)?.as_array().unwrap().clone(),
+                })
+            })
+            .transpose()
+    }
 
     #[test]
     fn provider_profiles_preserve_receiver_priority_and_strip_private_details() {
@@ -617,6 +1121,240 @@ mod tests {
     }
 
     #[test]
+    fn compact_status_is_truthful_versioned_and_private() {
+        for (state, _word, status) in [
+            ("working", "Working", Some("running")),
+            ("blocked", "Blocked", Some("attention")),
+            ("idle", "Idle", None),
+            ("ended", "Ended", None),
+            ("unknown", "Unknown", Some("unknown")),
+        ] {
+            for freshness in ["fresh", "expired", "historical", "unknown"] {
+                let value = Mutex::new(
+                    json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch","authorization":"none",
+                    "omitted_observations":0,"retired_native_observations":0,"observations":[{
+                        "observation_id":"a".repeat(64),"provider":"djinn","origin":"djinn_native_event",
+                        "capability":"activity","freshness":freshness,"reported_state":state,
+                        "session_id":"PRIVATE","prompt":"PRIVATE","tool":"PRIVATE","error":"PRIVATE","cwd":"/PRIVATE"}]}),
+                );
+                let model =
+                    super::snapshot(&value, Some(&format!("observation:{}", "a".repeat(64))))
+                        .unwrap()
+                        .unwrap();
+                let expected = if freshness == "fresh" {
+                    status
+                } else {
+                    Some("unknown")
+                };
+                for version in [1, 2] {
+                    let items = model.items(version).unwrap();
+                    let row = &items[0];
+                    assert_eq!(
+                        row.as_object().unwrap().len(),
+                        if version == 1 { 3 } else { 4 }
+                    );
+                    assert!(
+                        row["detail"]
+                            .as_str()
+                            .unwrap()
+                            .contains("selected (read-only)")
+                    );
+                    assert!(!items.to_string().contains("PRIVATE"));
+                    assert_eq!(row["label"], "Djinn");
+                    assert!(
+                        row["detail"]
+                            .as_str()
+                            .unwrap()
+                            .contains(&state.to_ascii_uppercase())
+                    );
+                    if version == 2 {
+                        assert_eq!(row["presentation"]["label"], "");
+                        let sidebar = format!(
+                            "{} {}",
+                            row["label"].as_str().unwrap(),
+                            row["presentation"]["label"].as_str().unwrap()
+                        );
+                        assert_eq!(sidebar.matches("Djinn").count(), 1);
+                        assert_eq!(sidebar.matches("aaaaaaaa").count(), 0);
+                        assert_eq!(row["presentation"]["status"].as_str(), expected);
+                        assert_eq!(
+                            row["presentation"]
+                                .as_object()
+                                .unwrap()
+                                .contains_key("status"),
+                            expected.is_some()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compact_collisions_limits_and_field_budget_are_bounded() {
+        let mut model = Model {
+            epoch: "epoch".into(),
+            rows: vec![
+                display_row(
+                    format!("agent:{}", "a".repeat(64)),
+                    "djinn",
+                    "x".repeat(512),
+                    "idle",
+                    true,
+                ),
+                display_row(
+                    format!("agent:{}b", "a".repeat(63)),
+                    "djinn",
+                    "x".repeat(512),
+                    "ended",
+                    true,
+                ),
+            ],
+        };
+        for version in [1, 2] {
+            let items = model.items(version).unwrap();
+            assert_eq!(items[0]["label"], "Djinn");
+            assert_eq!(items[1]["label"], "Djinn");
+            assert_ne!(items[0]["id"], items[1]["id"]);
+            assert!(serde_json::to_vec(&items).unwrap().len() < 96 * 1024);
+        }
+        model.rows[0].detail.push('x');
+        assert!(model.items(1).is_err());
+        assert!(model.items(2).is_err());
+    }
+
+    #[test]
+    fn full_frames_and_near_cap_profile_details_preserve_budgets() {
+        let observations: Vec<_> = (0..127).map(|n| json!({
+            "observation_id":format!("{n:064x}"),"provider":"opencode","origin":"provider_native_event",
+            "profile":"opencode-root.v1","reported_state":"blocked","capability":"activity","freshness":"fresh",
+            "hosting_state":"local_full_tui_root","fresh_pending_count":128,"unacknowledged_pending_count":128,
+            "session_id":"PRIVATE","prompt":"PRIVATE","tools":"PRIVATE","cwd":"/PRIVATE","error":"PRIVATE"
+        })).collect();
+        let value = Mutex::new(
+            json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch",
+            "authorization":"none","omitted_observations":u64::MAX,"retired_native_observations":u64::MAX,
+            "observations":observations}),
+        );
+        let selected = format!("observation:{:064x}", 0);
+        let mut model = super::snapshot(&value, Some(&selected)).unwrap().unwrap();
+        for row in &mut model.rows {
+            if row.id != "normal:limits" {
+                row.label = "\\".repeat(160);
+            }
+        }
+        for version in [1, 2] {
+            let named_items: Vec<_> = model
+                .rows
+                .iter()
+                .map(|row| {
+                    let mut item = json!({"id":row.id,"label":row.label,"detail":row.detail});
+                    if version == 2 {
+                        item["presentation"] = json!({"label":""});
+                        if let Some(status) = row.status {
+                            item["presentation"]["status"] = json!(status);
+                        }
+                    }
+                    item
+                })
+                .collect();
+            let needs_fallback = serde_json::to_vec(&named_items).unwrap().len() > 96 * 1024 - 512;
+            let items = model.items(version).unwrap();
+            assert_eq!(items.as_array().unwrap().len(), 128);
+            for (item, row) in items.as_array().unwrap().iter().zip(&model.rows) {
+                assert_eq!(
+                    item["label"],
+                    if needs_fallback {
+                        row.fallback
+                    } else {
+                        &row.label
+                    }
+                );
+                assert!(item["label"].as_str().unwrap().len() <= 160);
+            }
+            assert!(
+                items[0]["detail"]
+                    .as_str()
+                    .unwrap()
+                    .contains("selected (read-only)")
+            );
+            for row in items.as_array().unwrap() {
+                assert!(row["detail"].as_str().unwrap().len() <= 512);
+            }
+            let notice = &items[127];
+            assert_eq!(notice["id"], "normal:limits");
+            assert_eq!(notice["label"], "Evidence limits");
+            if version == 2 {
+                assert_eq!(notice["presentation"]["label"], "");
+            }
+            assert!(notice["presentation"].get("status").is_none());
+            let frame = json!({"source":"a".repeat(64),"lease":"l".repeat(128),"epoch":"e".repeat(128),
+                "revision":u64::MAX,"items":items});
+            let bytes = serde_json::to_vec(&frame).unwrap();
+            assert!(bytes.len() <= 96 * 1024);
+            assert!(!String::from_utf8(bytes).unwrap().contains("PRIVATE"));
+        }
+    }
+
+    #[test]
+    fn fresh_references_and_hosting_metadata_remain_unknown_in_both_profiles() {
+        for (provider, origin, capability) in [
+            ("djinn", "djinn_client_attachment", "activity"),
+            ("codex", "v1_receipt", "reference_only"),
+            ("copilot", "v1_receipt", "reference_only"),
+            ("pi", "v1_receipt", "reference_only"),
+            ("opencode", "v1_receipt", "reference_only"),
+        ] {
+            let value = Mutex::new(
+                json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch",
+                "authorization":"none","omitted_observations":0,"retired_native_observations":0,"observations":[{
+                    "observation_id":"a".repeat(64),"provider":provider,"origin":origin,"capability":capability,
+                    "freshness":"fresh","reported_state":"working","hosting_state":"local_full_tui_root"}]}),
+            );
+            let model = super::snapshot(&value, None).unwrap().unwrap();
+            assert_eq!(
+                model.items(2).unwrap()[0]["presentation"]["status"],
+                "unknown"
+            );
+            assert_eq!(
+                model.items(1).unwrap()[0]["label"],
+                model.items(2).unwrap()[0]["label"]
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn native_fact_event_names_never_become_outcome_or_activity() {
+        for provider in ["codex", "copilot"] {
+            for event in agent_management::facts::events(provider).unwrap() {
+                let row = json!({"observation_id":"b".repeat(64),"provider":provider,
+                    "profile":format!("{provider}-hook-facts.v1"),"origin":"provider_native_fact",
+                    "capability":"native_hook_fact","reported_state":"unknown","age_ms":0,
+                    "freshness":if provider == "codex" {"unknown"} else {"fresh"},
+                    "reference_trust":"caller_supplied_unverified","root_eligibility":"unestablished",
+                    "native_identity":"unestablished","job_completion":"unestablished","binding":"none",
+                    "attribution":"Coven","last_received_event":event,"ordering":"unordered",
+                    "time_basis":if provider == "codex" {"local_receipt_only"} else {"source_age_at_receipt_plus_monotonic"},
+                    "source_time":if provider == "codex" {"unknown"} else {"caller_supplied_utc"}});
+                let value = Mutex::new(
+                    json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch",
+                    "authorization":"none","omitted_observations":0,"retired_native_observations":0,"observations":[row]}),
+                );
+                let model = super::snapshot(&value, None).unwrap().unwrap();
+                assert_eq!(
+                    model.items(2).unwrap()[0]["presentation"]["status"],
+                    "unknown"
+                );
+                assert_eq!(
+                    model.items(1).unwrap()[0]["label"],
+                    model.items(2).unwrap()[0]["label"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn projection_is_bounded_read_only_and_age_bucketed() {
         let model = Mutex::new(projection());
         let before = snapshot(&model, None).unwrap().unwrap();
@@ -666,12 +1404,7 @@ mod tests {
         value["records"][0]["reported_state"] = json!("unknown");
         let model = Mutex::new(value);
         let view = snapshot(&model, None).unwrap().unwrap();
-        assert!(
-            view.rows[0]["label"]
-                .as_str()
-                .unwrap()
-                .starts_with("codex ")
-        );
+        assert!(view.rows[0]["label"].as_str().unwrap().eq("Codex"));
         assert!(
             view.rows[0]["detail"]
                 .as_str()
@@ -697,7 +1430,7 @@ mod tests {
         let view = snapshot(&model, Some(&format!("agent:{}", "a".repeat(64))))
             .unwrap()
             .unwrap();
-        assert_eq!(view.rows[0]["label"], "copilot \u{b7} aaaaaaaaaaaa");
+        assert_eq!(view.rows[0]["label"], "Copilot");
         let detail = view.rows[0]["detail"].as_str().unwrap();
         assert!(detail.starts_with("Last report: UNKNOWN \u{b7} age 1s"));
         assert!(detail.contains("reference: caller supplied, unverified"));
@@ -735,6 +1468,7 @@ mod tests {
                 },
                 &Mutex::new(Value::Null),
                 &cancel,
+                None,
             )
         });
         thread::sleep(Duration::from_millis(40));
@@ -757,10 +1491,7 @@ mod tests {
             let view = snapshot(&model, Some(&format!("agent:{}", "a".repeat(64))))
                 .unwrap()
                 .unwrap();
-            assert_eq!(
-                view.rows[0]["label"],
-                format!("{label} \u{b7} aaaaaaaaaaaa")
-            );
+            assert_eq!(view.rows[0]["label"], label);
             let detail = view.rows[0]["detail"].as_str().unwrap();
             assert!(detail.starts_with("Last report: UNKNOWN \u{b7} age 1s"));
             assert!(detail.contains("reference: caller supplied, unverified"));

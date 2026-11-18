@@ -57,6 +57,42 @@ fn token(value: &Value) -> bool {
     })
 }
 pub(crate) fn snapshot(reply: &socket::Reply, source: &str) -> WireResult<()> {
+    descriptor(reply, source).map(|_| ())
+}
+
+/// Only the normal agent presenter opts in; other publishers remain pure v1.
+pub(crate) fn presentation_version(reply: &socket::Reply, source: &str) -> WireResult<u64> {
+    let descriptor = descriptor(reply, source)?;
+    let Some(versions) = descriptor
+        .as_object()
+        .and_then(|o| o.get("supported_versions"))
+    else {
+        return Ok(1);
+    };
+    let versions = versions.as_array().ok_or_else(schema)?;
+    if versions.is_empty() || versions.len() > 8 {
+        return Err(schema());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for version in versions {
+        // Keep future integer versions exact, without coercion or narrowing.
+        let Native::Number(crate::values::Number::Integer(integer)) = version else {
+            return Err(schema());
+        };
+        if integer.as_str().starts_with('-')
+            || integer.as_str() == "0"
+            || !seen.insert(integer.as_str())
+        {
+            return Err(schema());
+        }
+    }
+    if !seen.contains("1") {
+        return Err(Failure::new("integration_view_unsupported"));
+    }
+    Ok(if seen.contains("2") { 2 } else { 1 })
+}
+
+fn descriptor(reply: &socket::Reply, source: &str) -> WireResult<Native> {
     let result = result(&reply.payload, &reply.request_id, "session_snapshot")?;
     let snapshot = field(&result, "snapshot")?;
     field(snapshot, "version")?.as_str().ok_or_else(schema)?;
@@ -95,7 +131,7 @@ pub(crate) fn snapshot(reply: &socket::Reply, source: &str) -> WireResult<()> {
     if !ids.contains(&source) {
         return Err(Failure::new("integration_view_source_disabled"));
     }
-    Ok(())
+    Ok(descriptor.clone())
 }
 pub(crate) fn opened(bytes: &[u8], id: &str) -> WireResult<Value> {
     let value = project(
@@ -153,6 +189,79 @@ pub(crate) fn closed(bytes: &[u8], id: &str) -> WireResult<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presentation_negotiates_only_explicit_exact_versions_after_whole_descriptor_validation() {
+        let base = json!({"id":"request","result":{"type":"session_snapshot","snapshot":{
+            "version":"fixture","protocol":18,"integration_views":{"version":1,
+            "sources":[{"id":"agents","epoch":null},{"id":"build","epoch":"epoch"}]}}}});
+        let check = |value: &Value| {
+            let reply = socket::Reply {
+                payload: serde_json::to_vec(value).unwrap(),
+                request_id: "request".into(),
+                endpoint: socket::Endpoint {
+                    selected: "/unused".into(),
+                    resolved: "/unused".into(),
+                    device: 0,
+                    inode: 0,
+                },
+            };
+            // Pure-v1 publishers ignore the advertisement and keep their old
+            // validation contract even when the peer also supports v2.
+            assert!(snapshot(&reply, "agents").is_ok());
+            presentation_version(&reply, "agents")
+        };
+        assert_eq!(check(&base).unwrap(), 1);
+        for (versions, chosen) in [
+            (json!([1]), 1),
+            (json!([2, 1]), 2),
+            (json!([1, 3]), 1),
+            (json!([99, 2, 1]), 2),
+        ] {
+            let mut value = base.clone();
+            value["result"]["snapshot"]["integration_views"]["supported_versions"] = versions;
+            assert_eq!(check(&value).unwrap(), chosen);
+        }
+        for versions in [
+            Value::Null,
+            json!([]),
+            json!([2]),
+            json!([1, 1]),
+            json!([1, 2, 2]),
+            json!([1, 0]),
+            json!([1, -2]),
+            json!([1, 2.0]),
+            json!([1, true]),
+            json!([1, "2"]),
+            json!({"1":2}),
+            json!([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+        ] {
+            let mut value = base.clone();
+            value["result"]["snapshot"]["integration_views"]["supported_versions"] = versions;
+            assert!(check(&value).is_err(), "{value}");
+        }
+        for bad in [
+            json!({"id":"build","epoch":"bad epoch"}),
+            json!({"id":"agents","epoch":null}),
+            json!({"id":"bad source","epoch":null}),
+        ] {
+            let mut value = base.clone();
+            value["result"]["snapshot"]["integration_views"]["supported_versions"] = json!([1, 2]);
+            value["result"]["snapshot"]["integration_views"]["sources"][1] = bad;
+            let reply = socket::Reply {
+                payload: serde_json::to_vec(&value).unwrap(),
+                request_id: "request".into(),
+                endpoint: socket::Endpoint {
+                    selected: "/unused".into(),
+                    resolved: "/unused".into(),
+                    device: 0,
+                    inode: 0,
+                },
+            };
+            assert!(snapshot(&reply, "agents").is_err());
+            assert!(presentation_version(&reply, "agents").is_err());
+        }
+    }
 
     #[test]
     fn legacy_view_methods_are_not_allowed() {

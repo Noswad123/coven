@@ -11,13 +11,83 @@ live-artifact attachment is required. With compatible Kitsune/Coven builds, addi
 ownership at server startup. Kitsune negotiates capabilities through
 `coven doctor status --json`, retains the selected native executable/default root,
 and lets Coven privately bootstrap state. Unknown source IDs remain
-presentation-only; selecting a source in the UI never launches a process.
+presentation-only; section disclosure in the UI never launches a process.
 
 After that opt-in and explicit native hook/extension configuration, users still
 type `djinn`, `codex`, `copilot`, etc. unchanged. Coven supplies attributed plain
-rows under the explicitly selected **Coven** integration source, not the old Kit
+rows in the **Coven** integration section, not the old Kit
 agent-status widgets, pane-focus/sidebar agent model or mobile completion cues.
 No PID association or authenticated native attestation follows.
+
+The desktop sidebar shows Spaces first and all configured integrations as peer
+sections simultaneously, with independent collapse and equal expanded-body shares
+(stable-order remainder of at most one row). There is no provider selector,
+Integrations umbrella or healthy `Available` preamble; unavailable/waiting/empty
+messages appear only in expanded bodies. Empty source config leaves only Spaces.
+Expand Coven if collapsed; this queues no intent and does not close its lease.
+At tiny heights, wheel input on headers navigates the section window; body-wheel
+input stays within its section, preserving workspace selection when Spaces fits.
+Global compact/hidden mode remains separate from persisted per-section collapse;
+the global menu, bottom toggle, width drag and workspace controls remain. The old
+vertical two-section divider is retired. See the
+[Kit presentation contract](../../kitsune/INTEGRATION_VIEWS.md) for compact identity,
+visual-order workspace numbering, snapshot compatibility and render/queue fences.
+This adds no runtime API/protocol or native-agent meaning; mobile adoption and
+native Windows/macOS operational qualification remain out of scope.
+
+Peer bodies use one-line summaries. `prefix+a` (the existing customizable
+`agent_selector` keybinding) opens Kit's generic local **Integration details**
+inspector: source/item lists, search and wrapped scrollable details. Tab/Shift+Tab
+cycles focus; arrows or `j`/`k` and PageUp/PageDown navigate/scroll; `/` edits search.
+Esc first blurs search, then closes. Source/item clicks only inspect, with no
+intent; Enter in Items explicitly sends the existing publisher selection intent.
+Enter in Details activates nothing. No native focus, acknowledgement, input,
+start/resume/cancel or old agent navigator is added. Server source facts remain
+shared; inspector focus/query/scroll are client presentation only.
+
+Normal presentation negotiates an additive JSON item profile: descriptor version
+1 with `supported_versions: [1,2]`; absence means v1 only. Coven validates the
+whole advertisement before open/write, selects 2 only when explicit, and pins the
+profile per lease. Malformed advertisement fails before open; uncertain mutation
+never causes downgrade. V1 remains exactly `{id,label,detail}`; v2 optionally adds
+`presentation` with `label` up to 48 UTF-8 bytes and optional generic status.
+Unknown/duplicate fields and explicit presentation/status null reject; v1 rejects
+presentation without lease renewal. Existing limits remain: 128-byte IDs,
+160-byte labels, 512-byte details, 128 items/source, eight sources, 32 intents/source,
+five-second leases and 96 KiB raw text/source including presentation labels.
+Plain old publishers work. Protocol 18 and binary wire structs are unchanged.
+
+Coven normal `item.label` is a human name only: provider default (for example,
+`Djinn`), preferring a valid associated explicit manual pane name. V2 sends
+`presentation.label: ""`; sidebar status is icon/animation only, without state
+words or hashes. Stable opaque row IDs remain internal selection identity, not
+display names or native session IDs. Duplicate names are allowed without ID or
+suffix disambiguation. V1 remains name-only with exactly `{id,label,detail}`, no
+presentation metadata. Third-party nonempty generic captions still render.
+Fresh Working uses generic `running`, Blocked uses `attention`; Idle and Ended
+omit status and intentionally share the neutral icon. Inspector details distinguish
+their states. Expired/history/unordered native
+facts are Unknown. Host statuses are `pending`, `running`, `attention`, `error`,
+`success`, `unknown`, plus neutral when absent. Success/error are explicit source
+assertions available to generic publishers, NOT normal Coven job proof; never
+idle=success. `[ui] integration_animations` defaults true; disabling it removes
+optional local working spinners, not facts. Animation never refreshes evidence.
+Headless presentation animation stops when no full App renderer is attached and
+resumes on reattachment without renewing evidence or discarding saved UI state.
+No authority bits, private IDs, styles or injected programs enter the generic UI.
+Successful-frame fences cover source/epoch/revision/item/query/focus/layout/scroll;
+animation phase is excluded and fact age remains independent.
+
+Name lookup requires a fresh valid association, exact endpoint binding and live
+terminal runtime generation. An explicit generic `pane.manual_label` may already
+exist or be renamed now; OSC title, CWD and historical `agent_name` are never manual
+identity fallbacks. Publisher-only private hints are not public raw targets. The
+read-only lookup has a shared 300 ms bound, uses no blocking receiver mutex, and
+creates no association, focus, input or acknowledgement. Failed checks use the
+provider default; name refresh changes no activity time or evidence authority.
+The `prefix+a` inspector shows full `Status: running`/`Status: neutral` even with
+blank captions, plus detailed state text, without opaque sidebar labels.
+
 [Checked CLI navigation](AGENT_NAVIGATION_CONTRACT.md) permits source-qualified
 local Djinn selected-root producer associations as well as unchanged temporary
 explicit user assertions. Producer display attachment is not execution ownership.
@@ -262,12 +332,34 @@ metadata and the actual reporter UUID registry before `report-attachment` frames
 Coven joins exact instance/SID and pins the Kit API device/inode, terminal and
 runtime incarnation under the captured receiver epoch.
 
-Only the selected root hosts, not other roots in the backend. Quiet root
-qualification is read-only, consumes no entries in the 256-entry native event map
-and emits no native event. Its observation remains UNKNOWN with null activity age.
+Only the selected root hosts, not other roots in the backend. Root qualification
+remains pure and read-only, consumes no entries in the 256-entry native event map
+and emits no native event. Separately, after valid selection, Djinn samples actual
+local `Session.Service.get` and `SessionStatus.Service.get` through
+`src/plugin/native-status-snapshot.ts`, independently of hosting semantics. Explicit
+busy/retry/idle readings use the existing native status event contract. Sampling is
+at most once per second with a 1,900 ms bound; selection change, unmount, deletion,
+reporter replacement/ambiguity and newer native callbacks cancel or fence stale work.
+No sparse SDK-list absence is interpreted as idle. The closed actual local native
+service's canonical idle default is native-owned state semantics, not process liveness.
+Native status setters commit and publish in per-instance, per-session semaphore
+order; `get`/`list` remain unlocked for callback reads. This protects initial samples
+against newer callbacks and concurrent publication. The immutable query-start time
+survives query, queue and IPC within one total 1,900 ms budget, never restamped at
+completion or replayed as fresh evidence.
 The five-second producer lease is independent of the 30-second native evidence
-clocks and five-second generic view lease. Heartbeats never renew activity or
-pending decisions. Chat leave, selection change and plugin disposal release;
+clocks and five-second generic view lease. Attachment heartbeats alone never renew
+activity or pending decisions. Only a successful fresh native query renews activity;
+it does not renew permission/question pending occurrences, acknowledge them or prove
+an outcome. Failed samples update no activity; evidence becomes Unknown after the
+30-second ceiling. This recovers quiet mounted normal full-TUI roots, not every
+live Unknown: unmounted, event-only, remote and unavailable profiles still have no
+automatic status heartbeat. Missing, expired, invalid and unsupported evidence remain
+distinct Unknown causes, never silently idle because a process is alive.
+The source fix addresses quiet/resumed selected-root initial and 30-second expiry
+gaps. The user's two existing Djinn instances, including the Unknown row, were not
+live-inspected; this does not establish their cause or claim they are already fixed.
+Chat leave, selection change and plugin disposal release;
 lost release expires. Conflicting targets are ambiguous, with no newest-PID/SID
 inference. Transient work is bounded and capture is never automatically rebound
 after endpoint/runtime/epoch replacement. The revocation owner token is cleared
@@ -364,7 +456,8 @@ their closed-envelope contract and validate actual native cancellation delivery.
 With compatible Coven/Kit builds and an updated Djinn native full-TUI build:
 
 These source changes are not installed activation. Rebuild all three apps first
-when ready, then perform the explicit server restart/new-pane/provider handoff.
+only after explicit user approval, then perform the explicit server
+restart/new-pane/provider handoff. Activation needs new Djinn, Coven and Kit builds.
 Provider configuration is never automatically edited.
 
 ```toml
@@ -411,8 +504,8 @@ occurs. Existing Kit assets require the provider's verified migration and explic
 mutation; restart the native OpenCode server, not just its attached TUI.
 
 Restart Kit (without `--no-session`), open new panes and restart/reload providers.
-Ensure Djinn's UI selection points at the updated build. Select **Coven** and type
-`djinn`, `codex`, etc. normally. Do not run `group present`, discovery presentation
+Ensure Djinn's UI selection points at the updated build. Expand **Coven** if
+collapsed and type `djinn`, `codex`, etc. normally. Do not run `group present`, discovery presentation
 or another publisher against the same `coven` lease. A config reload cannot activate
 or roll back this startup-only route. To stop the implicit runtime, remove the Coven
 source or set `[integrations.coven] auto_start = false`, then complete the deliberate
@@ -434,6 +527,46 @@ nested environment isolation, child cleanup, restore references, private endpoin
 admission, provider reference-only behavior and native event bounds remain tested.
 Groups, launch orchestration, broader provider lifecycle support, and native Mac
 runtime certification are separate follow-up work.
+
+**Current name/icon/quiet-root increment: QUALIFIED.** Supplied final results are
+green, recorded as separate qualifications, not one combined command:
+
+- Final Kit: 2,578 binary tests passed, five ignored; 193 integration tests across
+  11 targets and one explicitly invoked real-Coven roundtrip passed. This covers
+  duplicate/icon/name changes; the later compiled Kit hash matched the last unified run.
+- Latest unified run: 19 sidebar, 32 normal, four adoption and 16 hosting/status-sampling
+  gates; six Coven presentation integration tests and 127 filtered agent-management
+  units; 26 Djinn sampling/contract/publication tests across three files and one
+  actual-source interop fixture passed.
+- After that run, a type-binding-only fix captured Session/Status services outside
+  and provided them inside per-instance state, retaining per-instance snapshots,
+  with an explicit optional-signal snapshot annotation. The actual full-package
+  installed `tsgo --noEmit --incremental false --pretty false` exited 0 with zero
+  errors; the final broader Djinn run passed 84 tests across nine files, including
+  the new two-instance `Plugin.init/list` bootstrap test. Default and external
+  plugins were disabled in that test; it is not live Kitsune-plugin initialization proof.
+- Independent review confirmed no P1/P2 findings after the semaphore race fix.
+
+The full unified pipeline was not rerun after the type-binding fix; typecheck and
+targeted/broader Bun checks qualify that follow-up separately. Interop qualifies
+bounded source callbacks, not a full physical native frontend. No new provider,
+mobile, remote or actual model qualification, full CI or full Coven suite is claimed.
+All owned children stopped/reaped and cached run directories were empty after
+cleanup, with no retained artifacts. No installation/configuration activation has
+occurred; all three new builds still require explicit user approval and handoff.
+
+Historical prior status/inspector baseline, not tests of this increment: actual
+Kit/Coven qualification passed 16 composed sidebar gates, 32 normal
+workflow gates, four adoption scenarios, 12 hosting scenarios, five Coven
+CLI/presentation tests and 14 presentation-module unit tests. Hosting's actual-source
+Bun interop test also passed. Separate Kit validation passed 2,575 binary tests,
+all 193 integration tests and the opt-in real-Coven roundtrip. Held-key isolation,
+identical-pixel capture changes, failed queues, visible/occluded spinners and
+detach/reattach animation scheduling have regression coverage. These checks used
+native-shaped fixtures and actual-source adapters, not authenticated provider/model
+execution; they are not full CI or a full Coven suite. All owned artifacts were
+cleaned. See the
+[gate record](../tools/normal-workflow-check/README.md#sidebar-qualification).
 
 ## Related files
 

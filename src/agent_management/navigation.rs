@@ -11,6 +11,52 @@ struct Entry {
     valid: bool,
 }
 impl Associations {
+    // Private publisher projection only, never part of observations/control results.
+    pub(super) fn naming_hints(
+        &self,
+        view: &Value,
+        native: &native::NativeStore,
+        now: Instant,
+    ) -> Value {
+        let mut hints = Vec::new();
+        for row in view["observations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .take(128)
+        {
+            let Some(id) = row["observation_id"].as_str() else {
+                continue;
+            };
+            let hint = if let Some(entry) = self.0.get(id).filter(|e| {
+                e.valid
+                    && now.saturating_duration_since(e.asserted) < Duration::from_secs(30)
+                    && native.navigation_fact(id, now) == Some(e.fact)
+            }) {
+                native.naming_deadline(id, now, false).map(|end| {
+                    (
+                        entry.revision.clone(),
+                        entry.target.clone(),
+                        end.min(entry.asserted + Duration::from_secs(30)),
+                    )
+                })
+            } else {
+                native
+                    .producer_association(id, now)
+                    .and_then(|(revision, target)| {
+                        native
+                            .naming_deadline(id, now, true)
+                            .map(|end| (revision, target, end))
+                    })
+            };
+            if let Some((revision, target, end)) = hint {
+                hints.push(json!({"id":format!("observation:{id}"),"revision":revision,
+                    "target":target,"until":crate::agent_management_presentation::naming_tick(end)}));
+            }
+        }
+        json!(hints)
+    }
+
     pub(super) fn refresh(&mut self, native: &native::NativeStore, now: Instant) {
         for (id, entry) in &mut self.0 {
             entry.valid &= now.saturating_duration_since(entry.asserted) < Duration::from_secs(30)

@@ -78,7 +78,7 @@ def run(args, root):
                       'actual pane report route mismatch')
         # Establish deterministic headless geometry before asserting visible PTY content.
         view = check.ViewClient(root / 'k-client.sock')
-        view.expect('Integrations', 'coven')
+        view.expect('▾ Coven')
 
         def pane_text(pane_id):
             return check.api(kit, 'pane.read', dict(pane_id=pane_id, source='recent_unwrapped',
@@ -412,7 +412,7 @@ def run(args, root):
         binding = reply.get('result', {})
         check.require(binding.get('provenance') == 'producer_reported' and binding.get('native_hosting') == 'local_full_tui_root'
                       and binding.get('target') == target, 'private producer binding mismatch')
-        view.expect('Djinn', 'UNKNOWN')
+        view.expect_row('Djinn', 'UNKNOWN', 'caller unverified')
 
         def privacy():
             projection = json.dumps(check.api(kit, 'session.snapshot')['snapshot']['integration_views'])
@@ -471,6 +471,51 @@ def run(args, root):
         check.require(row('a')['unacknowledged_pending_count'] == 1, 'plugin disposal cleared pending decision')
         privacy()
         check.passed('A2 actual plugin disposal triggers worker higher-revision release; pending decision preserved')
+
+        check.api(kit, 'pane.rename', dict(pane_id=pane, label='Sample A'))
+        started = operation('sampler-start')
+        check.require(started['samplingInstance'] != ready['instance'], 'new sampler reused disposed reporter identity')
+        ids = {name: hashlib.sha256(('native\0' + started['samplingInstance'] + '\0' + ready[name]).encode()).hexdigest()
+               for name in ('a', 'b')}
+
+        def sampled(name, status):
+            return check.wait_for(lambda: (r if (r := row(name)) and r['origin'] == 'djinn_native_event' and
+                                          r['reported_state'] == status and r['freshness'] == 'fresh' else None),
+                                  'fresh bound native service ' + name + ' ' + status)
+
+        sampled('a', 'idle')
+        view.expect_row('Djinn', 'IDLE (fresh)', name='Sample A')
+        first_query = operation('sample')
+        # Timer admission is throttled to at most once per second; scheduling
+        # near that boundary can skip a tick. Observe two actual fresh queries.
+        time.sleep(4.2)
+        second_query = operation('sample')
+        check.require(second_query['queries'] >= first_query['queries'] + 2 and sampled('a', 'idle')['age_ms'] < 2000,
+                      'mounted quiet root did not obtain periodic fresh native service evidence')
+        check.passed('bound actual native Session/SessionStatus services establish quiet root Idle initially and periodically; not inferred from hosting/liveness')
+        operation('sampler-busy')
+        sampled('a', 'working')
+        view.expect_row('Djinn', 'WORKING (fresh)', name='Sample A')
+        operation('sampler-idle')
+        sampled('a', 'idle')
+        view.expect_row('Djinn', 'IDLE (fresh)', name='Sample A')
+        check.passed('actual native status service busy -> idle, with no plugin event callbacks, is recovered by fresh selected-root sampling and rendered icon/name/details')
+        operation('sampler-fail')
+        check.wait_for(lambda: (r if (r := row('a')) and r['reported_state'] == 'unknown' and
+                               r['freshness'] == 'expired' else None), 'unavailable-query evidence expires', 35)
+        check.require(row('a')['hosting_state'] == 'local_full_tui_root', 'failed query dropped hosting instead of expiring activity')
+        view.expect_row('Djinn', 'UNKNOWN (expired)', name='Sample A')
+        operation('sampler-recover')
+        sampled('a', 'idle')
+        view.expect_row('Djinn', 'IDLE (fresh)', name='Sample A')
+        check.passed('explicit unavailable-query seam expires activity to Unknown despite live hosting; successful fresh local service query restores Idle')
+        operation('sampler-b')
+        sampled('b', 'idle')
+        check.api(kit, 'pane.rename', dict(pane_id=pane, label='Sample B'))
+        view.expect_row('Djinn', 'IDLE (fresh)', name='Sample B')
+        check.require(row('a')['hosting_state'] == 'none' and row('b')['hosting_state'] == 'local_full_tui_root',
+                      'sampling new selected root retained old association')
+        check.passed('second actual native root receives its own fresh Idle evidence and current pane name; previous root loses hosting/name rather than sharing ownership')
         operation('done')
         check.require(producer.wait(timeout=15) == 0, 'producer teardown failed')
         print((root / 'producer.log').read_text()[-6000:], flush=True)
@@ -557,7 +602,7 @@ if __name__ == '__main__':
     parser.add_argument('--djinn-source', required=True, type=Path)
     args = parser.parse_args()
     try:
-        with check.owned_run() as root:
+        with check.owned_run(short=True) as root:
             run(args, root)
     except (Exception, KeyboardInterrupt) as exc:
         print(f'FAIL {exc}', file=sys.stderr)

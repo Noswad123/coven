@@ -36,6 +36,102 @@ and remote hosting remain user-deferred, mobile adoption unapproved; this cut ad
 no native A3 features. See [status](FEATURE_ADOPTION_STATUS.md#global-retirement-record)
 for latest supplied validation and cleaned-artifact status.
 
+### Generic Presentation Overlay
+
+Spaces, Coven and other configured sources remain ordered, independently
+collapsible peers with persisted collapse and equal expanded-body shares. Bodies
+use one-line summaries. `prefix+a` (customizable existing `agent_selector`) opens
+a generic local Integration details inspector with source/item lists, search and
+wrapped scrollable details, not the retired agent navigator. Tab/Shift+Tab cycles
+focus; arrows/`j`/`k`/PageUp/PageDown navigate or scroll; `/` edits search; Esc first
+blurs search, then closes. Source/item clicks only inspect; Enter in Items explicitly
+sends the existing publisher selection intent; Details Enter activates nothing.
+No native focus, acknowledgement, input, start/resume/cancel follows. Server source
+facts are shared; inspector focus/query/scroll are client presentation only.
+
+Descriptor version 1 adds `supported_versions: [1,2]`; absent means v1 only.
+Open pins the profile per lease. V1 is exactly `{id,label,detail}`; v2 optionally
+adds `presentation` with label up to 48 UTF-8 bytes and optional generic
+`pending|running|attention|error|success|unknown` status. Omission is neutral;
+explicit presentation/status null, unknown/duplicate fields and presentation on
+v1 reject without renewal. Existing 128-byte ID/160-byte label/512-byte detail,
+128-item/eight-source/32-intent/five-second/96-KiB limits remain, including
+presentation labels in raw text. Plain old publishers work; group present stays
+v1. Normal Coven validates the whole advertisement before open/write, chooses 2
+only explicitly and never downgrades after uncertain mutation. Protocol 18 and
+binary wire structs do not change.
+
+Coven normal `item.label` is human-name-only: provider default (e.g. Djinn),
+preferring a valid associated explicit manual pane name. V2 has blank
+`presentation.label`; status is sidebar icon/animation only, no words/hashes.
+V1 stays exactly `{id,label,detail}`, name-only with no metadata. Stable opaque
+IDs remain internal selection identity, not session IDs or display labels;
+duplicate labels have no disambiguating IDs/suffixes. Generic third-party nonempty
+captions still render. Fresh Working is running, Blocked attention; Idle/Ended
+intentionally share the neutral icon, with distinct detailed states in the
+`prefix+a` inspector (`Status: running`/`Status: neutral` even for blank captions).
+Expired/history/unordered native facts are Unknown. Generic success/
+error require explicit source assertions, not normal Coven job proof; never
+idle=success. Optional `[ui] integration_animations` defaults true; local working
+spinners never refresh facts. Generic UI accepts no authority bits, private native
+IDs, publisher styles or injected program. Successful foreground-frame fences
+include source/epoch/revision/item/query/focus/layout/scroll, exclude animation
+phase, and leave evidence age independent. No mobile or additional provider
+qualification follows; retirement and private-storage limits above remain intact.
+
+Naming requires a fresh valid association, exact endpoint binding and live terminal
+runtime generation. Already-set or newly renamed explicit `pane.manual_label` is
+eligible; OSC title/CWD/old `agent_name` are not identity fallbacks. Publisher-only
+private hints never expose raw targets publicly. Read lookup is bounded to 300 ms,
+does not block on the receiver mutex, and creates no association/focus/input/ack.
+Failure uses the provider default; name refresh renews no activity or authority.
+
+Djinn's pure root qualification remains separate from selected-root status sampling.
+The actual local `Session.Service.get`/`SessionStatus.Service.get` source supplies
+explicit busy/retry/idle, at most once/second within 1,900 ms, with stale-result
+cancellation/fences. Its canonical idle default is native-owned semantics, not
+process liveness or sparse SDK absence inference. Attachment heartbeat alone
+renews no activity; a successful fresh native query can renew only activity through
+the existing event contract, not pending occurrences, acknowledgements or outcomes.
+Failure leaves clocks unchanged and Unknown after 30 seconds. Quiet mounted normal
+full-TUI roots can recover; unmounted/event-only/remote/unavailable profiles still
+have no automatic heartbeat. Not all live Unknowns are guaranteed to disappear.
+Native status commit/publication is serialized per instance/session; unlocked
+`get`/`list` allow callback reads. Fresh samples retain immutable query-start age
+through query/queue/IPC within one total 1,900 ms budget, not a completion-time
+freshness reset or replay.
+
+**Current name/icon/quiet-root increment: QUALIFIED.** Final Kit validation passed
+2,578 binary tests (five ignored), 193 integration tests in 11 targets and one
+explicit real-Coven roundtrip. Separately, the latest unified run passed 19 sidebar,
+32 normal, four adoption and 16 hosting/status-sampling gates, six Coven presentation
+integration tests, 127 filtered agent-management units, 26 Djinn tests in three files
+and one actual-source interop fixture. After the subsequent type-binding-only fix,
+full-package installed tsgo exited 0 with zero errors and the final broader Djinn
+run passed 84 tests in nine files. Independent review found no P1/P2 after the
+semaphore race fix. These are separate results, not a unified rerun after binding
+changes; see the [gate record](../tools/normal-workflow-check/README.md#sidebar-qualification).
+Owned children stopped/reaped; cached runs were empty, with no retained artifacts.
+No full CI/full Coven suite, new provider/mobile/remote or actual model qualification.
+The two existing user Djinn instances were not live-inspected: the source addresses
+known quiet/resumed selected-root initial/expiry gaps, not a demonstrated fix of
+current rows. No install/config activation: all three new builds and explicit user
+approval are required before restart/new-pane/provider handoff.
+
+Historical prior status/inspector baseline, not this increment: actual Kit/Coven
+qualification passed 16 composed sidebar gates, 32 normal
+workflow gates, four adoption scenarios, 12 hosting scenarios, five Coven
+CLI/presentation tests and 14 presentation-module unit tests. Separate Kit
+validation passed 2,575 binary tests, all 193 integration tests and the opt-in
+real-Coven roundtrip. Review fixes for held-key isolation, identical-pixel capture
+changes, failed queues, visible/occluded spinners and detach/reattach scheduling
+have regression coverage. Native-shaped fixtures and actual-source adapters are
+not authenticated provider/model lifecycle execution or full CI. No installed
+activation occurred; all owned build/runtime artifacts were cleaned.
+See the [gate record](../tools/normal-workflow-check/README.md#sidebar-qualification).
+This overlay supersedes older plain-row/two-line/no-JSON-change and in-progress
+qualification wording in the historical detail below.
+
 ## Historical Adoption And Boundary Detail
 
 The remainder preserves earlier provider/acquisition decisions and scoped
@@ -136,22 +232,45 @@ not an assertion that macOS file mutation is absent.
 **Coven owns agent management; Kitsune exposes generic multiplexer controls,
 side-menu presentation and app messaging.** The functional
 [group presentation bridge](GROUP_PRESENTATION_CONTRACT.md) now supplies Coven's
-own participant/role rows within a multi-app Integrations block and consumes
+own participant/role rows within its generic desktop peer section and consumes
 read-only selection intents. Kitsune's
 generic model contains only opaque IDs and plain label/detail text, not agent or
 job semantics. This is an optional ownership step, not completed removal of legacy
 Kitsune agent management.
 
-The desktop lower block defaults to `Integrations`, with `No integrations configured`
-for an empty list and never detected-agent fallback. Manual `[integrations]`
-`sources = ["coven", "build"]` configures up to eight ordered unique ASCII IDs.
-The user selects an app locally from a vertical list; only its generic label/detail
-rows are shown. Coven validates the whole `snapshot.integration_views` descriptor
+The desktop sidebar shows Spaces first, then all configured integrations in order
+as independently collapsible peer sections, without an Integrations umbrella or
+provider selector. Empty config leaves only Spaces, with no lower placeholder or
+detected-agent fallback. Manual `[integrations]` `sources = ["coven", "build"]`
+configures up to eight ordered unique ASCII IDs. Exact `coven` is titled Coven;
+other IDs use sanitized literal, collision-disambiguated titles. Healthy bodies
+show generic label/detail rows directly; unavailable/waiting/empty messages appear
+only in expanded bodies. Coven validates the whole `snapshot.integration_views` descriptor
 and finds its source anywhere, not only first. `integration.view.open/replace/poll/close`
 give each provider its own lease, frame, revision and queue. Successful replace/poll
 renews its five-second TTL; close/expiry/removal affects only that provider and
-reorder preserves retained state/selection/scroll. No source selection is auth;
+reorder preserves retained state/collapse/scroll by ID. No disclosure is auth;
 at-most-once intents grant no native execution or physical-pixel acknowledgement.
+
+Expanded bodies share height equally, with stable-order remainder of at most one
+row; collapsed sections cost only a header. Header-wheel navigation reaches a
+contiguous section window at tiny heights; body-wheel input stays in its section,
+including existing workspace selection when Spaces content fits. The global menu,
+bottom toggle, Spaces `new` action, width drag and workspace controls remain
+separate; the vertical two-section divider is retired. Global compact/hidden mode
+is independent of persisted typed per-section collapse. Background smaller/mobile
+draws cannot adopt foreground scroll/focus/collapse clamps or captures. Item hits
+require a successful foreground render/frame queue with matching layout, client,
+collapse and scroll; neither failed enqueue nor invisible rows create targets.
+These are client presentation changes, not a new JSON runtime API, wire/protocol
+change (18), native focus/input or agent feature. Mobile integration adoption and
+native Windows/macOS operational qualification are not included. See the
+[Kit contract](../../kitsune/INTEGRATION_VIEWS.md) for exact compact labels, visual
+workspace numbering and snapshot compatibility, and the
+[gate record](../tools/normal-workflow-check/README.md) for source-qualified evidence.
+The current fixture and actual-server reruns are in progress; no result is claimed
+by this documentation update, and frame queueing is not physical native-TTY click
+validation.
 
 ### Legacy migration scope
 
@@ -162,7 +281,7 @@ consult the current implementation record above.
 
 | Surface | Current scope / next owner |
 | --- | --- |
-| Desktop persistent lower menu | Generic multi-app block, not a built-in agent inventory. |
+| Desktop sidebar sections | Spaces then all configured integration peers, not a built-in agent inventory or provider selector. |
 | New Claude hook configuration | Linux: Coven-owned settings operations, Kit install/recommendations/updates retired. Non-Linux: Kit production installer/assets/result type and recommendation/update/bulk paths preserved until matching Coven adapters. See [hook contract](CLAUDE_HOOKS_CONTRACT.md). |
 | New Codex hook configuration | Linux: Coven-owned hooks.json + config.toml operations; Kit install/recommend/update/bulk paths retired before provider discovery. Non-Linux legacy installer/assets/result type preserved until matching Coven adapters. Shared global enablement is not native approval. See [Codex contract](CODEX_HOOKS_CONTRACT.md). |
 | Independent Codex receipts | Same private Unix receiver/store; SessionStart reference capture only, always unknown even fresh. No working/idle lifecycle or native operational certification. |
@@ -463,7 +582,7 @@ These are independent paths, not a required round trip:
 ```text
 observation: Kitsune -> Coven adapter -> sourced observations
 annotation: user-enabled producer -> pane.annotate -> Kitsune terminal border
-integration views: independent apps -> per-source frames -> local app selector/rows -> per-source intents
+integration views: independent apps -> per-source frames -> ordered peer section bodies -> per-source intents
 Claude/Codex/Copilot receipts: explicit native hooks -> Coven report -> private receiver/store -> redacted inventory -> optional generic view
 Pi references: explicit extension -> Coven report-extension -> same receiver/store/inventory -> optional generic view
 group status: explicit participant/source declaration -> pinned local artifact -> Coven ephemeral busy/unknown rows

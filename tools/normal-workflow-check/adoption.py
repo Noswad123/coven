@@ -53,7 +53,7 @@ def run(args, root):
                       pane_env['KITSUNE_AGENT_MANAGEMENT'] == 'external' and
                       pane_env['KITSUNE_INTEGRATION_SOURCE'] == 'coven', 'actual pane route mismatch')
         view = check.ViewClient(root / 'k-client.sock')
-        view.expect('Integrations', 'coven')
+        view.expect('▾ Coven')
 
         def cli(*argv, payload=None, context=pane_env):
             return json.loads(check.command([args.coven_bin, *map(str, argv), '--json'], context, root, payload))
@@ -241,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--kitsune-bin', required=True, type=check.absolute)
     try:
         args = parser.parse_args()
-        with check.owned_run() as root:
+        with check.owned_run(short=True) as root:
             run(args, root)
     except (Exception, KeyboardInterrupt) as exc:
         print(f'FAIL {exc}', file=sys.stderr)

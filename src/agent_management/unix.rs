@@ -238,6 +238,24 @@ pub(super) fn run(
     projection: Arc<Mutex<Value>>,
     cancel: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<TaskOutput> {
+    run_inner(request, projection, cancel, None)
+}
+
+pub(crate) fn run_presentation(
+    request: &RunRequest,
+    projection: Arc<Mutex<Value>>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    naming: Arc<std::sync::atomic::AtomicU64>,
+) -> Result<TaskOutput> {
+    run_inner(request, projection, cancel, Some(naming))
+}
+
+fn run_inner(
+    request: &RunRequest,
+    projection: Arc<Mutex<Value>>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    naming: Option<Arc<std::sync::atomic::AtomicU64>>,
+) -> Result<TaskOutput> {
     let interrupt = crate::observation_socket::InterruptGuard::install()?;
     TERMINATED.store(false, std::sync::atomic::Ordering::Relaxed);
     let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
@@ -287,9 +305,22 @@ pub(super) fn run(
         }
         bound.fence()?;
         store.fence()?;
-        associations.refresh(&native, Instant::now());
+        let now = Instant::now();
+        associations.refresh(&native, now);
+        let mut next = native.projection(store.projection(), now);
+        if naming.is_some() {
+            next["_publisher_names"] = associations.naming_hints(&next, &native, now);
+        }
         if let Ok(mut model) = projection.try_lock() {
-            *model = native.projection(store.projection(), Instant::now());
+            *model = next;
+            if let Some(fence) = &naming {
+                // Odd means admission has invalidated the prior projection.
+                // Make it readable only after publishing the replacement atomically.
+                let revision = fence.load(std::sync::atomic::Ordering::Relaxed);
+                if revision & 1 != 0 {
+                    fence.fetch_add(1, std::sync::atomic::Ordering::Release);
+                }
+            }
         }
         match bound.listener.accept() {
             Ok((mut stream, _)) => {
@@ -315,6 +346,9 @@ pub(super) fn run(
                     )?;
                     #[cfg(test)]
                     super::receipt_trace::stage("admitted");
+                    if let Some(fence) = &naming {
+                        fence.fetch_or(1, std::sync::atomic::Ordering::AcqRel);
+                    }
                     handle_normal_navigation(&mut store, &mut native, &mut associations, &bytes)
                 });
                 #[cfg(test)]

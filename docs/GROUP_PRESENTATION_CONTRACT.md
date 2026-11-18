@@ -3,7 +3,7 @@
 ## Overview
 
 `coven group present` owns its content and selection meaning within Kitsune's
-generic desktop `Integrations` block. **Coven supplies the group/participant model;
+generic desktop integration section. **Coven supplies the group/participant model;
 Kitsune supplies generic rendering and message transport.** No detected-agent
 inventory, native session identity, provider status or execution grant is inferred.
 
@@ -30,13 +30,34 @@ against the same Coven lease. Runtime/ownership changes require server restart.
 Preserve existing configuration; Coven does not edit/reload/restart/install
 Kitsune. Source IDs are logical routing, not authentication: at most eight ordered,
 unique ASCII IDs of 1–64 bytes (`A–Z`, `a–z`, digits, `_`, `.` or `-`). The user
-locally selects an app from a vertical list; the rows below are that app's generic
-label/detail text, with no hard-coded Coven/agent semantics. An absent/expired app
-shows `Unavailable`, a new lease `Waiting for data`, and an empty frame `No items`.
-Empty config shows `No integrations configured`; there is never native-agent
-fallback. Other legacy agent APIs/detection, mobile surfaces, restore and hooks
-remain during transition. Legacy `integration.install/uninstall` and fixed
-`IntegrationTarget` configure compatibility agent hooks, not this provider list.
+sees Spaces first and all configured integrations as ordered peer sections, with
+independent disclosure headers rather than an Integrations umbrella/provider
+selector. Exact `coven` is titled **Coven**; other IDs remain sanitized literal
+titles with collision disambiguation. Only expanded bodies show `Unavailable`
+for an absent/expired app, `Waiting for data` for a new lease, or `No items` for
+an empty frame. Healthy bodies show rows without an `Available` preamble. Empty
+config leaves only Spaces, with no lower placeholder or native-agent fallback.
+Legacy hook compatibility interfaces are separate from this source list; this
+layout change neither alters global retirement nor adopts integrations on mobile.
+
+Expanded section bodies share height equally (stable-order remainder, at most one
+row difference); collapsed sections use only a header. The old vertical split drag
+is retired, not sidebar width dragging. Header-wheel input navigates a contiguous
+section window at tiny heights; body-wheel input stays in that section. Spaces
+retains wheel-based workspace selection when its content fits. The global menu,
+bottom toggle and Spaces `new` action are separate from disclosure. Compact/hidden
+mode is independent of persisted per-section collapse. See Kitsune's contract for
+compact identities, visual-order workspace numbering and tolerant snapshot decoding.
+
+Peer bodies now use one-line summaries. `prefix+a` (the existing customizable
+`agent_selector` keybinding) opens the generic local Integration details inspector
+with source/item lists, search and wrapped scrollable details. Tab/Shift+Tab cycles
+focus; arrows or `j`/`k` and PageUp/PageDown navigate/scroll; `/` edits search.
+Esc first blurs search, then closes. Source/item clicks only inspect locally and
+queue no intent. Enter in Items explicitly sends the existing publisher selection
+intent; Enter in Details activates nothing. No native focus, acknowledgement,
+input, start/resume/cancel or retired agent navigator is provided. Shared source
+facts are server-owned; inspector focus/query/scroll are client presentation.
 
 The obsolete `[external_view]` config is ignored with a diagnostic directing users
 to `integrations.sources`, never rewritten automatically. Both repositories use
@@ -62,9 +83,9 @@ The library exports `group_presenter::{Request, arguments}`.
    `snapshot.integration_views.version == 1`. Validate the complete ordered
    `sources: [{id, epoch}, ...]` list (including entries after the target) and find
    the requested source anywhere, not only first. Each inactive epoch is null;
-   discovery exposes no lease tokens and is independent of local UI selection.
+   discovery exposes no lease tokens and is independent of section visibility.
 3. Open only the requested source's five-second lease, publish a full frame, then
-   poll about every 250 ms. `--source coven` does not own/replace the whole block:
+   poll about every 250 ms. `--source coven` does not own/replace the whole sidebar:
    `build` and other producers coexist with independent leases/frames/revisions/queues.
 4. Accept only the current epoch/revision and known participant IDs. Re-read the
    local store before publication and after polling. Unknown/stale selections are
@@ -73,6 +94,42 @@ The library exports `group_presenter::{Request, arguments}`.
    The group header is explanatory; selecting it has no participant-details effect.
 6. Duration completion/Ctrl-C attempts one graceful close within the remaining
    budget. Crashes or uncertain delivery rely on lease expiry.
+
+`group present` remains a plain v1 publisher with exactly `{id,label,detail}`.
+The descriptor remains version 1 and may add `supported_versions: [1,2]`; absence
+means v1 only. Only the normal Coven presenter negotiates v2 after validating the
+whole advertisement before open/write, choosing 2 only when explicit and pinning
+the profile per lease. Malformed negotiation fails before open and uncertain
+mutation never triggers downgrade. V2 optionally adds `presentation` with label
+up to 48 UTF-8 bytes and optional status `pending|running|attention|error|success|unknown`.
+Omitted status is neutral; explicit presentation/status null, unknown/duplicate
+fields and presentation on v1 reject without renewal. Presentation-label bytes
+count toward the existing 96 KiB bound. Protocol 18/binary wire structs are unchanged.
+
+Normal Coven `item.label` is human-name-only: provider default, preferring a valid
+associated explicit manual pane name. V2 sends `presentation.label: ""` for
+icon/animation-only status, no state words/hashes. Normal v1 remains exactly
+`{id,label,detail}`, name-only without metadata; `group present` retains its declared
+participant keys/roles. Stable opaque row IDs are internal selection identity, not
+native session IDs or displayed labels. Duplicate names need no ID/suffix.
+Nonempty generic third-party captions still render; this is not global word stripping.
+Fresh Working is `running`, Blocked is `attention`; Idle/Ended intentionally share
+a neutral icon, distinguished by detailed state text. The `prefix+a` inspector
+shows full `Status: running`/`Status: neutral` even with blank captions.
+Expired/history/unordered facts are Unknown.
+Generic success/error require explicit source assertions, not normal Coven job
+proof; idle never means success. `[ui] integration_animations` defaults true and
+controls only optional local working spinners, never evidence refresh. Generic UI
+accepts no authority bits, private native IDs, styles or injected program.
+
+Normal name lookup uses only publisher-private association hints, with fresh
+association, endpoint and terminal-runtime generation checks within 300 ms, no
+blocking receiver mutex or public raw targets. Already-set/newly renamed explicit
+`pane.manual_label` qualifies, never OSC title/CWD/old `agent_name`. Failure uses
+the provider default; rendering creates no association/focus/input/acknowledgement
+and name refresh renews no activity or evidence authority. See the
+[normal workflow](NORMAL_AGENT_WORKFLOW.md#local-selected-root-attachment) for the
+separate fresh native status query, not attachment-heartbeat activity inference.
 
 Participant rows show declared keys/roles. Selection does not bind/adopt a pane,
 change membership or roles, focus a terminal, read a native artifact, submit input,
@@ -89,21 +146,29 @@ run; there is no annotation or native-control fallback.
 
 ## Edge Cases
 
-See [Kitsune's generic contract](../kitsune/INTEGRATION_VIEWS.md) for exact fields and
+See [Kitsune's generic contract](../../kitsune/INTEGRATION_VIEWS.md) for exact fields and
 bounds. Source/lease/epoch are correlation, not authentication or permission.
 Intents are bounded ephemeral `{epoch, revision, item_id}` messages, not commands.
 
 Successful replace/poll alone renews an opened lease; clicks, rejected calls and
-local UI selection do not. Close/expiry/removal affects only that provider.
-Config reorder preserves retained leases, frames, queues, selection and scroll;
-removing another source does not reset Coven. Quiet timers handle expiry without
-terminal activity, not with hard-real-time pixel guarantees.
+local disclosure do not. Collapse queues no intent and closes no lease.
+Close/expiry/removal affects only that provider. Config reorder preserves retained
+leases, frames, queues, collapse and scroll by ID; removal prunes removed state and
+re-add starts expanded. Removing another source does not reset Coven. Quiet timers
+handle expiry without terminal activity, not with hard-real-time pixel guarantees.
 
 Per provider: 128 items, unique nonblank IDs up to 128 UTF-8 bytes, nonblank labels
 up to 160 bytes, details up to 512 bytes, 96 KiB total raw text, 32 queued intents.
 Eight providers allow aggregate maxima of 1,024 items, 768 KiB and 256 intents.
-IDs may coincide across providers without sharing state. Internal activation routes
-the source explicitly; the intent payload stays unchanged. A successful local
+IDs may coincide across providers without sharing state. Explicit sidebar item
+activation routes the exact source/epoch/revision/item ID from a visible one-line
+summary; wrapped details live in the inspector. The intent payload stays unchanged.
+Multi-section layout, client, collapse and scroll changes fence stale hits until
+a successful render/frame queue; failed enqueue and invisible rows grant no hits.
+Background smaller/mobile draws cannot clamp foreground presentation or replace
+its captures. Inspector query/focus/selection/scroll also fence activation; animation
+phase is excluded and fact age is independent. There is no implicit native
+focus/input; additive JSON v2 changes no binary wire structs (protocol 18). A successful local
 draw/server frame queue is not physical client-pixel acknowledgement or permission
 to execute. No broker, plugin or scripts are involved.
 
@@ -130,27 +195,46 @@ With the source configured and an existing workspace/group:
 coven group present WORKSPACE GROUP --socket ABS_SOCKET --source coven --duration 60 --json
 ```
 
-Select `coven` locally in the Integrations list, then a participant row to inspect
-its declared read-only details. Selecting another app does not stop Coven's lease
+Expand **Coven** if collapsed, then open Integration details to inspect locally;
+Enter in Items explicitly requests publisher-updated participant details.
+Collapsing a section does not stop Coven's lease
 or change its management model. This is separate from border annotation priority.
 
 ## Validation and next ownership work
 
-Private-socket workflows exercise the real CLI and loss/stale/malformed/endpoint
-cases without live apps. An explicit developer test also connects the real Coven
-binary to actual Kitsune handlers on a private fixture socket and `TestBackend`,
-selects the source header and participant row, and verifies Coven's newer details
-frame and close. An independent `build` provider comes first with the same item ID;
-its lease/frame/queue remain isolated and survive Coven's close. The workspace files
-and native terminal state remain unchanged. This is a fixture integration result,
-not an installed-server or cross-platform certification.
+Private-socket workflows cover the real CLI and loss/stale/malformed/endpoint
+cases without installed apps. The explicit real-Coven fixture connects to actual
+Kitsune handlers on a private fixture socket and `TestBackend`, exercising
+participant selection, newer details, close and independent `build` isolation.
+**Current name/icon/quiet-root increment: QUALIFIED.** Final Kit validation passed
+2,578 binary tests (five ignored), 193 integration tests across 11 targets and one
+explicit real-Coven roundtrip, including duplicate/icon/name behavior. The separate
+latest unified run passed 19 sidebar, 32 normal, four adoption, 16 hosting/status-sampling,
+six Coven presentation integration and 127 filtered agent-management unit tests,
+plus 26 Djinn tests across three files and one actual-source interop fixture.
+After the subsequent type-binding-only fix, full-package installed tsgo passed with
+zero errors and broader Djinn validation passed 84 tests across nine files.
+Independent review found no P1/P2 after the semaphore race fix. These checks are
+separate, not a unified rerun after the binding fix; the
+[gate record](../tools/normal-workflow-check/README.md#sidebar-qualification) gives scope.
+No full CI/full Coven suite or new provider/mobile/remote/model qualification.
+All owned children stopped/reaped and cached runs were empty, no retained artifacts.
+This docs-only update performs no builds, installs or configuration changes;
+activation requires all three new app builds and explicit user approval. Existing
+user Djinn rows were not live-inspected and are not claimed fixed or activated.
 
-Current validation passes **48 focused Coven checks** across presenter workflows,
-legacy-method rejection, CLI compatibility, interactive/comparison regressions and
-package inventory. Strict all-target Clippy, Rust 1.85 checking, optimized build
-and source-package verification pass. Kitsune separately passes 509 focused checks,
-strict lint and its normal build; the explicit real-Coven/two-provider roundtrip
-also passes. That test is ignored by default and requires explicit
+Historical prior status/inspector baseline, not this increment: actual Kit/Coven
+qualification passed 16 composed sidebar gates, five Coven
+CLI/presentation tests and 14 presentation-module unit tests; the existing normal
+workflow, adoption and hosting gates also passed with compact-summary/inspector
+assertions. Separate Kit validation passed 2,575 binary tests, all 193 integration
+tests and the opt-in real-Coven roundtrip. Regression coverage includes input-repeat
+isolation, identical-pixel capture changes, failed queues, visible/occluded spinners
+and detach/reattach animation scheduling. This is not full CI or a full Coven suite.
+Consult the
+[actual-server gate record](../tools/normal-workflow-check/README.md) for current
+source-qualified evidence, distinct from fixture/coordinate-helper checks.
+The fixture is ignored by default and requires explicit
 `COVEN_TEST_BIN`, with no sibling/PATH fallback:
 
 ```sh
@@ -159,11 +243,13 @@ COVEN_TEST_BIN=/absolute/path/to/coven cargo test --offline --locked --bin kitsu
 
 Run that recipe from Kitsune with its selected project toolchains. It uses a
 direct-handler socket proxy and coordinate helper, not the full production API
-server or physical input. Full Kitsune `just check` remains unapproved/not run;
-Windows/macOS are not validated.
+server or physical input. Successful frame queueing is not physical native-TTY
+click validation or client-pixel acknowledgement. Native Windows/macOS operation
+is not qualified; no installed activation or authenticated provider/model run was
+performed.
 
 Next work should extend **Coven's management model and runtime adapters** behind
-this generic boundary, then retire matching legacy Kitsune management surfaces.
+this generic boundary without reviving globally retired Kitsune management surfaces.
 Do not add Coven-specific agent fields/actions to Kitsune or make more
 characterization the sole product milestone. Legacy native restore/failure tests
 remain removal gates for those subsystems, not prerequisites for every independent
@@ -172,8 +258,8 @@ Coven authorization and native runtime support; a menu click is not that grant.
 
 ## Related files
 
-- [src/group_presenter.rs](src/group_presenter.rs) — request, declaration projection and foreground loop.
-- [src/group_presenter/wire.rs](src/group_presenter/wire.rs) — whole-list discovery and response validation.
-- [src/observation_socket.rs](src/observation_socket.rs) — explicit method allowlist and endpoint fencing.
-- [tests/group_presenter_workflow.rs](tests/group_presenter_workflow.rs) — private-socket workflows.
+- [src/group_presenter.rs](../src/group_presenter.rs): request, declaration projection and foreground loop.
+- [src/group_presenter/wire.rs](../src/group_presenter/wire.rs): whole-list discovery and response validation.
+- [src/observation_socket.rs](../src/observation_socket.rs): explicit method allowlist and endpoint fencing.
+- [tests/group_presenter_workflow.rs](../tests/group_presenter_workflow.rs): private-socket workflows.
 - [GROUPS_CONTRACT.md](GROUPS_CONTRACT.md), [APP_BOUNDARIES.md](APP_BOUNDARIES.md) — declarations and migration scope.
