@@ -122,6 +122,13 @@ def run(args, root):
             return rows and all(re.fullmatch(r'. Djinn', row)
                                 and (glyph is None or row.startswith(glyph + ' ')) for row in rows)
 
+        report(16, 'session.status', status='busy')
+        report(16, 'session.deleted')
+        ended_id = hashlib.sha256(('native\0' + '11111111-1111-4111-8111-111111111111' + '\0PRIVATE-ROOT-16').encode()).hexdigest()
+        check.wait_for(lambda: not view.compact_rows('Djinn'), 'unhosted ended root hidden')
+        view.expect_missing('Djinn')
+        check.require(any(row['observation_id'] == ended_id and row['reported_state'] == 'ended'
+                          for row in observations()), 'ended root history was erased')
         for i in range(16):
             for event, fields in [('session.created', {}), ('session.status', {'status': 'busy'})]:
                 report(i, event, **fields)
@@ -137,7 +144,9 @@ def run(args, root):
         print('ACTUAL WORKING ROW: ' + coven_rows()[0], flush=True)
         check.require('Build detail 0' not in view.text and 'last-reported' not in view.text,
                       'one-line sidebar exposed inspector details')
-        check.require('supported_versions' in snapshot()['integration_views'], 'new Kit descriptor missing versions')
+        descriptor = snapshot()['integration_views']
+        check.require(descriptor['version'] == 1 and descriptor['supported_versions'] == [1, 2, 3],
+                      f'profile descriptor mismatch: {descriptor}')
         check.passed('actual new Kit accepts v1 plain build rows beside negotiated Coven status rows; one line, no inline detail')
 
         # No report/replace/poll inside this sampling window. Actual Coven may keep
@@ -159,7 +168,7 @@ def run(args, root):
         check.require(poll() == [], 'animation queued a fixture intent')
         for event, fields, glyph, state_word in [('session.status', {'status': 'idle'}, '·', 'Idle'),
                                                  ('permission.asked', {'request_id': 'PRIVATE-REQUEST'}, '!', 'Blocked'),
-                                                 ('session.deleted', {}, '·', 'Ended')]:
+                                                 ('permission.replied', {'request_id': 'PRIVATE-REQUEST'}, '·', 'Idle')]:
             for i in range(16):
                 report(i, event, **fields)
             settle(lambda text: coven_state(state_word, glyph))
@@ -169,7 +178,7 @@ def run(args, root):
                           'native idle/blocked/ended fabricated a job outcome')
             # Keep only the manual peer alive across CLI/report/render work.
             check.require(poll() == [], 'native status rendering queued a fixture intent')
-        check.passed('actual Coven shows icon + Djinn only: no state words, IDs or suffixes; Idle/Ended neutral, Blocked attention; no job outcome inferred')
+        check.passed('actual Coven shows icon + Djinn only; Idle neutral, Blocked attention; ended unhosted root retained in history, not an outcome')
         before = navigation()
         epoch = next(s['epoch'] for s in snapshot()['integration_views']['sources'] if s['id'] == 'coven')
         rows = lines()
@@ -205,6 +214,8 @@ def run(args, root):
                       'build selection reached actual Coven publisher')
         check.passed('actual mouse label/row blank both enqueue exact v1 build intent with Coven-colliding ID, no native focus change')
 
+        for i in range(16):
+            report(i, 'session.status', status='idle')
         coven_body = lines()[header('Coven') + 1:header('build')]
         view.mouse(5, header('build') + 1, 'down')
         settle(lambda text: 'Build task 0' not in text)
@@ -246,6 +257,13 @@ def run(args, root):
         check.passed('actual client resizes at heights 9/12/36 preserve valid peer frames and native navigation')
 
         # Derive the toggle and compact launcher from the latest rendered cells.
+        for i in range(16):
+            report(i, 'session.status', status='idle')
+        # The preceding wheel gate deliberately leaves Coven at its last row
+        # (Codex). Compact status checks need the native rows, not that viewport.
+        for _ in range(18):
+            view.mouse(5, header('Coven') + 1, 'up')
+        settle(lambda text: any(row == '· Djinn' for row in coven_rows()))
         rows = lines()
         y = next(y for y, line in enumerate(rows) if '«' in line)
         view.mouse(rows[y].index('«'), y)
@@ -291,7 +309,39 @@ def run(args, root):
 
         view.press('b', 2)
         view.press('a')
-        view.expect('Integration details', 'Status: neutral', 'caller unverified', 'success claim')
+        view.expect('Integration details', 'Attention', 'Current activity', 'Working context', '▸ Diagnostics [d]')
+        check.require('Coven:' not in view.text and 'caller unverified' not in view.text,
+                      'default inspector leaked raw diagnostics')
+        print('ACTUAL PROFILE-3 DEFAULT INSPECTOR (ASCII transcription):\n' + ascii_frame(view.text.splitlines()), flush=True)
+        pane_before = check.api(kit, 'pane.read', dict(pane_id=pane, source='recent_unwrapped', format='text'))['read']['text']
+        view.press('d')  # Items focus must not expand or leak input to a PTY.
+        view.expect('▸ Diagnostics [d]')
+        view.press('/')
+        for ch in 'caller unverified':
+            view.press(ch)
+        view.expect('/ caller unverified')
+        view.press('esc')  # Search Esc blurs; it does not close the inspector.
+        view.expect('Integration details', 'Match in Diagnostics — expand to view.', '▸ Diagnostics [d]')
+        check.require('Coven:' not in view.text, 'hidden-detail search automatically expanded diagnostics')
+        view.diagnostics(True)
+        check.require('Coven:' in view.inspector_details(), 'explicit d did not reveal provenance')
+        generation = view.generation
+        time.sleep(1.1)
+        check.wait_for(lambda: view.poll() and view.generation > generation, 'ordinary owner/age revision')
+        view.expect('▾ Diagnostics [d]')
+        rows = view.text.splitlines()
+        y = next(y for y, line in enumerate(rows) if '▾ Diagnostics [d]' in line[51:149])
+        view.mouse(55, y)
+        view.expect('▸ Diagnostics [d]')
+        check.require(poll() == [] and navigation() == before and
+                      check.api(kit, 'pane.read', dict(pane_id=pane, source='recent_unwrapped', format='text'))['read']['text'] == pane_before,
+                      'diagnostic keys/search/mouse leaked PTY input, intent or navigation')
+        view.press('esc')
+        settle(lambda text: 'Integration details' not in text)
+        view.press('b', 2)
+        view.press('a')
+        view.expect('Integration details', '▸ Diagnostics [d]')
+        check.passed('composed profile-3 main sections; hidden diagnostic search hint; focus-only d and visible mouse toggle; age revision preserves expansion, reopen collapses; no PTY/intent/navigation')
         view.press('/')
         for ch in 'Codex':
             view.press(ch)
@@ -302,7 +352,11 @@ def run(args, root):
         check.require(view.text.splitlines()[y][51:149].strip(' │>') == '? Codex',
                       'Unknown inspector row exposed a state word or opaque ID')
         view.mouse(55, y)
-        view.expect('Codex', 'Status: unknown', 'reference_only')
+        view.expect('Codex', 'Attention information unavailable from this report.',
+                    'Current activity is not available from this report type.')
+        view.diagnostics(True)
+        detail = view.inspector_details()
+        check.require('reference_only' in detail and 'Coven:' in detail, 'missing explicit Codex diagnostics')
         check.require('✓' not in view.text and '×' not in view.text and poll() == [] and navigation() == before,
                       'unknown reference manufactured an outcome or inspector navigation activated a row')
         print('ACTUAL COVEN INSPECTOR (ASCII transcription):\n' + ascii_frame(view.text.splitlines()), flush=True)
@@ -332,14 +386,17 @@ def run(args, root):
         view.press('b', 2)
         view.press('a')
         view.expect('Integration details')
-        y = next(y for y, line in enumerate(view.text.splitlines()) if line[51:149].strip(' │') == 'build')
-        view.mouse(55, y)
+        view.inspector_click(
+            lambda: next(((55, y) for y, line in enumerate(view.text.splitlines())
+                          if line[51:149].strip(' │') in ('build', '> build')), None),
+            lambda: 'Tab: Sources' in view.text and 'detail-start' in view.text and 'Fixture 0' in view.text,
+            'legacy build fixture source')
         view.expect('detail-start', 'Fixture 0')
         check.require(poll() == [], 'source click activated fixture item')
         view.press('tab')
         view.expect('Tab: Items')
         view.press('down')
-        view.expect('Fixture 1: error')
+        view.expect('Fixture 1', 'detail-start')
         view.press('/')
         for ch in 'Manual row 2':
             view.press(ch)
@@ -347,14 +404,15 @@ def run(args, root):
         view.press('enter')
         view.expect('Filter: Manual row 2')
         view.press('down')
-        view.expect('Fixture 2: success')
+        view.expect('Fixture 2', 'detail-start')
         check.require(poll() == [], 'item navigation/search activated fixture item')
         view.resize(200, 16)
         settle(lambda text: 'Integration details' in text)
         view.press('tab')
         view.expect('Tab: Details')
         view.press('pagedown')
-        settle(lambda text: 'detail-end' in text and 'Fixture 2: success' not in text)
+        settle(lambda text: 'detail-end' in text and not any(line[51:149].strip() == 'Details'
+                                                           for line in text.splitlines()))
         check.require(poll() == [] and navigation() == before, 'search/scroll/source/item navigation queued intent')
         view.press('enter')
         check.require(poll() == [], 'Enter in Details activated item')
@@ -377,6 +435,28 @@ def run(args, root):
         settle(lambda text: 'Integration details' not in text and 'Unavailable' in text)
         check.require(navigation() == before, 'expiry changed native navigation')
         check.passed('actual source expiry clears inspector data; stale Enter cannot revive expired owner; native navigation unchanged')
+
+        opened = check.api(kit, 'integration.view.open', dict(source='build', version=3))
+        owner = dict(source='build', lease=opened['lease'], epoch=opened['epoch'])
+        check.api(kit, 'integration.view.replace', {**owner, 'revision': 1, 'items': [dict(
+            id='plain-v3', label='Plain third party', detail='Useful plain detail; Kit branch: literal, not parsed.')]})
+        view.expect('Plain third party')
+        view.press('b', 2)
+        view.press('a')
+        view.expect('Integration details')
+        view.inspector_click(
+            lambda: next(((55, y) for y, line in enumerate(view.text.splitlines())
+                          if line[51:149].strip(' │') in ('build', '> build')), None),
+            lambda: 'Tab: Sources' in view.text and 'Useful plain detail;' in view.text,
+            'plain profile-3 fixture source')
+        view.expect('Useful plain detail; Kit branch: literal, not parsed.')
+        check.require('Diagnostics [d]' not in view.text and 'Working context' not in view.text,
+                      'information-absent third-party detail was collapsed or parsed')
+        check.require(poll() == [], 'plain detail inspection queued intent')
+        view.press('esc')
+        settle(lambda text: 'Integration details' not in text)
+        check.api(kit, 'integration.view.close', owner)
+        check.passed('profile-3 third-party information absent retains useful flat Details without metadata parsing or diagnostics collapse')
 
         # Persist visual preferences only, then cleanly restart the same owned session.
         click_header('Spaces', True)
@@ -450,10 +530,20 @@ def run(args, root):
             return len(rows) == 2 and rows.count('· Djinn') == 1 and '! ' + name in rows
 
         before_names = navigation()
+        # Give naming/lease checks their own activity window. Name reads and
+        # attachment renewal below must not refresh this evidence.
+        report(0, 'session.status', status='busy')
+        report(1, 'session.status', status='idle')
+        evidence = {row['observation_id']: row for row in observations() if row['provider'] == 'djinn'}
         pane_text = check.api(kit, 'pane.read', dict(pane_id=pane, source='recent_unwrapped', format='text'))['read']['text']
         check.api(kit, 'pane.rename', dict(pane_id=pane, label='API work'))
         attach(target)
         settle(lambda text: named('API work'))
+        project = next(w['label'] for w in snapshot()['workspaces']
+                       if w['workspace_id'] == target_pane['workspace_id'])
+        view.expect_row('Djinn', 'BLOCKED (fresh)', name='API work',
+                        main_facts=('Kit project: ' + project, 'Kit branch:', 'Evidence age:'))
+        check.passed('composed verified Kit workspace supplies project context and explicit cached-branch value/unavailable; selected-fact evidence age, no native CWD inference')
         print('ACTUAL NAMED ROOTS: ' + json.dumps(naming_rows(), ensure_ascii=False), flush=True)
         check.api(kit, 'pane.rename', dict(pane_id=pane, label='Review API'))
         settle(lambda text: named('Review API'))

@@ -168,6 +168,166 @@ struct DisplayRow {
     detail: String,
     state: &'static str,
     status: Option<&'static str>,
+    current_until: Option<u64>,
+    information: Information,
+    qualified_bundle: Option<QualifiedBundle>,
+}
+
+#[derive(Debug, PartialEq)]
+struct QualifiedBundle {
+    // Borrowed display metadata has its own lease, independent of row membership.
+    epoch: String,
+    admission: u64,
+    revision: String,
+    target: Value,
+    until: u64,
+}
+
+impl QualifiedBundle {
+    fn valid(&self, latest: &Value, id: &str, admission: u64, tick: u64) -> bool {
+        if latest["server_epoch"] != self.epoch
+            || admission & 1 != 0
+            || admission != self.admission
+            || tick >= self.until
+        {
+            return false;
+        }
+        let Some(hints) = latest["_publisher_names"]
+            .as_array()
+            .filter(|all| all.len() <= 128)
+        else {
+            return false;
+        };
+        let mut matching = hints.iter().filter(|hint| hint["id"] == id);
+        let Some(hint) = matching.next() else {
+            return false;
+        };
+        matching.next().is_none()
+            && hint["revision"] == self.revision
+            && hint["target"] == self.target
+            && hint["until"].as_u64().is_some_and(|until| tick < until)
+    }
+}
+
+impl DisplayRow {
+    fn clear_bundle(&mut self) {
+        self.label = self.fallback.into();
+        self.information.context = vec!["No qualified workspace context.".into()];
+        self.qualified_bundle = None;
+    }
+}
+
+#[derive(Debug, PartialEq, serde::Serialize)]
+struct Information {
+    attention: Vec<String>,
+    activity: Vec<String>,
+    context: Vec<String>,
+}
+
+impl Information {
+    fn unknown() -> Self {
+        Self {
+            attention: vec!["Attention information unavailable from this report.".into()],
+            activity: vec!["Current activity is not available from this report type.".into()],
+            context: vec!["No qualified workspace context.".into()],
+        }
+    }
+
+    fn compact(&self) -> Self {
+        let shorten = |line: &str| {
+            match line {
+                "Attention information unavailable from this report." => {
+                    "Report attention information unavailable."
+                }
+                "Current activity is not available from this report type." => {
+                    "Activity unavailable for this report type."
+                }
+                "Last reported working." => "Last reported working (fresh).",
+                "Last reported idle." => "Last reported idle (fresh).",
+                "Last reported ended." => "Last reported ended (fresh).",
+                other => other,
+            }
+            .to_owned()
+        };
+        Self {
+            attention: self
+                .attention
+                .first()
+                .map(|s| shorten(s))
+                .into_iter()
+                .collect(),
+            activity: self
+                .activity
+                .first()
+                .map(|s| shorten(s))
+                .into_iter()
+                .collect(),
+            context: Vec::new(),
+        }
+    }
+}
+
+// These are selected-fact ages, not receipt/last-seen times. Bucket here rather
+// than adding a UI clock or changing any receiver freshness anchor.
+fn reported_information(observation: &Value) -> WireResult<Information> {
+    let invalid = || Failure::new("presentation_projection_error");
+    let mut info = Information::unknown();
+    match (
+        observation.get("fresh_pending_count"),
+        observation.get("unacknowledged_pending_count"),
+    ) {
+        (None, None) => {}
+        (Some(count), Some(unacked)) => {
+            let count = count.as_u64().ok_or_else(invalid)?;
+            let unacked = unacked.as_u64().ok_or_else(invalid)?;
+            if count > 128 || unacked > count {
+                return Err(invalid());
+            }
+            info.attention = vec![if count == 0 {
+                "No pending request in recent reports.".into()
+            } else if unacked == 0 {
+                format!("{count} reported requests awaiting resolution.")
+            } else {
+                format!("Reported requests: {count}; unacknowledged: {unacked}.")
+            }];
+        }
+        _ => return Err(invalid()),
+    }
+    let age = observation
+        .get("age_ms")
+        .filter(|v| !v.is_null())
+        .map(|v| v.as_u64().ok_or_else(invalid))
+        .transpose()?;
+    if observation["capability"] != "activity" {
+        return Ok(info);
+    }
+    let freshness = observation["freshness"].as_str().ok_or_else(invalid)?;
+    let activity = match freshness {
+        "expired" => "No recent activity evidence.",
+        "historical" => "No activity report in this receiver session.",
+        "unknown" if age.is_none() => "No activity report received yet.",
+        "unknown" => "Current activity is unknown.",
+        "fresh" if observation["origin"] == "djinn_client_attachment" => {
+            "No activity report received yet."
+        }
+        "fresh" => match observation["reported_state"].as_str() {
+            Some("working") => "Last reported working.",
+            Some("idle") => "Last reported idle.",
+            Some("blocked") => "Waiting on a reported request.",
+            Some("ended") => "Last reported ended.",
+            Some("unknown") => "Current activity is unknown.",
+            _ => return Err(invalid()),
+        },
+        _ => return Err(invalid()),
+    };
+    info.activity = vec![activity.into()];
+    if matches!(freshness, "fresh" | "expired") {
+        if let Some(age) = age {
+            info.activity
+                .push(format!("Evidence age: {}s ({freshness}).", age / 1000));
+        }
+    }
+    Ok(info)
 }
 
 // Called only after provenance/state validation. A received event is not an
@@ -206,13 +366,43 @@ fn display_row(
         detail,
         state,
         status,
+        current_until: None,
+        information: Information::unknown(),
+        qualified_bundle: None,
     }
 }
 
 impl Model {
+    fn expire_current(&mut self, tick: u64) {
+        self.rows
+            .retain(|row| row.current_until.is_none_or(|until| tick < until));
+    }
+
+    fn publication_ceiling(&self) -> u64 {
+        self.rows
+            .iter()
+            .flat_map(|row| {
+                [
+                    row.current_until,
+                    row.qualified_bundle.as_ref().map(|bundle| bundle.until),
+                ]
+                .into_iter()
+                .flatten()
+            })
+            .fold(
+                naming_tick(Instant::now() + Duration::from_secs(5)),
+                u64::min,
+            )
+    }
+
     fn items(&self, version: u64) -> WireResult<Value> {
+        // v3 preserves names even under pressure. Its owner reserve also covers
+        // quote/backslash escaping in both bounded 128-byte lease tokens.
+        let limit = 96 * 1024 - if version == 3 { 768 } else { 512 };
         let mut items = Vec::with_capacity(self.rows.len());
-        for row in &self.rows {
+        let tick = naming_tick(Instant::now());
+        let eligible = |row: &&DisplayRow| row.current_until.is_none_or(|until| tick < until);
+        for row in self.rows.iter().filter(eligible) {
             if row.id.len() > 128
                 || row.label.len() > 160
                 || row.detail.len() > 512
@@ -223,11 +413,30 @@ impl Model {
                 return Err(Failure::new("integration_view_invalid_frame"));
             }
             let mut item = json!({"id":row.id,"label":row.label,"detail":row.detail});
-            if version == 2 {
+            if version >= 2 {
                 item["presentation"] = json!({"label":""});
                 if let Some(status) = row.status {
                     item["presentation"]["status"] = json!(status);
                 }
+            }
+            if version == 3 {
+                let info = &row.information;
+                let mut total = 0;
+                for lines in [&info.attention, &info.activity, &info.context] {
+                    if lines.len() > 4 {
+                        return Err(Failure::new("integration_view_invalid_frame"));
+                    }
+                    for line in lines {
+                        total += line.len();
+                        if !safe_display_text(line, 256) {
+                            return Err(Failure::new("integration_view_invalid_frame"));
+                        }
+                    }
+                }
+                if total > 1536 {
+                    return Err(Failure::new("integration_view_invalid_frame"));
+                }
+                item["information"] = json!(info);
             }
             items.push(item);
         }
@@ -236,11 +445,50 @@ impl Model {
         if serde_json::to_vec(&items)
             .map_err(|_| Failure::new("integration_view_invalid_frame"))?
             .len()
-            > 96 * 1024 - 512
+            > limit
         {
-            for (item, row) in items.iter_mut().zip(&self.rows) {
-                item["label"] = json!(row.fallback);
+            if version == 3 {
+                // Diagnostic detail is secondary. Never trade a human pane name
+                // or primary evidence for verbose technical provenance.
+                for item in &mut items {
+                    item["detail"] = json!("Additional detail omitted at view size limit.");
+                }
+                if serde_json::to_vec(&items)
+                    .map_err(|_| Failure::new("integration_view_invalid_frame"))?
+                    .len()
+                    > limit
+                {
+                    for (item, row) in items.iter_mut().zip(self.rows.iter().filter(eligible)) {
+                        let compact = row.information.compact();
+                        // This is Cove's production profile, not a promise to
+                        // losslessly pack 128 maximum-size generic v3 objects.
+                        if compact
+                            .attention
+                            .iter()
+                            .chain(&compact.activity)
+                            .any(|s| !s.is_ascii() || s.len() > 48)
+                        {
+                            return Err(Failure::new("integration_view_invalid_frame"));
+                        }
+                        item["information"] = json!(compact);
+                        item["detail"] = json!(
+                            "Additional detail omitted at view size limit. Context/age omitted."
+                        );
+                    }
+                }
+            } else {
+                for (item, row) in items.iter_mut().zip(self.rows.iter().filter(eligible)) {
+                    item["label"] = json!(row.fallback);
+                }
             }
+        }
+        if version == 3
+            && serde_json::to_vec(&items)
+                .map_err(|_| Failure::new("integration_view_invalid_frame"))?
+                .len()
+                > limit
+        {
+            return Err(Failure::new("integration_view_invalid_frame"));
         }
         Ok(json!(items))
     }
@@ -283,6 +531,21 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
             if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) || !ids.insert(id) {
                 return Err(invalid());
             }
+            let current_until = if observation["provider"] == "djinn"
+                && value.get("_publisher_current").is_some()
+            {
+                let item_id = format!("observation:{id}");
+                let Some(until) = current_hint_deadline(&value["_publisher_current"], &item_id)
+                else {
+                    continue;
+                };
+                if naming_tick(Instant::now()) >= until {
+                    continue;
+                }
+                Some(until)
+            } else {
+                None
+            };
             if observation["origin"] == "provider_native_fact" {
                 #[cfg(unix)]
                 agent_management::facts::validate_row(observation).map_err(|_| invalid())?;
@@ -397,11 +660,15 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
                     && capability == "activity"
                     && origin != "djinn_client_attachment",
             ));
+            rows.last_mut().unwrap().current_until = current_until;
+            rows.last_mut().unwrap().information = reported_information(observation)?;
         }
         if summary {
             rows.push(DisplayRow { id: "normal:limits".into(), label: "Evidence limits".into(), fallback: "Evidence limits",
                 detail: format!("{omitted} observations omitted from this view; {retired} native observations retired; bounded volatile history and replay protection"),
-                state: "Notice", status: None });
+                 state: "Notice", status: None, current_until: None, qualified_bundle: None,
+                 information: Information { attention: vec!["Some evidence omitted or retired from this view.".into(), format!("Omitted: {omitted}; retired: {retired}.")],
+                     activity: vec!["Bounded evidence history; not a current census.".into()], context: vec![] } });
         }
         return Ok(Some(Model {
             epoch: epoch.into(),
@@ -453,6 +720,14 @@ fn snapshot(model: &Mutex<Value>, selected: Option<&str>) -> WireResult<Option<M
             &state.to_ascii_lowercase(),
             !record["age_ms"].is_null(),
         ));
+        let information = reported_information(&json!({
+            "capability": if provider == "claude" { "activity" } else { "reference_only" },
+            "freshness": if record["age_ms"].is_null() { "historical" }
+                else if record["age_ms"].as_u64().is_some_and(|age| age >= 30_000) { "expired" }
+                else { "fresh" },
+            "reported_state": state.to_ascii_lowercase(), "age_ms": record["age_ms"]
+        }))?;
+        rows.last_mut().unwrap().information = information;
     }
     rows.sort_by(|a, b| a.id.cmp(&b.id));
     if rows.windows(2).any(|pair| pair[0].id == pair[1].id) {
@@ -468,6 +743,59 @@ fn deadline() -> Instant {
     Instant::now() + Duration::from_secs(3)
 }
 
+const REFRESH_NEEDED: &str = "presentation_refresh_needed";
+
+fn replace_preflight(
+    shared: &Mutex<Value>,
+    epoch: &str,
+    naming: Option<&AtomicU64>,
+    admission: Option<u64>,
+    rows: &[DisplayRow],
+) -> WireResult<()> {
+    let Some(naming) = naming else { return Ok(()) };
+    let latest = match shared.try_lock() {
+        Ok(latest) => latest,
+        Err(TryLockError::WouldBlock) => return Err(Failure::new(REFRESH_NEEDED)),
+        Err(TryLockError::Poisoned(_)) => {
+            return Err(Failure::new("presentation_projection_error"));
+        }
+    };
+    if latest["server_epoch"] != epoch {
+        return Err(Failure::new("presentation_server_epoch_changed"));
+    }
+    let revision = naming.load(Ordering::Acquire);
+    let tick = naming_tick(Instant::now());
+    // Empty and partial frames need the same coherent admission as full frames.
+    if revision & 1 != 0 || admission != Some(revision) {
+        return Err(Failure::new(REFRESH_NEEDED));
+    }
+    if let Some(until) = rows.iter().filter_map(|row| row.current_until).min() {
+        if tick >= until {
+            return Err(Failure::new(REFRESH_NEEDED));
+        }
+    }
+    // A borrowed label/context lease can be shorter than current membership,
+    // including on rows with no membership deadline. Never renew it here.
+    if rows.iter().any(|row| {
+        row.qualified_bundle.as_ref().is_some_and(|bundle| {
+            admission != Some(revision) || !bundle.valid(&latest, &row.id, revision, tick)
+        })
+    }) {
+        return Err(Failure::new(REFRESH_NEEDED));
+    }
+    Ok(())
+}
+
+fn current_hint_deadline(hints: &Value, id: &str) -> Option<u64> {
+    let hints = hints.as_array().filter(|all| all.len() <= 128)?;
+    let mut matching = hints.iter().filter(|hint| hint["id"] == id);
+    let hint = matching.next()?;
+    if matching.next().is_some() || hint.as_object()?.len() != 2 {
+        return None;
+    }
+    hint["until"].as_u64()
+}
+
 // Monotonic deadlines belong only to the in-process publisher projection.
 pub(crate) fn naming_tick(at: Instant) -> u64 {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
@@ -480,9 +808,12 @@ pub(crate) fn naming_tick(at: Instant) -> u64 {
 fn explicit_name(value: &Value) -> Option<&str> {
     let text = value.as_str()?;
     // Reject rather than truncate: never split UTF-8, ANSI, or multiline content.
-    (!text.trim().is_empty() && text.len() <= 160 && !text.chars().any(|c|
-        c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{2028}' | '\u{2029}')))
-        .then_some(text)
+    safe_display_text(text, 160).then_some(text)
+}
+
+fn safe_display_text(text: &str, limit: usize) -> bool {
+    !text.trim().is_empty() && text.len() <= limit && !text.chars().any(|c|
+        c.is_control() || matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{2028}' | '\u{2029}'))
 }
 
 fn naming_result(reply: &socket::Reply) -> Option<Value> {
@@ -495,7 +826,7 @@ fn naming_result(reply: &socket::Reply) -> Option<Value> {
     value.get("result").cloned()
 }
 
-fn named_pane<'a>(panes: &'a [Value], target: &Value, inspected: &Value) -> Option<&'a str> {
+fn matched_pane<'a>(panes: &'a [Value], target: &Value, inspected: &Value) -> Option<&'a Value> {
     if inspected.as_object()?.len() != 7
         || inspected["type"] != "terminal_inspected"
         || inspected["availability"] != "live"
@@ -521,7 +852,43 @@ fn named_pane<'a>(panes: &'a [Value], target: &Value, inspected: &Value) -> Opti
     {
         return None;
     }
-    explicit_name(&pane["label"])
+    Some(pane)
+}
+
+#[cfg(test)]
+fn named_pane<'a>(panes: &'a [Value], target: &Value, inspected: &Value) -> Option<&'a str> {
+    explicit_name(&matched_pane(panes, target, inspected)?["label"])
+}
+
+fn workspace_context(workspaces: &Value, pane: &Value) -> Option<Vec<String>> {
+    let workspaces = workspaces.as_array().filter(|all| all.len() <= 4096)?;
+    let mut matched = workspaces
+        .iter()
+        .filter(|w| w["workspace_id"] == pane["workspace_id"]);
+    let workspace = matched.next()?;
+    if matched.next().is_some() {
+        return None;
+    }
+    // Approved human metadata only. In particular, neither CWD nor a repository
+    // path is a substitute for Kit's display metadata or cached branch.
+    let project = explicit_name(&workspace["worktree"]["repo_name"])
+        .filter(|s| {
+            !s.contains(['/', '\\', ':']) && !matches!(*s, "." | "..") && !s.starts_with('~')
+        })
+        .or_else(|| {
+            explicit_name(&workspace["label"]).filter(|s| {
+                !s.contains(['/', '\\', ':']) && !matches!(*s, "." | "..") && !s.starts_with('~')
+            })
+        });
+    let branch = explicit_name(&workspace["git_branch"]).filter(|s| {
+        !s.starts_with(['/', '\\', '~'])
+            && !s.contains(['\\', ':'])
+            && !s.split('/').any(|part| matches!(part, "" | "." | ".."))
+    });
+    let mut context = Vec::new();
+    context.push(format!("Kit project: {}", project.unwrap_or("unavailable")));
+    context.push(format!("Kit branch: {}", branch.unwrap_or("unavailable")));
+    Some(context)
 }
 
 fn resolve_names(
@@ -530,22 +897,31 @@ fn resolve_names(
     endpoint: &socket::Endpoint,
     stop: &Stop,
     naming: Option<&AtomicU64>,
-) {
-    let Some(naming) = naming else { return };
+) -> WireResult<()> {
+    // Refresh the entire bundle, never retain metadata from a failed lookup,
+    // moved pane, old association, or contended receiver projection.
+    for row in &mut current.rows {
+        row.clear_bundle();
+    }
+    let Some(naming) = naming else { return Ok(()) };
     let revision = naming.load(Ordering::Acquire);
     if revision & 1 != 0 {
-        return;
+        return Err(Failure::new(REFRESH_NEEDED));
     }
     let end = Instant::now() + Duration::from_millis(300);
     let hints = match shared.try_lock() {
         Ok(value) if value["server_epoch"] == current.epoch => value["_publisher_names"].clone(),
-        _ => return,
+        Ok(_) => return Err(Failure::new("presentation_server_epoch_changed")),
+        Err(TryLockError::WouldBlock) => return Err(Failure::new(REFRESH_NEEDED)),
+        Err(TryLockError::Poisoned(_)) => {
+            return Err(Failure::new("presentation_projection_error"));
+        }
     };
     if naming.load(Ordering::Acquire) != revision {
-        return;
+        return Err(Failure::new(REFRESH_NEEDED));
     }
     let Some(hints) = hints.as_array().filter(|h| h.len() <= 128) else {
-        return;
+        return Err(Failure::new(REFRESH_NEEDED));
     };
     let eligible = |hint: &&Value| {
         let t = &hint["target"];
@@ -560,7 +936,7 @@ fn resolve_names(
     };
     let candidates: Vec<_> = hints.iter().filter(eligible).collect();
     if candidates.is_empty() {
-        return;
+        return Ok(());
     }
     let mut budget = socket::ReadBudget::new(1024 * 1024);
     let Some(snapshot) = socket::naming_snapshot(endpoint, end, &mut budget, stop)
@@ -568,18 +944,18 @@ fn resolve_names(
         .filter(|r| r.endpoint == *endpoint)
         .and_then(|r| naming_result(&r))
     else {
-        return;
+        return Err(Failure::new(REFRESH_NEEDED));
     };
     if snapshot["type"] != "session_snapshot"
         || snapshot["snapshot"]["terminal_navigation"]["version"] != 1
     {
-        return;
+        return Ok(());
     }
     let Some(panes) = snapshot["snapshot"]["panes"]
         .as_array()
         .filter(|p| p.len() <= 4096)
     else {
-        return;
+        return Ok(());
     };
     let mut names = Vec::new();
     for hint in candidates {
@@ -596,51 +972,96 @@ fn resolve_names(
         )
         .ok()
         .and_then(|r| naming_result(&r)) else {
-            continue;
+            return Err(Failure::new(REFRESH_NEEDED));
         };
-        if let Some(name) = named_pane(panes, target, &inspected) {
-            names.push((hint, name));
+        if let Some(pane) = matched_pane(panes, target, &inspected) {
+            let name = explicit_name(&pane["label"]);
+            let Some(context) = workspace_context(&snapshot["snapshot"]["workspaces"], pane) else {
+                continue;
+            };
+            let Some(tabs) = snapshot["snapshot"]["tabs"]
+                .as_array()
+                .filter(|all| all.len() <= 4096)
+            else {
+                continue;
+            };
+            let mut matched = tabs.iter().filter(|t| t["tab_id"] == pane["tab_id"]);
+            let Some(tab) = matched.next() else { continue };
+            if matched.next().is_some() || tab["workspace_id"] != pane["workspace_id"] {
+                continue;
+            }
+            names.push((hint, name, context));
         }
     }
-    if socket::check(end, stop).is_err()
-        || socket::select(&endpoint.selected).ok().as_ref() != Some(endpoint)
-    {
-        return;
+    if socket::check(end, stop).is_err() {
+        return Err(Failure::new(REFRESH_NEEDED));
+    }
+    if socket::select(&endpoint.selected).ok().as_ref() != Some(endpoint) {
+        return Ok(());
     }
     // Requalify against the receiver's latest epoch, association revision/target and
     // actual lease deadline after IO. No successful name survives a failed refresh.
-    let Ok(latest) = shared.try_lock() else {
-        return;
+    let latest = match shared.try_lock() {
+        Ok(latest) => latest,
+        Err(TryLockError::WouldBlock) => return Err(Failure::new(REFRESH_NEEDED)),
+        Err(TryLockError::Poisoned(_)) => {
+            return Err(Failure::new("presentation_projection_error"));
+        }
     };
-    if latest["server_epoch"] != current.epoch || naming.load(Ordering::Acquire) != revision {
-        return;
+    if latest["server_epoch"] != current.epoch {
+        return Err(Failure::new("presentation_server_epoch_changed"));
     }
-    for (hint, name) in names {
-        if hint["until"]
-            .as_u64()
-            .is_some_and(|until| naming_tick(Instant::now()) < until)
-            && latest["_publisher_names"].as_array().is_some_and(|all| {
-                all.iter().any(|h| {
-                    h["id"] == hint["id"]
-                        && h["revision"] == hint["revision"]
-                        && h["target"] == hint["target"]
-                        && h["until"]
-                            .as_u64()
-                            .is_some_and(|until| naming_tick(Instant::now()) < until)
-                })
-            })
-        {
+    if naming.load(Ordering::Acquire) != revision {
+        return Err(Failure::new(REFRESH_NEEDED));
+    }
+    let tick = naming_tick(Instant::now());
+    current.rows.retain(|row| {
+        row.current_until.is_none_or(|until| {
+            tick < until
+                && current_hint_deadline(&latest["_publisher_current"], &row.id)
+                    .is_some_and(|end| tick < end)
+        })
+    });
+    for (hint, name, context) in names {
+        let (Some(id), Some(hint_revision), Some(until)) = (
+            hint["id"].as_str(),
+            hint["revision"].as_str(),
+            hint["until"].as_u64(),
+        ) else {
+            continue;
+        };
+        let bundle = QualifiedBundle {
+            epoch: current.epoch.clone(),
+            admission: revision,
+            revision: hint_revision.into(),
+            target: hint["target"].clone(),
+            until,
+        };
+        if bundle.valid(&latest, id, revision, naming_tick(Instant::now())) {
             if let Some(row) = current.rows.iter_mut().find(|r| hint["id"] == r.id) {
-                row.label = name.into();
+                if let Some(name) = name {
+                    row.label = name.into();
+                }
+                row.information.context = context;
+                row.qualified_bundle = Some(bundle);
             }
         }
     }
+    Ok(())
 }
 fn pause(stop: &Stop, duration: Duration) {
     let end = Instant::now() + duration;
     while !stop.interrupted() && Instant::now() < end {
         thread::sleep(Duration::from_millis(10).min(end.saturating_duration_since(Instant::now())));
     }
+}
+
+fn defer_candidate(stop: &Stop, ceiling: u64) -> WireResult<()> {
+    if naming_tick(Instant::now()) >= ceiling {
+        return Err(Failure::new(REFRESH_NEEDED));
+    }
+    pause(stop, Duration::from_millis(20));
+    Ok(())
 }
 
 fn run(
@@ -696,29 +1117,57 @@ fn run(
         let mut current = initial;
         let server_epoch = current.epoch.clone();
         let mut selected: Option<String> = None;
+        let mut ceiling = naming_tick(Instant::now() + Duration::from_secs(5));
         loop {
             if stop.interrupted() {
                 return Ok(());
             }
-            if let Some(mut next) = snapshot(model, selected.as_deref())? {
-                if next.epoch != server_epoch {
-                    return Err(Failure::new("presentation_server_epoch_changed"));
-                }
-                resolve_names(model, &mut next, &endpoint, stop, naming);
-                current = next;
-            } else {
-                // Contention cannot retain a previously qualified name.
-                for row in &mut current.rows {
-                    row.label = row.fallback.into();
-                }
+            // Only a coherent candidate may replace or renew the shown view.
+            // A transient race never publishes a cleared/cached candidate.
+            let admission = naming.map(|fence| fence.load(Ordering::Acquire));
+            if admission.is_some_and(|revision| revision & 1 != 0) {
+                defer_candidate(stop, ceiling)?;
+                continue;
             }
-            let items = current.items(version)?;
+            let mut next = match snapshot(model, selected.as_deref())? {
+                Some(next) => next,
+                None if naming.is_none() => std::mem::replace(
+                    &mut current,
+                    Model {
+                        epoch: server_epoch.clone(),
+                        rows: Vec::new(),
+                    },
+                ),
+                None => {
+                    defer_candidate(stop, ceiling)?;
+                    continue;
+                }
+            };
+            if next.epoch != server_epoch {
+                return Err(Failure::new("presentation_server_epoch_changed"));
+            }
+            next.expire_current(naming_tick(Instant::now()));
+            let prepared = replace_preflight(model, &server_epoch, naming, admission, &next.rows)
+                .and_then(|_| resolve_names(model, &mut next, &endpoint, stop, naming))
+                .and_then(|_| {
+                    next.expire_current(naming_tick(Instant::now()));
+                    replace_preflight(model, &server_epoch, naming, admission, &next.rows)
+                });
+            match prepared {
+                Err(error) if error.code == REFRESH_NEEDED => {
+                    defer_candidate(stop, ceiling)?;
+                    continue;
+                }
+                Err(error) => return Err(error),
+                Ok(()) => {}
+            }
+            let items = next.items(version)?;
             if items != shown {
-                revision = revision
+                let next_revision = revision
                     .checked_add(1)
                     .ok_or_else(|| Failure::new("integration_view_invalid_frame"))?;
                 let mut frame = owner.clone();
-                frame["revision"] = json!(revision);
+                frame["revision"] = json!(next_revision);
                 frame["items"] = items.clone();
                 if serde_json::to_vec(&frame)
                     .map_err(|_| Failure::new("integration_view_invalid_frame"))?
@@ -727,30 +1176,77 @@ fn run(
                 {
                     return Err(Failure::new("integration_view_invalid_frame"));
                 }
-                socket::view_call(
+                let replaced = socket::view_call_guarded(
                     &endpoint,
                     "integration.view.replace",
                     &frame,
                     deadline(),
                     stop,
-                    &|bytes, id| wire::replaced(bytes, id, epoch, revision),
-                )?;
+                    &|bytes, id| wire::replaced(bytes, id, epoch, next_revision),
+                    &|| replace_preflight(model, &server_epoch, naming, admission, &next.rows),
+                );
+                match replaced {
+                    Err(error)
+                        if error.delivery == Delivery::Unsent && error.code == REFRESH_NEEDED =>
+                    {
+                        // Nothing was written. Rebuild on the same lease and revision;
+                        // attempted writes, including zero-byte failures, never enter here.
+                        defer_candidate(stop, ceiling)?;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                    Ok(_) => {}
+                }
+                revision = next_revision;
                 report["frames"] = json!(revision);
                 shown = items;
+                ceiling = next.publication_ceiling();
+            }
+            current = next;
+            if selected
+                .as_ref()
+                .is_some_and(|id| !current.rows.iter().any(|row| &row.id == id))
+            {
+                selected = None;
             }
             pause(stop, Duration::from_millis(250));
             if stop.interrupted() {
                 return Ok(());
             }
-            let polled = socket::view_call(
+            // A known clock boundary calls for a new coherent candidate, not a
+            // renewal of the old frame. Admission races still use bounded defer.
+            let tick = naming_tick(Instant::now());
+            if current.rows.iter().any(|row| {
+                row.current_until.is_some_and(|until| tick >= until)
+                    || row
+                        .qualified_bundle
+                        .as_ref()
+                        .is_some_and(|bundle| tick >= bundle.until)
+            }) {
+                continue;
+            }
+            let polled = socket::view_call_guarded(
                 &endpoint,
                 "integration.view.poll",
                 &owner,
                 deadline(),
                 stop,
                 &|bytes, id| wire::polled(bytes, id, epoch, revision),
-            )?;
+                &|| replace_preflight(model, &server_epoch, naming, admission, &current.rows),
+            );
+            let polled = match polled {
+                Err(error)
+                    if error.delivery == Delivery::Unsent && error.code == REFRESH_NEEDED =>
+                {
+                    defer_candidate(stop, ceiling)?;
+                    continue;
+                }
+                Err(error) => return Err(error),
+                Ok(polled) => polled,
+            };
             report["polls"] = json!(report["polls"].as_u64().unwrap_or(0) + 1);
+            ceiling = current.publication_ceiling();
+            current.expire_current(naming_tick(Instant::now()));
             for intent in polled["intents"].as_array().expect("validated intents") {
                 if intent["epoch"] == epoch
                     && intent["revision"] == revision
@@ -798,8 +1294,815 @@ fn run(
 }
 
 #[cfg(test)]
+#[path = "agent_management_presentation_continuity_tests.rs"]
+mod continuity_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v3_information_reports_evidence_not_inventory_or_completion() {
+        let mut row = json!({"capability":"activity","origin":"djinn_native_event",
+            "freshness":"fresh","reported_state":"working","age_ms":1999});
+        let info = reported_information(&row).unwrap();
+        assert_eq!(
+            info.attention,
+            ["Attention information unavailable from this report."]
+        );
+        assert_eq!(
+            info.activity,
+            ["Last reported working.", "Evidence age: 1s (fresh)."]
+        );
+        row["age_ms"] = json!(1000);
+        assert_eq!(reported_information(&row).unwrap(), info);
+        for (count, unacked, expected) in [
+            (0, 0, "No pending request in recent reports."),
+            (2, 1, "Reported requests: 2; unacknowledged: 1."),
+            (2, 0, "2 reported requests awaiting resolution."),
+        ] {
+            row["fresh_pending_count"] = json!(count);
+            row["unacknowledged_pending_count"] = json!(unacked);
+            assert_eq!(reported_information(&row).unwrap().attention, [expected]);
+        }
+        for (freshness, state, age, expected) in [
+            ("fresh", "idle", json!(2000), "Last reported idle."),
+            (
+                "fresh",
+                "blocked",
+                json!(2000),
+                "Waiting on a reported request.",
+            ),
+            ("fresh", "ended", json!(2000), "Last reported ended."),
+            (
+                "fresh",
+                "unknown",
+                json!(2000),
+                "Current activity is unknown.",
+            ),
+            (
+                "expired",
+                "unknown",
+                json!(32000),
+                "No recent activity evidence.",
+            ),
+            (
+                "historical",
+                "unknown",
+                Value::Null,
+                "No activity report in this receiver session.",
+            ),
+            (
+                "unknown",
+                "unknown",
+                Value::Null,
+                "No activity report received yet.",
+            ),
+        ] {
+            row["freshness"] = json!(freshness);
+            row["reported_state"] = json!(state);
+            row["age_ms"] = age;
+            let info = reported_information(&row).unwrap();
+            assert_eq!(info.activity[0], expected);
+            if freshness == "expired" {
+                assert_eq!(info.activity[1], "Evidence age: 32s (expired).");
+            }
+            assert!(!serde_json::to_string(&info).unwrap().contains("success"));
+        }
+        row["capability"] = json!("reference_only");
+        assert_eq!(
+            reported_information(&row).unwrap().activity,
+            ["Current activity is not available from this report type."]
+        );
+        for (key, bad) in [
+            ("fresh_pending_count", Value::Null),
+            ("unacknowledged_pending_count", json!(3)),
+            ("age_ms", json!("0")),
+        ] {
+            let mut invalid = row.clone();
+            invalid[key] = bad;
+            assert!(reported_information(&invalid).is_err());
+        }
+        row.as_object_mut().unwrap().remove("fresh_pending_count");
+        assert!(reported_information(&row).is_err());
+    }
+
+    #[test]
+    fn v3_workspace_context_is_allowlisted_unique_and_honest_about_missing_branch() {
+        let pane = json!({"workspace_id":"workspace"});
+        let workspace = json!({"workspace_id":"workspace","label":"Fallback",
+            "worktree":{"repo_name":"Coven","path":"/PRIVATE"},"git_branch":"feature/ui",
+            "cwd":"/PRIVATE","command":"PRIVATE","native_sid":"PRIVATE"});
+        assert_eq!(
+            workspace_context(&json!([workspace.clone()]), &pane).unwrap(),
+            ["Kit project: Coven", "Kit branch: feature/ui"]
+        );
+        for bad in [
+            Value::Null,
+            json!("/PRIVATE"),
+            json!("unsafe\nbranch"),
+            json!("\u{1b}[31mPRIVATE"),
+            json!("\u{202e}PRIVATE"),
+            json!("x".repeat(161)),
+        ] {
+            let mut w = workspace.clone();
+            w["worktree"]["repo_name"] = bad.clone();
+            w["git_branch"] = bad;
+            let context = workspace_context(&json!([w]), &pane).unwrap();
+            assert_eq!(
+                context,
+                ["Kit project: Fallback", "Kit branch: unavailable"]
+            );
+            assert!(!context.join(" ").contains("PRIVATE"));
+        }
+        assert!(workspace_context(&json!([workspace.clone(), workspace.clone()]), &pane).is_none());
+        assert!(workspace_context(&json!([workspace]), &json!({"workspace_id":"moved"})).is_none());
+    }
+
+    #[test]
+    fn context_contention_clears_the_whole_bundle_without_resetting_facts_or_deadlines() {
+        let shared = Mutex::new(json!({"server_epoch":"epoch"}));
+        let _held = shared.lock().unwrap();
+        let fence = AtomicU64::new(0);
+        let mut row = display_row(
+            "observation:opaque".into(),
+            "djinn",
+            "original facts".into(),
+            "working",
+            true,
+        );
+        row.label = "Old name".into();
+        row.information.context = vec!["Kit project: stale".into(), "Kit branch: stale".into()];
+        row.qualified_bundle = Some(QualifiedBundle {
+            epoch: "epoch".into(),
+            admission: 0,
+            revision: "PRIVATE-revision".into(),
+            target: json!({"runtime_generation":"PRIVATE-generation"}),
+            until: 123,
+        });
+        row.current_until = Some(123);
+        let mut model = Model {
+            epoch: "epoch".into(),
+            rows: vec![row],
+        };
+        let resolution = resolve_names(
+            &shared,
+            &mut model,
+            &socket::Endpoint {
+                selected: "/not/contacted".into(),
+                resolved: "/not/contacted".into(),
+                device: 0,
+                inode: 0,
+            },
+            &Stop(AtomicBool::new(false)),
+            Some(&fence),
+        );
+        assert_eq!(resolution.unwrap_err().code, REFRESH_NEEDED);
+        assert_eq!(model.rows[0].label, "Djinn");
+        assert_eq!(
+            model.rows[0].information.context,
+            ["No qualified workspace context."]
+        );
+        assert_eq!(model.rows[0].detail, "original facts");
+        assert_eq!(model.rows[0].status, Some("running"));
+        assert_eq!(model.rows[0].current_until, Some(123));
+        assert!(model.rows[0].qualified_bundle.is_none());
+        assert_eq!(fence.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn v3_full_production_frames_preserve_names_and_primary_facts_under_pressure() {
+        for utf8 in [false, true] {
+            let mut model = Model {
+                epoch: "epoch".into(),
+                rows: vec![],
+            };
+            for n in 0..128 {
+                let freshness = ["fresh", "expired", "historical", "unknown"][n % 4];
+                let state = if freshness == "fresh" {
+                    ["working", "blocked", "idle", "ended", "unknown"][n % 5]
+                } else {
+                    "unknown"
+                };
+                let mut row = display_row(
+                    format!("observation:{n:064x}"),
+                    "djinn",
+                    if utf8 {
+                        "\u{754c}".repeat(170) + "xx"
+                    } else {
+                        "\\\"".repeat(256)
+                    },
+                    state,
+                    freshness == "fresh",
+                );
+                row.label = if utf8 {
+                    "\u{754c}".repeat(52) + "\\\"\\\""
+                } else {
+                    "\\\"".repeat(80)
+                };
+                row.information = reported_information(&json!({"origin":"djinn_native_event",
+                    "capability":"activity","freshness":freshness,"reported_state":state,
+                    "age_ms":u64::MAX,"fresh_pending_count":128,"unacknowledged_pending_count":128})).unwrap();
+                row.information.context = vec![
+                    format!("Kit project: {}", "\\\"".repeat(80)),
+                    format!("Kit branch: {}", "\\\"".repeat(80)),
+                ];
+                model.rows.push(row);
+            }
+            let items = model.items(3).unwrap();
+            let frame = json!({"source":"s".repeat(64),"lease":"\\\"".repeat(64),
+                "epoch":"\\\"".repeat(64),"revision":u64::MAX,"items":items});
+            assert!(serde_json::to_vec(&frame).unwrap().len() <= 96 * 1024);
+            for (item, row) in frame["items"].as_array().unwrap().iter().zip(&model.rows) {
+                assert_eq!(item["label"], row.label);
+                assert_eq!(item["id"], row.id);
+                assert_eq!(item["presentation"]["label"], "");
+                assert_eq!(item["presentation"]["status"].as_str(), row.status);
+                assert_eq!(
+                    item["information"]["attention"][0],
+                    row.information.attention[0]
+                );
+                assert_eq!(
+                    item["information"]["activity"][0],
+                    row.information.compact().activity[0]
+                );
+                assert_eq!(item["information"]["context"], json!([]));
+                assert!(
+                    item["detail"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Context/age omitted")
+                );
+            }
+            for version in [1, 2] {
+                let legacy = model.items(version).unwrap();
+                assert_eq!(legacy[0]["detail"], model.rows[0].detail);
+                assert!(legacy[0].get("information").is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn v3_small_frames_keep_diagnostics_and_information_out_of_legacy_profiles() {
+        let mut row = display_row(
+            format!("observation:{}", "a".repeat(64)),
+            "djinn",
+            "Coven: caller unverified; no success claim".into(),
+            "working",
+            true,
+        );
+        row.information =
+            reported_information(&json!({"capability":"activity","freshness":"fresh",
+            "reported_state":"working","age_ms":1200}))
+            .unwrap();
+        let model = Model {
+            epoch: "epoch".into(),
+            rows: vec![row],
+        };
+        for version in [1, 2, 3] {
+            let items = model.items(version).unwrap();
+            assert_eq!(
+                items[0].as_object().unwrap().len(),
+                match version {
+                    1 => 3,
+                    2 => 4,
+                    _ => 5,
+                }
+            );
+            assert_eq!(items[0]["detail"], model.rows[0].detail);
+            assert_eq!(items[0].get("information").is_some(), version == 3);
+        }
+    }
+
+    #[test]
+    fn v3_information_limits_count_utf8_bytes_and_reject_unsafe_text() {
+        let mut model = Model {
+            epoch: "epoch".into(),
+            rows: vec![display_row(
+                "observation:opaque".into(),
+                "djinn",
+                "diagnostic".into(),
+                "unknown",
+                false,
+            )],
+        };
+        for bad in [
+            vec!["x".to_owned(); 5],
+            vec![String::new()],
+            vec!["\u{754c}".repeat(86)],
+            vec!["line\nline".into()],
+            vec!["\u{200f}unsafe".into()],
+            vec!["\u{1b}[31munsafe".into()],
+        ] {
+            model.rows[0].information.attention = bad;
+            assert!(model.items(3).is_err());
+            assert!(model.items(1).is_ok());
+            assert!(model.items(2).is_ok());
+        }
+        model.rows[0].information = Information {
+            attention: vec!["\u{754c}".repeat(85); 4],
+            activity: vec!["x".repeat(256); 2],
+            context: vec![],
+        };
+        assert!(model.items(3).is_ok()); // 4 * 255 + 2 * 256 = 1532 bytes.
+        model.rows[0].information.context = vec!["extra".into()];
+        assert!(model.items(3).is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn transport_pre_send_rebuilds_expired_or_invalidated_frames_without_consuming_revision() {
+        use std::{
+            io::{BufRead, BufReader, Write},
+            os::unix::{fs::PermissionsExt, net::UnixListener},
+        };
+        for (mode, version) in [
+            ("expiry", 2),
+            ("admission", 2),
+            ("stop", 2),
+            ("expiry", 3),
+            ("admission", 3),
+            ("stop", 3),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            let path = root.path().canonicalize().unwrap().join("view.sock");
+            let listener = UnixListener::bind(&path).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let endpoint = socket::select(path.to_str().unwrap()).unwrap();
+            let until = naming_tick(Instant::now() + Duration::from_secs(1));
+            let old_id = format!("observation:{}", "a".repeat(64));
+            let new_id = format!("observation:{}", "b".repeat(64));
+            let value = |id: &str, end: u64| {
+                json!({"contract":"coven.normal-observations.v1",
+                "server_epoch":"core","authorization":"none","omitted_observations":0,
+                "retired_native_observations":0,"_publisher_current":[{"id":id,"until":end}],
+                "observations":[{"observation_id":id.strip_prefix("observation:").unwrap(),
+                    "provider":"djinn","origin":"djinn_client_attachment","capability":"activity",
+                    "freshness":"unknown","reported_state":"unknown"}]})
+            };
+            let shared = Mutex::new(value(&old_id, until));
+            let naming = AtomicU64::new(0);
+            let stop = Stop(AtomicBool::new(false));
+            let mut stale = super::snapshot(&shared, None).unwrap().unwrap();
+            stale.rows[0].information.context = vec!["Kit branch: stale".into()];
+            let owner = json!({"source":"source","lease":"lease","epoch":"view"});
+            let mut frame = owner.clone();
+            frame["revision"] = json!(1);
+            frame["items"] = stale.items(version).unwrap();
+            assert_eq!(frame["items"][0]["id"], old_id);
+            let (connected, prepared) = mpsc::sync_channel(1);
+            thread::scope(|scope| {
+                let server = scope.spawn(|| {
+                    for attempt in 0..2 {
+                        let end = Instant::now() + Duration::from_secs(2);
+                        let (mut stream, _) = loop {
+                            match listener.accept() {
+                                Ok(stream) => break stream,
+                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                    assert!(
+                                        Instant::now() < end,
+                                        "missing connection: {mode}/{attempt}"
+                                    );
+                                    thread::sleep(Duration::from_millis(1));
+                                }
+                                Err(e) => panic!("{e}"),
+                            }
+                        };
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(2)))
+                            .unwrap();
+                        if attempt == 0 {
+                            connected.send(()).unwrap();
+                        }
+                        let mut line = String::new();
+                        let count = BufReader::new(stream.try_clone().unwrap())
+                            .read_line(&mut line)
+                            .unwrap();
+                        if attempt == 0 {
+                            assert_eq!(count, 0, "stale frame reached the socket: {mode}");
+                            continue;
+                        }
+                        let request: Value = serde_json::from_str(&line).unwrap();
+                        assert_eq!(request["params"]["lease"], "lease");
+                        let result = if mode == "stop" {
+                            assert_eq!(request["method"], "integration.view.close");
+                            json!({"type":"view_closed"})
+                        } else {
+                            assert_eq!(request["method"], "integration.view.replace");
+                            assert_eq!(request["params"]["revision"], 1);
+                            assert_eq!(request["params"]["items"][0]["id"], new_id);
+                            assert!(!request["params"]["items"].to_string().contains(&old_id));
+                            assert!(
+                                !request["params"]["items"]
+                                    .to_string()
+                                    .contains("Kit branch: stale")
+                            );
+                            json!({"type":"view_replaced","epoch":"view","revision":1})
+                        };
+                        writeln!(stream, "{}", json!({"id":request["id"],"result":result}))
+                            .unwrap();
+                    }
+                });
+                let failure = socket::view_call_guarded(
+                    &endpoint,
+                    "integration.view.replace",
+                    &frame,
+                    deadline(),
+                    &stop,
+                    &|bytes, id| wire::replaced(bytes, id, "view", 1),
+                    &|| {
+                        // This barrier is reached only after frame encoding, connection
+                        // and endpoint fencing, beyond the former items() check.
+                        prepared.recv_timeout(Duration::from_secs(1)).unwrap();
+                        match mode {
+                            "expiry" => {
+                                let end = Instant::now() + Duration::from_secs(2);
+                                while naming_tick(Instant::now()) < until {
+                                    assert!(Instant::now() < end);
+                                    thread::sleep(Duration::from_millis(1));
+                                }
+                            }
+                            "admission" => {
+                                naming.store(2, Ordering::Release);
+                            }
+                            "stop" => {
+                                stop.0.store(true, Ordering::Release);
+                            }
+                            _ => unreachable!(),
+                        }
+                        if mode != "stop" {
+                            *shared.lock().unwrap() = value(
+                                &new_id,
+                                naming_tick(Instant::now() + Duration::from_secs(2)),
+                            );
+                        }
+                        replace_preflight(&shared, "core", Some(&naming), Some(0), &stale.rows)
+                    },
+                )
+                .unwrap_err();
+                assert_eq!(failure.delivery, Delivery::Unsent);
+                if mode == "stop" {
+                    assert_eq!(failure.code, "interrupted");
+                    assert!(failure.interrupted);
+                    socket::view_call(
+                        &endpoint,
+                        "integration.view.close",
+                        &owner,
+                        Instant::now() + Duration::from_millis(200),
+                        &socket::NoCancel,
+                        &wire::closed,
+                    )
+                    .unwrap();
+                } else {
+                    assert_eq!(failure.code, REFRESH_NEEDED);
+                    let fresh = super::snapshot(&shared, None).unwrap().unwrap();
+                    frame["items"] = fresh.items(version).unwrap();
+                    let admission = naming.load(Ordering::Acquire);
+                    socket::view_call_guarded(
+                        &endpoint,
+                        "integration.view.replace",
+                        &frame,
+                        deadline(),
+                        &stop,
+                        &|bytes, id| wire::replaced(bytes, id, "view", 1),
+                        &|| {
+                            replace_preflight(
+                                &shared,
+                                "core",
+                                Some(&naming),
+                                Some(admission),
+                                &fresh.rows,
+                            )
+                        },
+                    )
+                    .unwrap();
+                }
+                server.join().unwrap();
+            });
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn transport_pre_send_rebuilds_expired_or_changed_bundles_without_retiring_current_rows() {
+        use std::{
+            io::{BufRead, BufReader, Write},
+            os::unix::{fs::PermissionsExt, net::UnixListener},
+        };
+        for version in [1, 2, 3] {
+            for mode in [
+                "expiry",
+                "extended_hint",
+                "revision",
+                "removed",
+                "generation",
+                "shortened_hint",
+                "admission_without_membership",
+            ] {
+                let root = tempfile::tempdir().unwrap();
+                std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700))
+                    .unwrap();
+                let path = root.path().canonicalize().unwrap().join("bundle.sock");
+                let listener = UnixListener::bind(&path).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+                listener.set_nonblocking(true).unwrap();
+                let endpoint = socket::select(path.to_str().unwrap()).unwrap();
+                let membership_until = naming_tick(Instant::now() + Duration::from_secs(30));
+                // The final 200ms of a five-second borrowed bundle lease.
+                let qualified_at = Instant::now() - Duration::from_millis(4800);
+                let bundle_until = if matches!(mode, "expiry" | "extended_hint") {
+                    naming_tick(qualified_at + Duration::from_secs(5))
+                } else {
+                    membership_until
+                };
+                let target = json!({"socket":endpoint.resolved,"device":endpoint.device,"inode":endpoint.inode,
+                    "terminal_id":"PRIVATE-terminal","runtime_generation":"PRIVATE-generation"});
+                let id = format!("observation:{}", "c".repeat(64));
+                let hint = json!({"id":id,"revision":"PRIVATE-revision","target":target,"until":bundle_until});
+                let shared = Mutex::new(json!({"server_epoch":"core","_publisher_names":[hint]}));
+                let naming = AtomicU64::new(0);
+                let stop = Stop(AtomicBool::new(false));
+                let other_provider = mode == "admission_without_membership";
+                let mut row = display_row(
+                    id.clone(),
+                    if other_provider { "claude" } else { "djinn" },
+                    "Original diagnostic facts".into(),
+                    "working",
+                    true,
+                );
+                row.current_until = (!other_provider).then_some(membership_until);
+                row.label = "OLD-NAME".into();
+                row.information.context = vec![
+                    "Kit project: OLD-PROJECT".into(),
+                    "Kit branch: OLD-BRANCH".into(),
+                ];
+                row.qualified_bundle = Some(QualifiedBundle {
+                    epoch: "core".into(),
+                    admission: 0,
+                    revision: "PRIVATE-revision".into(),
+                    target,
+                    until: bundle_until,
+                });
+                let mut current = Model {
+                    epoch: "core".into(),
+                    rows: vec![row],
+                };
+                let mut frame = json!({"source":"source","lease":"lease","epoch":"view","revision":1,
+                    "items":current.items(version).unwrap()});
+                let encoded = frame["items"].clone();
+                current.rows[0].qualified_bundle.as_mut().unwrap().until += 1;
+                assert_eq!(
+                    current.items(version).unwrap(),
+                    encoded,
+                    "private qualification is not wire state"
+                );
+                current.rows[0].qualified_bundle.as_mut().unwrap().until = bundle_until;
+                assert!(!frame.to_string().contains("PRIVATE"));
+                let (connected, prepared) = mpsc::sync_channel(1);
+                thread::scope(|scope| {
+                    let server = scope.spawn(|| {
+                        for attempt in 0..2 {
+                            let end = Instant::now() + Duration::from_secs(2);
+                            let (mut stream, _) = loop {
+                                match listener.accept() {
+                                    Ok(stream) => break stream,
+                                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                        assert!(
+                                            Instant::now() < end,
+                                            "missing connection: {mode}/{version}/{attempt}"
+                                        );
+                                        thread::sleep(Duration::from_millis(1));
+                                    }
+                                    Err(e) => panic!("{e}"),
+                                }
+                            };
+                            stream
+                                .set_read_timeout(Some(Duration::from_secs(2)))
+                                .unwrap();
+                            if attempt == 0 {
+                                connected.send(()).unwrap();
+                            }
+                            let mut line = String::new();
+                            let count = BufReader::new(stream.try_clone().unwrap())
+                                .read_line(&mut line)
+                                .unwrap();
+                            if attempt == 0 {
+                                assert_eq!(
+                                    count, 0,
+                                    "stale bundle reached the socket: {mode}/{version}"
+                                );
+                                continue;
+                            }
+                            let request: Value = serde_json::from_str(&line).unwrap();
+                            assert_eq!(request["method"], "integration.view.replace");
+                            assert_eq!(request["params"]["lease"], "lease");
+                            assert_eq!(request["params"]["epoch"], "view");
+                            assert_eq!(request["params"]["revision"], 1);
+                            assert_eq!(request["params"]["items"].as_array().unwrap().len(), 1);
+                            assert_eq!(request["params"]["items"][0]["id"], id);
+                            assert_eq!(
+                                request["params"]["items"][0]["label"],
+                                if other_provider { "Claude" } else { "Djinn" }
+                            );
+                            for stale in ["OLD-NAME", "OLD-PROJECT", "OLD-BRANCH", "PRIVATE"] {
+                                assert!(!line.contains(stale), "{stale} leaked: {mode}/{version}");
+                            }
+                            if version == 3 {
+                                assert_eq!(
+                                    request["params"]["items"][0]["information"]["context"],
+                                    json!(["No qualified workspace context."])
+                                );
+                            }
+                            writeln!(
+                                stream,
+                                "{}",
+                                json!({"id":request["id"],"result":{
+                                "type":"view_replaced","epoch":"view","revision":1}})
+                            )
+                            .unwrap();
+                        }
+                    });
+                    let failure = socket::view_call_guarded(&endpoint, "integration.view.replace", &frame,
+                        deadline(), &stop, &|bytes, id| wire::replaced(bytes, id, "view", 1), &|| {
+                            // Runs after encoding, connection and endpoint qualification.
+                            prepared.recv_timeout(Duration::from_secs(1)).unwrap();
+                            match mode {
+                                "expiry" | "extended_hint" => {
+                                    let end = Instant::now() + Duration::from_secs(1);
+                                    while naming_tick(Instant::now()) < bundle_until {
+                                        assert!(Instant::now() < end);
+                                        thread::sleep(Duration::from_millis(1));
+                                    }
+                                    if mode == "extended_hint" {
+                                        shared.lock().unwrap()["_publisher_names"][0]["until"] = json!(membership_until);
+                                    }
+                                },
+                                "revision" => shared.lock().unwrap()["_publisher_names"][0]["revision"] = json!("new"),
+                                "removed" => shared.lock().unwrap()["_publisher_names"] = json!([]),
+                                "generation" => shared.lock().unwrap()["_publisher_names"][0]["target"]["runtime_generation"] = json!("new"),
+                                "shortened_hint" => shared.lock().unwrap()["_publisher_names"][0]["until"] = json!(0),
+                                "admission_without_membership" => naming.store(2, Ordering::Release),
+                                _ => unreachable!(),
+                            }
+                            replace_preflight(&shared, "core", Some(&naming), Some(0), &current.rows)
+                        }).unwrap_err();
+                    assert_eq!(failure.delivery, Delivery::Unsent);
+                    assert_eq!(failure.code, REFRESH_NEEDED);
+                    if !other_provider {
+                        assert_eq!(naming.load(Ordering::Acquire), 0);
+                    }
+                    for row in &mut current.rows {
+                        row.clear_bundle();
+                    }
+                    current.expire_current(naming_tick(Instant::now()));
+                    assert_eq!(current.rows.len(), 1);
+                    assert_eq!(
+                        current.rows[0].current_until,
+                        (!other_provider).then_some(membership_until)
+                    );
+                    assert_eq!(current.rows[0].detail, "Original diagnostic facts");
+                    assert!(current.rows[0].qualified_bundle.is_none());
+                    frame["items"] = current.items(version).unwrap();
+                    let admission = naming.load(Ordering::Acquire);
+                    socket::view_call_guarded(
+                        &endpoint,
+                        "integration.view.replace",
+                        &frame,
+                        deadline(),
+                        &stop,
+                        &|bytes, id| wire::replaced(bytes, id, "view", 1),
+                        &|| {
+                            replace_preflight(
+                                &shared,
+                                "core",
+                                Some(&naming),
+                                Some(admission),
+                                &current.rows,
+                            )
+                        },
+                    )
+                    .unwrap();
+                    server.join().unwrap();
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn pre_send_preflight_checks_epoch_and_fails_closed_on_model_contention() {
+        let shared = Mutex::new(json!({"server_epoch":"core"}));
+        let naming = AtomicU64::new(0);
+        let mut row = display_row(
+            "observation:opaque".into(),
+            "djinn",
+            "fact".into(),
+            "unknown",
+            false,
+        );
+        row.current_until = Some(naming_tick(Instant::now() + Duration::from_secs(1)));
+        let rows = [row];
+        let held = shared.lock().unwrap();
+        assert_eq!(
+            replace_preflight(&shared, "core", Some(&naming), Some(0), &rows)
+                .unwrap_err()
+                .code,
+            REFRESH_NEEDED
+        );
+        drop(held);
+        for revision in [1, 2] {
+            naming.store(revision, Ordering::Release);
+            assert_eq!(
+                replace_preflight(&shared, "core", Some(&naming), Some(0), &[])
+                    .unwrap_err()
+                    .code,
+                REFRESH_NEEDED,
+                "empty frames must not bypass admission"
+            );
+        }
+        replace_preflight(&shared, "core", Some(&naming), Some(2), &[]).unwrap();
+        shared.lock().unwrap()["server_epoch"] = json!("restarted");
+        assert_eq!(
+            replace_preflight(&shared, "core", Some(&naming), Some(0), &rows)
+                .unwrap_err()
+                .code,
+            "presentation_server_epoch_changed"
+        );
+    }
+
+    #[test]
+    fn private_current_deadlines_fail_closed_without_hiding_other_providers() {
+        let id = format!("observation:{}", "b".repeat(64));
+        let mut value = json!({"contract":"coven.normal-observations.v1","server_epoch":"epoch",
+            "authorization":"none","omitted_observations":0,"retired_native_observations":0,
+            "observations":[
+                {"observation_id":"b".repeat(64),"provider":"djinn","origin":"djinn_client_attachment",
+                 "reported_state":"unknown","freshness":"unknown","capability":"activity"},
+                {"observation_id":"c".repeat(64),"provider":"codex","origin":"v1_receipt",
+                 "reported_state":"unknown","freshness":"historical","capability":"reference_only"}]});
+        let until = naming_tick(Instant::now() + Duration::from_secs(5));
+        for bad in [
+            Value::Null,
+            json!({}),
+            json!([]),
+            json!([{"id":id,"until":"invalid"}]),
+            json!([{"id":id,"until":0}]),
+            json!([{"id":id,"until":until},{"id":id,"until":until}]),
+        ] {
+            value["_publisher_current"] = bad;
+            let model = super::snapshot(&Mutex::new(value.clone()), Some(&id))
+                .unwrap()
+                .unwrap();
+            assert_eq!(model.rows.len(), 1);
+            assert_eq!(model.rows[0].label, "Codex");
+        }
+        value["_publisher_current"] = json!([{"id":id,"until":until}]);
+        let shared = Mutex::new(value);
+        let mut model = super::snapshot(&shared, Some(&id)).unwrap().unwrap();
+        assert_eq!(model.rows.len(), 2);
+        assert!(model.rows[0].detail.contains("selected (read-only)"));
+        // A contended model cannot refresh or extend this private deadline.
+        let _held = shared.lock().unwrap();
+        assert!(super::snapshot(&shared, None).unwrap().is_none());
+        model.expire_current(until - 1);
+        assert_eq!(model.rows.len(), 2);
+        model.expire_current(until);
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].label, "Codex");
+    }
+
+    #[test]
+    fn private_deadline_floor_and_admission_fences_never_extend_membership() {
+        let start = Instant::now() + Duration::from_secs(1);
+        let end = start + Duration::from_nanos(123_456);
+        assert!(naming_tick(end) <= naming_tick(start) + 1);
+        let mut model = Model {
+            epoch: "epoch".into(),
+            rows: vec![
+                display_row(
+                    "observation:a".into(),
+                    "djinn",
+                    "fact".into(),
+                    "unknown",
+                    false,
+                ),
+                display_row(
+                    "observation:b".into(),
+                    "codex",
+                    "fact".into(),
+                    "unknown",
+                    false,
+                ),
+            ],
+        };
+        model.rows[0].current_until = Some(naming_tick(end));
+        model.expire_current(naming_tick(end).saturating_sub(1));
+        assert_eq!(model.rows.len(), 2);
+        model.expire_current(naming_tick(end));
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].label, "Codex");
+    }
 
     #[test]
     #[cfg(unix)]
@@ -810,12 +2113,17 @@ mod tests {
         };
         for mode in [
             "success",
+            "generation",
+            "wrong_workspace",
+            "duplicate_workspace",
             "epoch",
             "revision",
             "removed",
             "expiry",
             "endpoint",
             "admission",
+            "current_removed",
+            "current_expired",
             "hung",
             "cancel",
         ] {
@@ -846,6 +2154,14 @@ mod tests {
                     true,
                 )],
             };
+            current.rows[0].label = "Stale name".into();
+            current.rows[0].information.context = vec!["Kit branch: stale".into()];
+            if matches!(mode, "current_removed" | "current_expired") {
+                let until = naming_tick(Instant::now() + Duration::from_secs(2));
+                current.rows[0].current_until = Some(until);
+                shared.lock().unwrap()["_publisher_current"] =
+                    json!([{"id":"observation:opaque","until":until}]);
+            }
             let model = shared.clone();
             let revision = fence.clone();
             let cancel = stop.clone();
@@ -877,8 +2193,19 @@ mod tests {
                     let request: Value = serde_json::from_str(&line).unwrap();
                     let result = if step == 0 {
                         assert_eq!(request["method"], "session.snapshot");
-                        json!({"type":"session_snapshot","snapshot":{"terminal_navigation":{"version":1},
-                            "panes":[{"terminal_id":"terminal","pane_id":"pane","tab_id":"tab","workspace_id":"workspace","label":"Manual name"}]}})
+                        let mut snapshot = json!({"type":"session_snapshot","snapshot":{"terminal_navigation":{"version":1},
+                            "workspaces":[{"workspace_id":"workspace","label":"Coven","git_branch":"feature/ui"}],
+                            "tabs":[{"tab_id":"tab","workspace_id":"workspace"}],
+                            "panes":[{"terminal_id":"terminal","pane_id":"pane","tab_id":"tab","workspace_id":"workspace","label":"Manual name"}]}});
+                        if mode == "wrong_workspace" {
+                            snapshot["snapshot"]["tabs"][0]["workspace_id"] = json!("other");
+                        }
+                        if mode == "duplicate_workspace" {
+                            snapshot["snapshot"]["workspaces"] = json!([
+                                {"workspace_id":"workspace","label":"Coven"},
+                                {"workspace_id":"workspace","label":"Other"}]);
+                        }
+                        snapshot
                     } else {
                         assert_eq!(request["method"], "terminal.inspect");
                         // Receiver mutation while the worker is in IO must acquire
@@ -897,6 +2224,13 @@ mod tests {
                             "admission" => {
                                 revision.fetch_or(1, Ordering::AcqRel);
                             }
+                            "current_removed" => {
+                                model.try_lock().unwrap()["_publisher_current"] = json!([]);
+                            }
+                            "current_expired" => {
+                                model.try_lock().unwrap()["_publisher_current"][0]["until"] =
+                                    json!(0);
+                            }
                             "endpoint" => {
                                 std::fs::remove_file(&path).unwrap();
                                 replacement = Some(UnixListener::bind(&path).unwrap());
@@ -913,18 +2247,49 @@ mod tests {
                             _ => {}
                         }
                         json!({"type":"terminal_inspected","terminal_id":"terminal","availability":"live",
-                            "runtime_generation":"generation","pane_id":"pane","tab_id":"tab","workspace_id":"workspace"})
+                            "runtime_generation":if mode == "generation" {"replaced"} else {"generation"},"pane_id":"pane","tab_id":"tab","workspace_id":"workspace"})
                     };
                     let _ = writeln!(stream, "{}", json!({"id":request["id"],"result":result}));
                 }
                 drop(replacement);
             });
-            resolve_names(&shared, &mut current, &endpoint, &stop, Some(&fence));
+            let resolution = resolve_names(&shared, &mut current, &endpoint, &stop, Some(&fence));
+            if mode == "epoch" {
+                assert_eq!(
+                    resolution.unwrap_err().code,
+                    "presentation_server_epoch_changed"
+                );
+            } else if matches!(mode, "admission" | "hung" | "cancel" | "endpoint") {
+                // Endpoint replacement occurs inside terminal.inspect. Its
+                // transport post-receive fence rejects the reply, so no mapping
+                // can be qualified and the entire candidate must be deferred.
+                assert_eq!(resolution.unwrap_err().code, REFRESH_NEEDED, "mode={mode}");
+            } else {
+                resolution.unwrap_or_else(|error| {
+                    panic!("unexpected lookup outcome: mode={mode}: {error:?}")
+                });
+            }
             let elapsed = started.elapsed();
             worker.join().unwrap();
             assert!(
                 elapsed < Duration::from_millis(500),
                 "total naming budget exceeded: {mode}: {elapsed:?}"
+            );
+            if matches!(mode, "current_removed" | "current_expired") {
+                assert!(current.rows.is_empty());
+                continue;
+            }
+            assert_eq!(
+                current.rows[0].information.context,
+                if mode == "success" {
+                    vec!["Kit project: Coven", "Kit branch: feature/ui"]
+                } else {
+                    vec!["No qualified workspace context."]
+                }
+            );
+            assert_eq!(
+                current.rows[0].qualified_bundle.is_some(),
+                mode == "success"
             );
             assert_eq!(
                 current.rows[0].label,
@@ -1349,6 +2714,16 @@ mod tests {
                 assert_eq!(
                     model.items(1).unwrap()[0]["label"],
                     model.items(2).unwrap()[0]["label"]
+                );
+                let v3 = model.items(3).unwrap();
+                assert_eq!(v3[0]["presentation"]["status"], "unknown");
+                assert_eq!(
+                    v3[0]["information"]["activity"][0],
+                    "Current activity is not available from this report type."
+                );
+                assert_eq!(
+                    v3[0]["information"]["attention"][0],
+                    "Attention information unavailable from this report."
                 );
             }
         }

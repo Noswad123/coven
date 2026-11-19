@@ -307,14 +307,11 @@ fn run_inner(
         store.fence()?;
         let now = Instant::now();
         associations.refresh(&native, now);
-        let mut next = native.projection(store.projection(), now);
-        if naming.is_some() {
-            next["_publisher_names"] = associations.naming_hints(&next, &native, now);
-        }
+        let next = run_projection(&store, &native, &associations, now, naming.is_some());
         if let Ok(mut model) = projection.try_lock() {
             *model = next;
             if let Some(fence) = &naming {
-                // Odd means admission has invalidated the prior projection.
+                // Odd means a mutation has invalidated the prior projection.
                 // Make it readable only after publishing the replacement atomically.
                 let revision = fence.load(std::sync::atomic::Ordering::Relaxed);
                 if revision & 1 != 0 {
@@ -346,10 +343,14 @@ fn run_inner(
                     )?;
                     #[cfg(test)]
                     super::receipt_trace::stage("admitted");
-                    if let Some(fence) = &naming {
-                        fence.fetch_or(1, std::sync::atomic::Ordering::AcqRel);
-                    }
-                    handle_normal_navigation(&mut store, &mut native, &mut associations, &bytes)
+                    handle_normal_navigation_with_clock(
+                        &mut store,
+                        &mut native,
+                        &mut associations,
+                        &bytes,
+                        naming.as_deref(),
+                        Instant::now,
+                    )
                 });
                 #[cfg(test)]
                 super::receipt_trace::stage(match &reply {
@@ -391,6 +392,25 @@ fn run_inner(
     )
 }
 
+fn run_projection(
+    store: &store::Store,
+    native: &native::NativeStore,
+    associations: &navigation::Associations,
+    now: Instant,
+    presentation: bool,
+) -> Value {
+    if !presentation {
+        return native.projection(store.projection(), now);
+    }
+    let mut next = native.publisher_projection(
+        store.projection(),
+        now,
+        &associations.current_deadlines(native, now),
+    );
+    next["_publisher_names"] = associations.naming_hints(&next, native, now);
+    next
+}
+
 #[cfg(test)]
 fn handle_normal(
     store: &mut store::Store,
@@ -405,13 +425,14 @@ fn handle_normal(
     )
 }
 
+#[cfg(test)]
 fn handle_normal_navigation(
     store: &mut store::Store,
     native: &mut native::NativeStore,
     associations: &mut navigation::Associations,
     bytes: &[u8],
 ) -> Result<Vec<u8>> {
-    handle_normal_navigation_with_clock(store, native, associations, bytes, Instant::now)
+    handle_normal_navigation_with_clock(store, native, associations, bytes, None, Instant::now)
 }
 
 fn handle_normal_navigation_with_clock(
@@ -419,11 +440,12 @@ fn handle_normal_navigation_with_clock(
     native: &mut native::NativeStore,
     associations: &mut navigation::Associations,
     bytes: &[u8],
+    admission: Option<&std::sync::atomic::AtomicU64>,
     mut now: impl FnMut() -> Instant,
 ) -> Result<Vec<u8>> {
     let request = decode(bytes, 8192)?;
     if request.get("contract").and_then(Value::as_str) == Some(CONTRACT) {
-        return handle(store, bytes);
+        return handle_decoded(store, &request, admission);
     }
     let id = text(&request, "id")?;
     require(
@@ -446,6 +468,17 @@ fn handle_normal_navigation_with_clock(
         )?;
         let method = text(&request, "method")?;
         let params = request.get("params").ok_or(Error("agent_invalid_schema"))?;
+        // Classification happens only after the strict, duplicate-rejecting
+        // decode and closed envelope/contract validation. Reads can age derived
+        // evidence but cannot change its identity or renew its original clocks.
+        let read_only = contract == native::CONTROL_RPC
+            && matches!(
+                method,
+                "observations" | "attention.list" | "association.inspect" | "focus.prepare"
+            );
+        if !read_only {
+            invalidate_admission(admission);
+        }
         // Refresh old evidence before overwriting it, using the report's exact time.
         let now = now();
         associations.refresh(native, now);
@@ -544,6 +577,20 @@ pub(super) fn serve(
 
 fn handle(store: &mut store::Store, bytes: &[u8]) -> Result<Vec<u8>> {
     let request = decode(bytes, 8192)?;
+    handle_decoded(store, &request, None)
+}
+
+fn invalidate_admission(admission: Option<&std::sync::atomic::AtomicU64>) {
+    if let Some(fence) = admission {
+        fence.fetch_or(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
+fn handle_decoded(
+    store: &mut store::Store,
+    request: &Value,
+    admission: Option<&std::sync::atomic::AtomicU64>,
+) -> Result<Vec<u8>> {
     let id = text(&request, "id")?;
     require(
         id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -557,7 +604,10 @@ fn handle(store: &mut store::Store, bytes: &[u8]) -> Result<Vec<u8>> {
         )?;
         let params = request.get("params").ok_or(Error("agent_invalid_schema"))?;
         match text(&request, "method")? {
-            "report" => store.report(params),
+            "report" => {
+                invalidate_admission(admission);
+                store.report(params)
+            }
             "inventory" => {
                 require(
                     params.as_object().is_some_and(|o| o.is_empty()),
@@ -844,6 +894,41 @@ fn validate_result(method: &str, value: &Value) -> Result<()> {
 mod tests {
     use super::*;
     use std::{cell::RefCell, fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn run_projection_without_presentation_is_the_public_six_field_history() {
+        let root = private_root();
+        fs::write(root.path().join("coven.json"), b"{}").unwrap();
+        let store = store::Store::open(root.path()).unwrap();
+        let mut native = native::NativeStore::default();
+        let associations = navigation::Associations::default();
+        let now = Instant::now();
+        for (sequence, sid, event) in [
+            (1, "stale", "session.status"),
+            (2, "lifecycle", "session.updated"),
+        ] {
+            let mut p = json!({"instance_id":"12345678-1234-1234-1234-123456789abc",
+                "session_id":sid,"sequence":sequence,"event":event});
+            if event == "session.status" {
+                p["status"] = json!("busy");
+            }
+            native.report(&p, now).unwrap();
+        }
+        let later = now + Duration::from_secs(30);
+        let public = run_projection(&store, &native, &associations, later, false);
+        assert_eq!(public.as_object().unwrap().len(), 6);
+        assert_eq!(public["observations"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            public,
+            native
+                .control("observations", &json!({}), store.projection(), later)
+                .unwrap()
+        );
+        let private = run_projection(&store, &native, &associations, later, true);
+        assert!(private["observations"].as_array().unwrap().is_empty());
+        assert!(private.get("_publisher_current").is_some());
+        assert!(private.get("_publisher_names").is_some());
+    }
 
     struct ControlChild(std::process::Child);
 

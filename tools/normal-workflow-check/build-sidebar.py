@@ -35,7 +35,8 @@ def main():
                    RUSTUP_HOME=os.environ.get('RUSTUP_HOME', str(Path.home() / '.rustup')),
                    CARGO_TARGET_DIR=str(root / 't'), CARGO_BUILD_JOBS='1', CARGO_INCREMENTAL='0',
                    CARGO_PROFILE_DEV_DEBUG='0', ZIG=args.zig,
-                   LIBGHOSTTY_VT_ZIG_SYSTEM_DIR=str(args.zig_package_cache.resolve()),
+                    LIBGHOSTTY_VT_ZIG_SYSTEM_DIR=str(args.zig_package_cache.resolve()),
+                    LIBGHOSTTY_VT_OUT_DIR=str(root / 'vt'),
                    ZIG_LOCAL_CACHE_DIR=str(root / 'z'), ZIG_GLOBAL_CACHE_DIR=str(Path.home() / '.cache/zig'),
                    TMPDIR=str(root))
         check.require(check.command([args.zig, 'version'], env, root).strip() == '0.15.2', 'need cached Zig 0.15.2')
@@ -55,16 +56,18 @@ def main():
                             os.waitpid(pid, os.WNOHANG)
                     except (FileNotFoundError, ProcessLookupError, ChildProcessError):
                         pass
-                check.require(time.monotonic() < end and log.stat().st_size <= 32 * 1024**2,
+                check.require(time.monotonic() < end and sum(p.stat().st_size for p in root.rglob('*.log')) <= 32 * 1024**2,
                               tag + ' exceeded deadline/log bound')
                 time.sleep(.2)
             text = log.read_text(errors='replace')
-            if '--message-format=json' not in argv:
+            if '--message-format=json' not in argv or child.returncode != 0:
                 print(text if tag == 'djinn-typecheck' else text[-24000:], flush=True)
             check.require(child.returncode == 0, f'{tag} failed ({child.returncode})')
             return text
 
         cargo = ['rustup', 'run', '1.96.1', 'cargo']
+        if args.bun:
+            check.require(check.command([args.bun, '--version'], env, root).strip() == '1.4.4', 'need cached Bun 1.4.4')
         manifests = {name: str((getattr(args, name + '_source') / 'Cargo.toml').resolve())
                      for name in ('coven', 'kitsune')}
         for name, manifest in manifests.items():
@@ -116,12 +119,13 @@ def main():
                     'coven-presentation', 180)
         except AssertionError as exc:
             failed.append(str(exc))
-        try:
-            bounded(cargo + ['test', '--locked', '--offline', '--manifest-path', manifests['coven'],
-                             '--lib', 'agent_management', '-j', '1', '--', '--test-threads=1'],
-                    'coven-presentation-unit', 180)
-        except AssertionError as exc:
-            failed.append(str(exc))
+        for test_filter, tag in [('agent_management', 'coven-presentation-unit'),
+                                 ('guarded_view', 'coven-guarded-transport')]:
+            try:
+                bounded(cargo + ['test', '--locked', '--offline', '--manifest-path', manifests['coven'],
+                                 '--lib', test_filter, '-j', '1', '--', '--test-threads=1'], tag, 180)
+            except AssertionError as exc:
+                failed.append(str(exc))
         test_env = {**env, 'COVEN_TEST_BIN': str(root / 't/debug/coven')}
         for name, executable in executables:
             if name == 'kitsune':

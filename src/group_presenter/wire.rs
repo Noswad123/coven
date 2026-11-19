@@ -89,7 +89,13 @@ pub(crate) fn presentation_version(reply: &socket::Reply, source: &str) -> WireR
     if !seen.contains("1") {
         return Err(Failure::new("integration_view_unsupported"));
     }
-    Ok(if seen.contains("2") { 2 } else { 1 })
+    Ok(if seen.contains("3") {
+        3
+    } else if seen.contains("2") {
+        2
+    } else {
+        1
+    })
 }
 
 fn descriptor(reply: &socket::Reply, source: &str) -> WireResult<Native> {
@@ -215,7 +221,9 @@ mod tests {
         for (versions, chosen) in [
             (json!([1]), 1),
             (json!([2, 1]), 2),
-            (json!([1, 3]), 1),
+            (json!([1, 3]), 3),
+            (json!([3, 2, 1]), 3),
+            (json!([1, 2, 99, 3]), 3),
             (json!([99, 2, 1]), 2),
         ] {
             let mut value = base.clone();

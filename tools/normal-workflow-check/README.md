@@ -108,25 +108,214 @@ nothing. No native focus/acknowledgement/input/start/resume/cancel or old agent
 navigator follows. Shared server facts and client inspector focus/scroll differ.
 
 Coven normal `item.label` is human-name-only: provider default (e.g. Djinn),
-preferring a valid associated explicit manual pane name. V2 has blank
+preferring a valid associated explicit manual pane name. V2/v3 have blank
 `presentation.label`; sidebar status is icon/animation only, no words/hashes.
 Stable opaque IDs remain internal selection identity, not native session IDs or
 display labels; duplicate labels have no ID/suffix disambiguation. Normal v1 is
 name-only, exactly `{id,label,detail}` with no metadata. Generic third-party
-nonempty captions remain supported. The `prefix+a` inspector retains full
+nonempty captions remain supported. Flat fallback Details retains full
 `Status: running`/`Status: neutral` for blank captions and detailed state text.
 Fresh Working/running and Blocked/attention are distinct from
 neutral Idle/Ended (intentionally identical icons) and expired/history/unordered Unknown. Idle is never success;
 generic success/error require explicit source assertions, not normal Coven job
 proof. Optional `ui.integration_animations` defaults true; local working spinners
 do not refresh facts. See the [wire contract](../../../kitsune/INTEGRATION_VIEWS.md)
-for additive descriptor-v1 `supported_versions: [1,2]`, lease-pinned strict v1/v2
+for additive descriptor-v1 `supported_versions: [1,2,3]`, lease-pinned strict v1/v2/v3
 profiles, limits, null/duplicate/unknown-field rejection, whole-advertisement
 validation before open and no uncertain-mutation downgrade. Protocol 18 and binary
 wire structs are unchanged. Successful-frame fences include identity/query/focus/
 layout/scroll, not animation phase; evidence age remains independent.
 
-**Current name/icon/quiet-root increment: QUALIFIED.** Supplied final results are
+### Current Structured-Information Increment
+
+The user-approved concise `prefix+a` feature is a docs/source increment over Kit
+HEAD `4f4e700a` (26 dirty source files at handoff) and Coven HEAD `a541e9f`,
+preserving the prior uncommitted stale-row filter and the new structured-v3 work.
+It adds Kit/Coven JSON DTOs/UI and Coven publication-continuity fencing, not
+protocol 18, binary wire structs, Djinn source or native payloads.
+Descriptor version 1 advertises `[1,2,3]`; Coven
+validates the whole list and opens advertised 3, else 2, else 1 (absent list: 1).
+Uncertain mutation never causes downgrade/retry. Group present stays exact v1.
+
+V3 optional non-null `information` has only `attention`, `activity`, `context`
+string arrays defaulting to `[]`, each at most four nonblank strings of at most
+256 UTF-8 bytes, rejecting controls/bidi. Information text is at most 1,536 raw
+bytes/item within the existing 96 KiB/source quota. Required `detail` stays at most
+512 bytes and becomes Diagnostics when information is present; `{}` is valid with
+honest empty placeholders. V1/v2 reject information atomically without renewal or
+partial frame/revision/queue changes. Plain v3 and old v1/v2 keep visible Details.
+Neither a 128-row ceiling nor accepted per-line maxima promise all-maxima frames fit.
+
+The inspector name appears once in Items, then meaningful Attention, Current
+activity, Working context and collapsed Diagnostics. Details-focus `d` outside
+search and a visible scroll-clipped header click toggle it; the footer hints it.
+Search covers all information/diagnostics, with a hidden-only match hint and no
+automatic expansion or activation. Source/epoch/item change, disappearance and
+close/reopen reset expansion; ordinary revisions (including sampled age) preserve
+it. Background rendering and successful-frame geometry/hit-map fences remain.
+Tab/search/Esc and explicit Items Enter/Details Enter-no-action are unchanged.
+
+Attention is fresh reported counts, not exhaustive inventory/global all-clear.
+Activity is reported Working/Idle/Blocked or honest missing/reference-only evidence,
+never guessed commands or summaries. Age is the selected fact's age, not receipt
+time, coarsely sampled once/second by the owner; it can freeze on publisher stall
+until lease expiry, not a continuous TUI clock. No task history, cost or native
+prompt scope. `Kit project`/`Kit branch` are not native Djinn CWD proof: project is
+associated worktree `repo_name`, else workspace human label, and optional JSON
+`NewWorkspaceInfo.git_branch` is cached current provenance in snapshot/event
+contexts, never label/path/native inference or projection-time Git/filesystem/
+process I/O. The entire name/project/branch bundle shares 300 ms qualification,
+post-I/O and pre-send endpoint/generation/unique-pane/workspace/tab/association-
+epoch/admission/original-deadline guards. Coherently established association,
+generation or endpoint loss clears the entire bundle to default name/no context,
+not an otherwise current row; private qualification renews no native clock.
+
+Every candidate, including empty/partial frames, brackets current receiver
+projection, name/context lookup and actual pre-send. Temporary projection-lock
+contention, changed/odd admission or unavailable lookup evidence defers the candidate,
+not fake absence or transient provider-name fallback that loses a name-filtered
+selection. Borrowed context never survives its original qualified deadline: the
+last shown publication is bounded by the minimum membership/context ceiling and
+five-second view TTL. Deferral cannot poll-renew it indefinitely. Genuine monotonic
+membership expiry still removes a row; coherent explicit removal clears selection.
+Safely Unsent pre-send refresh-needed results may rebuild on the same owner and
+candidate revision within the bounded ceiling; attempted/uncertain writes never retry.
+
+Read-only receiver observers (legacy inventory/control observations, `attention.list`,
+association inspection and `focus.prepare`) do not invalidate admission. Strict
+authority/closed-envelope method classification precedes marking; mutations,
+including reports, attachments, acknowledgements and association changes, remain
+conservatively fenced. Reads renew neither native evidence nor association clocks.
+
+Frame pressure first marks diagnostic omission, then compacts primary attention/
+activity and drops context/evidence-age secondary lines with explicit diagnostic
+explanation, preserving manual human name. The bounded profile covers 128
+escape-heavy rows with 160-byte labels/full 512-byte diagnostics, not arbitrary
+accepted 3,072-byte line combinations losslessly. V1/v2 legacy provider fallback
+budgets and the Djinn 5/30-second current/history policy remain unchanged.
+
+**Final structured-information qualification: PASS.** The supplied final observed
+results are separate qualifications, not one all-tests invocation:
+
+| Qualification | Observed Result |
+| --- | --- |
+| Latest unified `--sidebar-only`: filtered Coven agent-management units | 150 passed |
+| Latest unified: Coven presentation integrations / guarded transport | Nine / two passed |
+| Latest unified: sidebar / normal workflow / adoption | 22 / 32 / four gates passed |
+| Latest unified: hosting / actual-source interop | 18 / two passed |
+| Latest unified: Bun / Python frame-pump regressions | 26 / four passed |
+| Separate earlier new-Kit native validation | 2,591 binary tests passed, five ignored; 193 integration tests across 11 targets; one explicit real-Coven roundtrip passed |
+| Independent final review after continuity fix | READY, no P1/P2 findings |
+
+The full Kit suite was not rerun in the latest pipeline: the final production fix
+was Coven-only, and the latest built Kit application hash matched the earlier
+full-suite build. The final observed binary SHA-256 identities are:
+
+```text
+kitsune c59f23baf4c305dfd5362b24b90dd20387a44c83a91a81dfa8362ba324efbfe5
+coven   ddc1be6f58c98016558e602d63a7a65cd0009c58ceddbf174ba691a630120b4e
+```
+
+Continuity coverage includes a real observer storm every 50 ms with 150 ms Kit
+inspection, retaining a live-hosted Unknown row after 30 seconds and its chosen
+name/details without `Unavailable`. Actual mixed-source profiles 1/2/3 avoid fake
+empty frames; coherent source-filter removal still clears selection, and uncertain
+writes are not retried. The bounded newest-complete-frame pump checks established
+selection on every frame, with no hidden reselection. Only stale-input-guarded,
+read-only selection/focus/toggle operations may retry, never Enter/effectful actions.
+Inspector coverage verifies all three main sections, collapsed Diagnostics,
+Details-focus `d`, visible-header mouse toggling, hidden search hints without
+auto-expansion, name once, expansion surviving 1 Hz age updates and collapse on reopen.
+
+Actual cached branch acquisition is unit-qualified only. Composition accepts a
+cached branch value or unavailable; it is not physical real-branch acquisition
+qualification. The generic JSON cache field adds no scripts/native heuristics or
+protocol-18 change. Djinn source and the 5/30-second current/history filter are unchanged.
+No latest Clippy, TypeScript typecheck, full Coven suite/full CI or new physical
+native-provider/model qualification is claimed. The baseline Linux
+`items_after_test_module` Clippy finding is unchanged and was not rerun.
+
+The run owner confirmed all owned roots from five attempts were removed after
+children stopped/reaped, and the run cache was verified empty; no artifacts remain.
+No source installs, user-server/provider restarts, config changes, commits, user
+endpoints, credentials or provider/model execution occurred. This docs-only
+finalization runs static diff checks only. When explicitly approved, rebuild/install
+Coven and Kit, then restart the Kit server to pin the new Coven generation; this
+increment requires no Djinn rebuild and performs no activation itself.
+
+### Current Stale-Row Increment
+
+Historical previous-feature qualification follows, not current structured-v3
+validation. The heading is retained for existing links.
+
+This is a Coven-only follow-up to committed HEAD `a541e9f`; the new filter and
+tests are working-tree changes, not the historical qualification below. No new
+Kit/Djinn source, API or binary-version changes are needed.
+
+Normal current Djinn rows require any unexpired producer-selected-root lease
+(including conflicting nonfocusable targets), a valid manual association matching
+the fact, or non-ended native Working/Blocked/Idle activity within its 30-second
+grace. Quiet attached Unknown survives query failures; every independently current
+second root stays visible, regardless of label or typing. Liveness is not idle.
+Hide unhosted ended, lifecycle-only Unknown, expired and historical v1 Djinn rows.
+A quiet old reporter without activity disappears five seconds after its last
+attachment heartbeat; real old native activity can keep it for at most 30 seconds
+after that evidence. Never guess replacements by label/provider SID/PID/CWD or
+merge opaque IDs. Hiding is not deletion, stopped/success evidence or acknowledgement.
+
+Filter privately before the 128-item cap. Hidden Djinn history does not contribute
+private retirement/omission notices, create an Evidence limits ghost or cost the
+128th current slot; non-Djinn notices and public aggregate counts stay unchanged.
+Public observations and exported `run_with_projection` retain the unchanged
+six-field envelope and history IDs, with no public `_publisher_*` hints. Generic
+`prefix+a` sees published items, while CLI observation history remains readable.
+Frozen legacy serve and other-provider display policy remain unchanged.
+Private membership expires across cached models/name I/O and encoding, with
+conservative deadline-floor, admission and epoch fences. The transport pre-send
+callback runs after encoding, connection and endpoint fencing. Only safely Unsent
+refresh-needed results rebuild on the same owner/candidate revision; attempted or
+uncertain writes never retry or close. Membership/name/render/animation checks
+renew no attachment or native-evidence clock.
+
+**Final unified qualification: PASS.** The latest source build passed all stages:
+
+| Qualification | Result |
+| --- | --- |
+| Sidebar / normal workflow / adoption | 19 / 32 / four gates passed |
+| Hosting and restart | 18 gates passed |
+| Coven presentation integration | Eight tests passed |
+| Filtered Coven agent-management units | 140 tests passed |
+| Explicit guarded-transport tests | Two tests passed |
+| Bun status tests | 26 tests passed |
+| Actual-source interop fixtures | Two tests passed |
+
+Independent review found no remaining P1/P2 findings. The final inspector assertion
+checks exact item labels: a search for `Djinn` may legitimately match that word in
+the details of the current `coven sesh` row and does not itself prove a stale row.
+
+The restart fixture uses actual source factories, registry, observer workers and
+SDK bridge: old A and new B share a provider SID but have new factory IDs, while
+C is a second live root that must remain current. Actual semantic frames showed
+both `? Djinn` and `? coven sesh` while B and C were live, then only
+`? coven sesh` after C was released. All three public history IDs remained.
+The old reporter's lease loss was observed 4.69 seconds after worker termination,
+measured from termination rather than its last heartbeat. The separate real
+30-second unhosted activity-expiry gate also passed, as did quiet attached Unknown
+and failed-query expired Unknown retention.
+Bun inputs remain fixture-controlled source evidence, not physical frontend,
+provider or model execution. No live user rows were inspected; no install,
+restart, config edit or commit occurred. All attempts stopped/reaped owned children
+and removed their exact disk-backed run directories; no artifacts were retained.
+Qualification used cached Rust 1.96.1, Zig 0.15.2 and Bun 1.4.4, offline locked Cargo,
+one CPU and one build job. Full Kit native tests, the full Coven suite, Clippy and
+typecheck were not rerun for this Coven-only increment. Kit's binary hash remains
+`d4d29589ad61a390d4eb2b11430423a4553dfa5d58fadea7aa84bf9472c8253a`;
+Coven's qualified binary hash is
+`4abc9e39cec47b4eafbae9b66351f63c0bbb73959126d6623586c25ada5b4775`.
+
+### Historical Name/Icon/Quiet-Root Qualification
+
+**Historical name/icon/quiet-root baseline: QUALIFIED.** Supplied final results are
 all green. These are separate qualifications, not one all-tests command:
 
 | Qualification | Final Result |
@@ -165,9 +354,10 @@ selected-root initial/30-second expiry gaps; the user's two existing Djinn insta
 (one Unknown) were not live-inspected and are not claimed fixed or already activated.
 Unknown remains valid on failed queries, unmount, references or missing activity
 evidence. This documentation update runs no builds, tests or live commands,
-installs nothing and edits no configuration. Activation still needs all new Djinn,
-Coven and Kit builds, then explicit user approval for restart/new-pane/provider
-handoff. Historical counts below remain prior baselines, not these final results.
+installs nothing and edits no configuration. Activation of that historical
+cross-app baseline needs new Djinn, Coven and Kit builds, then explicit user
+approval for restart/new-pane/provider handoff, unlike the Coven-only follow-up.
+Historical counts below remain prior baselines, not these final results.
 
 Qualified name-check coverage preserves fresh association, terminal runtime generation
 and endpoint binding, already-set/renamed explicit `pane.manual_label`, provider

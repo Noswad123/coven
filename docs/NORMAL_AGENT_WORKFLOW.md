@@ -45,9 +45,22 @@ Enter in Details activates nothing. No native focus, acknowledgement, input,
 start/resume/cancel or old agent navigator is added. Server source facts remain
 shared; inspector focus/query/scroll are client presentation only.
 
+Structured v3 shows the human name once in Items, then **Attention**, **Current
+activity**, **Working context** and collapsed **Diagnostics**, rather than a Coven
+metadata dump. With Details focused and search inactive, `d` toggles Diagnostics;
+the footer hints it and its visible, scroll-clipped header is mouse-toggleable.
+Search covers all information/diagnostics; a hidden-only match says "Match in
+Diagnostics — expand to view." without expanding or activating. Expansion resets
+on source/epoch/item change, disappearance or close/reopen, not ordinary revisions
+(including sampled age). Background rendering and successful-frame geometry/hit-map
+fences remain unchanged. Empty information sections show honest missing-data
+placeholders, not Idle/no-pending assertions. Without information, generic Details
+keeps flat text visible for old v1/v2 and plain v3 third-party publishers; Kit does
+not parse Coven-specific diagnostics.
+
 Normal presentation negotiates an additive JSON item profile: descriptor version
-1 with `supported_versions: [1,2]`; absence means v1 only. Coven validates the
-whole advertisement before open/write, selects 2 only when explicit, and pins the
+1 with `supported_versions: [1,2,3]`; absence means v1 only. Coven validates the
+whole advertisement before open/write, selects advertised 3, else 2, else 1, and pins the
 profile per lease. Malformed advertisement fails before open; uncertain mutation
 never causes downgrade. V1 remains exactly `{id,label,detail}`; v2 optionally adds
 `presentation` with `label` up to 48 UTF-8 bytes and optional generic status.
@@ -55,10 +68,19 @@ Unknown/duplicate fields and explicit presentation/status null reject; v1 reject
 presentation without lease renewal. Existing limits remain: 128-byte IDs,
 160-byte labels, 512-byte details, 128 items/source, eight sources, 32 intents/source,
 five-second leases and 96 KiB raw text/source including presentation labels.
+V3 additionally permits strict optional non-null `information` with only
+`attention`, `activity`, `context`: string arrays defaulting to `[]`, at most four
+entries each, each nonblank and at most 256 UTF-8 bytes, rejecting controls/bidi.
+Information is at most 1,536 raw bytes/item and is included in the existing 96 KiB
+source quota; 128 maximum-size rows are not promised to fit one frame. Unknown/
+duplicate fields, null objects/arrays/entries and wrong types reject. V1/v2 reject
+information atomically without renewal or partial frame/revision/queue changes.
+V3 requires explicit open. Required `detail` remains bounded to 512 bytes and is
+diagnostic text when information is present; `information: {}` is valid.
 Plain old publishers work. Protocol 18 and binary wire structs are unchanged.
 
 Coven normal `item.label` is a human name only: provider default (for example,
-`Djinn`), preferring a valid associated explicit manual pane name. V2 sends
+`Djinn`), preferring a valid associated explicit manual pane name. V2/v3 send
 `presentation.label: ""`; sidebar status is icon/animation only, without state
 words or hashes. Stable opaque row IDs remain internal selection identity, not
 display names or native session IDs. Duplicate names are allowed without ID or
@@ -83,10 +105,59 @@ terminal runtime generation. An explicit generic `pane.manual_label` may already
 exist or be renamed now; OSC title, CWD and historical `agent_name` are never manual
 identity fallbacks. Publisher-only private hints are not public raw targets. The
 read-only lookup has a shared 300 ms bound, uses no blocking receiver mutex, and
-creates no association, focus, input or acknowledgement. Failed checks use the
-provider default; name refresh changes no activity time or evidence authority.
-The `prefix+a` inspector shows full `Status: running`/`Status: neutral` even with
-blank captions, plus detailed state text, without opaque sidebar labels.
+creates no association, focus, input or acknowledgement. Confirmed association,
+generation or endpoint loss uses the provider default; temporary incoherence defers
+publication instead. Name refresh changes no activity time or evidence authority.
+Flat fallback Details shows `Status: running`/`Status: neutral` even with blank
+captions; structured v3 uses the concise source-owned information above.
+
+Attention uses fresh reported pending counts, not exhaustive native inventory:
+"No pending request in recent reports" is not global all-clear. Current activity
+reports Working/Idle/Blocked only from evidence. Missing data says "No recent
+activity evidence" or "No activity report received yet"; reference-only providers
+say current activity is unavailable. No guessed tools/commands, task summaries,
+history, costs or native prompt scope are projected. Evidence age is the selected
+fact's age, not last receipt time; it is owner-sampled coarsely once/second, not a
+continuous TUI clock, and may freeze during a publisher stall until lease expiry.
+
+Working context is labeled `Kit project`/`Kit branch`, not native Djinn CWD proof.
+Project uses associated worktree `repo_name`, else the workspace human label.
+Optional JSON `NewWorkspaceInfo.git_branch` supplies cached current provenance in
+the same snapshot/event contexts; missing stays unavailable, never inferred from
+label/path/native metadata. Projection performs no Git/filesystem/process I/O.
+Name/project/branch share the 300 ms qualified lookup bundle: endpoint/generation,
+unique pane plus workspace/tab, association epoch, admission and original deadline
+are rechecked after I/O and at transport pre-send. Coherently established loss
+clears the entire bundle to provider name/no context without hiding an otherwise
+eligible current row.
+Private qualification fields enter neither public observations nor native payloads
+and renew no native clock.
+
+Every candidate, including empty/partial frames, coherently brackets current
+receiver projection, name/context lookup and actual pre-send. Temporary projection-
+lock contention, changed/odd admission or unavailable lookup evidence defers the
+candidate, not fake absence or a transient provider-name fallback that loses a
+name-filtered selection. Last-shown publication remains bounded by the minimum
+original membership/context deadline and five-second view TTL; deferrals cannot
+poll-renew borrowed context indefinitely. Real monotonic membership expiry still
+removes rows; coherent explicit removal clears selection. Only safely Unsent
+pre-send refresh-needed candidates may rebuild on the same owner/candidate revision
+within that ceiling; attempted/uncertain writes never retry.
+
+Read-only receiver observers (legacy inventory/control observations, `attention.list`,
+association inspection and `focus.prepare`) do not invalidate admission. Strict
+authority/closed-envelope method classification precedes marking; mutations such
+as reports, attachments, acknowledgements and association changes remain
+conservatively fenced. Reads renew neither native evidence nor association clocks.
+Cached branch acquisition is unit-qualified only; composition accepts a cached
+branch or unavailable, not physical real-branch acquisition qualification.
+
+The bounded producer profile preserves manual human name and primary attention/
+activity under frame pressure: first replace diagnostics with an omission marker,
+then compact primary lines and drop context/evidence-age secondary text with an
+explicit diagnostic explanation. Coverage includes all 128 escape-heavy rows with
+160-byte labels/full 512-byte diagnostics, not arbitrary accepted 3,072-byte line
+combinations losslessly fitting a frame. V1/v2 keep legacy provider fallback budgets.
 
 [Checked CLI navigation](AGENT_NAVIGATION_CONTRACT.md) permits source-qualified
 local Djinn selected-root producer associations as well as unchanged temporary
@@ -376,6 +447,42 @@ unqualified. The seven-scenario [source interop gate](../tools/normal-workflow-c
 uses actual SDK/plugin factory/load/controller/registry and actual Coven/Kit, not
 a physically rendered Djinn TUI or separate Bun Worker/private-RPC handshake.
 
+### Current Djinn View Versus History
+
+The normal publisher's current Djinn view is distinct from retained observation
+history. Keep a row when any unexpired producer-selected-root lease exists
+(including conflicting targets that cannot be focused), when a valid manual
+association matches the fact, or when non-ended native Working/Blocked/Idle
+activity is still within its 30-second grace. Keep every independently current
+Djinn root, including a second quiet attached root; labels and whether the user is
+typing are not membership criteria. Failed native queries may leave an attached
+row Unknown, never idle inferred from liveness.
+
+Hide unhosted ended, lifecycle-only Unknown, expired and historical v1 Djinn rows
+from normal publication. An old quiet reporter without activity disappears five
+seconds after its last producer heartbeat; real old activity can retain it for at
+most 30 seconds after the last native evidence. These are independent clocks, not
+a restart timeout. Never guess replacement by label, provider SID, PID or CWD, or
+merge opaque observation IDs. Hiding is not deletion, stopped/success evidence or
+acknowledgement. CLI observations still expose retained history; `prefix+a` sees
+only current published items, not a hidden-history browser.
+
+Filtering is publisher-private and precedes the 128-item cap. Hidden Djinn history
+does not count as private omission/retirement loss or reserve an Evidence limits
+slot; non-Djinn notices and public aggregate counts are unchanged. Public
+observations and exported `run_with_projection` retain the same six-field envelope
+and history IDs; `_publisher_*` hints remain private. Frozen legacy `agent serve`
+and other providers' display policy are unchanged.
+
+Private membership deadlines survive cached-model and manual-name I/O, with a
+conservative deadline floor and admission/receiver-epoch fences. A final transport
+pre-send check runs after frame encoding, connection and endpoint fencing. Only
+a safely Unsent refresh-needed result permits rebuilding on the same owner lease
+and candidate revision. Attempted writes, including uncertain delivery, never
+retry or trigger a close; the lease expires. Membership/name/render/animation
+checks renew neither attachment nor native-evidence clocks. That stale-row increment needs
+no new Kit/Djinn source, API or binary-version changes.
+
 ### Receiver freshness and retention
 
 Normal native observations identify the provider as `djinn`, not `opencode`.
@@ -455,10 +562,12 @@ their closed-envelope contract and validate actual native cancellation delivery.
 
 With compatible Coven/Kit builds and an updated Djinn native full-TUI build:
 
-These source changes are not installed activation. Rebuild all three apps first
-only after explicit user approval, then perform the explicit server
-restart/new-pane/provider handoff. Activation needs new Djinn, Coven and Kit builds.
-Provider configuration is never automatically edited.
+These source changes are not installed activation. For this structured-information/
+continuity increment, explicitly approve rebuilding/installing Coven and Kit, then
+restart the Kit server to pin the new Coven generation and complete the normal
+new-pane/provider handoff as needed. No Djinn rebuild is required by this increment;
+the updated native full-TUI baseline remains a prerequisite. Provider configuration
+is never automatically edited.
 
 ```toml
 [integrations]
@@ -528,7 +637,18 @@ admission, provider reference-only behavior and native event bounds remain teste
 Groups, launch orchestration, broader provider lifecycle support, and native Mac
 runtime certification are separate follow-up work.
 
-**Current name/icon/quiet-root increment: QUALIFIED.** Supplied final results are
+The historical Coven-only stale-row increment's validation is recorded in the
+[gate record](../tools/normal-workflow-check/README.md#current-stale-row-increment).
+It is not qualification or activation of the user's existing rows; no live rows
+were inspected. That filter required no new Kit/Djinn build; the current structured
+information feature changes Kit/Coven JSON DTOs and UI. Its separate validation is
+in the [gate record](../tools/normal-workflow-check/README.md#current-structured-information-increment),
+not an installed activation or new Djinn/native-provider qualification.
+Final observed qualification passed with independent final review READY and no
+P1/P2 after the continuity fix. The central record separates the earlier full Kit
+suite from the latest Coven-only production-fix rerun and records limits/cleanup.
+
+**Historical name/icon/quiet-root baseline: QUALIFIED.** Supplied final results are
 green, recorded as separate qualifications, not one combined command:
 
 - Final Kit: 2,578 binary tests passed, five ignored; 193 integration tests across
@@ -553,7 +673,8 @@ bounded source callbacks, not a full physical native frontend. No new provider,
 mobile, remote or actual model qualification, full CI or full Coven suite is claimed.
 All owned children stopped/reaped and cached run directories were empty after
 cleanup, with no retained artifacts. No installation/configuration activation has
-occurred; all three new builds still require explicit user approval and handoff.
+occurred; activation of that historical cross-app baseline requires all three new
+builds and explicit user approval and handoff, unlike the Coven-only follow-up.
 
 Historical prior status/inspector baseline, not tests of this increment: actual
 Kit/Coven qualification passed 16 composed sidebar gates, 32 normal

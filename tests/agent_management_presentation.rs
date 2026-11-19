@@ -48,6 +48,120 @@ fn receiver_child() {
 
 struct Receiver(Child);
 
+#[test]
+fn public_projection_receiver_child() {
+    let Ok(root) = std::env::var("COVEN_PUBLIC_PROJECTION_TEST_ROOT") else {
+        return;
+    };
+    let model = Arc::new(Mutex::new(Value::Null));
+    agent_management::run_with_projection(
+        &agent_management::RunRequest {
+            workspace: root.clone().into(),
+            socket: format!("{root}/native.sock"),
+        },
+        model.clone(),
+    )
+    .unwrap();
+    fs::write(
+        format!("{root}/public-projection.json"),
+        serde_json::to_vec(&*model.lock().unwrap()).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn exported_run_projection_retains_stale_and_lifecycle_djinn_without_private_fields() {
+    let root = physical_temp::tempdir();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(root.path().join("coven.json"), "{}").unwrap();
+    let path = root.path().join("native.sock");
+    let mut receiver = Receiver(
+        Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "public_projection_receiver_child",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("COVEN_PUBLIC_PROJECTION_TEST_ROOT", root.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
+    );
+    let ready = Instant::now() + Duration::from_secs(5);
+    while agent_management::observations_arguments(path.to_str().unwrap(), true).is_err() {
+        assert!(
+            Instant::now() < ready,
+            "isolated public receiver was not ready"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    for (sequence, sid, event) in [
+        (1, "stale", "session.status"),
+        (2, "lifecycle", "session.updated"),
+    ] {
+        let mut p = json!({"contract":"djinn.native-events.v1",
+            "instance_id":"12345678-1234-1234-1234-123456789abc", "session_id":sid,"sequence":sequence,"event":event});
+        if event == "session.status" {
+            p["status"] = json!("busy");
+        }
+        agent_management::native_report_payload(
+            path.to_str().unwrap(),
+            p.to_string().as_bytes(),
+            true,
+        )
+        .unwrap();
+    }
+    let end = Instant::now() + Duration::from_secs(33);
+    let mut rpc: Value = loop {
+        let value: Value = serde_json::from_str(
+            &agent_management::observations_arguments(path.to_str().unwrap(), true)
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        if value["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["freshness"] == "expired")
+        {
+            break value;
+        }
+        assert!(Instant::now() < end, "native evidence did not expire");
+        thread::sleep(Duration::from_millis(50));
+    };
+    // Let the receiver publish the post-RPC model before its explicitly owned stdin closes.
+    thread::sleep(Duration::from_millis(100));
+    drop(receiver.0.stdin.take());
+    receiver.finish();
+    let mut model: Value =
+        serde_json::from_slice(&fs::read(root.path().join("public-projection.json")).unwrap())
+            .unwrap();
+    assert_eq!(model.as_object().unwrap().len(), 6);
+    assert!(
+        model
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|key| !key.starts_with("_publisher"))
+    );
+    assert_eq!(model["observations"].as_array().unwrap().len(), 2);
+    for view in [&mut model, &mut rpc] {
+        for row in view["observations"].as_array_mut().unwrap() {
+            if row["freshness"] == "expired" {
+                assert!(row["age_ms"].as_u64().unwrap() >= 30_000);
+            }
+            // Independent reads have different monotonic ages, but identical public facts/IDs.
+            row["age_ms"] = Value::Null;
+        }
+    }
+    assert_eq!(model, rpc);
+    assert!(!path.exists());
+}
+
 fn native_call(path: &std::path::Path, contract: &str, method: &str, params: Value) -> Value {
     let mut stream = UnixStream::connect(path).unwrap();
     stream
@@ -91,8 +205,10 @@ fn normal_names_follow_manual_pane_rename_movement_and_fail_closed_without_refre
         "label":"Review pane","title":"PRIVATE-OSC","agent_name":"PRIVATE-RETIRED"});
     let inspection = json!({"type":"terminal_inspected","terminal_id":"terminal","runtime_generation":generation,
         "availability":"live","pane_id":"pane","tab_id":"tab","workspace_id":"workspace"});
-    kit.providers.lock().unwrap()["_naming"] =
-        json!({"panes":[pane],"inspection":inspection,"hung":false});
+    kit.providers.lock().unwrap()["_naming"] = json!({"panes":[pane],"inspection":inspection,"hung":false,
+            "workspaces":[{"workspace_id":"workspace","label":"Coven",
+                "worktree":{"repo_name":"Coven","path":"/PRIVATE"},"git_branch":"feature/ui"}],
+            "tabs":[{"workspace_id":"workspace","tab_id":"tab"}]});
     let path = root.path().join("native.sock");
     let mut receiver = Receiver(
         Command::new(env!("CARGO_BIN_EXE_coven"))
@@ -140,6 +256,10 @@ fn normal_names_follow_manual_pane_rename_movement_and_fail_closed_without_refre
     assert_eq!(named["id"], default["id"]);
     assert_eq!(named["presentation"]["label"], "");
     assert_eq!(named["presentation"]["status"], "running");
+    assert_eq!(
+        named["information"]["context"],
+        json!(["Kit project: Coven", "Kit branch: feature/ui"])
+    );
     // Model the generic snapshot after pane.rename and a same-runtime move.
     {
         let mut state = kit.providers.lock().unwrap();
@@ -171,9 +291,35 @@ fn normal_names_follow_manual_pane_rename_movement_and_fail_closed_without_refre
     }
     kit.providers.lock().unwrap()["_naming"]["inspection"]["runtime_generation"] =
         json!("restarted");
-    wait_name(&kit, "Djinn");
+    assert_eq!(
+        wait_name(&kit, "Djinn")["information"]["context"],
+        json!(["No qualified workspace context."])
+    );
     kit.providers.lock().unwrap()["_naming"]["inspection"]["runtime_generation"] =
         json!(generation);
+    wait_name(&kit, "Review pane");
+    kit.providers.lock().unwrap()["_naming"]["workspaces"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("git_branch");
+    let end = Instant::now() + Duration::from_secs(3);
+    loop {
+        let row = wait_name(&kit, "Review pane");
+        if row["information"]["context"][1] == "Kit branch: unavailable" {
+            break;
+        }
+        assert!(
+            Instant::now() < end,
+            "old branch survived a successful refresh"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    kit.providers.lock().unwrap()["_naming"]["tabs"][0]["workspace_id"] = json!("wrong-workspace");
+    assert_eq!(
+        wait_name(&kit, "Djinn")["information"]["context"],
+        json!(["No qualified workspace context."])
+    );
+    kit.providers.lock().unwrap()["_naming"]["tabs"][0]["workspace_id"] = json!("workspace");
     wait_name(&kit, "Review pane");
     let before: Value = serde_json::from_str(
         &agent_management::observations_arguments(path.to_str().unwrap(), true)
@@ -321,13 +467,168 @@ fn normal_names_follow_manual_pane_rename_movement_and_fail_closed_without_refre
 }
 
 #[test]
+fn observer_read_storm_keeps_live_hosted_unknown_available_without_renewing_evidence_or_leases() {
+    let root = physical_temp::tempdir();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(root.path().join("coven.json"), "{}").unwrap();
+    let kit = Kit::start(root.path(), "names");
+    let generation = "12345678-1234-1234-1234-123456789abc";
+    kit.providers.lock().unwrap()["_naming"] = json!({"hung":false,"delay_ms":150,
+        "panes":[{"pane_id":"pane","terminal_id":"terminal","tab_id":"tab","workspace_id":"workspace","label":"SampleA"}],
+        "inspection":{"type":"terminal_inspected","terminal_id":"terminal","runtime_generation":generation,
+            "availability":"live","pane_id":"pane","tab_id":"tab","workspace_id":"workspace"},
+        "workspaces":[{"workspace_id":"workspace","label":"Coven","git_branch":"feature/ui"}],
+        "tabs":[{"workspace_id":"workspace","tab_id":"tab"}]});
+    let path = root.path().join("native.sock");
+    let mut receiver = Receiver(
+        Command::new(env!("CARGO_BIN_EXE_coven"))
+            .args(["agent", "run"])
+            .arg(root.path())
+            .arg("--socket")
+            .arg(&path)
+            .arg("--kitsune-socket")
+            .arg(root.path().join("kit.sock"))
+            .args(["--source", "queueSource2", "--json"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
+    );
+    let end = Instant::now() + Duration::from_secs(5);
+    let initial: Value = loop {
+        if let Ok(output) = agent_management::observations_arguments(path.to_str().unwrap(), true) {
+            break serde_json::from_str(&output.stdout).unwrap();
+        }
+        assert!(Instant::now() < end, "receiver did not become ready");
+        assert!(
+            receiver.0.try_wait().unwrap().is_none(),
+            "receiver exited before readiness"
+        );
+        thread::sleep(Duration::from_millis(5));
+    };
+    let reported = Instant::now();
+    agent_management::native_report_payload(path.to_str().unwrap(), json!({"contract":"djinn.native-events.v1",
+        "instance_id":generation,"session_id":"PRIVATE-STORM","sequence":1,"event":"session.status","status":"busy"})
+        .to_string().as_bytes(), true).unwrap();
+    let metadata = fs::metadata(root.path().join("kit.sock")).unwrap();
+    let mut attachment = json!({"expected_epoch":initial["server_epoch"],
+        "client_id":"12345678-1234-1234-1234-123456789abd","revision":1,"operation":"attach",
+        "instance_id":generation,"session_id":"PRIVATE-STORM","scope":"local_full_tui_root",
+        "target":{"socket":root.path().join("kit.sock").canonicalize().unwrap(),"device":metadata.dev(),
+            "inode":metadata.ino(),"terminal_id":"terminal","runtime_generation":generation}});
+    native_call(
+        &path,
+        "coven.client-attachments.v1",
+        "report",
+        attachment.clone(),
+    );
+    let named = wait_name(&kit, "SampleA");
+    let mut heartbeat = Instant::now();
+    let mut revision = 1;
+    let end = reported + Duration::from_secs(34);
+    // Model a failed native query: no further activity facts are supplied. Only
+    // the independently live host attachment is renewed, never activity age.
+    loop {
+        if heartbeat.elapsed() >= Duration::from_secs(1) {
+            revision += 1;
+            attachment["revision"] = json!(revision);
+            native_call(
+                &path,
+                "coven.client-attachments.v1",
+                "report",
+                attachment.clone(),
+            );
+            heartbeat = Instant::now();
+        }
+        let observed: Value = serde_json::from_str(
+            &agent_management::observations_arguments(path.to_str().unwrap(), true)
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        assert_eq!(observed.as_object().unwrap().len(), 6);
+        let state = kit.providers.lock().unwrap();
+        let items = state["queueSource2"]["items"]
+            .as_array()
+            .expect("read-only observers made Coven unavailable");
+        let row = items
+            .iter()
+            .find(|row| row["id"] == named["id"])
+            .expect("live hosted row disappeared under observers");
+        assert_eq!(row["label"], "SampleA");
+        assert_eq!(
+            row["information"]["context"],
+            json!(["Kit project: Coven", "Kit branch: feature/ui"])
+        );
+        if observed["observations"][0]["freshness"] == "expired"
+            && row["detail"]
+                .as_str()
+                .unwrap()
+                .contains("UNKNOWN (expired)")
+        {
+            assert!(observed["observations"][0]["age_ms"].as_u64().unwrap() >= 30_000);
+            assert_eq!(row["presentation"]["status"], "unknown");
+            assert_eq!(
+                row["information"]["activity"][0],
+                "No recent activity evidence."
+            );
+            break;
+        }
+        drop(state);
+        assert!(
+            Instant::now() < end,
+            "read storm renewed native evidence or hid expired Unknown"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    // Stop only host heartbeats; the same read storm must not extend the real
+    // five-second attachment lease or resurrect an expired native fact.
+    let end = Instant::now() + Duration::from_secs(6);
+    loop {
+        let observed: Value = serde_json::from_str(
+            &agent_management::observations_arguments(path.to_str().unwrap(), true)
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        assert_eq!(observed["observations"][0]["freshness"], "expired");
+        let items = kit.providers.lock().unwrap()["queueSource2"]["items"].clone();
+        assert!(
+            items.is_array(),
+            "observer traffic terminated the available source"
+        );
+        if items.as_array().unwrap().is_empty() {
+            break;
+        }
+        assert!(Instant::now() < end, "read storm renewed the host lease");
+        thread::sleep(Duration::from_millis(50));
+    }
+    drop(receiver.0.stdin.take());
+    receiver.finish();
+}
+
+#[test]
 fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
     for ending in [0, libc::SIGINT, libc::SIGTERM] {
         let root = physical_temp::tempdir();
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::write(root.path().join("coven.json"), "{}").unwrap();
-        let version = if ending == libc::SIGINT { 2 } else { 1 };
-        let kit = Kit::start(root.path(), if version == 2 { "v2" } else { "success" });
+        let version = if ending == libc::SIGINT {
+            2
+        } else if ending == libc::SIGTERM {
+            3
+        } else {
+            1
+        };
+        let kit = Kit::start(
+            root.path(),
+            match version {
+                2 => "v2",
+                3 => "v3",
+                _ => "success",
+            },
+        );
         let path = root.path().join("native.sock");
         let mut receiver = Receiver(
             Command::new(env!("CARGO_BIN_EXE_coven"))
@@ -399,7 +700,11 @@ fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
         let row = &working["params"]["items"][0];
         assert_eq!(row["label"], "Djinn");
         assert!(!row["label"].as_str().unwrap().contains("Coven /"));
-        if version == 2 {
+        assert_eq!(row.get("information").is_some(), version == 3);
+        if version == 3 {
+            assert_eq!(row["information"]["activity"][0], "Last reported working.");
+        }
+        if version >= 2 {
             assert_eq!(row["presentation"]["status"], "running");
             assert_eq!(row["presentation"]["label"], "");
             let sidebar = format!(
@@ -411,7 +716,7 @@ fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
             agent_management::native_report_payload(
                 path.to_str().unwrap(),
                 json!({"contract":"djinn.native-events.v1","instance_id":"12345678-1234-1234-1234-123456789abc",
-                    "session_id":"PRIVATE-SECOND-SESSION","sequence":2,"event":"session.created"})
+                    "session_id":"PRIVATE-SECOND-SESSION","sequence":2,"event":"session.status","status":"idle"})
                     .to_string().as_bytes(),
                 true,
             ).unwrap();
@@ -424,8 +729,21 @@ fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
                     assert_ne!(items[0]["id"], items[1]["id"]);
                     assert_eq!(items[0]["presentation"]["label"], "");
                     assert_eq!(items[1]["presentation"]["label"], "");
-                    assert_eq!(items[0]["presentation"]["status"], "running");
-                    assert_eq!(items[1]["presentation"]["status"], "unknown");
+                    let working = items
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|item| item["id"] == row["id"])
+                        .unwrap();
+                    let idle = items
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|item| item["id"] != row["id"])
+                        .unwrap();
+                    assert_eq!(working["presentation"]["status"], "running");
+                    assert!(idle["presentation"].get("status").is_none());
+                    assert!(idle["detail"].as_str().unwrap().contains("IDLE"));
                     assert!(!items.to_string().contains("PRIVATE"));
                     break;
                 }
@@ -461,16 +779,12 @@ fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
             );
             let expiry_end = Instant::now() + Duration::from_secs(32);
             loop {
-                let calls = kit.calls.lock().unwrap();
-                if calls.iter().any(|c| {
-                    c["method"] == "integration.view.replace"
-                        && c["params"]["items"]
-                            .to_string()
-                            .contains("UNKNOWN (expired)")
-                }) {
+                if kit.providers.lock().unwrap()["queueSource2"]["items"]
+                    .as_array()
+                    .is_some_and(Vec::is_empty)
+                {
                     break;
                 }
-                drop(calls);
                 assert!(
                     Instant::now() < expiry_end,
                     "evidence was renewed by repainting"
@@ -478,6 +792,23 @@ fn normal_cli_reports_before_eof_and_joins_on_eof_or_interrupt() {
                 thread::sleep(Duration::from_millis(20));
             }
             assert!(receiver.0.try_wait().unwrap().is_none());
+            let history: Value = serde_json::from_str(
+                &agent_management::observations_arguments(path.to_str().unwrap(), true)
+                    .unwrap()
+                    .stdout,
+            )
+            .unwrap();
+            assert_eq!(history["observations"].as_array().unwrap().len(), 1);
+            assert_eq!(history["observations"][0]["freshness"], "expired");
+            assert_eq!(
+                format!(
+                    "observation:{}",
+                    history["observations"][0]["observation_id"]
+                        .as_str()
+                        .unwrap()
+                ),
+                row["id"].as_str().unwrap()
+            );
             agent_management::report_payload(
                 &ReportRequest {
                     socket: path.to_string_lossy().into_owned(),
@@ -680,9 +1011,13 @@ impl Kit {
                     .set_read_timeout(Some(Duration::from_secs(1)))
                     .unwrap();
                 let mut line = String::new();
-                BufReader::new(stream.try_clone().unwrap())
+                let count = BufReader::new(stream.try_clone().unwrap())
                     .read_line(&mut line)
                     .unwrap();
+                if count == 0 {
+                    // A failed pre-send qualification closes the prepared socket without a frame.
+                    continue;
+                }
                 let request: Value = serde_json::from_str(&line).unwrap();
                 seen.lock().unwrap().push(request.clone());
                 let method = request["method"].as_str().unwrap();
@@ -694,11 +1029,13 @@ impl Kit {
                         assert_eq!(params["epoch"], "queue-epoch");
                     }
                 }
-                if matches!(mode, "busy" | "reject_v2") && method == "integration.view.open" {
-                    if mode == "reject_v2" {
-                        assert_eq!(params["version"], 2);
+                if matches!(mode, "busy" | "reject_v2" | "reject_v3")
+                    && method == "integration.view.open"
+                {
+                    if matches!(mode, "reject_v2" | "reject_v3") {
+                        assert_eq!(params["version"], if mode == "reject_v3" { 3 } else { 2 });
                     }
-                    let reply = json!({"id":request["id"],"error":{"code":if mode == "reject_v2" {"unsupportedVersion"} else {"sourceBusy"},"message":"PRIVATE MESSAGE"}});
+                    let reply = json!({"id":request["id"],"error":{"code":if mode.starts_with("reject_") {"unsupportedVersion"} else {"sourceBusy"},"message":"PRIVATE MESSAGE"}});
                     writeln!(stream, "{reply}").unwrap();
                     continue;
                 }
@@ -708,16 +1045,17 @@ impl Kit {
                         "version":"fixture","protocol":18,"selected_integration_source":"build",
                         "integration_views":{"version":if mode == "unsupported" {2} else {1},
                             "sources":[{"id":"build","epoch":"build-epoch"},{"id":"queueSource2","epoch":null}]}}});
-                        if matches!(
-                            mode,
-                            "v2" | "lost_open_v2" | "reject_v2" | "bad_sources" | "names"
-                        ) {
+                        if matches!(mode, "v2" | "lost_open_v2" | "reject_v2" | "bad_sources") {
                             reply["snapshot"]["integration_views"]["supported_versions"] =
                                 json!([1, 2]);
                         }
+                        if matches!(mode, "v3" | "lost_open_v3" | "reject_v3" | "names") {
+                            reply["snapshot"]["integration_views"]["supported_versions"] =
+                                json!([1, 2, 3]);
+                        }
                         if mode == "advertised_v1" {
                             reply["snapshot"]["integration_views"]["supported_versions"] =
-                                json!([1, 3]);
+                                json!([1, 99]);
                         }
                         if mode == "bad_versions" {
                             reply["snapshot"]["integration_views"]["supported_versions"] =
@@ -733,10 +1071,19 @@ impl Kit {
                             reply["snapshot"]["terminal_navigation"] = json!({"version":1});
                             reply["snapshot"]["panes"] =
                                 state.lock().unwrap()["_naming"]["panes"].clone();
+                            reply["snapshot"]["workspaces"] =
+                                state.lock().unwrap()["_naming"]["workspaces"].clone();
+                            reply["snapshot"]["tabs"] =
+                                state.lock().unwrap()["_naming"]["tabs"].clone();
                         }
                         reply
                     }
                     "terminal.inspect" if mode == "names" => {
+                        let delay = state.lock().unwrap()["_naming"]["delay_ms"]
+                            .as_u64()
+                            .unwrap_or(0)
+                            .min(200);
+                        thread::sleep(Duration::from_millis(delay));
                         let hung = state.lock().unwrap()["_naming"]["hung"] == true;
                         if hung {
                             while !done.load(Ordering::Acquire) {
@@ -750,14 +1097,16 @@ impl Kit {
                         revision = 0;
                         assert_eq!(
                             params["version"],
-                            if matches!(mode, "v2" | "lost_open_v2" | "names") {
+                            if matches!(mode, "v3" | "lost_open_v3" | "names") {
+                                3
+                            } else if matches!(mode, "v2" | "lost_open_v2") {
                                 2
                             } else {
                                 1
                             }
                         );
                         state.lock().unwrap()["queueSource2"] = json!({"items":[],"intents":[]});
-                        if matches!(mode, "lost_open" | "lost_open_v2") {
+                        if matches!(mode, "lost_open" | "lost_open_v2" | "lost_open_v3") {
                             continue;
                         }
                         json!({"type":"view_opened","lease":"queue-lease","epoch":"queue-epoch","revision":0,"ttl_ms":5000})
@@ -770,15 +1119,39 @@ impl Kit {
                         for row in params["items"].as_array().unwrap() {
                             assert_eq!(
                                 row.as_object().unwrap().len(),
-                                if matches!(mode, "v2" | "names") { 4 } else { 3 }
+                                if matches!(mode, "v3" | "names") {
+                                    5
+                                } else if mode == "v2" {
+                                    4
+                                } else {
+                                    3
+                                }
                             );
                             assert!(row["detail"].as_str().unwrap().len() <= 512);
-                            if mode == "v2" {
+                            if matches!(mode, "v2" | "v3" | "names") {
                                 assert!(row["presentation"]["label"].as_str().unwrap().len() <= 48);
                                 assert!(!matches!(
                                     row["presentation"]["status"].as_str(),
                                     Some("success" | "error")
                                 ));
+                            }
+                            if matches!(mode, "v3" | "names") {
+                                let info = row["information"].as_object().unwrap();
+                                assert_eq!(info.len(), 3);
+                                let mut bytes = 0;
+                                for key in ["attention", "activity", "context"] {
+                                    let lines = info[key].as_array().unwrap();
+                                    assert!(lines.len() <= 4);
+                                    for line in lines {
+                                        let line = line.as_str().unwrap();
+                                        assert!(!line.trim().is_empty() && line.len() <= 256);
+                                        assert!(!line.chars().any(|c| c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{2028}' | '\u{2029}')));
+                                        bytes += line.len();
+                                    }
+                                }
+                                assert!(bytes <= 1536);
+                            } else {
+                                assert!(row.get("information").is_none());
                             }
                         }
                         state.lock().unwrap()["queueSource2"]["items"] = params["items"].clone();
@@ -846,11 +1219,14 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
         "busy",
         "success",
         "v2",
+        "v3",
         "advertised_v1",
         "bad_versions",
         "bad_sources",
         "reject_v2",
+        "reject_v3",
         "lost_open_v2",
+        "lost_open_v3",
         "codex",
         "lost_open",
         "lost_poll",
@@ -864,29 +1240,47 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
         let build_before = kit
             .as_ref()
             .map(|kit| kit.providers.lock().unwrap()["build"].clone());
-        let started = Instant::now();
-        let receiver = Receiver::start(root.path());
+        let startup = Instant::now();
+        let mut receiver = Receiver::start(root.path());
         let socket = root
             .path()
             .join("receiver.sock")
             .to_str()
             .unwrap()
             .to_owned();
-        let deadline = Instant::now() + Duration::from_secs(1);
+        let deadline = startup + Duration::from_secs(5);
         loop {
-            if agent_management::inventory_arguments(
+            let readiness = agent_management::inventory_arguments(
                 &InventoryRequest {
                     socket: socket.clone(),
                 },
                 true,
-            )
-            .is_ok()
-            {
+            );
+            if readiness.is_ok() {
+                assert!(
+                    Instant::now() < deadline,
+                    "receiver readiness exceeded startup bound: mode={mode}; startup_ms={}",
+                    startup.elapsed().as_millis()
+                );
                 break;
             }
-            assert!(Instant::now() < deadline, "receiver not ready: {mode}");
+            let probe = readiness.as_ref().err().map(|error| error.code());
+            let status = receiver.0.try_wait().unwrap();
+            assert!(
+                status.is_none(),
+                "receiver exited before readiness: mode={mode}; status={status:?}; startup_ms={}; probe={probe:?}",
+                startup.elapsed().as_millis()
+            );
+            assert!(
+                Instant::now() < deadline,
+                "receiver not ready: mode={mode}; startup_ms={}; probe={probe:?}",
+                startup.elapsed().as_millis()
+            );
             thread::sleep(Duration::from_millis(5));
         }
+        // Process scheduling/store startup is not part of the two-second serve
+        // interval or the admitted receiver's report/ACK and shutdown budgets.
+        let started = Instant::now();
         let provider = if mode == "codex" { "codex" } else { "claude" };
         let event = if mode == "codex" {
             "SessionStart"
@@ -1083,18 +1477,21 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
                         .all(|call| call["method"] == "session.snapshot")
                 );
             }
-            if mode == "reject_v2" {
+            if matches!(mode, "reject_v2" | "reject_v3") {
                 assert_eq!(
                     calls.len(),
                     2,
                     "a rejected open must not trigger a downgrade or mutation"
                 );
                 assert_eq!(calls[1]["method"], "integration.view.open");
-                assert_eq!(calls[1]["params"]["version"], 2);
+                assert_eq!(
+                    calls[1]["params"]["version"],
+                    if mode == "reject_v3" { 3 } else { 2 }
+                );
             }
             if matches!(
                 mode,
-                "success" | "ctrl_c" | "codex" | "v2" | "advertised_v1"
+                "success" | "ctrl_c" | "codex" | "v2" | "v3" | "advertised_v1"
             ) {
                 assert_eq!(ui["cleanup"], "closed");
                 assert!(calls.iter().any(|c| {
@@ -1117,7 +1514,7 @@ fn optional_kit_isolated_from_receiver_and_other_sources() {
                 assert!(kit.providers.lock().unwrap().get("queueSource2").is_none());
             } else if matches!(
                 mode,
-                "lost_open" | "lost_open_v2" | "lost_poll" | "blocked_poll"
+                "lost_open" | "lost_open_v2" | "lost_open_v3" | "lost_poll" | "blocked_poll"
             ) {
                 assert_eq!(ui["outcome"], "uncertain");
                 assert!(

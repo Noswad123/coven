@@ -11,6 +11,36 @@ struct Entry {
     valid: bool,
 }
 impl Associations {
+    pub(super) fn current_deadlines(
+        &self,
+        native: &native::NativeStore,
+        now: Instant,
+    ) -> BTreeMap<String, Instant> {
+        self.0
+            .keys()
+            .filter_map(|id| {
+                self.current_deadline(id, native, now)
+                    .map(|end| (id.clone(), end))
+            })
+            .collect()
+    }
+
+    pub(super) fn current_deadline(
+        &self,
+        id: &str,
+        native: &native::NativeStore,
+        now: Instant,
+    ) -> Option<Instant> {
+        let entry = self.0.get(id).filter(|e| {
+            e.valid
+                && now.saturating_duration_since(e.asserted) < Duration::from_secs(30)
+                && native.navigation_fact(id, now) == Some(e.fact)
+        })?;
+        native
+            .naming_deadline(id, now, false)
+            .map(|end| end.min(entry.asserted + Duration::from_secs(30)))
+    }
+
     // Private publisher projection only, never part of observations/control results.
     pub(super) fn naming_hints(
         &self,

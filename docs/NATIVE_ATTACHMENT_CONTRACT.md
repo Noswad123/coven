@@ -150,6 +150,34 @@ retirement once. Forgetting bounded end history cannot revive an old lease or
 association revision; requalification requires a fresh higher-revision attach.
 Receiver restart clears leases and changes epoch; late frames fail.
 
+## Current View Membership
+
+Normal Djinn publication keeps any unexpired selected-root producer lease, even
+conflicting targets that refuse focus, or a valid manual association matching the
+fact, or fresh non-ended native Working/Blocked/Idle activity within 30 seconds.
+A quiet attached Unknown remains visible even when native queries fail. Each
+independently current root stays visible, including an idle second root; typing
+and human labels are not selection criteria and liveness never implies idle.
+
+Unhosted ended, lifecycle-only Unknown, expired and historical v1 Djinn rows are
+hidden, not deleted, stopped, successful or acknowledged. A quiet old reporter
+without activity disappears five seconds after its last lease heartbeat; real
+native activity may keep it for at most 30 seconds after that evidence. No label,
+provider SID, PID or CWD replacement heuristic or opaque-ID merge is allowed.
+CLI observations retain history, while generic `prefix+a` inspects published rows.
+
+This filter is private to the normal publisher and runs before its 128-item cap.
+Hidden Djinn history contributes no private limits/retirement notice or lost slot;
+public aggregate retirement counts and non-Djinn notices remain unchanged. Public
+observations and exported `run_with_projection` keep their six-field envelope and
+retained history IDs, without `_publisher_*` hints. Legacy serve and other-provider
+display policies do not change. Cached models, name I/O and encoded frames cannot
+extend membership: deadline-floor, admission and epoch checks reach the transport
+pre-send boundary after encoding, connection and endpoint fencing. Only safely
+Unsent refresh-needed frames rebuild on the same owner/candidate revision;
+attempted or uncertain writes never retry or close. These checks and rendering
+renew no leases or evidence clocks. No new Kit/Djinn source/API/version is needed.
+
 ## Checked Navigation
 
 Existing `user_asserted` assertions retain their original 30-second semantics,
@@ -201,7 +229,12 @@ qualification is a separate Djinn responsibility, not proven by receiver tests.
 
 ## Current Increment Record
 
-Name/icon/quiet-root review and qualification are **QUALIFIED**. Final Kit passed
+The Coven-only stale-row increment is tracked in the
+[gate record](../tools/normal-workflow-check/README.md#current-stale-row-increment).
+Existing user rows were not live-inspected; this is not installed activation and
+does not require new Kit/Djinn builds.
+
+Historical name/icon/quiet-root review and qualification are **QUALIFIED**. Final Kit passed
 2,578 binary tests (five ignored), 193 integration tests across 11 targets and one
 explicit real-Coven roundtrip. Separately, the latest unified run passed 19 sidebar,
 32 normal, four adoption, 16 hosting/status-sampling gates, six Coven presentation
@@ -218,5 +251,6 @@ No full CI/full Coven suite, new provider/mobile/remote or actual model qualific
 The source addresses quiet/resumed selected-root initial and expiry gaps, but the
 two existing user Djinn instances were not live-inspected; their current Unknown
 cause and resolution are not established. No binary/wire version change, install
-or configuration edit; activation still requires new Djinn/Coven/Kit builds and
-explicit user approval for restart/new-pane/provider handoff.
+or configuration edit; activation of that historical cross-app baseline requires
+new Djinn/Coven/Kit builds and explicit user approval for restart/new-pane/provider
+handoff, unlike the Coven-only follow-up.

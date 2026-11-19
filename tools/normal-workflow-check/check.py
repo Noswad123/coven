@@ -252,15 +252,23 @@ class ViewClient:
         self.send(b'\x07\x02' + event + b'\x00' + event + b'\x02')
 
     def poll(self):
-        if select.select([self.sock], [], [], .05)[0]:
-            data = self.sock.recv(1024**2)
-            require(data, 'render client disconnected')
-            self.pending.extend(data)
-        while len(self.pending) >= 4:
-            size = struct.unpack('<I', self.pending[:4])[0]
-            require(size <= 2 * 1024**2, 'oversized semantic frame')
-            if len(self.pending) < size + 4:
-                break
+        deadline = time.monotonic() + .15
+        received = frames = 0
+        while frames < 32 and time.monotonic() < deadline:
+            if len(self.pending) >= 4:
+                size = struct.unpack('<I', self.pending[:4])[0]
+                require(size <= 2 * 1024**2, 'oversized semantic frame')
+            else:
+                size = None
+            if size is None or len(self.pending) < size + 4:
+                if received >= 8 * 1024**2 or not select.select([self.sock], [], [], .05 if not received and not frames else 0)[0]:
+                    break
+                data = self.sock.recv(1024**2)
+                require(data, 'render client disconnected')
+                self.pending.extend(data)
+                received += len(data)
+                continue
+            frames += 1
             d = Decoder(self.pending[4:size + 4])
             del self.pending[:size + 4]
             kind = d.uint()
@@ -284,7 +292,63 @@ class ViewClient:
                     continue
                 self.text = '\n'.join(''.join(cells[y * width:(y + 1) * width]) for y in range(height))
                 self.generation += 1
+                guard = getattr(self, 'selection_guard', None)
+                if guard is not None:
+                    require(self.inspector_identity() == guard,
+                            f'inspector selection continuity lost at frame {self.generation}: '
+                            f'expected={guard!r} actual={self.inspector_identity()!r}\n{self.text}')
         return self.text
+
+    def inspector_identity(self):
+        """Rendered source/query/selected item only; protocol 18 exposes no item IDs."""
+        width, height = min(self.width, 100), min(self.height, 32)
+        left, top = (self.width - width) // 2, (self.height - height) // 2
+        rows = [line[left + 1:left + width - 1].strip()
+                for line in self.text.splitlines()[top + 1:top + height - 1]]
+        available = height - 4
+        start = 2 + min(available // 4, 8)
+        selected = [line[2:].split(' ', 1)[-1] for line in rows[start:start + available // 3]
+                    if line.startswith('> ')]
+        source = [line for line in rows[2:start] if line.startswith('> ')]
+        return (tuple(source), rows[1], selected[0]) if len(selected) == 1 and len(rows) > 1 else None
+
+    @contextlib.contextmanager
+    def selected_frames(self):
+        previous = getattr(self, 'selection_guard', None)
+        identity = self.inspector_identity()
+        require(identity is not None, 'inspector has no selected item:\n' + self.text)
+        require(previous is None or identity == previous, 'inspector identity changed before interaction')
+        self.selection_guard = identity
+        try:
+            yield identity
+        finally:
+            self.selection_guard = previous
+
+    def inspector_click(self, locate, expected, description, timeout=3):
+        """Retry only local inspection clicks, with fresh hits and rendered postconditions."""
+        end = time.monotonic() + timeout
+        attempts = 0
+        while time.monotonic() < end:
+            self.poll()
+            if expected():
+                if attempts > 1:
+                    print(f'INPUT TRACE {description}: {attempts} read-only attempts; frame={self.generation}', flush=True)
+                return
+            point = locate()
+            if point is None:
+                time.sleep(.02)
+                continue
+            attempts += 1
+            self.mouse(*point)
+            reply_end = min(end, time.monotonic() + .35)
+            while time.monotonic() < reply_end:
+                self.poll()
+                if expected():
+                    if attempts > 1:
+                        print(f'INPUT TRACE {description}: {attempts} read-only attempts; frame={self.generation}', flush=True)
+                    return
+                time.sleep(.01)
+        raise AssertionError(f'timeout: {description}; attempts={attempts}; frame={self.generation}\n{self.text}')
 
     def expect(self, *words, timeout=10):
         def matches():
@@ -307,7 +371,7 @@ class ViewClient:
         return [match.groups() for line in self.poll().splitlines()
                 if (match := re.fullmatch(pattern, line.split('│', 1)[0].strip()))]
 
-    def expect_row(self, provider, *facts, timeout=10, name=None):
+    def expect_row(self, provider, *facts, timeout=10, name=None, main_facts=()):
         """Check the actual summary and its read-only inspector, never RPC models."""
         state = next((m.group().title() for fact in facts
                       if (m := re.match(r'WORKING|BLOCKED|IDLE|ENDED|UNKNOWN', fact))), None)
@@ -323,11 +387,13 @@ class ViewClient:
             left, top = (self.width - width) // 2, (self.height - height) // 2
 
             def panel():
-                return [line[left + 1:left + width - 1] for line in self.poll().splitlines()[top + 1:top + height - 1]]
+                return [line[left + 1:left + width - 1] for line in self.text.splitlines()[top + 1:top + height - 1]]
 
-            source_y = wait_for(lambda: next((top + 1 + n for n, line in enumerate(panel())
-                                              if line.strip() in ('coven', '> coven')), None), 'inspector Coven source')
-            self.mouse(left + 3, source_y)
+            self.inspector_click(
+                lambda: next(((left + 3, top + 1 + n) for n, line in enumerate(panel())
+                              if line.strip() in ('coven', '> coven')), None),
+                lambda: 'Tab: Sources' in self.text and any(line.strip() == '> coven' for line in panel()),
+                'inspector Coven source')
             self.press('/')
             searching = True
             for char in name:
@@ -342,19 +408,45 @@ class ViewClient:
             def matches():
                 # Duplicate names are intentional. Inspect each rendered hit;
                 # identities stay in the owner protocol, never in the sidebar.
-                hits = [top + 1 + n for n, line in enumerate(panel())
-                        if re.fullmatch(rf'[ >]*\S {re.escape(name)}\s*', line)]
-                for y in hits:
-                    generation = self.generation
-                    self.mouse(left + 3, y)
-                    wait_for(lambda: self.poll() and self.generation > generation, 'selected inspector frame')
-                    detail = ''.join(panel()[detail_start:]).rstrip()
-                    if name in detail and 'Status: ' in detail and all(fact in detail for fact in facts):
-                        return True
+                def hits():
+                    return [top + 1 + n for n, line in enumerate(panel())
+                            if 2 + min(available // 4, 8) <= n < detail_start and
+                            re.fullmatch(rf'[ >]*\S {re.escape(name)}\s*', line)]
+
+                for ordinal in range(len(hits())):
+                    def locate():
+                        current = hits()
+                        return (left + 3, current[ordinal]) if ordinal < len(current) else None
+
+                    def selected():
+                        point = locate()
+                        return point is not None and panel()[point[1] - top - 1].strip().startswith('> ') and all(
+                            heading in '\n'.join(panel()[detail_start:])
+                            for heading in ('Attention', 'Current activity', 'Working context'))
+
+                    self.inspector_click(locate, selected, f'initial {name} selection {ordinal}', timeout)
+                    with self.selected_frames():
+                        detail = '\n'.join(panel()[detail_start:]).rstrip()
+                        if '▾ Diagnostics [d]' in detail:
+                            self.diagnostics(False)
+                            detail = '\n'.join(panel()[detail_start:]).rstrip()
+                        require(all(heading in detail for heading in ('Attention', 'Current activity', 'Working context')),
+                                'structured main information missing: ' + detail)
+                        require('▸ Diagnostics [d]' in detail and 'Coven:' not in detail and 'Status:' not in detail,
+                                'diagnostics leaked into default main information: ' + detail)
+                        require(name not in detail, 'item name repeated in Details: ' + detail)
+                        require(all(fact in detail for fact in main_facts), 'missing main information: ' + detail)
+                        self.diagnostics(True)
+                        detail = self.inspector_details()
+                        if 'Coven:' in detail and all(fact in detail for fact in facts):
+                            return detail
+                        self.diagnostics(False)
                 return False
 
-            wait_for(matches, f'actual {provider} full inspector detail {facts}', timeout)
+            detail = matches()
+            require(detail, f'actual {provider} full inspector detail missing: {facts}')
             require('PRIVATE-' not in self.text, 'native identifier leaked into generic inspector')
+            return detail
         except AssertionError:
             print('Last actual frame:\n' + self.text, file=sys.stderr)
             raise
@@ -368,8 +460,95 @@ class ViewClient:
                     self.press('esc')
                     wait_for(lambda: 'Integration details' not in self.poll(), 'inspector closed after row check')
 
+    def diagnostics(self, expanded=True):
+        """Use the visible header to focus Details, then its read-only key."""
+        with self.selected_frames():
+            self.expect('Diagnostics [d]')
+            width, height = min(self.width, 100), min(self.height, 32)
+            left, top = (self.width - width) // 2, (self.height - height) // 2
+
+            def focus_point():
+                return next(((left + 3, y - 1) for y, line in enumerate(self.text.splitlines())
+                             if top + 1 < y < top + height - 1 and
+                             'Diagnostics [d]' in line[left + 1:left + width - 1]), None)
+
+            target = ('▾' if expanded else '▸') + ' Diagnostics [d]'
+            if target in self.text:
+                return
+            self.inspector_click(focus_point, lambda: 'Tab: Details' in self.text, 'Details focus')
+            for attempt in range(4):
+                self.poll()
+                if target in self.text:
+                    return
+                require(('▸' if expanded else '▾') + ' Diagnostics [d]' in self.text,
+                        'diagnostic header disappeared before toggle')
+                self.press('d')
+                end = time.monotonic() + .5
+                while time.monotonic() < end:
+                    self.poll()
+                    if target in self.text:
+                        if attempt:
+                            print(f'INPUT TRACE diagnostics: {attempt + 1} read-only attempts; frame={self.generation}', flush=True)
+                        return
+                    time.sleep(.01)
+            raise AssertionError('diagnostic toggle did not produce expected state:\n' + self.text)
+
+    def inspector_details(self):
+        """Collect wrapped detail text through actual read-only viewport scrolling."""
+        width, height = min(self.width, 100), min(self.height, 32)
+        left, top = (self.width - width) // 2, (self.height - height) // 2
+        available = height - 4
+        start = top + 1 + 2 + min(available // 4, 8) + available // 3
+        with self.selected_frames():
+            chunks = []
+            for _ in range(8):
+                chunks.append(''.join(line[left + 1:left + width - 1].rstrip()
+                                      for line in self.poll().splitlines()[start:top + height - 1]))
+                generation = self.generation
+                self.press('down')
+                wait_for(lambda: self.poll() and self.generation > generation, 'scrolled diagnostic frame')
+            for _ in range(8):
+                generation = self.generation
+                self.press('pageup')
+                wait_for(lambda: self.poll() and self.generation > generation, 'restored detail viewport')
+                if 'Attention' in self.text:
+                    break
+            return '\n'.join(chunks)
+
     def close(self):
         self.sock.close()
+
+    def expect_missing(self, name, timeout=10):
+        """Verify a removed row in the actual filtered inspector, not just a viewport."""
+        self.press('b', 2)
+        self.press('a')
+        try:
+            self.expect('Integration details', timeout=timeout)
+            width, height = min(self.width, 100), min(self.height, 32)
+            left, top = (self.width - width) // 2, (self.height - height) // 2
+            def panel():
+                return [line[left + 1:left + width - 1]
+                        for line in self.poll().splitlines()[top + 1:top + height - 1]]
+            source_y = wait_for(lambda: next((top + 1 + n for n, line in enumerate(panel())
+                                              if line.strip() in ('coven', '> coven')), None), 'inspector Coven source')
+            self.mouse(left + 3, source_y)
+            self.press('/')
+            for char in name:
+                self.press(char)
+            self.expect('/ ' + name)
+            self.press('enter')  # Finish the search, never activate an item.
+            # Kit also searches details: a named live row can legitimately match
+            # "Djinn" through its origin. Reject the old exact row label, not all hits.
+            self.expect('Filter: ' + name, timeout=timeout)
+            available = height - 4
+            item_start = 2 + min(available // 4, 8)
+            item_rows = panel()[item_start:item_start + available // 3]
+            require(not any(re.fullmatch(rf'[ >]*[?·!◌\u2800-\u28ff✓×] {re.escape(name)}\s*', line)
+                            for line in item_rows),
+                    'removed row remains in actual inspector: ' + name)
+        finally:
+            self.press('esc')
+            wait_for(lambda: 'Integration details' not in self.poll(), 'inspector closed after absence check')
 
 
 def environment(root):
@@ -564,9 +743,21 @@ def native_checks(args, root, kit, receiver, server, helper, pane_id, pane_env, 
                 pane_env, root, json.dumps({'session_id': 'PRIVATE-HOOK-REFERENCE', 'hook_event_name': 'SessionStart'}))
         view.expect_row('codex', 'UNKNOWN', 'reference_only')
         passed('reference-only codex hook remains UNKNOWN in actual generic view')
-        view.expect_row('Djinn', 'UNKNOWN (expired)', timeout=35)
+        def observations():
+            return json.loads(command([args.coven_bin, 'agent', 'observations', '--from-kitsune', '--json'],
+                                      pane_env, root))['observations']
+        native = next(row for row in observations() if row['provider'] == 'djinn')
+        native_id = native['observation_id']
+        def expired():
+            row = next(row for row in observations() if row['observation_id'] == native_id)
+            return row if row['reported_state'] == 'unknown' and row['freshness'] == 'expired' else None
+        old = wait_for(expired, 'public native evidence expiry with history retained', 35)
+        wait_for(lambda: not view.compact_rows('Djinn'), 'expired unhosted Djinn removed from sidebar')
+        view.expect_missing('Djinn')
+        require(old['age_ms'] >= 30000 and old['unacknowledged_pending_count'] == native['unacknowledged_pending_count'],
+                'expiry erased history or acknowledged native attention')
         require(Path(f'/proc/{helper}').exists(), 'helper died instead of evidence expiry')
-        passed('native evidence expires after real 30s while presenter remains alive')
+        passed('real 30s event-only expiry removes unhosted Djinn from sidebar/inspector; same public ID/history retained, presenter alive')
         event('session.status', sessionID=sid, status={'type': 'busy'})
         view.expect_row('Djinn', 'WORKING (fresh)')
         os.kill(helper, signal.SIGKILL)

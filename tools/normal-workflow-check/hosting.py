@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import select
 import socket
@@ -31,7 +32,147 @@ def retirement_error(method):
 def spawn_bun(argv, env, root, tag, package):
     with (root / (tag + '.log')).open('wb') as log:
         return subprocess.Popen(argv, cwd=package, env=env, stdout=log, stderr=log,
-                                start_new_session=True, preexec_fn=check.limits)
+                                 start_new_session=True, preexec_fn=check.limits)
+
+
+def restart_checks(args, root):
+    phase = root / 'restart'
+    phase.mkdir(mode=0o700)
+    env = check.environment(phase)
+    env['XDG_STATE_HOME'] = str(root / 'j')
+    state = root / 'j/coven/integration'
+    check.require(len(os.fsencode(state / 'i' / ('0' * 24) / 'r.sock')) < 108, 'restart receiver path too long')
+    bindir = phase / 'bin'
+    bindir.mkdir(mode=0o700)
+    (bindir / 'coven').symlink_to(args.coven_bin)
+    env['PATH'] = str(bindir) + ':/usr/bin:/bin'
+    config = phase / 'kit.toml'
+    config.write_text('onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n'
+                      '[ui]\nsidebar_width = 100\nsidebar_min_width = 100\nsidebar_max_width = 100\n'
+                      '[integrations]\nsources = ["coven"]\n')
+    kit = root / 'q.sock'
+    env.update(KITSUNE_CONFIG_PATH=str(config), KITSUNE_SOCKET_PATH=str(kit),
+               KITSUNE_SESSION='reporter-restart', KITSUNE_LOG='warn')
+    workspace = phase / 'w'
+    check.command([args.coven_bin, 'init', str(workspace), '--blank'], env, phase)
+    server = check.spawn([args.kitsune_bin, 'server'], env, phase, 'kit', stdin=subprocess.DEVNULL)
+    producer = view = None
+    try:
+        check.wait_for(lambda: check.api(kit, 'session.snapshot'), 'restart fixture Kit')
+        directory, receipt = check.wait_for(lambda: instance(state, kit), 'restart receiver receipt')
+        helper = check.wait_for(lambda: helper_for(args, server), 'restart actual helper')
+        pane, pane_env = check.pane_environment(kit, phase, workspace)
+        other = phase / 'c'
+        other.mkdir(mode=0o700)
+        other_pane, _ = check.pane_environment(kit, other, workspace)
+        check.api(kit, 'pane.rename', dict(pane_id=pane, label='old'))
+        check.api(kit, 'pane.rename', dict(pane_id=other_pane, label=None))
+        view = check.ViewClient(root / 'q-client.sock', 200, 60)
+        view.expect('Coven')
+        package = args.djinn_source.resolve() / 'clients/djinn-ui/packages/opencode'
+        fixture = phase / 'restart-producer.test.ts'
+        fixture.write_text(Path(__file__).with_name('restart-producer.test.ts').read_text())
+        producer = spawn_bun([args.bun, 'test', '--timeout', '60000', str(fixture)],
+                             {**env, 'COVEN_RESTART_PACKAGE': str(package), 'COVEN_RESTART_INTEROP': str(phase),
+                              'OPENCODE_DISABLE_DEFAULT_PLUGINS': 'true', 'OPENCODE_DISABLE_MODELS_FETCH': 'true'},
+                             phase, 'producer', package)
+        number = 0
+        def operation(value):
+            nonlocal number
+            number += 1
+            path = phase / f'restart-command-{number}.json'
+            pending = path.with_suffix('.new')
+            pending.write_text(json.dumps(dict(operation=value)))
+            pending.replace(path)
+            def reply():
+                file = phase / f'restart-reply-{number}.json'
+                if file.exists():
+                    return [json.loads(file.read_text())]
+                check.require(producer.poll() is None, 'restart producer exited: ' + (phase / 'producer.log').read_text()[-10000:])
+            return check.wait_for(reply, 'actual reporter ' + value, 20)[0]
+        def observations():
+            result = json.loads(check.command([args.coven_bin, 'agent', 'observations', '--from-kitsune', '--json'],
+                                              pane_env, phase))
+            check.require('_publisher_current' not in result and '_publisher_names' not in result,
+                          'private publisher hints leaked into public observations')
+            return {row['observation_id']: row for row in result['observations']}
+        def identity(result):
+            return hashlib.sha256(('native\0' + result['instance'] + '\0' + result['session']).encode()).hexdigest()
+        def rows(expected):
+            actual = {name: len(view.compact_rows('djinn', name=name)) for name in ('old', 'coven sesh', 'Djinn')}
+            return actual == {name: expected.count(name) for name in actual}
+        def unchanged():
+            snapshot = check.api(kit, 'session.snapshot')['snapshot']
+            return {key: snapshot.get(key) for key in ('focused_workspace_id', 'focused_tab_id', 'focused_pane_id')} | {
+                'panes': [(p['pane_id'], p['terminal_id'], p.get('agent_session')) for p in snapshot['panes']],
+                'text': [check.api(kit, 'pane.read', dict(pane_id=p, source='recent_unwrapped', format='text'))['read']['text']
+                         for p in (pane, other_pane)]}
+        before = unchanged()
+        a = operation('start-a')
+        aid = identity(a)
+        view.expect_row('Djinn', 'UNKNOWN', name='old')
+        initial = observations()[aid]
+        check.require(initial['age_ms'] is None and initial['hosting_state'] == 'local_full_tui_root',
+                      'actual metadata qualification manufactured activity')
+        operation('stop-a')
+        lost = time.monotonic()
+        check.api(kit, 'pane.rename', dict(pane_id=pane, label='coven sesh'))
+        b = operation('start-b')
+        bid = identity(b)
+        check.require(a['session'] == b['session'] and a['instance'] != b['instance'] and aid != bid,
+                      'reporter replacement merged identities or changed native SID')
+        check.wait_for(lambda: rows(['coven sesh', 'coven sesh']), 'both actual same-SID reporter rows before old lease expiry')
+        c = operation('start-c')
+        cid = identity(c)
+        view.expect_row('Djinn', 'UNKNOWN', name='Djinn')
+        check.wait_for(lambda: observations().get(aid, {}).get('hosting_state') == 'none', 'old reporter real 5s lease expiry', 8)
+        check.wait_for(lambda: rows(['coven sesh', 'Djinn']), 'two genuine live roots retained, stale reporter hidden')
+        expiry_elapsed = time.monotonic() - lost
+        view.expect_missing('old')
+        view.expect_row('Djinn', 'UNKNOWN', name='coven sesh')
+        view.expect_row('Djinn', 'UNKNOWN', name='Djinn')
+        retained = observations()
+        check.require(set(retained) == {aid, bid, cid} and retained[aid]['hosting_state'] == 'none' and
+                      all(retained[key]['age_ms'] is None and retained[key]['reported_state'] == 'unknown' and
+                          retained[key]['unacknowledged_pending_count'] == initial['unacknowledged_pending_count']
+                          for key in retained) and
+                      all(retained[key]['hosting_state'] == 'local_full_tui_root' for key in (bid, cid)),
+                      'quiet restart erased history, lost live roots, invented activity or acknowledged attention')
+        check.require(all(value not in view.text for value in (a['instance'], b['instance'], c['instance'], a['session'], c['session'])),
+                      'raw producer identity leaked into actual frame')
+        print('ACTUAL TWO LIVE ROOTS: ' + json.dumps([line.split('│', 1)[0].strip() for line in view.poll().splitlines()
+              if re.fullmatch(r'. (coven sesh|Djinn)', line.split('│', 1)[0].strip())]), flush=True)
+        check.passed(f'actual isolated Djinn factories/registry/workers: same SID/new UUID gives independent rows; lost-detach lease hides old A ({expiry_elapsed:.2f}s observed); quiet B and real other-root C kept')
+        operation('stop-c')
+        check.wait_for(lambda: rows(['coven sesh']), 'only current coven sesh after other frontend disposal')
+        view.expect_missing('Djinn')
+        view.expect_missing('old')
+        view.expect_row('Djinn', 'UNKNOWN', name='coven sesh')
+        check.require(set(observations()) == {aid, bid, cid} and unchanged() == before and
+                      Path(f'/proc/{helper}').exists(), 'restart visibility changed history, native focus/input or helper')
+        final_rows = [line.split('│', 1)[0].strip() for line in view.poll().splitlines()
+                      if re.fullmatch(r'. (coven sesh|Djinn|old)', line.split('│', 1)[0].strip())]
+        check.require(final_rows == ['? coven sesh'], f'final actual rows not current-only: {final_rows}')
+        print('ACTUAL FINAL CURRENT ROWS: ' + json.dumps(final_rows) + '; public history retains all 3 opaque observation IDs', flush=True)
+        check.passed('actual sidebar + prefix+a filters contain only current coven sesh; old A/C public history retained, no native focus/input/ack')
+        operation('done')
+        check.require(producer.wait(timeout=15) == 0, 'restart producer teardown failed')
+        print((phase / 'producer.log').read_text()[-6000:], flush=True)
+    finally:
+        if producer and producer.poll() is None:
+            producer.terminate()
+            producer.wait(timeout=10)
+            print('RESTART PRODUCER LOG:\n' + (phase / 'producer.log').read_text()[-10000:], flush=True)
+        if view:
+            view.close()
+        if server.poll() is None:
+            check.api(kit, 'server.stop')
+        check.require(server.wait(timeout=10) == 0, 'restart fixture Kit shutdown failed')
+    released = json.loads((directory / 'receipt.json').read_text())
+    check.require(released['released'] and released['nonce'] == receipt['nonce'] and
+                  not (directory / 'r.sock').exists() and not Path(f'/proc/{helper}').exists(),
+                  'restart fixture receiver/helper/receipt cleanup failed')
+    check.stop_children()
 
 
 def run(args, root):
@@ -520,6 +661,13 @@ def run(args, root):
         check.require(producer.wait(timeout=15) == 0, 'producer teardown failed')
         print((root / 'producer.log').read_text()[-6000:], flush=True)
     finally:
+        failed = sys.exc_info()[0] is not None
+        if failed and 'helper' in locals():
+            for fd in (1, 2):
+                try:
+                    print(f'HELPER OUTPUT fd={fd}: ' + os.readlink(f'/proc/{helper}/fd/{fd}'), flush=True)
+                except OSError as exc:
+                    print(f'HELPER OUTPUT fd={fd}: unavailable ({exc})', flush=True)
         if producer and producer.poll() is None:
             producer.terminate()
             producer.wait(timeout=10)
@@ -528,6 +676,16 @@ def run(args, root):
         if server.poll() is None:
             check.api(kit, 'server.stop')
         check.require(server.wait(timeout=10) == 0, 'actual Kit shutdown failed')
+        if failed:
+            paths = [root / 'kit.log', root / 'producer.log', *root.rglob('kitsune-server.log')]
+            for path in paths[:4]:
+                try:
+                    with path.open('rb') as stream:
+                        stream.seek(max(0, path.stat().st_size - 16000))
+                        print(f'SHUTDOWN DIAGNOSTICS {path.relative_to(root)}:\n' +
+                              stream.read(16000).decode(errors='replace'), flush=True)
+                except OSError as exc:
+                    print(f'SHUTDOWN DIAGNOSTICS {path.name}: unavailable ({exc})', flush=True)
     released = json.loads((directory / 'receipt.json').read_text())
     check.require(released['released'] and released['nonce'] == receipt['nonce'] and
                   not receiver.exists() and not Path(f'/proc/{helper}').exists(), 'helper/receipt shutdown failed')
@@ -535,6 +693,8 @@ def run(args, root):
     check.stop_children()
     check.require(not check.descendants(), 'owned descendants remain')
     print('SHUTDOWN verified: actual server.stop, helper reaped, same receipt generation released, no owned descendants', flush=True)
+
+    restart_checks(args, root)
 
     phase = root / 'solo'
     phase.mkdir(mode=0o700)

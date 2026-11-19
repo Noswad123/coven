@@ -769,6 +769,100 @@ mod unix {
     }
 
     #[test]
+    fn guarded_view_attempted_writes_stay_uncertain_and_never_reenter_preflight() {
+        for mode in [
+            "read_timeout",
+            "cancel",
+            "validation_refresh",
+            "partial_send",
+        ] {
+            let server = Server::new();
+            let flag = Arc::new(AtomicBool::new(false));
+            let cancel = Flag(flag.clone());
+            let calls = std::cell::Cell::new(0);
+            let listener = server.listener.try_clone().unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let (done, wait) = std::sync::mpsc::channel();
+            let worker = thread::spawn(move || {
+                let end = Instant::now() + Duration::from_secs(2);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(stream) => break stream,
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < end, "missing guarded view connection");
+                            thread::sleep(Duration::from_millis(1));
+                        }
+                        Err(e) => panic!("{e}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                if mode != "partial_send" {
+                    let mut line = String::new();
+                    BufReader::new(&stream).read_line(&mut line).unwrap();
+                    if mode == "cancel" {
+                        flag.store(true, Ordering::Release);
+                    }
+                    if mode == "validation_refresh" {
+                        stream.write_all(b"{}\n").unwrap();
+                    }
+                }
+                let _ = wait.recv_timeout(Duration::from_secs(2));
+            });
+            let params = if mode == "partial_send" {
+                json!({"text":"x".repeat(512 * 1024)})
+            } else {
+                json!({})
+            };
+            let failure = view_call_guarded(
+                &select(&server.path).unwrap(),
+                "integration.view.replace",
+                &params,
+                Instant::now() + Duration::from_millis(500),
+                &cancel,
+                &|_, _| Err(Failure::new("presentation_refresh_needed")),
+                &|| {
+                    calls.set(calls.get() + 1);
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+            assert_eq!(failure.delivery, Delivery::Uncertain, "{mode}");
+            assert_eq!(calls.get(), 1);
+            if mode == "cancel" {
+                assert!(failure.interrupted);
+            }
+            done.send(()).unwrap();
+            worker.join().unwrap();
+            server.listener.set_nonblocking(true).unwrap();
+            assert!(
+                server.listener.accept().is_err(),
+                "unexpected transport retry: {mode}"
+            );
+        }
+    }
+
+    #[test]
+    fn guarded_view_keeps_the_closed_method_allowlist_before_preflight_or_connect() {
+        let server = Server::new();
+        let failure = view_call_guarded(
+            &select(&server.path).unwrap(),
+            "pane.annotate",
+            &json!({}),
+            deadline(),
+            &NoCancel,
+            &|_, _| unreachable!(),
+            &|| panic!("invalid method reached preflight"),
+        )
+        .unwrap_err();
+        assert_eq!(failure.code, "invalid_view_method");
+        assert_eq!(failure.delivery, Delivery::Unsent);
+        server.listener.set_nonblocking(true).unwrap();
+        assert!(server.listener.accept().is_err());
+    }
+
+    #[test]
     fn partial_send_backpressure_obeys_deadline_and_is_uncertain() {
         let server = Server::new();
         let listener = server.listener.try_clone().unwrap();

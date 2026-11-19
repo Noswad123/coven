@@ -304,6 +304,7 @@ pub(super) struct NativeStore {
     tombstones: BTreeMap<(String, String), Instant>,
     observations: BTreeMap<(String, String), Observation>,
     retired: u64,
+    retired_djinn: u64,
     occurrence: u64,
 }
 
@@ -318,8 +319,11 @@ impl NativeStore {
 
     fn remove_observation(&mut self, key: &(String, String)) {
         self.revoke_selections(key);
-        if self.observations.remove(key).is_some() {
+        if let Some(observation) = self.observations.remove(key) {
             self.retired = self.retired.saturating_add(1);
+            if observation.provider == "djinn" {
+                self.retired_djinn = self.retired_djinn.saturating_add(1);
+            }
         }
     }
 
@@ -507,6 +511,33 @@ impl NativeStore {
             .values()
             .find(|o| o.id == id && o.active(now))
             .map(|_| self.navigation_generation)
+    }
+    // Membership is independent of focusability: conflicting selections still host a row.
+    pub(super) fn current_deadline(&self, id: &str, now: Instant) -> Option<Instant> {
+        let (key, o) = self.observations.iter().find(|(_, o)| o.id == id)?;
+        if o.ended.is_some() {
+            return None;
+        }
+        let selection = self
+            .clients
+            .values()
+            .filter_map(|c| {
+                (now.saturating_duration_since(c.seen) < ATTACHMENT_TTL
+                    && c.selection.as_ref().is_some_and(|s| &s.key == key))
+                .then_some(c.seen + ATTACHMENT_TTL)
+            })
+            .max();
+        // Any still-fresh activity can sustain membership, not just the oldest
+        // pending fact currently chosen for the public blocked-state display.
+        let activity = o
+            .status
+            .into_iter()
+            .map(|(_, at)| at)
+            .chain(o.pending.values().map(|p| p.at))
+            .filter(|at| fresh(*at, now))
+            .map(|at| at + EVIDENCE_TTL)
+            .max();
+        selection.into_iter().chain(activity).max()
     }
     pub(super) fn naming_deadline(
         &self,
@@ -765,6 +796,9 @@ impl NativeStore {
             // The terminal safety fact is retained even if all display slots
             // contain live activity. There is no extra hidden active slot.
             self.retired = self.retired.saturating_add(1);
+            if p["provider"].as_str().unwrap_or("djinn") == "djinn" {
+                self.retired_djinn = self.retired_djinn.saturating_add(1);
+            }
             return Ok(json!({"type":"accepted","delivery":"volatile"}));
         }
         let kind = event.split('.').next().unwrap();
@@ -849,8 +883,55 @@ impl NativeStore {
     }
 
     pub fn projection(&self, legacy: Value, now: Instant) -> Value {
+        self.project(legacy, now, None)
+    }
+
+    pub(super) fn publisher_projection(
+        &self,
+        legacy: Value,
+        now: Instant,
+        manual: &BTreeMap<String, Instant>,
+    ) -> Value {
+        let deadlines: BTreeMap<_, _> = self
+            .observations
+            .values()
+            .filter(|o| o.provider == "djinn" && o.ended.is_none())
+            .filter_map(|o| {
+                self.current_deadline(&o.id, now)
+                    .into_iter()
+                    .chain(manual.get(&o.id).copied())
+                    .max()
+                    .map(|end| (o.id.clone(), end))
+            })
+            .collect();
+        let mut view = self.project(legacy, now, Some(&deadlines));
+        view["_publisher_current"] = json!(
+            view["observations"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|row| {
+                    let id = row["observation_id"].as_str()?;
+                    let end = deadlines.get(id)?;
+                    Some(json!({"id":format!("observation:{id}"),
+                    "until":crate::agent_management_presentation::naming_tick(*end)}))
+                })
+                .collect::<Vec<_>>()
+        );
+        view
+    }
+
+    fn project(
+        &self,
+        legacy: Value,
+        now: Instant,
+        current: Option<&BTreeMap<String, Instant>>,
+    ) -> Value {
         let mut observations = Vec::new();
         for record in legacy["records"].as_array().into_iter().flatten() {
+            if current.is_some() && record["provider"] == "djinn" {
+                continue;
+            }
             let age = record["age_ms"].as_u64();
             let capability = if record["provider"] == "claude" {
                 "activity"
@@ -867,6 +948,11 @@ impl NativeStore {
             ));
         }
         for observation in self.observations.values() {
+            if observation.provider == "djinn"
+                && current.is_some_and(|ids| !ids.contains_key(&observation.id))
+            {
+                continue;
+            }
             let fact = observation.fact(now);
             let age = fact.map(|(_, at)| {
                 now.saturating_duration_since(at)
@@ -930,7 +1016,12 @@ impl NativeStore {
                 o["observation_id"].as_str().unwrap_or_default().to_owned(),
             )
         });
-        let limit = if observations.len() > MAX_RECORDS || self.retired > 0 {
+        let retired = if current.is_some() {
+            self.retired.saturating_sub(self.retired_djinn)
+        } else {
+            self.retired
+        };
+        let limit = if observations.len() > MAX_RECORDS || retired > 0 {
             MAX_RECORDS - 1
         } else {
             MAX_RECORDS
@@ -938,7 +1029,7 @@ impl NativeStore {
         let omitted = observations.len().saturating_sub(limit);
         observations.truncate(limit);
         json!({"contract":VIEW,"server_epoch":legacy["server_epoch"],"authorization":"none","observations":observations,
-            "omitted_observations":omitted,"retired_native_observations":self.retired})
+            "omitted_observations":omitted,"retired_native_observations":retired})
     }
 }
 
@@ -1164,6 +1255,254 @@ mod tests {
     }
     fn attachment(store: &mut NativeStore, p: Value, now: Instant) -> Result<Value> {
         store.report_attachment(&p, &"a".repeat(32), now)
+    }
+
+    #[test]
+    fn current_view_restart_keeps_distinct_roots_and_history_without_clock_mutation() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        store.report(&status(1, "busy"), now).unwrap();
+        let old = view(&store, now)["observations"][0]["observation_id"].clone();
+        let later = now + Duration::from_secs(30);
+        let mut restarted = attach(2, 1);
+        restarted["instance_id"] = json!("12345678-1234-1234-1234-123456789abd");
+        attachment(&mut store, restarted.clone(), later).unwrap();
+        let legacy = json!({"server_epoch":"a".repeat(32),"records":[]});
+        let associations = BTreeMap::new();
+        let history = store.projection(legacy.clone(), later);
+        let sequences = store.sequences.clone();
+        let tombstones = store.tombstones.clone();
+        let current = store.publisher_projection(legacy.clone(), later, &associations);
+        assert_eq!(current["observations"].as_array().unwrap().len(), 1);
+        assert_ne!(current["observations"][0]["observation_id"], old);
+        assert_eq!(current["observations"][0]["reported_state"], "unknown");
+        let new_id = current["observations"][0]["observation_id"]
+            .as_str()
+            .unwrap();
+        assert!(store.navigation_fact(new_id, later).is_none());
+        assert_eq!(store.projection(legacy.clone(), later), history);
+        assert_eq!(store.sequences, sequences);
+        assert_eq!(store.tombstones, tombstones);
+
+        attachment(&mut store, attach(1, 1), later).unwrap();
+        let both = store.publisher_projection(legacy.clone(), later, &associations);
+        assert_eq!(both["observations"].as_array().unwrap().len(), 2);
+        attachment(&mut store, detach(1, 2), later).unwrap();
+        let remaining = store.publisher_projection(legacy.clone(), later, &associations);
+        assert_eq!(remaining["observations"], current["observations"]);
+        let mut conflict = restarted;
+        conflict["client_id"] = attach(3, 1)["client_id"].clone();
+        conflict["target"]["terminal_id"] = json!("conflicting-root");
+        attachment(&mut store, conflict, later).unwrap();
+        assert!(store.producer_association(new_id, later).is_none());
+        assert_eq!(
+            store.current_deadline(new_id, later),
+            Some(later + ATTACHMENT_TTL)
+        );
+        assert_eq!(
+            store.publisher_projection(legacy.clone(), later, &associations)["observations"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(store.publisher_projection(legacy, later + ATTACHMENT_TTL, &associations)["observations"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn current_selection_uses_last_live_client_deadline_and_explicit_end_wins() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        let id = view(&store, now)["observations"][0]["observation_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut conflict = attach(2, 1);
+        conflict["target"]["terminal_id"] = json!("other-root");
+        attachment(&mut store, conflict, now + Duration::from_secs(1)).unwrap();
+        assert!(
+            store
+                .producer_association(&id, now + Duration::from_secs(1))
+                .is_none()
+        );
+        let end = now + Duration::from_secs(6);
+        assert_eq!(
+            store.current_deadline(&id, end - Duration::from_nanos(1)),
+            Some(end)
+        );
+        assert_eq!(store.current_deadline(&id, end), None);
+        // Exercise the native ended guard independently of report-time lease revocation.
+        store.observations.values_mut().next().unwrap().ended = Some(now);
+        assert_eq!(
+            store.current_deadline(&id, now + Duration::from_secs(1)),
+            None
+        );
+        assert!(
+            store.publisher_projection(
+                json!({"server_epoch":"epoch","records":[]}),
+                now + Duration::from_secs(1),
+                &BTreeMap::new()
+            )["observations"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn current_activity_uses_latest_real_evidence_without_mutating_attention() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        store
+            .report(&decision(1, "permission.asked", "request"), now)
+            .unwrap();
+        store
+            .report(&status(2, "idle"), now + Duration::from_secs(1))
+            .unwrap();
+        let before = view(&store, now + Duration::from_secs(1));
+        let id = before["observations"][0]["observation_id"]
+            .as_str()
+            .unwrap();
+        let occurrence = store.occurrence;
+        let current = store.publisher_projection(
+            json!({"server_epoch":"epoch","records":[]}),
+            now + Duration::from_secs(1),
+            &BTreeMap::new(),
+        );
+        assert_eq!(current["observations"], before["observations"]);
+        assert_eq!(view(&store, now + Duration::from_secs(1)), before);
+        assert_eq!(store.occurrence, occurrence);
+        assert_eq!(
+            store.current_deadline(id, now + Duration::from_secs(29)),
+            Some(now + Duration::from_secs(31))
+        );
+    }
+
+    #[test]
+    fn current_activity_deadlines_are_exact_and_lifecycle_never_renews_them() {
+        for state in ["busy", "idle", "blocked"] {
+            let now = Instant::now();
+            let mut store = NativeStore::default();
+            let p = if state == "blocked" {
+                let mut p = event(1, "permission.asked");
+                p["request_id"] = json!("request");
+                p
+            } else {
+                status(1, state)
+            };
+            store.report(&p, now).unwrap();
+            let id = view(&store, now)["observations"][0]["observation_id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let end = now + EVIDENCE_TTL;
+            assert_eq!(
+                store.current_deadline(&id, end - Duration::from_nanos(1)),
+                Some(end)
+            );
+            assert_eq!(store.current_deadline(&id, end), None);
+            store.report(&event(2, "session.updated"), end).unwrap();
+            assert_eq!(store.current_deadline(&id, end), None);
+            store.report(&event(3, "session.deleted"), end).unwrap();
+            assert_eq!(store.current_deadline(&id, end), None);
+        }
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        store.report(&event(1, "session.created"), now).unwrap();
+        let id = view(&store, now)["observations"][0]["observation_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(store.current_deadline(&id, now), None);
+    }
+
+    #[test]
+    fn publisher_djinn_retirements_never_create_a_ghost_notice_or_reserve_a_current_slot() {
+        let now = Instant::now();
+        let legacy = json!({"server_epoch":"epoch","records":[]});
+        let mut store = NativeStore::default();
+        for sequence in 1..=129 {
+            let mut p = event(sequence, "session.updated");
+            p["session_id"] = json!(format!("history-{sequence}"));
+            store.report(&p, now).unwrap();
+        }
+        assert_eq!(store.retired, 1);
+        assert_eq!(store.retired_djinn, 1);
+        let current = store.publisher_projection(legacy.clone(), now, &BTreeMap::new());
+        assert!(current["observations"].as_array().unwrap().is_empty());
+        assert_eq!(current["retired_native_observations"], 0);
+        assert_eq!(current["omitted_observations"], 0);
+        assert_eq!(
+            store.projection(legacy.clone(), now)["retired_native_observations"],
+            1
+        );
+
+        let sessions: Vec<_> = store
+            .observations
+            .keys()
+            .map(|(_, sid)| sid.clone())
+            .collect();
+        for (n, sid) in sessions.into_iter().enumerate() {
+            let mut p = status(130 + n as u64, "busy");
+            p["session_id"] = json!(sid);
+            store.report(&p, now).unwrap();
+        }
+        let current = store.publisher_projection(legacy.clone(), now, &BTreeMap::new());
+        assert_eq!(current["observations"].as_array().unwrap().len(), 128);
+        assert_eq!(current["omitted_observations"], 0);
+        assert_eq!(current["retired_native_observations"], 0);
+        let public = store.projection(legacy, now);
+        assert_eq!(public["retired_native_observations"], 1);
+        assert_eq!(public["omitted_observations"], 1);
+    }
+
+    #[test]
+    fn publisher_preserves_non_djinn_retirement_notices() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        for sequence in 1..=129 {
+            let mut p = event(sequence, "session.updated");
+            p["session_id"] = json!(format!("history-{sequence}"));
+            p["provider"] = json!("opencode");
+            p["profile"] = json!("opencode-root.v1");
+            store.report_provider(&p, now).unwrap();
+        }
+        assert_eq!(store.retired_djinn, 0);
+        let legacy = json!({"server_epoch":"epoch","records":[]});
+        let public = store.projection(legacy.clone(), now);
+        let mut current = store.publisher_projection(legacy, now, &BTreeMap::new());
+        current
+            .as_object_mut()
+            .unwrap()
+            .remove("_publisher_current");
+        assert_eq!(current, public);
+        assert_eq!(current["retired_native_observations"], 1);
+    }
+
+    #[test]
+    fn publisher_filters_history_before_cap_without_counting_it_as_evidence_loss() {
+        let now = Instant::now();
+        let mut store = NativeStore::default();
+        attachment(&mut store, attach(1, 1), now).unwrap();
+        for sequence in 1..128 {
+            let mut p = event(sequence, "session.updated");
+            p["session_id"] = json!(format!("history-{sequence}"));
+            store.report(&p, now).unwrap();
+        }
+        let records: Vec<_> = (0..127).map(|n| json!({"record_id":format!("{n:064x}"),
+            "provider":"djinn","reported_state":"unknown","age_ms":null})).chain([
+                json!({"record_id":"f".repeat(64),"provider":"codex","reported_state":"unknown","age_ms":null})
+            ]).collect();
+        let legacy = json!({"server_epoch":"a".repeat(32),"records":records});
+        let public = store.projection(legacy.clone(), now);
+        assert_eq!(public["omitted_observations"], 129);
+        let current = store.publisher_projection(legacy.clone(), now, &BTreeMap::new());
+        assert_eq!(current["observations"].as_array().unwrap().len(), 2);
+        assert_eq!(current["omitted_observations"], 0);
+        assert_eq!(current["retired_native_observations"], 0);
+        assert_eq!(current["observations"][1]["provider"], "codex");
+        assert_eq!(store.projection(legacy, now), public);
     }
 
     #[test]

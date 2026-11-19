@@ -244,6 +244,28 @@ pub(crate) fn view_call(
     cancel: &dyn Cancel,
     validate: &dyn Fn(&[u8], &str) -> WireResult<Value>,
 ) -> WireResult<Value> {
+    view_call_guarded(
+        endpoint,
+        method,
+        params,
+        deadline,
+        cancel,
+        validate,
+        &|| Ok(()),
+    )
+}
+
+/// The preflight runs after serialization, connection and endpoint fencing, while
+/// delivery is still Unsent. It is never called again after a send is attempted.
+pub(crate) fn view_call_guarded(
+    endpoint: &Endpoint,
+    method: &str,
+    params: &Value,
+    deadline: Instant,
+    cancel: &dyn Cancel,
+    validate: &dyn Fn(&[u8], &str) -> WireResult<Value>,
+    pre_send: &dyn Fn() -> WireResult<()>,
+) -> WireResult<Value> {
     let mut sent = false;
     let result = (|| {
         check(deadline, cancel)?;
@@ -265,6 +287,9 @@ pub(crate) fn view_call(
             crate::platform::observation_socket::Socket::connect(endpoint, deadline, cancel)?;
         crate::platform::observation_socket::fence(endpoint)?;
         check(deadline, cancel)?;
+        let qualified = pre_send();
+        check(deadline, cancel)?;
+        qualified?;
         sent = true;
         socket.send(&request, deadline, cancel)?;
         crate::platform::observation_socket::fence(endpoint)?;

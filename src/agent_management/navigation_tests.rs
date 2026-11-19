@@ -76,6 +76,43 @@ fn report(native: &mut native::NativeStore, seq: u64, event: &str, now: Instant)
 }
 
 #[test]
+fn current_manual_assertion_consumes_matching_fact_and_expires_without_renewal() {
+    let now = Instant::now();
+    let epoch = "a".repeat(32);
+    let mut native = native::NativeStore::default();
+    let p = json!({"instance_id":"12345678-1234-1234-1234-123456789abc", "session_id":"PRIVATE",
+        "sequence":1,"event":"session.status","status":"idle"});
+    native.report(&p, now).unwrap();
+    let legacy = json!({"server_epoch":epoch,"records":[]});
+    let id = native.projection(legacy, now)["observations"][0]["observation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut associations = Associations::default();
+    associations.control("association.assert", &json!({
+        "observation_id":id,"expected_epoch":epoch,"expected_revision":null,
+        "provenance":"user_asserted","apply":true,
+        "target":{"socket":"/not/contacted","device":1,"inode":2,
+            "terminal_id":"terminal","runtime_generation":"12345678-1234-1234-1234-123456789abc"}
+    }), &epoch, &native, now).unwrap();
+    let end = now + Duration::from_secs(30);
+    assert_eq!(
+        associations.current_deadline(&id, &native, end - Duration::from_nanos(1)),
+        Some(end)
+    );
+    assert_eq!(associations.current_deadline(&id, &native, end), None);
+    assert_eq!(associations.0[&id].asserted, now);
+    assert!(associations.0[&id].valid);
+    let mut gap = p;
+    gap["sequence"] = json!(3);
+    native.report(&gap, now + Duration::from_secs(1)).unwrap();
+    assert_eq!(
+        associations.current_deadline(&id, &native, now + Duration::from_secs(1)),
+        None
+    );
+}
+
+#[test]
 fn private_naming_hints_follow_manual_and_producer_expiry_without_public_fields() {
     let now = Instant::now();
     let epoch = "a".repeat(32);
@@ -442,6 +479,7 @@ fn handler_lapsed_native_fact_cannot_revive_an_unexpired_assertion() {
         &mut native,
         &mut associations,
         &frame,
+        None,
         || {
             samples += 1;
             after
@@ -479,6 +517,107 @@ fn handler_lapsed_native_fact_cannot_revive_an_unexpired_assertion() {
     associations
         .control("focus.prepare", &focus, &epoch, &native, after)
         .unwrap();
+}
+
+#[test]
+fn validated_dispatch_fences_mutations_but_not_observers_or_ambiguous_json() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("coven.json"), b"{}").unwrap();
+    let mut persistent = store::Store::open(root.path()).unwrap();
+    let mut native = native::NativeStore::default();
+    let mut associations = Associations::default();
+    let fence = AtomicU64::new(20);
+    for (contract, method, params, mutating) in [
+        (CONTRACT, "inventory", json!({}), false),
+        (native::CONTROL_RPC, "observations", json!({}), false),
+        (native::CONTROL_RPC, "attention.list", json!({}), false),
+        (native::CONTROL_RPC, "association.inspect", json!({}), false),
+        (native::CONTROL_RPC, "focus.prepare", json!({}), false),
+        (CONTRACT, "report", json!({}), true),
+        (native::RPC, "report", json!({}), true),
+        (
+            native::RPC,
+            "report",
+            json!({"instance_id":"12345678-1234-1234-1234-123456789abc",
+            "session_id":"PRIVATE","sequence":1,"event":"session.status","status":"busy"}),
+            true,
+        ),
+        (facts::RPC, "report", json!({}), true),
+        (native::PROVIDER_RPC, "report", json!({}), true),
+        (native::ATTACHMENT_RPC, "report", json!({}), true),
+        (
+            native::CONTROL_RPC,
+            "attention.acknowledge",
+            json!({"apply":true}),
+            true,
+        ),
+        (
+            native::CONTROL_RPC,
+            "association.assert",
+            json!({"apply":true}),
+            true,
+        ),
+        (
+            native::CONTROL_RPC,
+            "association.remove",
+            json!({"apply":true}),
+            true,
+        ),
+        // A report under a known but wrong contract is never allowlisted as read-only.
+        (native::RPC, "observations", json!({}), true),
+    ] {
+        fence.store(20, Ordering::Release);
+        let frame =
+            json!({"id":"f".repeat(32),"contract":contract,"method":method,"params":params});
+        handle_normal_navigation_with_clock(
+            &mut persistent,
+            &mut native,
+            &mut associations,
+            &serde_json::to_vec(&frame).unwrap(),
+            Some(&fence),
+            Instant::now,
+        )
+        .unwrap();
+        assert_eq!(
+            fence.load(Ordering::Acquire),
+            if mutating { 21 } else { 20 },
+            "{contract}/{method}"
+        );
+    }
+    for frame in [
+        format!(
+            r#"{{"id":"{}","contract":"{}","method":"observations","method":"attention.acknowledge","params":{{}}}}"#,
+            "f".repeat(32),
+            native::CONTROL_RPC
+        ),
+        format!(
+            r#"{{"id":"{}","contract":"{}","contract":"{}","method":"report","params":{{}}}}"#,
+            "f".repeat(32),
+            native::CONTROL_RPC,
+            native::RPC
+        ),
+        format!(
+            r#"{{"id":"{}","contract":"{}","method":"observations","params":{{}},"extra":true}}"#,
+            "f".repeat(32),
+            native::CONTROL_RPC
+        ),
+    ] {
+        fence.store(20, Ordering::Release);
+        let _ = handle_normal_navigation_with_clock(
+            &mut persistent,
+            &mut native,
+            &mut associations,
+            frame.as_bytes(),
+            Some(&fence),
+            Instant::now,
+        );
+        assert_eq!(
+            fence.load(Ordering::Acquire),
+            20,
+            "invalid envelope must not reach dispatch"
+        );
+    }
 }
 
 #[test]
