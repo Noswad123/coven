@@ -344,6 +344,10 @@ def read_team_config(workspace: Path) -> dict[str, Any]:
     if "runtime" in config and not isinstance(runtime, dict):
         fail("coven.toml [runtime] must be a table")
     if runtime is not None:
+        if "agent_working_directories" in runtime:
+            if not isinstance(team.get("runtime", {}), dict):
+                fail("invalid_runtime_configuration")
+            team["runtime"] = {**team.get("runtime", {}), "agent_working_directories": runtime["agent_working_directories"]}
         for key in ("multiplexer", "opencode_command"):
             if key in runtime:
                 value = runtime[key]
@@ -355,11 +359,95 @@ def read_team_config(workspace: Path) -> dict[str, Any]:
     except ValueError as exc:
         fail(f"Invalid effective workspace configuration: {exc}")
     runtime_multiplexer(team)
+    validate_agent_directories(team)
     # Derived flag, never an authorization input from user metadata. Workspace-
     # aware launch entrypoints also check the actual control directly.
     team["_runtime_launch_mode"] = actions.ActionStore(workspace).read_control() is not None
     team["_workspace_root"] = str(workspace.resolve())
     return team
+
+
+def runtime_configuration(team: dict[str, Any]):
+    runtime = team.get("runtime", {})
+    if not isinstance(runtime, dict):
+        fail("invalid_runtime_configuration")
+    return runtime
+
+
+def validate_agent_directories(team: dict[str, Any]) -> dict[str, Path]:
+    """Pure schema checks; unavailable mounts must not block shutdown/coordination."""
+    runtime = runtime_configuration(team)
+    if "agent_working_directories" not in runtime:
+        return {}
+    mapping = runtime["agent_working_directories"]
+    if not isinstance(mapping, dict):
+        fail("invalid_agent_working_directories")
+    if set(mapping) != set(team_agents(team)):
+        fail("agent_working_directories_roster_mismatch")
+    for text in mapping.values():
+        if not isinstance(text, str) or not Path(text).is_absolute() or any(c in text for c in "\0\n\r"):
+            fail("invalid_agent_working_directory")
+    return {agent: Path(mapping[agent]) for agent in team_agents(team)}
+
+
+def resolve_agent_directories(workspace: Path, team: dict[str, Any]) -> dict[str, Path]:
+    mapping = validate_agent_directories(team)
+    if not mapping:
+        return {}
+    import shutil
+    selected = shutil.which("git")
+    if selected is None:
+        fail("repository_git_missing")
+    executable = Path(selected).resolve(strict=True)
+
+    def git_paths(path):
+        env = repositories._environment()
+        if repositories._run_git(executable, ("rev-parse", "--is-bare-repository"), path, env, 3) != b"false\n":
+            raise ValueError("bare repository")
+        raw = repositories._run_git(executable, ("rev-parse", "--path-format=absolute", "--show-toplevel"), path, env, 3)
+        if not raw.endswith(b"\n"):
+            raise ValueError("invalid Git root")
+        git_dir = repositories._run_git(executable, ("rev-parse", "--path-format=absolute", "--absolute-git-dir"), path, env, 3)
+        if not git_dir.endswith(b"\n"):
+            raise ValueError("invalid Git directory")
+        return (Path(raw[:-1].decode("utf-8")).resolve(strict=True),
+                Path(git_dir[:-1].decode("utf-8")).resolve(strict=True))
+
+    control = workspace.resolve(strict=True)
+    try:
+        _, control_git_dir = git_paths(control)
+    except (ValueError, OSError, repositories.RepositoryError):
+        control_git_dir = None
+    result = {}
+    git_dirs = set()
+    for agent, configured in mapping.items():
+        try:
+            path = configured.resolve(strict=True)
+            root, git_dir = git_paths(path)
+            if not path.is_dir() or path == control or path in control.parents or root != path or git_dir == control_git_dir:
+                fail("invalid_agent_working_directory")
+        except (ValueError, OSError, repositories.RepositoryError):
+            fail("invalid_agent_working_directory")
+        if path in result.values() or git_dir in git_dirs:
+            fail("duplicate_agent_working_directory")
+        result[agent] = path
+        git_dirs.add(git_dir)
+    return result
+
+
+def stage_agent_launches(workspace: Path, team: dict[str, Any]) -> dict[str, tuple[str, Path]]:
+    directories = resolve_agent_directories(workspace, team)
+    validate_isolated_starters(workspace, team)
+    return {agent: (agent_launch_command(str(team["name"]), workspace, agent,
+                   str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND),
+                   runtime_multiplexer(team), bool(directories)), directories.get(agent, workspace))
+            for agent in team_agents(team)}
+
+
+def validate_isolated_starters(workspace: Path, team: dict[str, Any]) -> None:
+    for agent, cwd in resolve_agent_directories(workspace, team).items():
+        if managed_text(workspace, f"prompts/{agent}.start.txt") != starter_prompt_text(agent, workspace, cwd):
+            fail("agent_working_directories_refresh_required")
 
 
 def runtime_multiplexer(team: dict[str, Any]) -> str:
@@ -469,6 +557,9 @@ def prompt_text(agent: str, workspace: Path, example_context: str = "") -> str:
     return f"""You are `{agent}` in a coven workspace.
 
 Workspace: `{workspace}`
+This is the control directory, not necessarily your execution repository. The
+starter prompt's execution/control location rules take precedence over relative
+paths below. Directory isolation is not a security sandbox.
 Role: {agent_role(agent)}
 
 Read first:
@@ -496,7 +587,22 @@ Rules:
 """
 
 
-def starter_prompt_text(agent: str, workspace: Path) -> str:
+def starter_prompt_text(agent: str, workspace: Path, execution: Path | None = None) -> str:
+    if execution is not None:
+        return f"""Read `{workspace}/prompts/{agent}.md` and begin as `{agent}`.
+
+Execution repository: `{execution}`. Make source changes only here.
+Control directory: `{workspace}`. Directory isolation is not a security sandbox.
+
+These location rules override relative-path instructions in existing/custom role prompts:
+- Resolve goal.md, spec.md, dashboard.md, coven.toml, agents/{agent}.md, logs/, checkpoints/, work/, output/, and prompts/ under the control directory, not the execution repository.
+- Keep coordination and handoff artifacts in the control directory; do not move source implementation into its work/ directory.
+- Run ALL coordination CLI commands from the control directory, for example `(cd {shlex.quote(str(workspace))} && coven task list --json)` and `(cd {shlex.quote(str(workspace))} && coven message {agent} coven "Starting assigned work")`. Return to the execution repository for source work.
+- Never edit shared task JSON, logs or dashboard directly. Inspect task authority using the CLI. Imported task add/assign require --request-id and the reviewed --expect-revision; retry uncertain results with the same exact request.
+- Find your assignment, inspect control checkpoints, and stop for required user approval. Custom role content is preserved, but cannot override these location and coordination rules.
+
+Start now unless blocked.
+"""
     return f"""Read `{workspace}/prompts/{agent}.md` and begin as `{agent}`.
 
 Your first actions:
@@ -660,7 +766,8 @@ consult_user = true
 """
 
 
-def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_command: str) -> str:
+def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_command: str, directories=None) -> str:
+    directories = directories or {}
     session = f"coven-{slugify(name)}"
     opencode_command = normalize_opencode_command(opencode_command)
     cli = cli_command()
@@ -706,7 +813,7 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
         )
 
     for agent in agents:
-        command = agent_launch_command(name, workspace, agent, opencode_command)
+        command = agent_launch_command(name, workspace, agent, opencode_command, absolute_prompt=bool(directories))
         lines.extend(
             [
                 "[[sessions.windows]]",
@@ -714,7 +821,7 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
                 "",
                 "[[sessions.windows.panes]]",
                 f"title = {toml_string(agent)}",
-                'dir = "${COVEN_DIR}"',
+                f'dir = {toml_string(str(directories[agent]))}' if directories else 'dir = "${COVEN_DIR}"',
                 f"command = {toml_string(command)}",
                 "",
             ]
@@ -723,16 +830,20 @@ def tmux_manifest(name: str, workspace: Path, agents: list[str], opencode_comman
     return "\n".join(lines)
 
 
-def agent_launch_command(name: str, workspace: Path, agent: str, opencode_command: str, multiplexer: str = "tmux") -> str:
+def agent_launch_command(name: str, workspace: Path, agent: str, opencode_command: str, multiplexer: str = "tmux", absolute_prompt: bool = False) -> str:
     record_id(agent, "agent")
     managed_path(workspace, f"prompts/{agent}.md")
     managed_path(workspace, f"prompts/{agent}.start.txt")
     opencode_command = normalize_opencode_command(opencode_command)
-    prompt_path = f"prompts/{agent}.start.txt"
+    prompt_path = str(workspace / f"prompts/{agent}.start.txt") if absolute_prompt else f"prompts/{agent}.start.txt"
+    label = f"printf 'Agent: {agent}\\nPrompt: {workspace}/prompts/{agent}.md\\n'"
+    if absolute_prompt and any(c in str(workspace) for c in "'%\\"):
+        label = f"printf '%s\\n' {shlex.quote(f'Agent: {agent}')} {shlex.quote(f'Prompt: {workspace}/prompts/{agent}.md')}"
+    notice = (f"printf '%s\\n\\n' {shlex.quote(f'Auto-bootstrapping OpenCode with {prompt_path}...')}" if absolute_prompt
+              else f"printf 'Auto-bootstrapping OpenCode with {prompt_path}...\\n\\n'")
     if multiplexer == "herdr":
         return (
-            f"printf 'Agent: {agent}\\nPrompt: {workspace}/prompts/{agent}.md\\n'"
-            f"; printf 'Auto-bootstrapping OpenCode with {prompt_path}...\\n\\n'"
+            f"{label}; {notice}"
             "; pane=\"${HERDR_PANE_ID:-}\""
             "; herdr_bin=\"${HERDR_BIN_PATH:-herdr}\""
             f"; (sleep 5; if [ -n \"$pane\" ]; then prompt=\"$(cat {shlex.quote(prompt_path)})\"; "
@@ -743,10 +854,9 @@ def agent_launch_command(name: str, workspace: Path, agent: str, opencode_comman
 
     buffer_name = f"coven-{slugify(name)}-{agent}-starter"
     return (
-        f"printf 'Agent: {agent}\\nPrompt: {workspace}/prompts/{agent}.md\\n'"
-        f"; printf 'Auto-bootstrapping OpenCode with {prompt_path}...\\n\\n'"
+        f"{label}; {notice}"
         f"; pane=\"$(tmux display-message -p '#{{pane_id}}')\""
-        f"; (sleep 5; tmux load-buffer -b {q(buffer_name)} {q(prompt_path)}; "
+        f"; (sleep 5; tmux load-buffer -b {q(buffer_name)} {shlex.quote(prompt_path) if absolute_prompt else q(prompt_path)}; "
         f"tmux paste-buffer -b {q(buffer_name)} -t \"$pane\"; "
         f"tmux send-keys -t \"$pane\" Enter) & "
         f"{opencode_command}"
@@ -1426,6 +1536,8 @@ def legacy_transport_effect(function):
     def guarded(workspace, *args, **kwargs):
         if function.__name__ in {"start_agent_window", "stop_agent_window"} and len(args) >= 2:
             require_agent(args[0], args[1])
+        if function.__name__ in {"start_agent_window", "create_coven_tmux_session", "create_coven_herdr_workspace"}:
+            stage_agent_launches(workspace, args[0] if args else kwargs["team"])
         with legacy_runtime_transport(workspace):
             return function(workspace, *args, **kwargs)
     return guarded
@@ -1445,6 +1557,8 @@ def action_control_mutation(workspace: Path):
 
 def runtime_launch_inputs(workspace: Path) -> dict[str, Any]:
     team = load_team(workspace)
+    if "agent_working_directories" in runtime_configuration(team):
+        raise actions.ActionError("runtime_launch_v1_agent_directories_unsupported")
     tasks = task_inspection(workspace)
     if tasks.get("import_pending") or tasks.get("projection", {"status": "current"})["status"] != "current":
         raise actions.ActionError("Resolve pending task import/projection recovery before reviewing runtime startup")
@@ -2339,10 +2453,12 @@ def agent_runtime_status(team: dict[str, Any], agent: str) -> tuple[str, str | N
 
 
 @legacy_transport_effect
-def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> bool:
+def start_agent_window(workspace: Path, team: dict[str, Any], agent: str, launches=None) -> bool:
     preflight_workspace_paths(workspace, team)
     require_legacy_runtime(workspace)
     require_agent(team, agent)
+    launches = launches if launches is not None else stage_agent_launches(workspace, team)
+    command, cwd = launches[agent]
     status, pane = agent_runtime_status(team, agent)
     if status == "running":
         info(f"{agent} already running at {pane}")
@@ -2356,9 +2472,8 @@ def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> boo
         if not workspace_id:
             fail("Could not resolve Coven Herdr workspace id")
         opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
-        command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command, "herdr")
         tab_result = run_herdr(
-            ["tab", "create", "--workspace", workspace_id, "--cwd", str(workspace), "--label", f"agent-{agent}", "--focus"],
+            ["tab", "create", "--workspace", workspace_id, "--cwd", str(cwd), "--label", f"agent-{agent}", "--focus"],
             capture=True,
         )
         tab_payload = herdr_result(tab_result, f"Failed to create Herdr tab for agent `{agent}`")
@@ -2376,9 +2491,8 @@ def start_agent_window(workspace: Path, team: dict[str, Any], agent: str) -> boo
         fail(f"Coven tmux session is not running: {session}. Run `coven start` first.")
 
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
-    command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command, "tmux")
     result = subprocess.run(
-        ["tmux", "new-window", "-t", session, "-n", f"agent-{agent}", "-c", str(workspace), command],
+        ["tmux", "new-window", "-t", session, "-n", f"agent-{agent}", "-c", str(cwd), command],
         check=False,
         capture_output=True,
         text=True,
@@ -3100,11 +3214,12 @@ def command_agent_start(args: argparse.Namespace) -> int:
     if not rest:
         fail("agent start requires an agent")
     team = load_team(workspace)
+    launches = stage_agent_launches(workspace, team)
     started = 0
     for agent in rest:
         require_agent(team, agent)
     for agent in rest:
-        if start_agent_window(workspace, team, agent):
+        if start_agent_window(workspace, team, agent, launches):
             started += 1
     refresh_dashboard(workspace)
     info(f"Started {started} agent window(s)")
@@ -3132,13 +3247,14 @@ def command_agent_restart(args: argparse.Namespace) -> int:
     if not rest:
         fail("agent restart requires an agent")
     team = load_team(workspace)
+    launches = stage_agent_launches(workspace, team)
     require_legacy_runtime(workspace)
     restarted = 0
     for agent in rest:
         require_agent(team, agent)
     for agent in rest:
         stop_agent_window(workspace, team, agent)
-        if start_agent_window(workspace, team, agent):
+        if start_agent_window(workspace, team, agent, launches):
             restarted += 1
     refresh_dashboard(workspace)
     info(f"Restarted {restarted} agent window(s)")
@@ -3351,6 +3467,7 @@ def command_refresh(args: argparse.Namespace) -> int:
 
 def prepare_refresh(workspace: Path) -> tuple[str, dict[str, str], dict[str, str], str, str]:
     team = load_team(workspace)
+    directories = resolve_agent_directories(workspace, team)
     agents = team_agents(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
     multiplexer = runtime_multiplexer(team)
@@ -3360,11 +3477,11 @@ def prepare_refresh(workspace: Path) -> tuple[str, dict[str, str], dict[str, str
     # Stage generated outputs before writing; state, guidance, and logs are read-only.
     checkpoint_requests(workspace)
     try:
-        manifest = tmux_manifest(team["name"], workspace, agents, opencode_command)
+        manifest = tmux_manifest(team["name"], workspace, agents, opencode_command, directories)
         tomllib.loads(manifest)
         example_context = read_example_text(example, "prompt-context.md")
         prompt_files = {
-            f"prompts/{agent}.start.txt": starter_prompt_text(agent, workspace) for agent in agents
+            f"prompts/{agent}.start.txt": starter_prompt_text(agent, workspace, directories.get(agent)) for agent in agents
         }
         missing_prompts = {
             f"prompts/{agent}.md": prompt_text(agent, workspace, example_context)
@@ -3398,6 +3515,7 @@ def team_session_name(team: dict[str, Any]) -> str:
 def command_bootstrap(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     team = load_team(workspace)
+    validate_isolated_starters(workspace, team)
     require_legacy_runtime(workspace)
     team_session_name(team)
     for agent in team_agents(team):
@@ -3409,6 +3527,7 @@ def command_bootstrap(args: argparse.Namespace) -> int:
 def _command_bootstrap_legacy(args: argparse.Namespace) -> int:
     workspace = workspace_path(args.workspace)
     team = load_team(workspace)
+    validate_isolated_starters(workspace, team)
     require_legacy_runtime(workspace)
     agents = team_agents(team)
 
@@ -3522,9 +3641,10 @@ def print_herdr_plan(workspace: Path, team: dict[str, Any]) -> int:
 
 
 @legacy_transport_effect
-def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
+def create_coven_tmux_session(workspace: Path, team: dict[str, Any], launches=None) -> None:
     preflight_workspace_paths(workspace, team)
     require_legacy_runtime(workspace)
+    launches = launches if launches is not None else stage_agent_launches(workspace, team)
     agents = team_agents(team)
     session = team_session_name(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
@@ -3549,17 +3669,18 @@ def create_coven_tmux_session(workspace: Path, team: dict[str, Any]) -> None:
     run_tmux(["select-layout", "-t", f"{session}:orchestrator", "tiled"])
 
     for agent in agents:
-        command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command)
-        result = run_tmux(["new-window", "-t", session, "-n", f"agent-{agent}", "-c", str(workspace), command], capture=True)
+        command, cwd = launches[agent]
+        result = run_tmux(["new-window", "-t", session, "-n", f"agent-{agent}", "-c", str(cwd), command], capture=True)
         fail_tmux(result, f"Failed to create agent window `{agent}`")
 
     run_tmux(["select-window", "-t", f"{session}:orchestrator"])
 
 
 @legacy_transport_effect
-def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any]) -> str:
+def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any], launches=None) -> str:
     preflight_workspace_paths(workspace, team)
     require_legacy_runtime(workspace)
+    launches = launches if launches is not None else stage_agent_launches(workspace, team)
     agents = team_agents(team)
     label = herdr_workspace_label(team)
     opencode_command = str(team.get("opencode_command") or DEFAULT_OPENCODE_COMMAND)
@@ -3595,9 +3716,9 @@ def create_coven_herdr_workspace(workspace: Path, team: dict[str, Any]) -> str:
             run_herdr(["pane", "run", pane_id, command], capture=True)
 
     for agent in agents:
-        command = agent_launch_command(str(team["name"]), workspace, agent, opencode_command, "herdr")
+        command, cwd = launches[agent]
         tab_result = run_herdr(
-            ["tab", "create", "--workspace", workspace_id, "--cwd", str(workspace), "--label", f"agent-{agent}", "--no-focus"],
+            ["tab", "create", "--workspace", workspace_id, "--cwd", str(cwd), "--label", f"agent-{agent}", "--no-focus"],
             capture=True,
         )
         tab_payload = herdr_result(tab_result, f"Failed to create Herdr agent tab `{agent}`")
@@ -3615,12 +3736,15 @@ def run_coven_tmux(workspace: Path, team: dict[str, Any], action: str) -> int:
     preflight_workspace_paths(workspace, team)
     if actions.ActionStore(workspace).read_control() is not None:
         return stop_current_action(workspace) if action == "down" else reject_legacy_runtime()
+    if action in {"up", "restart"}:
+        stage_agent_launches(workspace, team)
     with legacy_runtime_transport(workspace):
-        return _run_coven_tmux_legacy(workspace, team, action)
+        return _run_coven_tmux_legacy(workspace, load_team(workspace), action)
 
 
 def _run_coven_tmux_legacy(workspace: Path, team: dict[str, Any], action: str) -> int:
     session = team_session_name(team)
+    launches = stage_agent_launches(workspace, team) if action in {"up", "restart"} else None
     if action == "plan":
         return print_tmux_plan(workspace, team)
     if action == "down":
@@ -3632,11 +3756,11 @@ def _run_coven_tmux_legacy(workspace: Path, team: dict[str, Any], action: str) -
         if tmux_session_exists(session):
             result = run_tmux(["kill-session", "-t", session], capture=True)
             fail_tmux(result, f"Failed to stop coven tmux session `{session}`")
-        create_coven_tmux_session(workspace, team)
+        create_coven_tmux_session(workspace, team, launches)
         return focus_tmux_session(session)
     if action == "up":
         if not tmux_session_exists(session):
-            create_coven_tmux_session(workspace, team)
+            create_coven_tmux_session(workspace, team, launches)
         return focus_tmux_session(session)
     fail(f"Unsupported tmux action: {action}")
 
@@ -3645,12 +3769,15 @@ def run_coven_herdr(workspace: Path, team: dict[str, Any], action: str) -> int:
     preflight_workspace_paths(workspace, team)
     if actions.ActionStore(workspace).read_control() is not None:
         return stop_current_action(workspace) if action == "down" else reject_legacy_runtime()
+    if action in {"up", "restart"}:
+        stage_agent_launches(workspace, team)
     with legacy_runtime_transport(workspace):
-        return _run_coven_herdr_legacy(workspace, team, action)
+        return _run_coven_herdr_legacy(workspace, load_team(workspace), action)
 
 
 def _run_coven_herdr_legacy(workspace: Path, team: dict[str, Any], action: str) -> int:
     label = herdr_workspace_label(team)
+    launches = stage_agent_launches(workspace, team) if action in {"up", "restart"} else None
     if action == "plan":
         return print_herdr_plan(workspace, team)
     if action == "down":
@@ -3670,11 +3797,11 @@ def _run_coven_herdr_legacy(workspace: Path, team: dict[str, Any], action: str) 
             result = run_herdr(["workspace", "close", str(workspace_info["workspace_id"])], capture=True)
             if result.returncode != 0:
                 fail(result.stderr.strip() or f"Failed to close Coven Herdr workspace `{label}`")
-        workspace_id = create_coven_herdr_workspace(workspace, team)
+        workspace_id = create_coven_herdr_workspace(workspace, team, launches)
         return focus_herdr_workspace(workspace_id, label)
     if action == "up":
         workspace_info = find_herdr_workspace(team)
-        workspace_id = str(workspace_info.get("workspace_id")) if workspace_info else create_coven_herdr_workspace(workspace, team)
+        workspace_id = str(workspace_info.get("workspace_id")) if workspace_info else create_coven_herdr_workspace(workspace, team, launches)
         return focus_herdr_workspace(workspace_id, label)
     fail(f"Unsupported Herdr action: {action}")
 
@@ -3695,6 +3822,8 @@ def command_tmux(args: argparse.Namespace) -> int:
     team = load_team(workspace)
     action = "restart" if args.action == "up" and getattr(args, "replace", False) else args.action
     multiplexer = runtime_multiplexer(team)
+    if action in {"up", "restart"}:
+        stage_agent_launches(workspace, team)
     append_event(workspace, f"{multiplexer}.{action}.requested")
     return run_coven_runtime(workspace, team, action)
 

@@ -8,8 +8,8 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-mod endpoint;
-mod protocol;
+pub(crate) mod endpoint;
+pub(crate) mod protocol;
 
 #[cfg(all(test, unix))]
 type AfterAckHook = Box<dyn FnMut(&JsonValue)>;
@@ -242,7 +242,7 @@ pub fn prompt_arguments(request: &Request, json: bool) -> Result<TaskOutput> {
     output
 }
 
-fn fresh_id() -> WireResult<String> {
+pub(crate) fn fresh_id() -> WireResult<String> {
     let raw = crate::platform::random_uuid_hex().map_err(|_| Failure::new("native_io_error"))?;
     if raw.len() != 32 || !raw.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(Failure::new("native_io_error"));

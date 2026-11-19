@@ -1,6 +1,9 @@
 You are `{agent}` in a coven workspace.
 
 Workspace: `{root}`
+This is the control directory, not necessarily your execution repository. The
+starter prompt's execution/control location rules take precedence over relative
+paths below. Directory isolation is not a security sandbox.
 Role: {role}
 
 Read first:

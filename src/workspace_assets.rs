@@ -96,6 +96,19 @@ pub(crate) fn starter_text(agent: &str, root: &str) -> String {
     )
 }
 
+pub(crate) fn starter_text_at(agent: &str, root: &str, execution: Option<&str>) -> String {
+    let Some(execution) = execution else {
+        return starter_text(agent, root);
+    };
+    format!(
+        include_str!("workspace_assets/starter-isolated.txt"),
+        root = root,
+        agent = agent,
+        execution = execution,
+        control_shell = shell_quote(root),
+    )
+}
+
 // Python json.dumps defaults to ensure_ascii=True; TOML keeps Unicode scalars.
 fn quote(value: &str, ascii: bool) -> String {
     use std::fmt::Write;
@@ -160,12 +173,24 @@ pub(crate) fn normalize_opencode_command(command: &str) -> String {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn agent_launch_command(
     name: &str,
     root: &str,
     agent: &str,
     command: &str,
     multiplexer: &str,
+) -> Result<String> {
+    agent_launch_command_at(name, root, agent, command, multiplexer, false)
+}
+
+pub(crate) fn agent_launch_command_at(
+    name: &str,
+    root: &str,
+    agent: &str,
+    command: &str,
+    multiplexer: &str,
+    absolute_prompt: bool,
 ) -> Result<String> {
     // Reject original bytes before oc normalization can JSON-escape the NUL.
     require(!command.contains('\0'), "invalid_runtime_command")?;
@@ -179,6 +204,7 @@ pub(crate) fn agent_launch_command(
         agent,
         &normalize_opencode_command(command),
         multiplexer,
+        absolute_prompt,
     )
 }
 
@@ -188,6 +214,7 @@ fn normalized_agent_launch_command(
     agent: &str,
     command: &str,
     multiplexer: &str,
+    absolute_prompt: bool,
 ) -> Result<String> {
     require(
         agent.len() <= 255 - ".start.txt".len()
@@ -204,7 +231,19 @@ fn normalized_agent_launch_command(
         crate::values::Profile::LegacySnapshot,
     )?)?;
     records::multiplexer(multiplexer)?;
-    let prompt = format!("prompts/{agent}.start.txt");
+    let prompt = if absolute_prompt {
+        format!("{root}/prompts/{agent}.start.txt")
+    } else {
+        format!("prompts/{agent}.start.txt")
+    };
+    let notice = if absolute_prompt {
+        format!(
+            "printf '%s\\n\\n' {}",
+            shell_quote(&format!("Auto-bootstrapping OpenCode with {prompt}..."))
+        )
+    } else {
+        format!("printf 'Auto-bootstrapping OpenCode with {prompt}...\\n\\n'")
+    };
     // Preserve legacy bytes for ordinary paths, but never interpolate shell
     // quotes or printf format/escape sequences from workspace metadata.
     let label = if root.contains(['\'', '%', '\\']) {
@@ -218,14 +257,18 @@ fn normalized_agent_launch_command(
     };
     let launch = if records::trimmed(multiplexer).eq_ignore_ascii_case("herdr") {
         format!(
-            "{label}; printf 'Auto-bootstrapping OpenCode with {prompt}...\\n\\n'; pane=\"${{HERDR_PANE_ID:-}}\"; herdr_bin=\"${{HERDR_BIN_PATH:-herdr}}\"; (sleep 5; if [ -n \"$pane\" ]; then prompt=\"$(cat {})\"; \"$herdr_bin\" pane send-text \"$pane\" \"$prompt\"; \"$herdr_bin\" pane send-keys \"$pane\" enter; fi) & {command}",
+            "{label}; {notice}; pane=\"${{HERDR_PANE_ID:-}}\"; herdr_bin=\"${{HERDR_BIN_PATH:-herdr}}\"; (sleep 5; if [ -n \"$pane\" ]; then prompt=\"$(cat {})\"; \"$herdr_bin\" pane send-text \"$pane\" \"$prompt\"; \"$herdr_bin\" pane send-keys \"$pane\" enter; fi) & {command}",
             shell_quote(&prompt)
         )
     } else {
         let buffer = q(&format!("coven-{}-{agent}-starter", slug(name)?));
         format!(
-            "{label}; printf 'Auto-bootstrapping OpenCode with {prompt}...\\n\\n'; pane=\"$(tmux display-message -p '#{{pane_id}}')\"; (sleep 5; tmux load-buffer -b {buffer} {}; tmux paste-buffer -b {buffer} -t \"$pane\"; tmux send-keys -t \"$pane\" Enter) & {command}",
-            q(&prompt)
+            "{label}; {notice}; pane=\"$(tmux display-message -p '#{{pane_id}}')\"; (sleep 5; tmux load-buffer -b {buffer} {}; tmux paste-buffer -b {buffer} -t \"$pane\"; tmux send-keys -t \"$pane\" Enter) & {command}",
+            if absolute_prompt {
+                shell_quote(&prompt)
+            } else {
+                q(&prompt)
+            }
         )
     };
     require(!launch.contains('\0'), "invalid_runtime_command")?;
@@ -242,6 +285,24 @@ pub(crate) fn tmux_manifest(
     agents: &[&str],
     command: &str,
     context: &PureAssetContext,
+) -> Result<String> {
+    tmux_manifest_at(
+        name,
+        root,
+        agents,
+        command,
+        context,
+        &std::collections::BTreeMap::new(),
+    )
+}
+
+pub(crate) fn tmux_manifest_at(
+    name: &str,
+    root: &str,
+    agents: &[&str],
+    command: &str,
+    context: &PureAssetContext,
+    directories: &std::collections::BTreeMap<String, std::path::PathBuf>,
 ) -> Result<String> {
     require(!command.contains('\0'), "invalid_runtime_command")?;
     let session = format!("coven-{}", slug(name)?);
@@ -286,9 +347,19 @@ pub(crate) fn tmux_manifest(
         output.push_str(&format!("\n[[sessions.windows.panes]]\ntitle = {}\ndir = \"${{COVEN_DIR}}\"\ncommand = {}\nrole = {}\n", tq(title), tq(&command), tq(role)));
     }
     for agent in agents {
-        let launch =
-            normalized_agent_launch_command(name, root, agent, &normalized_command, "tmux")?;
-        output.push_str(&format!("\n[[sessions.windows]]\nname = {}\n\n[[sessions.windows.panes]]\ntitle = {}\ndir = \"${{COVEN_DIR}}\"\ncommand = {}\n", tq(&format!("agent-{agent}")), tq(agent), tq(&launch)));
+        let launch = normalized_agent_launch_command(
+            name,
+            root,
+            agent,
+            &normalized_command,
+            "tmux",
+            !directories.is_empty(),
+        )?;
+        let cwd = directories
+            .get(*agent)
+            .map(|v| crate::read_fs::path_text(v))
+            .transpose()?;
+        output.push_str(&format!("\n[[sessions.windows]]\nname = {}\n\n[[sessions.windows.panes]]\ntitle = {}\ndir = {}\ncommand = {}\n", tq(&format!("agent-{agent}")), tq(agent), tq(cwd.as_deref().unwrap_or("${COVEN_DIR}")), tq(&launch)));
         require(
             output.len() <= 1_048_576,
             "unsupported_refresh_template_profile",

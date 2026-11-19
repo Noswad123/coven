@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#181917">
+  <title>Coven Web · Fleet Observer</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#agents">Skip to agents</a>
+  <div class="shell">
+    <header class="masthead">
+      <div class="brand-mark" aria-hidden="true">C<span>+</span></div>
+      <div><p class="eyebrow">Coven / Private Observatory</p><h1>Coven Web</h1></div>
+      <span class="read-only">Read only</span>
+    </header>
+    <main>
+      <section class="intro" aria-labelledby="overview-title">
+        <p class="eyebrow">01 / The Living Index</p>
+        <h2 id="overview-title">A quiet view of your agents.</h2>
+        <p class="muted">Observe the work. Leave the controls at the source.</p>
+      </section>
+      <section class="connection-panel" aria-label="Connection and host filter">
+        <div class="connection-line"><span id="connection-dot" class="status-dot" aria-hidden="true"></span><strong id="connection-status" role="status">Connecting to the observatory...</strong></div>
+        <p id="poll-status" class="muted small">Waiting for the first authenticated snapshot.</p>
+        <div class="toolbar"><label for="host-filter">Host</label><select id="host-filter"><option value="">All hosts</option></select><button id="refresh" class="quiet-button" type="button">Refresh now</button></div>
+      </section>
+      <p id="notice" class="notice" role="status" hidden></p>
+      <section aria-labelledby="agents-title" id="agents" tabindex="-1">
+        <div class="section-heading"><h2 id="agents-title">Agent index</h2><span id="agent-count" class="muted small">Awaiting snapshot</span></div>
+        <div id="host-health" class="host-health" aria-label="Endpoint health"></div>
+        <p class="muted small">Coverage is incomplete: scan completeness is unknown, even when discovery is observed. Unclassified terminals are not counted as agents.</p>
+        <div id="empty-state" class="empty-state"><span class="empty-sigil" aria-hidden="true">+</span><h3 id="empty-title">Opening the index</h3><p id="empty-description">No fleet data has been received yet.</p></div>
+        <div id="agent-grid" class="agent-grid"></div>
+      </section>
+      <section aria-labelledby="conversations-title">
+        <div class="section-heading"><h2 id="conversations-title">Conversations</h2><button id="refresh-conversations" class="quiet-button" type="button">Refresh list</button></div>
+        <p class="muted small">Explicit operator registrations only. These targets are not inferred from fleet cards. Native reads happen only on open or explicit refresh.</p>
+        <label for="conversation-team">Team</label> <select id="conversation-team"><option value="">All authorized teams</option></select>
+        <p id="conversation-list-status" role="status">Loading authorized registrations...</p>
+        <div id="conversation-list" class="agent-grid"></div>
+      </section>
+      <footer><span>Observation, not orchestration.</span><span>Activity is heuristic. Idle is not completion; blocked is not a native approval request.</span></footer>
+    </main>
+  </div>
+  <dialog id="output-dialog" aria-labelledby="detail-title" aria-describedby="attribution-warning">
+    <div class="dialog-heading"><div><p class="eyebrow">On-demand / Text Observation</p><h2 id="detail-title">Agent output</h2></div><button id="close-detail" class="quiet-button" type="button" autofocus>Close</button></div>
+    <p id="detail-meta" class="muted small"></p>
+    <p id="attribution-warning" class="warning">Best-effort attribution only. Matching snapshots cannot rule out terminal replacement races or attest output freshness. This is text, not a live terminal.</p>
+    <div class="output-toolbar"><p id="output-status" role="status">Waiting for output.</p><button id="read-output" class="quiet-button" type="button" hidden>Read again</button><button id="copy-output" class="quiet-button" type="button" disabled>Copy text</button></div>
+    <p id="truncation" class="notice" hidden>Output was truncated by the server. Only a bounded excerpt is shown.</p>
+    <pre id="output-text" tabindex="0" aria-label="Agent output text" hidden></pre>
+    <p id="copy-status" class="muted small" role="status"></p>
+  </dialog>
+  <dialog id="conversation-dialog" aria-labelledby="conversation-title">
+    <div class="dialog-heading"><h2 id="conversation-title">Conversation</h2><button id="close-conversation" class="quiet-button" type="button" autofocus>Close</button></div>
+    <p class="warning">Source: native Djinn bounded projection, not a live terminal or full history. Local endpoint identity checks are not authentication against malicious local processes.</p>
+    <div class="output-toolbar"><p id="conversation-status" role="status"></p><button id="read-conversation" class="quiet-button" type="button">Refresh messages</button></div>
+    <div id="conversation-messages"></div>
+  </dialog>
+  <noscript><p class="notice">Coven Web needs JavaScript to read the same-origin observation API. No fleet data is available without it.</p></noscript>
+</body>
+</html>

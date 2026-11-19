@@ -216,7 +216,9 @@ fn plan(root: &Path, state: &WorkspaceState, ns: &str) -> Result<CommandResult> 
     Ok(CommandResult { body, exit_code: 0 })
 }
 
-fn launch_commands(root: &Path, state: &WorkspaceState) -> Result<Vec<(String, String)>> {
+fn launch_commands(root: &Path, state: &WorkspaceState) -> Result<Vec<(String, String, String)>> {
+    let directories = crate::agent_directories::resolve(root, &state.team)?;
+    crate::agent_directories::validate_starters(root, &state.team)?;
     let team = state.team.value();
     let name = transport::field(team, "name").ok_or(Error("invalid_team_record"))?;
     let command = transport::field(team, "opencode_command")
@@ -230,15 +232,17 @@ fn launch_commands(root: &Path, state: &WorkspaceState) -> Result<Vec<(String, S
         ] {
             crate::read_fs::managed(root, Path::new(&relative), false)?;
         }
-        let script = workspace_assets::agent_launch_command(
+        let script = workspace_assets::agent_launch_command_at(
             name,
             &crate::read_fs::path_text(root)?,
             agent,
             command,
             &state.multiplexer,
+            !directories.is_empty(),
         )?;
-        let sizes = [agent.len(), script.len()];
-        draft.push((agent.to_owned(), script), &sizes)?;
+        let cwd = crate::read_fs::path_text(directories.get(agent).map_or(root, |v| v.as_path()))?;
+        let sizes = [agent.len(), script.len(), cwd.len()];
+        draft.push((agent.to_owned(), script, cwd), &sizes)?;
     }
     Ok(draft.finish())
 }
@@ -388,12 +392,18 @@ fn agent_change_admitting<'a>(
                 lines.push(format!("[INFO] {agent} already running at {pane}"));
                 continue;
             }
-            let command = &commands
+            let (_, command, cwd) = &commands
                 .iter()
-                .find(|(name, _)| name == agent)
-                .ok_or(Error("unknown_agent"))?
-                .1;
-            create::agent(root, &ns, agent, command, &state.multiplexer, &backend)?;
+                .find(|(name, _, _)| name == agent)
+                .ok_or(Error("unknown_agent"))?;
+            create::agent(
+                Path::new(cwd),
+                &ns,
+                agent,
+                command,
+                &state.multiplexer,
+                &backend,
+            )?;
             changed += 1;
             if let Err(error) = agent_event(root, &gate, agent, &state.multiplexer, true) {
                 return Ok(progress_error(&format!("Started {agent}"), error));

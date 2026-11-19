@@ -139,7 +139,7 @@ fn characterization_tmux_startup_transcript_required_vs_ignored_failures() {
     create::tmux(
         root.path(),
         "coven-test",
-        &[("Beta".into(), "launch".into())],
+        &[("Beta".into(), "launch".into(), "/execution/root".into())],
         &[
             ("events", "events".into()),
             ("messages", "messages".into()),
@@ -214,7 +214,7 @@ fn characterization_tmux_startup_transcript_required_vs_ignored_failures() {
                 "-n",
                 "agent-Beta",
                 "-c",
-                cwd,
+                "/execution/root",
                 "launch"
             ],
             vec!["select-window", "-t", "coven-test:orchestrator"],
@@ -262,7 +262,7 @@ fn characterization_herdr_startup_transcript_required_vs_ignored_and_optional_pa
         create::herdr(
             root.path(),
             "coven-test",
-            &[("Beta".into(), "launch".into())],
+            &[("Beta".into(), "launch".into(), "/execution/root".into())],
             &[("events", "events".into()), ("messages", "messages".into())],
             &backend
         )
@@ -320,7 +320,7 @@ fn characterization_herdr_startup_transcript_required_vs_ignored_and_optional_pa
                 "--workspace",
                 "w1",
                 "--cwd",
-                cwd,
+                "/execution/root",
                 "--label",
                 "agent-Beta",
                 "--no-focus"
@@ -688,7 +688,11 @@ fn characterization_required_creation_failures_stop_without_cleanup_or_retry() {
             create::tmux(
                 root.path(),
                 "coven-test",
-                &[("Beta".into(), "launch".into())],
+                &[(
+                    "Beta".into(),
+                    "launch".into(),
+                    root.path().to_str().unwrap().into()
+                )],
                 &[("events", "events".into())],
                 &backend
             )
@@ -736,7 +740,11 @@ fn characterization_required_creation_failures_stop_without_cleanup_or_retry() {
             create::herdr(
                 root.path(),
                 "coven-test",
-                &[("Beta".into(), "launch".into())],
+                &[(
+                    "Beta".into(),
+                    "launch".into(),
+                    root.path().to_str().unwrap().into()
+                )],
                 &[("events", "events".into())],
                 &backend
             )

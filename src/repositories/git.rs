@@ -20,6 +20,21 @@ use std::{
 };
 
 const MAX_OUTPUT: usize = 1_048_576;
+
+/// Only locator probes: no index scan, hooks, filters, or repository helpers.
+pub(crate) fn working_tree_paths(root: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
+    let selected = identity::find_executable("git").ok_or(Error("repository_git_missing"))?;
+    let runner = crate::process::NativeRunner;
+    let mut observation = Observation::new(root.to_owned(), selected, &runner)?;
+    require(
+        observation.probe(Command::Bare)? == b"false\n",
+        "invalid_agent_working_directory",
+    )?;
+    let path = observation.locator("--show-toplevel")?;
+    let git_dir = observation.locator("--absolute-git-dir")?;
+    observation.confirm_executable()?;
+    Ok((path, git_dir))
+}
 const GUARDS: &[&str] = &[
     "--no-pager",
     "--no-optional-locks",

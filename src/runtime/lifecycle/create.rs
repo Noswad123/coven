@@ -5,7 +5,7 @@ pub(super) const DASHBOARD: &str = "while true; do clear; cat dashboard.md; slee
 pub(super) fn tmux(
     root: &Path,
     ns: &str,
-    agents: &[(String, String)],
+    agents: &[(String, String, String)],
     monitors: &[(&str, String)],
     backend: &transport::Backend<'_>,
 ) -> Result<()> {
@@ -57,7 +57,7 @@ pub(super) fn tmux(
         }
     }
     backend.capture(&["select-layout", "-t", &orchestrator, "tiled"])?;
-    for (agent, command) in agents {
+    for (agent, command, cwd) in agents {
         checked(
             backend,
             &[
@@ -67,7 +67,7 @@ pub(super) fn tmux(
                 "-n",
                 &format!("agent-{agent}"),
                 "-c",
-                &cwd,
+                cwd,
                 command,
             ],
         )?;
@@ -79,7 +79,7 @@ pub(super) fn tmux(
 pub(super) fn herdr(
     root: &Path,
     ns: &str,
-    agents: &[(String, String)],
+    agents: &[(String, String, String)],
     monitors: &[(&str, String)],
     backend: &transport::Backend<'_>,
 ) -> Result<String> {
@@ -130,7 +130,7 @@ pub(super) fn herdr(
             backend.capture(&["pane", "run", &id, command])?;
         }
     }
-    for (agent, command) in agents {
+    for (agent, command, cwd) in agents {
         let result = payload(
             backend,
             &[
@@ -139,7 +139,7 @@ pub(super) fn herdr(
                 "--workspace",
                 &workspace,
                 "--cwd",
-                &cwd,
+                cwd,
                 "--label",
                 &format!("agent-{agent}"),
                 "--no-focus",

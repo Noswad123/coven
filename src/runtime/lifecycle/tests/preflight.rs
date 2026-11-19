@@ -1,6 +1,50 @@
 use super::*;
 use std::{collections::BTreeMap, path::PathBuf};
 
+#[test]
+fn isolation_validates_entire_roster_before_first_locks_or_restart_effects() {
+    for multiplexer in ["tmux", "herdr"] {
+        let root = fixture(multiplexer);
+        fs::write(
+            root.path().join("coven.toml"),
+            "[runtime.agent_working_directories]\nBeta='/does/not/exist'\n",
+        )
+        .unwrap();
+        let before = snapshot(root.path());
+        let fake = Fake::new(root.path(), vec![]);
+        let (result, _) = run(
+            root.path(),
+            RuntimeAction::Restart,
+            &fake,
+            multiplexer == "tmux",
+            false,
+            false,
+        );
+        assert_eq!(
+            result.unwrap_err().code(),
+            "agent_working_directories_roster_mismatch"
+        );
+        let result = agent_change_using(
+            root.path(),
+            &["Beta".into()],
+            AgentAction::Restart,
+            |r, _| {
+                Ok(transport::Backend::injected(
+                    r,
+                    multiplexer == "tmux",
+                    &fake,
+                ))
+            },
+        );
+        assert_eq!(
+            result.unwrap_err().code(),
+            "agent_working_directories_roster_mismatch"
+        );
+        assert_eq!(snapshot(root.path()), before);
+        assert!(fake.calls.borrow().is_empty());
+    }
+}
+
 pub(crate) fn snapshot(root: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
     fn visit(root: &Path, path: &Path, files: &mut BTreeMap<PathBuf, Option<Vec<u8>>>) {
         for entry in fs::read_dir(path).unwrap() {

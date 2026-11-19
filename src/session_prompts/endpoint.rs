@@ -1,15 +1,15 @@
 use super::*;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Endpoint {
-    pub socket: crate::observation_socket::Endpoint,
+pub(crate) struct Endpoint {
+    pub(crate) socket: crate::observation_socket::Endpoint,
     parent_device: u64,
     parent_inode: u64,
 }
 
 impl Endpoint {
     #[cfg(unix)]
-    pub(super) fn select(address: &str) -> WireResult<Self> {
+    pub(crate) fn select(address: &str) -> WireResult<Self> {
         use std::os::unix::fs::{FileTypeExt, MetadataExt};
         let io = |_| Failure::new("prompt_or_endpoint_unavailable");
         path(address).map_err(|e| Failure::new(e.code()))?;
@@ -59,11 +59,11 @@ impl Endpoint {
     }
 
     #[cfg(not(unix))]
-    pub(super) fn select(_: &str) -> WireResult<Self> {
+    pub(crate) fn select(_: &str) -> WireResult<Self> {
         Err(Failure::new("unsupported_platform"))
     }
 
-    pub(super) fn fence(&self) -> WireResult<()> {
+    pub(crate) fn fence(&self) -> WireResult<()> {
         let current = Self::select(&self.socket.selected)
             .map_err(|_| Failure::new("native_endpoint_changed"))?;
         if current != *self {

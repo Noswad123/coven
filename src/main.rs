@@ -21,6 +21,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Serve a private, read-only fleet observer and its Coven Web browser client.
+    Observer {
+        #[command(subcommand)]
+        command: Observer,
+    },
     /// Inspect this native executable's compatibility metadata without probing a runtime.
     Doctor {
         #[command(subcommand)]
@@ -1500,8 +1505,54 @@ enum Handoff {
     },
 }
 
+#[derive(Subcommand)]
+enum Observer {
+    /// Validate configuration without contacting endpoints or starting a server.
+    Check {
+        #[arg(long)]
+        config: PathBuf,
+    },
+    /// Serve Coven Web on loopback behind a trusted Tailscale Serve proxy.
+    Serve {
+        #[arg(long)]
+        config: PathBuf,
+    },
+    /// Perform one bounded local read; accepts a closed JSON request on stdin.
+    Probe {
+        #[arg(long)]
+        socket: String,
+    },
+}
+
 fn run(cli: Cli) -> Result<TaskOutput> {
     let report = match cli.command {
+        Command::Observer { command } => {
+            let value = match command {
+                Observer::Check { config } => {
+                    coven::observer::Config::load(&config)?;
+                    serde_json::json!({"contract":"coven.fleet-observer.v1","configuration":"valid"})
+                }
+                Observer::Serve { config } => {
+                    let config = coven::observer::Config::load(&config)?;
+                    coven::observer::http::serve(config)?;
+                    serde_json::json!({"stopped":true})
+                }
+                Observer::Probe { socket } => {
+                    use std::io::Read;
+                    let mut input = Vec::new();
+                    std::io::stdin().take(4097).read_to_end(&mut input)?;
+                    if input.len() > 4096 {
+                        return Err(coven::Error::invalid_cli_arguments());
+                    }
+                    coven::observer::probe_response(&socket, &input)
+                }
+            };
+            return Ok(TaskOutput {
+                stdout: format!("{}\n", serde_json::to_string(&value)?),
+                warnings: Vec::new(),
+                exit_code: 0,
+            });
+        }
         Command::Doctor { command } => match command {
             Doctor::Status { json } => return coven::doctor::status_arguments(json),
         },

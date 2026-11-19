@@ -24,6 +24,9 @@ include = [
     "/src/hook_files/platform/*.c",
     "/src/hook_files/platform/*.h",
     "/src/workspace_assets/*.txt",
+    "/clients/web/index.html",
+    "/clients/web/app.js",
+    "/clients/web/styles.css",
     "/src/execution/inspection/projection/vectors.json",
     "/examples/**/*.json",
     "/examples/**/*.md",
@@ -64,6 +67,11 @@ toml = "0.8"
 # Use the already-locked codec directly for surgical provider TOML edits.
 toml_edit = "0.22"
 tempfile = "3.27"
+# Parse HTTP with an established server; TLS/identity forwarding stays in Serve.
+hyper = { version = "1", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

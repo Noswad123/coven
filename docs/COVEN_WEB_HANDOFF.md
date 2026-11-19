@@ -1,5 +1,184 @@
 # Coven Web: progress and integration handoff
 
+## Current deployment and cleanup, 2026-11-19
+
+This section supersedes the historical worker/reconciliation/deployment records
+below. Source now resides in the normal main checkouts:
+
+- `/home/jdawson/Projects/coven`, base `a3f9fc1`, with unstaged/uncommitted feature
+  changes and current-main agent-management integration preserved.
+- `/home/jdawson/Projects/djinn`, base `88e2042`, with the native reader added while
+  preserving the pre-existing attachment/status work. Nothing was committed or
+  pushed during reconciliation and rollout.
+
+### Published and running
+
+- `coven-web.service` runs
+  `/home/jdawson/.local/libexec/coven-web/f0904e1da389ab1a/bin/coven`.
+  Its SHA256 is
+  `f0904e1da389ab1a65954dfaeb2e2e38e99fff6a8a37bb5871b15b43c2d80d32`.
+- The existing tailnet-only site remains
+  `https://bumblebee.tail97624b.ts.net`, proxying only to `127.0.0.1:7341`.
+  The Serve route, observer configuration, login policy and two selected fleet
+  endpoints were unchanged. Best-effort terminal output remains disabled.
+- Future public dev Coven launches select `coven-native-y6fzrkjz`; the old
+  `coven-native-agc3h45d` payload is retained. The public wrapper and Arcana registry
+  were unchanged; the existing installer atomically switched its dev prefix.
+- Future Djinn UI launches select compiled bundle
+  `2b75443906a85635e8e28bf0bb4a915f1e952ca012a204c0678c409768aa027e`
+  under `~/.local/libexec/arcana-dev/djinn/bin/.djinn/`. The CLI bytes are unchanged.
+  The previous `9ac92fd0...` bundle is retained. No existing native agent/UI/Coven
+  process was restarted or signaled; only the web gateway was restarted.
+
+**Conversation activation is still explicit.** The new website currently returns
+an empty authorized Conversations list: no native target was guessed or registered.
+Existing UI processes were started without `DJINN_PROMPT_SOCKET` and cannot acquire
+one from binary installation alone. Start a new full TUI with the published UI and
+a private socket, obtain its runtime UUID, and deliberately register the exact root
+session and allowed logins using [the configuration contract](COVEN_WEB.md). Do not
+infer a session from a pane/PID/title or silently follow a runtime replacement.
+
+### Validation of reconciled main
+
+- 39 Node and 273 focused Rust checks passed, including current-main observations
+  and presentation regressions, isolation/lifecycle/parity, install/package, and
+  the separately invoked real-producer HTTP fixture. Cargo all-target check and
+  formatting passed.
+- After a two-line lifecycle borrow cleanup, 27 targeted lifecycle/isolation
+  checks and the final release build passed. These overlap the earlier scope and
+  are not an additional unique-test total. Strict Clippy still reports five
+  pre-existing unchanged-code style findings; new lifecycle findings were fixed.
+- Djinn: 103 reader/session/instance tests, 85 focused native/attachment tests and
+  14 selected-session tests passed; package typecheck and compiled capability
+  probes passed. One opt-in full Coven/Kit hosting test was skipped. The existing
+  models snapshot and dependencies were reused without dependency installation.
+- Isolated candidate, live loopback and actual Serve HTTPS checks passed for page,
+  new assets, health, fleet schema, empty Conversations list, unknown reference
+  refusal and identity admission. This is not phone/cellular or real-chat acceptance.
+- Owned test/build directories and children were cleaned. Full regression and
+  physical-device/provider-model acceptance remain separate gates.
+
+### Rollback and removed worktrees
+
+The original unit is retained byte-for-byte at
+`~/.config/systemd/user/coven-web.service.rollback-920bef44`, alongside its old
+`920bef44922edaf6` payload. Restore only that unit's content, reload the user manager
+and restart only `coven-web.service` if rollback is needed. Keep the Serve route and
+live agents unchanged. Native/dev selection rollback must preserve the matched
+payload and should not terminate existing sessions.
+
+All three effort-owned **local** worktrees were removed normally after source and
+index/untracked preservation checks. Named Git recovery stashes remain until the
+integrated work is committed and recovery is no longer needed:
+
+| Removed worktree | Repository | Recovery stash object |
+| --- | --- | --- |
+| `coven-web` | Coven | `50f5b8645b89ca217234c55072c442a2766c2630` |
+| `coven-team-isolation` | Coven | `f4ff432c2c614b07b4d60fc60304b54661f5a1b2` |
+| `djinn-conversation-view` | Djinn | `6917b18bf4192dd4fe055e55bbf4b3c3469b0ad2` |
+
+Do not pop/drop unrelated stashes; later recovery-snapshot cleanup must identify
+only these exact entries after integrated source is committed. The unrelated
+`coven-rust-migration`, `coven-worker-handoffs`, both main checkouts, and the remote
+Megatron worktree were retained. No branch deletion or forced removal was used.
+
+## Main source reconciliation overlay, 2026-11-19
+
+The complete Coven prototype, web/conversation and agent-directory implementation
+has now been reconciled as **unstaged, uncommitted source changes** into
+`/home/jdawson/Projects/coven`, on `main` at `a3f9fc1`. Selection used the combined
+`coven-web` working tree's delta against `a541e9f`, including prototype commit
+`323dbc9` content and all 11 untracked implementation/test/doc files, rather than
+copying its older integration files over current main.
+
+Current-main agent-management, native integration and normal-workflow changes are
+retained. The closed `PaneRead` method and its transport test were added alongside
+the newer guarded-view transport and tests; module declarations were combined.
+The local implementation and validation records below describe the earlier worker
+baselines, **not test or activation results against this reconciled main**.
+
+Both `/home/jdawson/Projects/coven-web` and
+`/home/jdawson/Projects/coven-team-isolation` remain preserved and untouched,
+including the former's pending no-commit merge/index. No staging, commit, build,
+rollout, live configuration change or worktree deletion was performed during this
+reconciliation. Build/test/rollout verification remains with the integration owner;
+retain the source worktrees until safe integration has been verified.
+
+Source-only checks on this overlay passed: all 55 files other than this handoff and
+the two socket merges match the selected source exactly, including module
+declarations. Both socket deltas match the prototype additions exactly, and all 19 main-only files
+changed since `a541e9f` remain equal to `a3f9fc1`. Rust formatting, JavaScript and
+Python syntax, and diff whitespace checks passed. These are not build, runtime,
+test-suite or rollout acceptance results.
+
+## Local implementation overlay, 2026-11-18
+
+The deployment/source-location sections below record the earlier prototype handoff.
+That prototype was subsequently preserved on `coven-web-observer` in commit
+`323dbc95ccb86f1c49b070f6735a40a3cdd679dd` and pushed. Its original Megatron
+worktree was retained. The following new implementation is **local, uncommitted,
+and not deployed**:
+
+- `/home/jdawson/Projects/coven-web`: combined Coven implementation. The saved
+  prototype has a pending, conflict-resolved **no-commit merge** of committed
+  `main` at `a541e9f`, plus the new web and team-directory changes. Automatic
+  merge results are staged; new implementation edits include unstaged and untracked
+  files. Review both the index and working tree, including new files. No merge
+  commit or additional push has been made.
+- `/home/jdawson/Projects/coven-team-isolation`, branch `work/team-isolation`:
+  retained isolation worker source. Its changes were copied into the combined
+  worktree while preserving the web modules.
+- `/home/jdawson/Projects/djinn-conversation-view`, branch
+  `work/native-conversation-view`: the companion native reader and tests, based on
+  committed Djinn `main` at `88e2042`.
+
+The original Coven and Djinn main worktrees have ongoing unrelated, uncommitted
+integration changes. They were not edited or copied into these worker worktrees.
+**The combined checks cover the named committed baselines plus this implementation,
+not those evolving main-worktree edits.** Reconcile those changes before preparing
+an installed rollout; do not overwrite either main worktree.
+
+### Delivered first slice
+
+1. [Agent directory isolation](AGENT_DIRECTORY_ISOLATION.md): explicit full-roster
+   mapping to distinct, existing Git working-tree roots for legacy team launches.
+   Coordination state stays in the control directory. No automatic worktree
+   creation/deletion, relocation of running panes, security sandbox or scheduler
+   is claimed. Reviewed `runtime_launch` v1 explicitly refuses this new mapping.
+2. [Native conversation viewing](COVEN_WEB.md): explicit local socket/runtime/session
+   registrations with per-resource Serve-login authorization. A separate
+   Conversations list opens bounded, inert user/assistant text. No guessed binding
+   from process/pane cards, terminal-output fallback, prompt submission or decision
+   response was added. Remote native conversation endpoints remain unsupported.
+3. Djinn's opt-in full-TUI private endpoint advertises
+   `djinn.conversation-read.v1`. It reads already-active native contexts, limits
+   persisted-record acquisition before materialization, and returns at most 20
+   messages / 8192 UTF-8 text bytes. Its digest identifies the returned projection,
+   not a transactional whole-conversation revision.
+
+### Validation and operational boundary
+
+- Combined Coven: native-conversation units (5), observer units (44), HTTP gateway
+  tests (6), isolation acceptance, selected legacy-lifecycle/runtime-launch/refresh
+  parity workflows, native install (9) and native package (2) checks passed.
+- The separately invoked, default-ignored real Djinn socket producer through the
+  authenticated HTTP gateway passed. Its messages are synthetic; it is not live
+  native DB/TUI, provider/model, physical browser or tailnet acceptance.
+- Final Node suite: 39 passed, including authorization invalidation, metadata
+  expiry, deferred responses and keyboard-focus preservation.
+- Djinn: 103 focused tests and its package typecheck passed. Independent native,
+  isolation and web reviews were performed; identified correctness issues were
+  fixed with regression coverage.
+- Combined all-target Cargo check, formatting and whitespace checks passed. The
+  full regression gate and a fresh strict Clippy run were not performed.
+- Owned test/build/fixture directories were cleaned after child shutdown; unrelated
+  run directories and shared package caches were preserved.
+
+No installed executable, provider configuration, live agent, systemd unit or
+Tailscale Serve route was changed. Activation needs separately reviewed builds,
+explicit native endpoint startup, authorized target registration, and a deliberate
+gateway rollout. Existing sessions are not retrofitted or restarted automatically.
+
 ## Decision and immediate coordination boundary
 
 Coven Web is **Coven's browser client**, not a separate product, repository or

@@ -1,4 +1,4 @@
-use super::super::{agent_launch_command, shell_quote};
+use super::super::{agent_launch_command_at, shell_quote};
 use crate::transport_gate::TransportGuard;
 use std::{
     fs,
@@ -50,7 +50,7 @@ fn argv(home: &Path, verb: &str) -> Vec<String> {
 }
 
 #[test]
-fn literal_delayed_bootstrap_keeps_legacy_bytes_and_outlives_transport_admission() {
+fn literal_delayed_bootstrap_handles_legacy_and_isolated_cwds_and_outlives_admission() {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
     fs::create_dir(&bin).unwrap();
@@ -66,8 +66,13 @@ fn literal_delayed_bootstrap_keeps_legacy_bytes_and_outlives_transport_admission
     let herdr = bin.join("herdr peer's%");
     fs::copy(&fixture, &herdr).unwrap();
 
-    for backend in ["tmux", "herdr"] {
-        let home = temp.path().join(backend);
+    for (backend, isolated) in [
+        ("tmux", false),
+        ("herdr", false),
+        ("tmux", true),
+        ("herdr", true),
+    ] {
+        let home = temp.path().join(format!("{backend}-{isolated}"));
         fs::create_dir(&home).unwrap();
         let root = home.join("workspace a'b%\\literal");
         fs::create_dir_all(root.join("prompts")).unwrap();
@@ -81,18 +86,21 @@ fn literal_delayed_bootstrap_keeps_legacy_bytes_and_outlives_transport_admission
             "native-pane_7"
         };
         fs::write(home.join("target"), target).unwrap();
-        let launch = agent_launch_command(
+        let launch = agent_launch_command_at(
             "Bootstrap Test",
             root.to_str().unwrap(),
             agent,
             &format!("{} foreground", shell_quote(fixture.to_str().unwrap())),
             backend,
+            isolated,
         )
         .unwrap();
         assert!(launch.contains("(sleep 5;"));
         let stdout = fs::File::create(home.join("stdout")).unwrap();
         let stderr = fs::File::create(home.join("stderr")).unwrap();
         let shared = TransportGuard::shared(&root, Duration::ZERO).unwrap();
+        let execution = home.join("execution");
+        fs::create_dir(&execution).unwrap();
         let started = Instant::now();
         let deadline = started + Duration::from_secs(20);
         let mut shell = Shell(Some(
@@ -103,7 +111,7 @@ fn literal_delayed_bootstrap_keeps_legacy_bytes_and_outlives_transport_admission
                     "-c",
                     &format!("{launch}\nstatus=$?\nwait\nexit \"$status\""),
                 ])
-                .current_dir(&root)
+                .current_dir(if isolated { &execution } else { &root })
                 .env_clear()
                 .env("HOME", &home)
                 .env("PATH", format!("{}:/bin", bin.display()))
@@ -140,13 +148,21 @@ fn literal_delayed_bootstrap_keeps_legacy_bytes_and_outlives_transport_admission
                 argv(&home, "display-message"),
                 ["display-message", "-p", "#{pane_id}"]
             );
+            let prompt = if isolated {
+                root.join("prompts/Legacy_SAFE-7.start.txt")
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
+            } else {
+                "prompts/Legacy_SAFE-7.start.txt".to_owned()
+            };
             assert_eq!(
                 argv(&home, "load-buffer"),
                 [
                     "load-buffer",
                     "-b",
                     "coven-bootstrap-test-Legacy_SAFE-7-starter",
-                    "prompts/Legacy_SAFE-7.start.txt"
+                    prompt.as_str()
                 ]
             );
             assert_eq!(

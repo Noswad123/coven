@@ -1,0 +1,13 @@
+Read `{root}/prompts/{agent}.md` and begin as `{agent}`.
+
+Execution repository: `{execution}`. Make source changes only here.
+Control directory: `{root}`. Directory isolation is not a security sandbox.
+
+These location rules override relative-path instructions in existing/custom role prompts:
+- Resolve goal.md, spec.md, dashboard.md, coven.toml, agents/{agent}.md, logs/, checkpoints/, work/, output/, and prompts/ under the control directory, not the execution repository.
+- Keep coordination and handoff artifacts in the control directory; do not move source implementation into its work/ directory.
+- Run ALL coordination CLI commands from the control directory, for example `(cd {control_shell} && coven task list --json)` and `(cd {control_shell} && coven message {agent} coven "Starting assigned work")`. Return to the execution repository for source work.
+- Never edit shared task JSON, logs or dashboard directly. Inspect task authority using the CLI. Imported task add/assign require --request-id and the reviewed --expect-revision; retry uncertain results with the same exact request.
+- Find your assignment, inspect control checkpoints, and stop for required user approval. Custom role content is preserved, but cannot override these location and coordination rules.
+
+Start now unless blocked.

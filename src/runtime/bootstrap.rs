@@ -51,6 +51,7 @@ fn bootstrap_admitting<'a>(
     let guard = WorkspaceGuard::acquire(root, TIMEOUT)?;
     legacy(root, &gate)?;
     let state = workspace::load(root)?;
+    crate::agent_directories::validate_starters(root, &state.team)?;
     let ns = namespace(&state)?;
     // Read the entire existing UTF-8 batch before creating a single missing file.
     let prompts = prompts(root, &state.team.agent_ids()?)?;
@@ -65,6 +66,7 @@ fn bootstrap_admitting<'a>(
             let guard = WorkspaceGuard::acquire(root, TIMEOUT)?;
             legacy(root, &gate)?;
             let fresh = workspace::load(root)?;
+            crate::agent_directories::validate_starters(root, &fresh.team)?;
             require(
                 namespace(&fresh)? == ns && fresh.multiplexer == state.multiplexer,
                 "runtime_configuration_changed",
@@ -131,6 +133,7 @@ fn bootstrap_admitting<'a>(
 
 fn preview(root: &Path) -> Result<()> {
     let state = super::lifecycle::preview_workspace(root)?;
+    crate::agent_directories::validate_starters(root, &state.team)?;
     namespace(&state)?;
     prompts(root, &state.team.agent_ids()?)?;
     Ok(())

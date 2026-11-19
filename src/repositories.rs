@@ -4,6 +4,8 @@ mod record;
 mod registration;
 mod timestamp;
 
+pub(crate) use git::working_tree_paths;
+
 use crate::{Result, task_mutation::TaskOutput};
 use serde_json::{Value, json};
 use std::path::Path;

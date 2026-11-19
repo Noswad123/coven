@@ -52,6 +52,7 @@ impl Cancel for NoCancel {
 pub(crate) enum ReadMethod {
     Snapshot,
     ProcessInfo,
+    PaneRead,
 }
 
 #[derive(Debug)]
@@ -150,6 +151,7 @@ pub(crate) fn read(
         match method {
             ReadMethod::Snapshot => "session.snapshot",
             ReadMethod::ProcessInfo => "pane.process_info",
+            ReadMethod::PaneRead => "pane.read",
         },
         params,
         deadline,

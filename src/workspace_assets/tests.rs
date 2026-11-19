@@ -248,7 +248,12 @@ fn generated_launch_script_must_be_nul_free_without_io() {
         // check, including the internal normalized-command path used by manifests.
         assert_eq!(
             normalized_agent_launch_command(
-                "test", "/nonexistent", "agent", "opencode\0", backend,
+                "test",
+                "/nonexistent",
+                "agent",
+                "opencode\0",
+                backend,
+                false,
             )
             .unwrap_err()
             .code(),

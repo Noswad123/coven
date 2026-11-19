@@ -273,6 +273,16 @@ fn read_team(root: &Path) -> Result<(TeamRecord, String)> {
             let runtime = runtime
                 .as_table()
                 .ok_or(Error("invalid_runtime_configuration"))?;
+            if let Some(value) = runtime.get("agent_working_directories") {
+                let value = values::parse(&serde_json::to_vec(value)?, Profile::LegacySnapshot)?;
+                let mut runtime = effective
+                    .as_object()
+                    .and_then(|v| v.get("runtime"))
+                    .cloned()
+                    .unwrap_or(Value::object(Vec::new())?);
+                runtime.set_field("agent_working_directories", value)?;
+                effective.set_field("runtime", runtime)?;
+            }
             for key in ["multiplexer", "opencode_command"] {
                 if let Some(value) = runtime.get(key) {
                     let value = value
@@ -286,6 +296,7 @@ fn read_team(root: &Path) -> Result<(TeamRecord, String)> {
         }
     }
     let effective = TeamRecord::validate(effective)?;
+    crate::agent_directories::validate(&effective)?;
     let multiplexer = effective_multiplexer(&effective)?;
     crate::actions::validate_workspace_control(root)?;
     Ok((effective, multiplexer))
@@ -418,6 +429,30 @@ mod tests {
     }
     fn inspect(root: &Path, items: &[PathBuf]) -> Result<Value> {
         inspect_root(root, items, &mut |_| {})
+    }
+
+    #[test]
+    fn missing_execution_directory_does_not_block_general_workspace_load() {
+        let root = minimal();
+        let missing = root.path().join("unmounted-checkout");
+        fs::write(
+            root.path().join("coven.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "name":"test", "agents":["operator"],
+                "runtime":{"agent_working_directories":{"operator":missing}}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let state = load(root.path()).unwrap();
+        assert_eq!(state.team.agent_ids().unwrap(), ["operator"]);
+        assert_eq!(
+            crate::agent_directories::validate(&state.team).unwrap()["operator"],
+            missing
+        );
+        diagnostic(root.path()).unwrap();
+        assert!(!root.path().join("state").exists());
+        assert!(!missing.exists());
     }
 
     #[test]

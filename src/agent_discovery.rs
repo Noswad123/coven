@@ -72,103 +72,21 @@ pub(crate) fn inspect_cancel(request: &Request, cancel: &dyn Cancel) -> Result<V
             "Provider-family recognition is not native identity, activity, lifecycle, job completion, authorization, or a complete native catalog. No persistence, adoption, roles, or terminal associations are created."
         ]
     });
-    let outcome = (|| -> WireResult<Vec<Value>> {
-        observation_socket::check(deadline, cancel)?;
-        if cfg!(windows) {
-            return Err(Failure::new("unsupported_acquisition"));
-        }
-        report["endpoint"]["resolved"] = json!(observation_socket::resolve(&request.socket)?);
-        let endpoint = observation_socket::select(&request.socket)?;
-        report["endpoint"] = json!({"selected":endpoint.selected,"resolved":endpoint.resolved,
-            "device":endpoint.device,"inode":endpoint.inode});
-        let mut budget = ReadBudget::new(request.max_response_bytes);
-        let mut read = |method, params: &Value| {
-            observation_socket::check(deadline, cancel)?;
-            if observation_socket::select(&request.socket)? != endpoint {
-                return Err(Failure::new("endpoint_replaced"));
-            }
-            let reply = observation_socket::read(
-                &request.socket,
-                method,
-                params,
-                deadline,
-                &mut budget,
-                cancel,
-            )?;
-            if reply.endpoint != endpoint
-                || observation_socket::select(&request.socket)? != endpoint
-            {
-                return Err(Failure::new("endpoint_replaced"));
-            }
-            Ok(reply)
-        };
-        let before = schema::snapshot(&read(ReadMethod::Snapshot, &json!({}))?)?;
-        report["process_observation"] = before.descriptor.clone();
-        let selected = before.selected(request.pane.as_deref())?;
-        if request
-            .expected_terminal
-            .as_deref()
-            .is_some_and(|expected| {
-                selected.first().and_then(|p| p["terminal_id"].as_str()) != Some(expected)
-            })
-        {
-            return Err(Failure::new("pane_mapping_changed"));
-        }
-        let mut targets = Vec::new();
-        for locators in &selected {
-            let pane = locators["pane_id"]
-                .as_str()
-                .ok_or_else(|| Failure::new("schema_error"))?;
-            let facts = schema::processes(
-                &read(ReadMethod::ProcessInfo, &json!({"pane_id":pane}))?,
-                pane,
-            )?;
-            let sample_received_at =
-                crate::task_time::now().map_err(|_| Failure::new("io_error"))?;
-            let matches: Vec<_> = facts
-                .iter()
-                .flat_map(crate::agent_processes::classify)
-                .collect();
-            let mut providers: Vec<_> = matches.iter().map(|m| m.provider).collect();
-            providers.sort_unstable();
-            providers.dedup();
-            let recognition = match providers.len() {
-                0 => "unknown",
-                1 => "provider_family",
-                _ => "multiple_provider_families",
-            };
-            // JSON tuple encoding avoids ambiguous concatenation of opaque locators.
-            let seed = serde_json::to_vec(&json!([scan_id, locators["terminal_id"]]))
-                .map_err(|_| Failure::new("io_error"))?;
-            let observation_id = format!("{:x}", Sha256::digest(seed));
-            let mut target = locators.clone();
-            target["observation_id"] = json!(observation_id);
-            target["recognition"] = json!(recognition);
-            target["matches"] =
-                serde_json::to_value(matches).map_err(|_| Failure::new("io_error"))?;
-            target["provider_candidates"] = json!(providers);
-            target["sample_received_at"] = json!(sample_received_at);
-            target["mapping_evidence"] = json!("matching_inventory_brackets");
-            target["activity"] = json!("unknown");
-            target["attention"] = json!("unknown");
-            for key in ["native_identity", "native_lifecycle", "job_completion"] {
-                target[key] = json!("unestablished");
-            }
-            targets.push(target);
-        }
-        let after = schema::snapshot(&read(ReadMethod::Snapshot, &json!({}))?)?;
-        if before.version != after.version || before.protocol != after.protocol {
-            return Err(Failure::new("server_changed"));
-        }
-        if before.descriptor != after.descriptor {
-            return Err(Failure::new("process_observation_changed"));
-        }
-        if selected != after.selected(request.pane.as_deref())? {
-            return Err(Failure::new("pane_mapping_changed"));
-        }
-        observation_socket::check(deadline, cancel)?;
-        Ok(targets)
-    })();
+    let outcome = acquire(
+        AcquisitionRequest {
+            socket: &request.socket,
+            pane: request.pane.as_deref(),
+            expected_terminal: request.expected_terminal.as_deref(),
+            scan_id: &scan_id,
+            allow_unsupported: false,
+            pane_limit: 64,
+        },
+        deadline,
+        cancel,
+        &mut ReadBudget::new(request.max_response_bytes),
+        &mut report,
+    )
+    .map(|acquisition| acquisition.targets);
     match outcome {
         Ok(targets) => {
             report["assessment"] = json!("observed");
@@ -197,6 +115,137 @@ pub(crate) fn inspect_cancel(request: &Request, cancel: &dyn Cancel) -> Result<V
     }
     report["duration_ms"] = json!(started.elapsed().as_secs_f64() * 1000.0);
     Ok(report)
+}
+
+pub(crate) struct AcquisitionRequest<'a> {
+    pub socket: &'a str,
+    pub pane: Option<&'a str>,
+    pub expected_terminal: Option<&'a str>,
+    pub scan_id: &'a str,
+    pub allow_unsupported: bool,
+    /// Per-consumer scan cap, bounded to 1..=1024. The standalone CLI stays at 64.
+    pub pane_limit: usize,
+}
+
+pub(crate) struct Acquisition {
+    pub snapshot: observation_socket::Reply,
+    pub targets: Vec<Value>,
+    pub supported: bool,
+}
+
+/// Shared single-deadline, single-budget foreground cohort acquisition. Progress
+/// retains the CLI's endpoint/descriptor diagnostics even when acquisition fails.
+/// Acquisition completeness stays unknown; recognized families are not native identity.
+pub(crate) fn acquire(
+    request: AcquisitionRequest<'_>,
+    deadline: Instant,
+    cancel: &dyn Cancel,
+    budget: &mut ReadBudget,
+    progress: &mut Value,
+) -> WireResult<Acquisition> {
+    if !(1..=1024).contains(&request.pane_limit) {
+        return Err(Failure::new("invalid_pane_limit"));
+    }
+    observation_socket::check(deadline, cancel)?;
+    if cfg!(windows) {
+        return Err(Failure::new("unsupported_acquisition"));
+    }
+    progress["endpoint"]["resolved"] = json!(observation_socket::resolve(request.socket)?);
+    let endpoint = observation_socket::select(request.socket)?;
+    progress["endpoint"] = json!({"selected":endpoint.selected,"resolved":endpoint.resolved,
+            "device":endpoint.device,"inode":endpoint.inode});
+    let mut read = |method, params: &Value| {
+        observation_socket::check(deadline, cancel)?;
+        if observation_socket::select(request.socket)? != endpoint {
+            return Err(Failure::new("endpoint_replaced"));
+        }
+        let reply =
+            observation_socket::read(request.socket, method, params, deadline, budget, cancel)?;
+        if reply.endpoint != endpoint || observation_socket::select(request.socket)? != endpoint {
+            return Err(Failure::new("endpoint_replaced"));
+        }
+        Ok(reply)
+    };
+    let before_reply = read(ReadMethod::Snapshot, &json!({}))?;
+    let before = schema::snapshot_profile(&before_reply, request.allow_unsupported)?;
+    progress["process_observation"] = before.descriptor.clone();
+    if before.descriptor.is_null() {
+        observation_socket::check(deadline, cancel)?;
+        return Ok(Acquisition {
+            snapshot: before_reply,
+            targets: Vec::new(),
+            supported: false,
+        });
+    }
+    let select = |snapshot: &schema::Snapshot| {
+        if request.pane_limit == 64 {
+            snapshot.selected(request.pane)
+        } else {
+            snapshot.selected_with_limit(request.pane, request.pane_limit)
+        }
+    };
+    let selected = select(&before)?;
+    if request.expected_terminal.is_some_and(|expected| {
+        selected.first().and_then(|p| p["terminal_id"].as_str()) != Some(expected)
+    }) {
+        return Err(Failure::new("pane_mapping_changed"));
+    }
+    let mut targets = Vec::new();
+    for locators in &selected {
+        let pane = locators["pane_id"]
+            .as_str()
+            .ok_or_else(|| Failure::new("schema_error"))?;
+        let facts = schema::processes(
+            &read(ReadMethod::ProcessInfo, &json!({"pane_id":pane}))?,
+            pane,
+        )?;
+        let sample_received_at = crate::task_time::now().map_err(|_| Failure::new("io_error"))?;
+        let matches: Vec<_> = facts
+            .iter()
+            .flat_map(crate::agent_processes::classify)
+            .collect();
+        let mut providers: Vec<_> = matches.iter().map(|m| m.provider).collect();
+        providers.sort_unstable();
+        providers.dedup();
+        let recognition = match providers.len() {
+            0 => "unknown",
+            1 => "provider_family",
+            _ => "multiple_provider_families",
+        };
+        // JSON tuple encoding avoids ambiguous concatenation of opaque locators.
+        let seed = serde_json::to_vec(&json!([request.scan_id, locators["terminal_id"]]))
+            .map_err(|_| Failure::new("io_error"))?;
+        let observation_id = format!("{:x}", Sha256::digest(seed));
+        let mut target = locators.clone();
+        target["observation_id"] = json!(observation_id);
+        target["recognition"] = json!(recognition);
+        target["matches"] = serde_json::to_value(matches).map_err(|_| Failure::new("io_error"))?;
+        target["provider_candidates"] = json!(providers);
+        target["sample_received_at"] = json!(sample_received_at);
+        target["mapping_evidence"] = json!("matching_inventory_brackets");
+        target["activity"] = json!("unknown");
+        target["attention"] = json!("unknown");
+        for key in ["native_identity", "native_lifecycle", "job_completion"] {
+            target[key] = json!("unestablished");
+        }
+        targets.push(target);
+    }
+    let after = schema::snapshot(&read(ReadMethod::Snapshot, &json!({}))?)?;
+    if before.version != after.version || before.protocol != after.protocol {
+        return Err(Failure::new("server_changed"));
+    }
+    if before.descriptor != after.descriptor {
+        return Err(Failure::new("process_observation_changed"));
+    }
+    if selected != select(&after)? {
+        return Err(Failure::new("pane_mapping_changed"));
+    }
+    observation_socket::check(deadline, cancel)?;
+    Ok(Acquisition {
+        snapshot: before_reply,
+        targets,
+        supported: true,
+    })
 }
 
 pub fn arguments(request: &Request, json_output: bool) -> Result<TaskOutput> {

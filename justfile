@@ -22,7 +22,10 @@ test-rust-verbose:
 test-python:
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -q
 
-test: test-rust test-python
+test-web:
+    node --test clients/web/*.test.mjs
+
+test: test-rust test-python test-web
 
 check: fmt lint test
 

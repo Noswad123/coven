@@ -2,6 +2,15 @@
 
 ## Overview
 
+### Coven Web browser client
+
+[Coven Web](docs/COVEN_WEB.md) is Coven's read-only, phone-first browser client,
+not a separate product or agent manager. Its dependency-free source lives in
+[`clients/web/`](clients/web/README.md); Coven serves the assets and the unchanged
+`coven.fleet-observer.v1` observation API together behind private Tailscale Serve.
+The documented `coven-web.service`, `~/.config/coven-web/` and
+`~/.local/libexec/coven-web/` layout is a deployment target, not verified activation.
+
 ### Normal native-agent invocation (opt-in)
 
 Codex/Copilot also have separate, unordered
@@ -2113,6 +2122,14 @@ In approved-launch mode, only metadata is recorded; legacy pane delivery remains
 disabled and a lead record cannot grant startup or worker tool permissions.
 
 ## Development checks
+
+Coven Web's synthetic client tests need Node 20+ and no dependency installation:
+
+```bash
+node --test clients/web/*.test.mjs
+node --check clients/web/app.js
+# Or: just test-web
+```
 
 Python 3.11+ and local POSIX locking (macOS/Linux) are required. Run the offline regression
 suite from the repository root:

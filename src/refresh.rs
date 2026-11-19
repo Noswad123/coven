@@ -86,7 +86,9 @@ fn prepare(root: &Path) -> Result<Prepared> {
     };
     task_delivery::validate_checkpoint_history(root)?;
     let root_text = read_fs::path_text(root)?;
-    let manifest = assets::tmux_manifest(name, &root_text, &agents, command, &context)?;
+    let directories = crate::agent_directories::resolve(root, &state.team)?;
+    let manifest =
+        assets::tmux_manifest_at(name, &root_text, &agents, command, &context, &directories)?;
     require(
         manifest.len() <= MAX_TEMPLATE,
         "unsupported_refresh_template_profile",
@@ -119,7 +121,15 @@ fn prepare(root: &Path) -> Result<Prepared> {
     for agent in &agents {
         result.push(
             format!("prompts/{agent}.start.txt"),
-            assets::starter_text(agent, &root_text),
+            assets::starter_text_at(
+                agent,
+                &root_text,
+                directories
+                    .get(*agent)
+                    .map(|v| crate::read_fs::path_text(v))
+                    .transpose()?
+                    .as_deref(),
+            ),
             false,
         )?;
     }

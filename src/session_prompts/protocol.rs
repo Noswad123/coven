@@ -15,7 +15,7 @@ impl Method {
     }
 }
 
-pub(super) fn uuid(value: &str) -> bool {
+pub(crate) fn uuid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(i, b)| {
             if [8, 13, 18, 23].contains(&i) {
@@ -26,7 +26,7 @@ pub(super) fn uuid(value: &str) -> bool {
         })
 }
 
-pub(super) fn identifier(value: &str, prefix: &str) -> bool {
+pub(crate) fn identifier(value: &str, prefix: &str) -> bool {
     value.strip_prefix(prefix).is_some_and(|tail| {
         !tail.is_empty()
             && tail.len() <= 128

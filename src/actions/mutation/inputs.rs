@@ -21,6 +21,10 @@ impl Captured {
 
 pub(super) fn capture(root: &Path) -> Result<Captured> {
     let state = crate::workspace::load(root)?;
+    require(
+        crate::agent_directories::configured(&state.team)?.is_none(),
+        "runtime_launch_v1_agent_directories_unsupported",
+    )?;
     let task_authority = if let Some(view) = crate::ledger::read(root)? {
         let report = view.report(root)?;
         require(

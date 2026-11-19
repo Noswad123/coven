@@ -225,6 +225,11 @@ pub fn prepare(workspace: &Path, json: bool) -> Result<CommandResult> {
     prepare_with(&root(workspace)?, json, &SystemIo)
 }
 fn prepare_with(root: &Path, json: bool, io: &impl Io) -> Result<CommandResult> {
+    let preview = crate::workspace::load(root)?;
+    require(
+        crate::agent_directories::configured(&preview.team)?.is_none(),
+        "runtime_launch_v1_agent_directories_unsupported",
+    )?;
     let guard = WorkspaceGuard::acquire(root, TIMEOUT)?;
     let (control, _) = enabled(root)?;
     available(&control)?;
