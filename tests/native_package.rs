@@ -61,6 +61,9 @@ fn native_source_package_boundary() {
     }
     for required in [
         "src/main.rs",
+        "clients/web/index.html",
+        "clients/web/app.js",
+        "clients/web/styles.css",
         "build.rs",
         "src/hook_files/platform.rs",
         "src/private_access.rs",
@@ -119,6 +122,19 @@ fn native_source_package_boundary() {
             "missing package input: {required}"
         );
     }
+    assert_eq!(
+        files
+            .iter()
+            .filter(|file| file.starts_with("clients/"))
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "clients/web/index.html",
+            "clients/web/app.js",
+            "clients/web/styles.css"
+        ]),
+        "only the Coven Web runtime assets belong in the source package"
+    );
 }
 
 #[test]

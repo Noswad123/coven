@@ -52,6 +52,7 @@ impl Cancel for NoCancel {
 pub(crate) enum ReadMethod {
     Snapshot,
     ProcessInfo,
+    PaneRead,
 }
 
 #[derive(Debug)]
@@ -154,6 +155,7 @@ pub(crate) fn read(
     let method = match method {
         ReadMethod::Snapshot => "session.snapshot",
         ReadMethod::ProcessInfo => "pane.process_info",
+        ReadMethod::PaneRead => "pane.read",
     };
     let request = frame(&request_id, method, params)?;
     let socket = crate::platform::observation_socket::Socket::connect(&endpoint, deadline, cancel)?;

@@ -66,6 +66,13 @@ pub(super) struct Snapshot {
 
 impl Snapshot {
     pub fn selected(&self, pane: Option<&str>) -> WireResult<Vec<Value>> {
+        self.selected_with_limit(pane, 64)
+    }
+
+    pub fn selected_with_limit(&self, pane: Option<&str>, limit: usize) -> WireResult<Vec<Value>> {
+        if !(1..=1024).contains(&limit) {
+            return Err(Failure::new("invalid_pane_limit"));
+        }
         let mut selected: Vec<_> = self
             .panes
             .iter()
@@ -75,7 +82,7 @@ impl Snapshot {
         if pane.is_some() && selected.is_empty() {
             return Err(Failure::new("pane_not_found"));
         }
-        if selected.len() > 64 {
+        if selected.len() > limit {
             return Err(Failure::new("pane_limit"));
         }
         selected.sort_by(|a, b| a["pane_id"].as_str().cmp(&b["pane_id"].as_str()));
@@ -84,6 +91,10 @@ impl Snapshot {
 }
 
 pub(super) fn snapshot(reply: &Reply) -> WireResult<Snapshot> {
+    snapshot_profile(reply, false)
+}
+
+pub(super) fn snapshot_profile(reply: &Reply, allow_unsupported: bool) -> WireResult<Snapshot> {
     let root = crate::observation_wire::decode_native(&reply.payload)
         .map_err(|e| Failure::new(e.code()))?;
     let result = result(&root, &reply.request_id, "session_snapshot")?;
@@ -95,24 +106,39 @@ pub(super) fn snapshot(reply: &Reply) -> WireResult<Snapshot> {
         return Err(Failure::new("unsupported_protocol"));
     }
     let descriptor = (|| -> WireResult<Value> {
-        let d = field(snapshot, "process_observation")?;
+        let d = optional(snapshot, "process_observation")
+            .filter(|d| !matches!(d, N::Null))
+            .ok_or_else(|| Failure::new("process_observation_unsupported"))?;
         let version = uint(field(d,"version")?, u32::MAX.into())?;
         let platform = string(field(d,"platform")?, 64)?;
-        for (key, expected) in [("scope","pane_foreground_cohort"),("selection","unclassified")] {
-            require(string(field(d,key)?, 64)? == expected)?;
+        let scope = string(field(d,"scope")?, 64)?;
+        let selection = string(field(d,"selection")?, 64)?;
+        if scope != "pane_foreground_cohort" || selection != "unclassified" {
+            return Err(Failure::new("process_observation_unsupported"));
         }
         let mut descriptor = json!({"version":version,"platform":platform,"scope":"pane_foreground_cohort","selection":"unclassified"});
         match (platform, version) {
             ("linux", 1) => {},
             ("macos", 2) => {
                 let policy = string(field(d, "argument_policy")?, 64)?;
-                require(policy == "darwin_procargs2_lp64_v1")?;
+                if policy != "darwin_procargs2_lp64_v1" {
+                    return Err(Failure::new("process_observation_unsupported"));
+                }
                 descriptor["argument_policy"] = json!(policy);
             }
             _ => return Err(Failure::new("process_observation_unsupported")),
         }
         Ok(descriptor)
-    })().map_err(|_| Failure::new("process_observation_unsupported"))?;
+    })().or_else(|failure| {
+        if !allow_unsupported {
+            // Preserve the standalone CLI's historical incompatible classification.
+            Err(Failure::new("process_observation_unsupported"))
+        } else if failure.code == "process_observation_unsupported" {
+            Ok(Value::Null)
+        } else {
+            Err(failure)
+        }
+    })?;
     let rows = field(snapshot, "panes")?
         .as_array()
         .ok_or_else(|| Failure::new("schema_error"))?;

@@ -30,6 +30,48 @@ fn budget_is_exact_and_exhaustion_cannot_wrap() {
     assert_eq!(budget.remaining(), 0);
 }
 
+#[cfg(unix)]
+#[test]
+fn pane_read_is_a_closed_read_method_with_correlated_bounded_transport() {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::{fs::PermissionsExt, net::UnixListener},
+        time::Duration,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("read.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let worker = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(&stream).read_line(&mut line).unwrap();
+        let request: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(request["method"], "pane.read");
+        let mut bytes =
+            serde_json::to_vec(&json!({"id":request["id"],"result":{"type":"pane_read"}})).unwrap();
+        bytes.push(b'\n');
+        stream.write_all(&bytes).unwrap();
+    });
+    let reply = read(
+        path.to_str().unwrap(),
+        ReadMethod::PaneRead,
+        &json!({"pane_id":"p"}),
+        Instant::now() + Duration::from_secs(1),
+        &mut ReadBudget::new(4096),
+        &NoCancel,
+    )
+    .unwrap();
+    assert_eq!(
+        crate::observation_wire::decode(&reply.payload).unwrap()["id"],
+        reply.request_id
+    );
+    worker.join().unwrap();
+}
+
 #[test]
 fn only_correlated_safe_rejections_are_rejected() {
     let rejection =

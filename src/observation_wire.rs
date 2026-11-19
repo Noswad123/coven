@@ -12,22 +12,25 @@ fn require(ok: bool) -> Result<()> {
     }
 }
 
-fn wire_walk(v: &Value, key: Option<&str>) -> Result<()> {
+fn wire_walk(v: &Value, key: Option<&str>, output: Option<&Value>) -> Result<()> {
     match v {
         Value::Object(o) => {
             require(o.entries().len() <= 4096)?;
             for (k, v) in o.entries() {
                 require(k.chars().count() <= 4096)?;
-                wire_walk(v, Some(k))?;
+                wire_walk(v, Some(k), output)?;
             }
         }
         Value::Array(a) => {
             require(a.len() <= 4096)?;
             for v in a {
-                wire_walk(v, key)?;
+                wire_walk(v, key, output)?;
             }
         }
         Value::String(s) => {
+            if output.is_some_and(|text| std::ptr::eq(text, v)) {
+                return require(s.len() <= 256 * 1024);
+            }
             let path = key.is_some_and(|k| {
                 matches!(k, "value" | "cwd" | "foreground_cwd" | "path") || k.ends_with("_path")
             });
@@ -39,6 +42,16 @@ fn wire_walk(v: &Value, key: Option<&str>) -> Result<()> {
 }
 
 pub(crate) fn decode_native(payload: &[u8]) -> Result<Value> {
+    decode_profile(payload, false)
+}
+
+/// Only the pane-read text leaf gets a larger bound; ordinary wire limits stay intact.
+pub(crate) fn decode_terminal_output(payload: &[u8]) -> Result<Value> {
+    require(payload.len() <= 2 * 1024 * 1024)?;
+    decode_profile(payload, true)
+}
+
+fn decode_profile(payload: &[u8], terminal_output: bool) -> Result<Value> {
     let s = std::str::from_utf8(payload).map_err(|_| Error("invalid_utf8"))?;
     let (mut depth, mut quoted, mut escaped) = (0i32, false, false);
     let mut constant = false;
@@ -86,7 +99,18 @@ pub(crate) fn decode_native(payload: &[u8]) -> Result<Value> {
             _ => "invalid_json",
         })
     })?;
-    wire_walk(&value, None)?;
+    let output = if terminal_output {
+        value
+            .as_object()
+            .and_then(|o| o.get("result"))
+            .and_then(Value::as_object)
+            .and_then(|o| o.get("read"))
+            .and_then(Value::as_object)
+            .and_then(|o| o.get("text"))
+    } else {
+        None
+    };
+    wire_walk(&value, None, output)?;
     Ok(value)
 }
 

@@ -54,6 +54,7 @@ pub mod native_extensions;
 mod observation_socket;
 mod observation_time;
 mod observation_wire;
+pub mod observer;
 pub mod opencode_extension;
 mod output;
 pub mod pi_extension;
