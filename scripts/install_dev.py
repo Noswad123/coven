@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import signal
 import stat
@@ -69,11 +70,101 @@ def child(command, **kwargs):
                             process.stdout.close()
 
 
+def build_environment(env, system=None, machine=None, probe=subprocess.run, root=None):
+    """Prefer distro OpenSSL only for an otherwise unconfigured native Linux build."""
+    result = dict(env)
+    if (system if system is not None else sys.platform) != "linux":
+        return result
+    for key in env:
+        if ("OPENSSL_" in key or "PKG_CONFIG" in key
+                or key in {"HOST", "TARGET", "CARGO_BUILD_TARGET", "RUSTFLAGS",
+                           "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS",
+                           "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER"}
+                or key.startswith("CARGO_BUILD_RUSTC")
+                or (key.startswith("CARGO_TARGET_") and key != "CARGO_TARGET_DIR")
+                or any(key == name or key.startswith(name + "_") or key.endswith("_" + name)
+                       for name in ("CC", "CXX", "AR", "CFLAGS", "CPPFLAGS", "LDFLAGS"))):
+            return result
+
+    root = ROOT if root is None else Path(root)
+    try:
+        # Cargo also accepts targets from ancestor and user configuration files.
+        config_dirs = [path / ".cargo" for path in (root, *root.parents)]
+        cargo_home = env.get("CARGO_HOME")
+        if cargo_home:
+            config_dirs.append(root / cargo_home)
+        elif env.get("HOME"):
+            config_dirs.append(Path(env["HOME"]) / ".cargo")
+        else:
+            return result  # Cannot establish Cargo's user configuration location.
+        for directory in config_dirs:
+            for name in ("config", "config.toml"):
+                config = directory / name
+                if config.exists():
+                    import tomllib
+                    with config.open("rb") as source:
+                        settings = tomllib.load(source)
+                    if (settings.get("build") or settings.get("target")
+                            or settings.get("env") or settings.get("include")):
+                        return result
+
+        def query(command, query_env):
+            return probe(command, env=dict(query_env), cwd=root, check=True,
+                         capture_output=True, text=True, timeout=5).stdout.strip()
+
+        rust_env = dict(env, RUSTUP_AUTO_INSTALL="0")
+        version = query(["rustc", "-vV"], rust_env)
+        hosts = [line[6:] for line in version.splitlines() if line.startswith("host: ")]
+        arch = machine if machine is not None else platform.machine()
+        arch = {"amd64": "x86_64", "arm64": "aarch64", "armv7l": "armv7"}.get(arch, arch)
+        if (len(hosts) != 1 or hosts[0].split("-")[0] != arch
+                or not hosts[0].endswith(("-linux-gnu", "-linux-gnueabihf"))):
+            return result
+
+        # No ambient search paths, sysroot, Homebrew executable, or user .pc files.
+        clean = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+        pc = "/usr/bin/pkg-config"
+        builtin = query([pc, "--variable=pc_path", "pkg-config"], clean)
+        paths = []
+        for value in builtin.split(os.pathsep):
+            path = Path(value)
+            if (path.is_absolute() and path.name == "pkgconfig"
+                    and any(path.resolve().is_relative_to(base)
+                            for base in (Path("/usr/lib"), Path("/usr/lib64"),
+                                         Path("/usr/share")))):
+                paths.append(str(path))
+        if not paths:
+            return result
+        clean.update(PKG_CONFIG_PATH="", PKG_CONFIG_LIBDIR=os.pathsep.join(paths),
+                     PKG_CONFIG_SYSROOT_DIR="/")
+        lib = Path(query([pc, "--variable=libdir", "openssl"], clean))
+        include = Path(query([pc, "--variable=includedir", "openssl"], clean))
+        if (not lib.is_absolute() or not include.is_absolute()
+                or not any(lib.resolve().is_relative_to(base)
+                           for base in (Path("/usr/lib"), Path("/usr/lib64")))
+                or not include.resolve().is_relative_to(Path("/usr/include"))
+                or not (include / "openssl/opensslv.h").is_file()
+                or not (include / "openssl/opensslv.h").resolve().is_relative_to(include.resolve())
+                or not all((lib / name).is_file() for name in ("libssl.so", "libcrypto.so"))):
+            return result
+        for name in ("libssl.so", "libcrypto.so"):
+            library = lib / name
+            if not library.resolve().is_relative_to(lib.resolve()):
+                return result
+            with library.open("rb") as source:
+                if source.read(4) != b"\x7fELF":
+                    return result
+        result.update(OPENSSL_LIB_DIR=str(lib), OPENSSL_INCLUDE_DIR=str(include))
+    except (OSError, ValueError, ImportError, subprocess.SubprocessError):
+        pass  # Missing/ambiguous system development files retain Cargo's usual behavior.
+    return result
+
+
 def build():
     executable = None
     command = ["cargo", "build", "--locked", "--release", "--bin", "coven",
                "--message-format=json-render-diagnostics"]
-    env = os.environ.copy()
+    env = build_environment(os.environ)
     env["RUSTUP_AUTO_INSTALL"] = "0"
     with child(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True) as cargo:
         for line in cargo.stdout:

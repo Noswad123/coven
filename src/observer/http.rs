@@ -1,4 +1,5 @@
 //! Same-origin loopback HTTP facade. Serve is trusted; local processes are trusted too.
+use super::push::PushService;
 use super::{Config, Observer};
 use crate::{Error, Result};
 use http_body_util::{BodyExt, Full};
@@ -31,9 +32,39 @@ use tokio::{
 
 const MAX_JSON: usize = 2 * 1024 * 1024;
 const MAX_BODY: usize = 400 * 1024;
-const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'";
+const CSP: &str = "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'";
 
 trait Api: Send + Sync {
+    fn attention(&self, _login: &str) -> Value {
+        json!({"contract":"coven.attention.v1","state":"unavailable","items":[],"omitted_count":null,"unavailable_count":1,"unlinked_count":0})
+    }
+    fn decision_details(&self, _login: &str, _id: &str) -> Result<Value> {
+        Err(Error("decision_unavailable"))
+    }
+    fn decision_response_allowed(&self, _login: &str, _id: &str) -> bool {
+        false
+    }
+    fn respond_decision(
+        &self,
+        _login: &str,
+        _id: &str,
+        _attempt: &str,
+        _action: &Value,
+    ) -> Result<Value> {
+        Err(Error("decision_unavailable"))
+    }
+    fn push_status(&self, _login: &str) -> Value {
+        json!({"contract":"coven.web-push.v1","enabled":false,"public_key":null,"subscriptions":[]})
+    }
+    fn push_allowed(&self, _login: &str) -> bool {
+        false
+    }
+    fn push_subscribe(&self, _login: &str, _subscription: &Value) -> Result<Value> {
+        Err(Error("push_unavailable"))
+    }
+    fn push_unsubscribe(&self, _login: &str, _id: &str) -> Result<Value> {
+        Err(Error("push_unavailable"))
+    }
     fn conversations(&self, _login: &str) -> Value {
         json!({"contract":"coven.conversations.v1","conversations":[]})
     }
@@ -59,6 +90,24 @@ trait Api: Send + Sync {
     fn output(&self, id: &str) -> Result<Value>;
 }
 impl Api for Observer {
+    fn attention(&self, login: &str) -> Value {
+        Observer::attention(self, login)
+    }
+    fn decision_details(&self, login: &str, id: &str) -> Result<Value> {
+        Observer::decision_details(self, login, id)
+    }
+    fn decision_response_allowed(&self, login: &str, id: &str) -> bool {
+        Observer::decision_response_allowed(self, login, id)
+    }
+    fn respond_decision(
+        &self,
+        login: &str,
+        id: &str,
+        attempt: &str,
+        action: &Value,
+    ) -> Result<Value> {
+        Observer::respond_decision(self, login, id, attempt, action)
+    }
     fn conversations(&self, login: &str) -> Value {
         self.conversation_list(login)
     }
@@ -85,6 +134,94 @@ impl Api for Observer {
     }
     fn output(&self, id: &str) -> Result<Value> {
         Observer::output(self, id)
+    }
+}
+
+struct WebApi {
+    observer: Arc<Observer>,
+    push: Option<Arc<PushService>>,
+}
+impl WebApi {
+    fn start(config: &Config, observer: Arc<Observer>) -> Result<Self> {
+        let weak = Arc::downgrade(&observer);
+        let push = PushService::start(
+            config,
+            Arc::new(move |login| {
+                weak.upgrade().map(|o| o.attention(login)).unwrap_or_else(|| json!({"contract":"coven.attention.v1","state":"unavailable","items":[],"omitted_count":null,"unavailable_count":1,"unlinked_count":0}))
+            }),
+        )?;
+        Ok(Self { observer, push })
+    }
+}
+impl Api for WebApi {
+    fn attention(&self, login: &str) -> Value {
+        self.observer.attention(login)
+    }
+    fn decision_details(&self, login: &str, id: &str) -> Result<Value> {
+        self.observer.decision_details(login, id)
+    }
+    fn decision_response_allowed(&self, login: &str, id: &str) -> bool {
+        self.observer.decision_response_allowed(login, id)
+    }
+    fn respond_decision(
+        &self,
+        login: &str,
+        id: &str,
+        attempt: &str,
+        action: &Value,
+    ) -> Result<Value> {
+        self.observer.respond_decision(login, id, attempt, action)
+    }
+    fn push_status(&self, login: &str) -> Value {
+        self.push
+            .as_ref()
+            .map(|p| p.status(login))
+            .unwrap_or_else(|| self.observer.push_status(login))
+    }
+    fn push_allowed(&self, login: &str) -> bool {
+        self.push
+            .as_ref()
+            .is_some_and(|p| p.registration_allowed(login))
+    }
+    fn push_subscribe(&self, login: &str, subscription: &Value) -> Result<Value> {
+        self.push
+            .as_ref()
+            .ok_or(Error("push_unavailable"))?
+            .subscribe(login, subscription)
+    }
+    fn push_unsubscribe(&self, login: &str, id: &str) -> Result<Value> {
+        self.push
+            .as_ref()
+            .ok_or(Error("push_unavailable"))?
+            .unsubscribe(login, id)
+    }
+    fn conversations(&self, login: &str) -> Value {
+        self.observer.conversation_list(login)
+    }
+    fn conversation(&self, login: &str, id: &str) -> Result<Value> {
+        self.observer.conversation(login, id)
+    }
+    fn linked_conversation(
+        &self,
+        login: &str,
+        agent: &str,
+        conversation: &str,
+        binding: &str,
+    ) -> Result<Value> {
+        self.observer
+            .linked_conversation(login, agent, conversation, binding)
+    }
+    fn submission_allowed(&self, login: &str, id: &str) -> bool {
+        self.observer.submission_allowed(login, id)
+    }
+    fn submit(&self, login: &str, id: &str, request: &str, text: &str) -> Result<Value> {
+        self.observer.submit(login, id, request, text)
+    }
+    fn fleet(&self) -> Value {
+        self.observer.fleet()
+    }
+    fn output(&self, id: &str) -> Result<Value> {
+        self.observer.output(id)
     }
 }
 
@@ -351,6 +488,24 @@ fn route(api: &dyn Api, policy: &Policy, slots: &AtomicUsize, meta: &Metadata) -
     if meta.url == "/api/v1/conversations" {
         return Reply::json(200, &api.conversations(login));
     }
+    if meta.url == "/api/v1/attention" {
+        return Reply::json(200, &api.attention(login));
+    }
+    if meta.url == "/api/v1/push/config" {
+        return Reply::json(200, &api.push_status(login));
+    }
+    if let Some(id) = meta.url.strip_prefix("/api/v1/decisions/") {
+        if !super::valid_id(id) {
+            return Reply::error(400, "invalid_reference");
+        }
+        let Some(_slot) = OutputSlot::acquire(slots) else {
+            return Reply::error(429, "observer_busy");
+        };
+        return match api.decision_details(login, id) {
+            Ok(value) => Reply::json(200, &value),
+            Err(_) => Reply::error(409, "decision_unavailable"),
+        };
+    }
     if let Some((agent, conversation, binding)) = linked_route(&meta.url) {
         let Some(_slot) = OutputSlot::acquire(slots) else {
             return Reply::error(429, "observer_busy");
@@ -401,6 +556,10 @@ fn route(api: &dyn Api, policy: &Policy, slots: &AtomicUsize, meta: &Metadata) -
         "/app.js" => Reply::asset(
             "text/javascript; charset=utf-8",
             include_bytes!("../../clients/web/app.js"),
+        ),
+        "/service-worker.js" => Reply::asset(
+            "text/javascript; charset=utf-8",
+            include_bytes!("../../clients/web/service-worker.js"),
         ),
         "/styles.css" => Reply::asset(
             "text/css; charset=utf-8",
@@ -467,6 +626,7 @@ pub fn serve(config: Config) -> Result<()> {
         .map_err(|_| Error("observer_start_failed"))?;
     let policy = Arc::new(Policy::from_config(&config)?);
     let observer = Arc::new(Observer::start(&config)?);
+    let web_api = Arc::new(WebApi::start(&config, observer.clone())?);
     let slots = Arc::new(AtomicUsize::new(0));
     let outputs = Arc::new(Semaphore::new(2));
     let mutations = Arc::new(Semaphore::new(2));
@@ -495,7 +655,7 @@ pub fn serve(config: Config) -> Result<()> {
                 continue;
             };
             let (api, policy, slots, outputs, mutations) = (
-                observer.clone(),
+                web_api.clone(),
                 policy.clone(),
                 slots.clone(),
                 outputs.clone(),
@@ -525,6 +685,7 @@ pub fn serve(config: Config) -> Result<()> {
         result
     });
     runtime.shutdown_timeout(Duration::from_secs(6));
+    drop(web_api);
     drop(observer);
     result
 }
@@ -642,6 +803,163 @@ fn parse_prompt(body: &[u8]) -> Option<PromptBody> {
     Some(prompt)
 }
 
+#[derive(Deserialize, serde::Serialize)]
+#[serde(tag = "type", deny_unknown_fields)]
+enum DecisionAction {
+    #[serde(rename = "question_answer")]
+    Answer { answers: Vec<Vec<String>> },
+    #[serde(rename = "question_reject")]
+    Reject {},
+    #[serde(rename = "permission_once")]
+    Once {},
+    #[serde(rename = "permission_deny")]
+    Deny { scope: String },
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DecisionBody {
+    contract: String,
+    attempt_id: String,
+    execute: bool,
+    action: DecisionAction,
+}
+fn parse_decision(bytes: &[u8]) -> Option<DecisionBody> {
+    let body: DecisionBody = serde_json::from_str(std::str::from_utf8(bytes).ok()?).ok()?;
+    if body.contract != "coven.decision-response.v1"
+        || !body.execute
+        || !crate::session_prompts::protocol::uuid(&body.attempt_id)
+    {
+        return None;
+    }
+    match &body.action {
+        DecisionAction::Deny { scope } if scope != "session_pending" => return None,
+        DecisionAction::Answer { answers } => {
+            if answers.is_empty() || answers.len() > 8 {
+                return None;
+            }
+            let mut total = 0;
+            for row in answers {
+                if row.len() > 17 {
+                    return None;
+                }
+                let mut seen = std::collections::HashSet::new();
+                for answer in row {
+                    total += answer.len();
+                    if answer.trim().is_empty()
+                        || answer.len() > 4096
+                        || !seen.insert(answer)
+                        || answer
+                            .chars()
+                            .any(|c| c.is_control() && !matches!(c, '\t' | '\r' | '\n'))
+                    {
+                        return None;
+                    }
+                }
+            }
+            if total > 8192 {
+                return None;
+            }
+        }
+        _ => {}
+    }
+    Some(body)
+}
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct PushKeys {
+    p256dh: String,
+    auth: String,
+}
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct Subscription {
+    endpoint: String,
+    keys: PushKeys,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubscribeBody {
+    contract: String,
+    execute: bool,
+    subscription: Subscription,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnsubscribeBody {
+    contract: String,
+    execute: bool,
+    subscription_id: String,
+}
+
+async fn extended_mutation(
+    api: Arc<dyn Api>,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    login: String,
+    id: String,
+    path: &str,
+    bytes: &[u8],
+) -> Reply {
+    if path.starts_with("/api/v1/decisions/") {
+        let Some(body) = parse_decision(bytes) else {
+            return Reply::error(400, "invalid_decision");
+        };
+        let Ok(action) = serde_json::to_value(body.action) else {
+            return Reply::error(400, "invalid_decision");
+        };
+        let uncertain = json!({"contract":"coven.decision-response.v1","id":id,"attempt_id":body.attempt_id,
+            "outcome":"uncertain","delivery":"uncertain","action":action["type"],"diagnostics":["decision_uncertain"]});
+        let fallback = uncertain.clone();
+        return tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            match api.respond_decision(&login, &id, &body.attempt_id, &action) {
+                Ok(value) => Reply::json(200, &value),
+                Err(_) => Reply::json(200, &uncertain),
+            }
+        })
+        .await
+        .unwrap_or_else(|_| Reply::json(200, &fallback));
+    }
+    let Some(text) = std::str::from_utf8(bytes).ok() else {
+        return Reply::error(400, "invalid_request");
+    };
+    let subscription = if path == "/api/v1/push/subscriptions" {
+        let Ok(body) = serde_json::from_str::<SubscribeBody>(text) else {
+            return Reply::error(400, "invalid_request");
+        };
+        if body.contract != "coven.web-push.v1" || !body.execute {
+            return Reply::error(400, "invalid_request");
+        }
+        let Ok(value) = serde_json::to_value(body.subscription) else {
+            return Reply::error(400, "invalid_request");
+        };
+        Ok(value)
+    } else {
+        let Ok(body) = serde_json::from_str::<UnsubscribeBody>(text) else {
+            return Reply::error(400, "invalid_request");
+        };
+        if body.contract != "coven.web-push.v1"
+            || !body.execute
+            || !super::valid_id(&body.subscription_id)
+        {
+            return Reply::error(400, "invalid_request");
+        }
+        Err(body.subscription_id)
+    };
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let result = match subscription {
+            Ok(value) => api.push_subscribe(&login, &value),
+            Err(id) => api.push_unsubscribe(&login, &id),
+        };
+        match result {
+            Ok(value) => Reply::json(200, &value),
+            Err(_) => Reply::error(409, "push_unavailable"),
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Reply::error(503, "push_unavailable"))
+}
+
 // Cache/metadata only: no native I/O and no body polling on refusal.
 fn submit_preflight<'a>(
     api: &dyn Api,
@@ -651,12 +969,27 @@ fn submit_preflight<'a>(
     policy
         .authorize(meta)
         .map_err(|status| Reply::error(status, "access_denied"))?;
-    let id = meta
+    let (id, max_body) = if let Some(id) = meta
         .url
-        .strip_prefix("/api/v1/conversations/")
-        .and_then(|s| s.strip_suffix("/prompts"))
-        .ok_or_else(|| Reply::error(405, "method_not_allowed"))?;
-    if !super::valid_id(id) {
+        .strip_prefix("/api/v1/decisions/")
+        .and_then(|s| s.strip_suffix("/responses"))
+    {
+        (id, 65536)
+    } else if matches!(
+        meta.url.as_str(),
+        "/api/v1/push/subscriptions" | "/api/v1/push/unsubscribe"
+    ) {
+        ("", 8192)
+    } else {
+        (
+            meta.url
+                .strip_prefix("/api/v1/conversations/")
+                .and_then(|s| s.strip_suffix("/prompts"))
+                .ok_or_else(|| Reply::error(405, "method_not_allowed"))?,
+            MAX_BODY,
+        )
+    };
+    if !meta.url.starts_with("/api/v1/push/") && !super::valid_id(id) {
         return Err(Reply::error(400, "invalid_reference"));
     }
     let login = meta
@@ -664,7 +997,14 @@ fn submit_preflight<'a>(
         .ok()
         .flatten()
         .unwrap_or("");
-    if !api.submission_allowed(login, id) {
+    let allowed = if meta.url.starts_with("/api/v1/decisions/") {
+        api.decision_response_allowed(login, id)
+    } else if meta.url.starts_with("/api/v1/push/") {
+        api.push_allowed(login)
+    } else {
+        api.submission_allowed(login, id)
+    };
+    if !allowed {
         return Err(Reply::error(403, "submission_disabled"));
     }
     if meta.header("origin") != Ok(Some(policy.origin.as_str()))
@@ -702,7 +1042,7 @@ fn submit_preflight<'a>(
         .flatten()
         .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
         .and_then(|s| s.parse::<usize>().ok())
-        .filter(|n| *n > 0 && *n <= MAX_BODY)
+        .filter(|n| *n > 0 && *n <= max_body)
         .ok_or_else(|| Reply::error(400, "invalid_request"))?;
     Ok((login, id, length))
 }
@@ -745,6 +1085,17 @@ where
         Err(_) => return Reply::error(408, "body_timeout"),
         _ => return Reply::error(400, "invalid_request"),
     };
+    if meta.url.starts_with("/api/v1/decisions/") || meta.url.starts_with("/api/v1/push/") {
+        return extended_mutation(
+            api,
+            permit,
+            login.to_owned(),
+            id.to_owned(),
+            &meta.url,
+            &bytes,
+        )
+        .await;
+    }
     let Some(prompt) = parse_prompt(&bytes) else {
         return Reply::error(400, "invalid_prompt");
     };
@@ -793,7 +1144,13 @@ async fn dispatch(
 ) -> Reply {
     let output = meta.method == "GET"
         && policy.authorize(&meta).is_ok()
-        && (meta.url == "/api/v1/conversations"
+        && (matches!(
+            meta.url.as_str(),
+            "/api/v1/conversations" | "/api/v1/attention" | "/api/v1/push/config"
+        ) || meta
+            .url
+            .strip_prefix("/api/v1/decisions/")
+            .is_some_and(super::valid_id)
             || linked_route(&meta.url).is_some()
             || meta
                 .url
@@ -828,6 +1185,10 @@ async fn dispatch(
 #[cfg(test)]
 #[path = "http/prompt_tests.rs"]
 mod prompt_tests;
+
+#[cfg(test)]
+#[path = "http/attention_tests.rs"]
+mod attention_tests;
 
 #[cfg(test)]
 pub(super) mod tests {

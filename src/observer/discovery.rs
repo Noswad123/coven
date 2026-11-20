@@ -22,8 +22,13 @@ pub(super) struct Selected {
     pub expires: Instant,
 }
 
-#[cfg(unix)]
+#[cfg(all(test, unix))]
 pub(super) fn scan(directory: &str, deadline: Instant) -> Result<Vec<Selected>> {
+    scan_coverage(directory, deadline).map(|(selected, _)| selected)
+}
+
+#[cfg(unix)]
+pub(super) fn scan_coverage(directory: &str, deadline: Instant) -> Result<(Vec<Selected>, usize)> {
     use std::{
         fs::{File, OpenOptions},
         io::Read,
@@ -42,7 +47,7 @@ pub(super) fn scan(directory: &str, deadline: Instant) -> Result<Vec<Selected>> 
         .open(directory)
     {
         Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((Vec::new(), 0)),
         Err(_) => return Err(invalid()),
     };
     let info = root.metadata().map_err(|_| invalid())?;
@@ -135,12 +140,14 @@ pub(super) fn scan(directory: &str, deadline: Instant) -> Result<Vec<Selected>> 
         return Err(invalid());
     }
     let mut selected = Vec::new();
+    let mut unavailable = 0;
     let mut identities = HashSet::new();
     for descriptor in descriptors {
         if Instant::now() >= deadline {
             return Err(invalid());
         }
         let Ok(endpoint) = Endpoint::select(&descriptor.native_socket) else {
+            unavailable += 1;
             continue;
         };
         if endpoint.socket.resolved != descriptor.native_socket {
@@ -151,26 +158,38 @@ pub(super) fn scan(directory: &str, deadline: Instant) -> Result<Vec<Selected>> 
         }
         let mut connection = Connection::new(&endpoint, &descriptor.expected_runtime, deadline);
         if connection.capabilities().is_err() {
+            unavailable += 1;
             continue;
         }
         // Start the lease before the request, not after the network round trip.
         let started = Instant::now();
-        if let Ok(Some(grant)) = connection.status() {
-            let expires = started + Duration::from_millis(grant.lease_ms);
-            if Instant::now() < expires {
-                selected.push(Selected {
-                    endpoint,
-                    runtime: descriptor.expected_runtime,
-                    grant,
-                    expires,
-                });
+        match connection.status() {
+            Ok(Some(grant)) => {
+                let expires = started + Duration::from_millis(grant.lease_ms);
+                if Instant::now() < expires {
+                    selected.push(Selected {
+                        endpoint,
+                        runtime: descriptor.expected_runtime,
+                        grant,
+                        expires,
+                    });
+                } else {
+                    unavailable += 1;
+                }
             }
+            Ok(None) => {}
+            Err(_) => unavailable += 1,
         }
     }
-    Ok(selected)
+    Ok((selected, unavailable))
+}
+
+#[cfg(all(test, not(unix)))]
+pub(super) fn scan(_: &str, _: Instant) -> Result<Vec<Selected>> {
+    Err(Error("discovery_unavailable"))
 }
 
 #[cfg(not(unix))]
-pub(super) fn scan(_: &str, _: Instant) -> Result<Vec<Selected>> {
+pub(super) fn scan_coverage(_: &str, _: Instant) -> Result<(Vec<Selected>, usize)> {
     Err(Error("discovery_unavailable"))
 }

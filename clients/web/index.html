@@ -28,6 +28,7 @@
         <div class="toolbar"><label for="host-filter">Host</label><select id="host-filter"><option value="">All hosts</option></select><label for="conversation-team">Team</label><select id="conversation-team"><option value="">All authorized teams</option></select><button id="refresh" class="quiet-button" type="button">Refresh now</button></div>
       </section>
       <p id="notice" class="notice" role="status" hidden></p>
+      <div class="toolbar"><span id="attention-status" role="status">Attention unknown</span><button id="enable-alerts" class="quiet-button" type="button">Enable alerts</button><button id="disable-alerts" class="quiet-button" type="button" hidden>Disable alerts</button><span id="alerts-status" class="small" role="status">Background alerts not enabled</span></div>
       <section aria-labelledby="agents-title" id="agents" tabindex="-1">
         <div class="section-heading"><h2 id="agents-title">Sessions</h2><span id="agent-count" class="muted small">Awaiting snapshot</span></div>
         <div id="host-health" class="host-health" aria-label="Endpoint health"></div>
@@ -36,6 +37,7 @@
         <p id="conversation-list-status" role="status">Loading authorized registrations...</p>
         <div id="agent-grid" class="agent-grid"></div>
         <p id="prompt-attempt-status" role="status" class="notice"></p>
+        <p id="decision-attempt-status" role="status" class="notice"></p>
       </section>
     </main>
   </div>
@@ -52,12 +54,15 @@
   <dialog id="conversation-dialog" aria-labelledby="conversation-title">
     <div class="dialog-heading"><h2 id="conversation-title">Conversation</h2><button id="close-conversation" class="quiet-button" type="button" autofocus>Close</button></div>
     <p id="conversation-link-status" class="warning"></p>
+    <p id="decision-status" role="status" class="notice"></p>
+    <div id="decision-requests"></div>
+    <div id="decision-details"></div>
     <div class="output-toolbar"><p id="conversation-status" role="status"></p><button id="read-conversation" class="quiet-button" type="button">Refresh messages</button></div>
     <div id="conversation-messages"></div>
     <form id="prompt-composer" hidden>
       <h3>Send a follow-up</h3>
       <p id="prompt-status" role="status" class="notice"></p>
-      <p class="muted small">Follow-ups only. Native permission requests and unanswered questions must be handled at the source. Acceptance means persisted/scheduled, not completed. Drafts stay in this view only.</p>
+      <p class="muted small">Follow-ups are separate from request responses. Accepted means scheduled, not completed. Drafts stay in this view only.</p>
       <label for="prompt-text">Exact prompt text</label>
       <textarea id="prompt-text" rows="5" aria-describedby="prompt-bytes" spellcheck="false" autocomplete="off"></textarea>
       <p id="prompt-bytes" class="muted small">0 / 65536 UTF-8 bytes</p>

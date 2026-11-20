@@ -399,8 +399,119 @@ loss, hiding and reference expiry, without exposing old target labels or text.
 These safeguards are in-memory for this page only, not durable across reloads or
 tabs. Reloading does not establish delivery or make a retry safe; inspect native
 history at the source when an original reference is no longer available.
-Refresh messages never sends a prompt. Native permission/question answering,
-terminal input, full history and remote native adapters are outside this scope.
+Refresh messages never sends a prompt. Native requests use the separate attention
+flow below. Terminal input, full history and remote native adapters remain excluded.
+
+### Actionable Attention
+
+The authoritative details and native/public shapes are in
+[ACTIONABLE_ATTENTION_CONTRACT.md](ACTIONABLE_ATTENTION_CONTRACT.md), including its
+shared clarifications. This is additive to BASIC one-click cards, not a chooser,
+third card or transcript-derived approval system.
+
+- `GET /api/v1/attention` returns `coven.attention.v1` metadata with `state`, opaque
+  exact-occurrence items, nullable omissions and unavailable/unlinked counts.
+  Only visible pages poll metadata; no background transcript/detail reads.
+- `GET /api/v1/decisions/<64hex>` explicitly reads complete sanitized details
+  inside the existing conversation dialog. Raw native IDs, paths and tool linkage
+  never cross this boundary. Unsupported/oversized detail requires the source UI.
+- `POST /api/v1/decisions/<64hex>/responses` accepts only
+  `{contract:"coven.decision-response.v1",attempt_id:UUID,execute:true,action:ACTION}`.
+  Actions are `question_answer` with ordered `string[][]` answers,
+  `question_reject`, `permission_once`, or `permission_deny` with
+  `scope:"session_pending"`. Never generic yes, remembered/always or remote policy edits.
+- Decision source ACL `decision_logins` is separate from follow-up `submit_logins`
+  and native model/configuration `can_submit`. Readers may inspect without write
+  authority. Native read_write plus explicit startup `decision_control` and exact
+  current grant/verified binding/occurrence are required to respond.
+- Mutation checks reuse Host/login/Origin/Fetch Metadata/CSRF/framing gates before
+  polling the body. Decision body cap is 64 KiB and two seconds; answers are bounded
+  to 8192 UTF-8 bytes total and 4096 per answer. Strict duplicate/unknown fields,
+  invalid UTF-8 and unsupported union variants are refused. Blocking jobs retain
+  permits through cancellation; the core owns transport gates and native fencing.
+
+Questions render complete inert text and native single/multiple/custom controls.
+Allow once remembers no rule. Deny discloses that it rejects all currently pending
+permissions in that session, not future arrivals. A response is separate from a
+follow-up. Applied means **native wait settled, not tool completed**. Lost/invalid
+receipts are uncertain, never automatic retries. The page retains at most 32
+answer-free occurrence/attempt records, does not evict uncertainty, and requires
+fresh explicit detail inspection plus a separate deliberate choice for a new
+attempt. A different request cannot clear earlier uncertainty. These records are
+in-memory, not durable proof across page reloads. Stale grants, ACLs, bindings and
+occurrences clear details/drafts and fence late callbacks without retargeting.
+
+### Opt-In Background Alerts
+
+Optional gateway `push:{state_directory:"ABS"}` enables the separate server-owned
+collector; absence creates no push state, sender or collector. It never renews native
+sharing grants. Source reader eligibility permits generic alerts, not native action.
+No deployment/configuration or browser permission change is performed by the UI
+until the user's explicit gesture.
+
+- `GET /api/v1/push/config` returns `coven.web-push.v1`, `enabled`, public VAPID key
+  and principal-owned opaque subscription IDs. Disabled means false/null/empty.
+- `POST /api/v1/push/subscriptions` accepts closed
+  `{contract:"coven.web-push.v1",execute:true,subscription:{endpoint,keys:{p256dh,auth}}}`.
+- `POST /api/v1/push/unsubscribe` accepts closed
+  `{contract:"coven.web-push.v1",execute:true,subscription_id:64hex}`.
+- Both mutations use fresh CSRF, existing mutation origin/identity/framing checks,
+  an 8192-byte/two-second body bound and bounded blocking disk jobs. Endpoint/key
+  blobs come only from browser PushManager, never native selectors. Subscription
+  ID is SHA256(endpoint UTF-8); the backend still enforces owner ACL independently.
+
+Enable alerts is the only permission/subscription gesture. It registers the embedded
+no-store `/service-worker.js` at `/`, with CSP `worker-src 'self'`. No fetch handler,
+offline cache or sensitive localStorage is added. Browser permission, service-worker
+registration and subscription state are narrow persistence exceptions, not content
+storage. Existing subscription ownership is checked; explicit re-enable may remove
+an unowned browser endpoint and create a fresh one, never transfer it silently.
+Disable alerts removes an owned server subscription and the browser subscription.
+Unsupported/denied APIs retain working in-page badges with honest background status.
+
+Local browser unsubscription is attempted before, and independently of, server
+config/token/removal success. If it succeeds but server cleanup is unverified, the
+page says so and retains only opaque subscription IDs for another deliberate cleanup
+click. A failed local removal never claims browser alerts are disabled. Browser setup
+promises and config/CSRF/POST/body waits share a 10-second operation deadline, which
+releases controls without retrying mutations. Timed-out subscription creation remains
+unverified because the server may have committed it. Optional closed `delivery_status`
+codes describe delivery separately from subscription-enabled state; arbitrary errors
+are never displayed. Optional attention `streams` metadata does not replace exact
+public item/verified-root matching and is not rejected by this frontend.
+
+Unresolved creation attempts and ordinary removal candidates are separate bounded,
+opaque-ID-only records. Creation uncertainty starts immediately before the subscription
+POST, not during CSRF acquisition. A config sample without that ID, a later successful
+delete, or a different successful create cannot prove an older blocking create will
+not commit afterward. With no ordered cleanup proof in this API, the page retains
+that creation notice even after local opt-out and explicit server deletion. Further
+cleanup requires another deliberate click; polling never retries it. These records
+are memory-only, and reloading is not proof of server cleanup. No endpoint/key blob
+or private content is retained in them.
+
+The bounded HTTPS endpoint hash is saved before waiting on local unsubscription, so
+a timeout followed by late browser success does not lose the server cleanup ID.
+An identity that cannot be established remains unverified rather than becoming a
+false fully-disabled claim. Passive inspections capture the push-operation revision;
+starting a user operation fences their late success and failure updates.
+
+The server collector works without an open browser page. Encrypted worker payloads
+are only `{version:1,alert_id:64hex}`; title/body are constant generic text, without
+question/permission/provider content or approval actions. Notification clicks focus
+or open only the same origin `/#attention=<alert-id>` and never execute an action.
+Fresh bounded metadata must match the stable alert to the exact current occurrence
+and verified root before detail opens. Missing/incomplete/revoked references mean
+cannot currently verify, never resolved or select the latest request.
+Later fresh metadata may verify that same stable alert under a new grant-bound
+decision reference. A failed lookup does not consume navigation; after successful
+verified opening, dismissal does not reopen the alert on every poll.
+
+HTTPS, browser/platform permissions (including installed-home-screen requirements on
+some mobile platforms), native share lifetime, host availability and vendor delivery
+all apply. Delivery is advisory. Node worker-VM tests exercise closed-tab handlers;
+installed Firefox fixtures exercise real first-card forms without browser permission
+prompts or vendor push. Neither is actual device delivery or live native acceptance.
 
 ### Optional cross-language acceptance
 

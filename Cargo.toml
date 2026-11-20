@@ -27,6 +27,7 @@ include = [
     "/clients/web/index.html",
     "/clients/web/app.js",
     "/clients/web/styles.css",
+    "/clients/web/service-worker.js",
     "/src/execution/inspection/projection/vectors.json",
     "/examples/**/*.json",
     "/examples/**/*.md",
@@ -72,6 +73,15 @@ hyper = { version = "1", default-features = false, features = ["server", "http1"
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 http-body-util = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync"] }
+web-push = { version = "0.11", default-features = false }
+# Bound transitive pure-Rust crypto versions to preserve the Rust 1.85 floor.
+jwt-simple = { version = "=0.12.11", default-features = false, features = ["pure-rust"] }
+superboring = { version = "=0.1.4", default-features = false }
+ece = "=2.2.0"
+openssl = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+base64 = "0.22"
+hickory-resolver = { version = "0.24", default-features = false, features = ["system-config", "tokio-runtime"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -5,6 +5,8 @@ use std::{collections::HashSet, io::Read, net::SocketAddr, path::Path};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub push: Option<super::push::PushConfig>,
     pub listen: SocketAddr,
     pub public_origin: String,
     pub allowed_logins: Vec<String>,
@@ -27,6 +29,8 @@ pub struct ConversationSourceConfig {
     pub allowed_logins: Vec<String>,
     #[serde(default)]
     pub submit_logins: Vec<String>,
+    #[serde(default)]
+    pub decision_logins: Vec<String>,
     #[serde(default)]
     pub control_workspace: Option<String>,
 }
@@ -99,6 +103,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if let Some(push) = &self.push {
+            push.validate()?;
+        }
         if !self.listen.ip().is_loopback() {
             return Err(Error("invalid_listen"));
         }
@@ -200,6 +207,13 @@ impl Config {
                     .iter()
                     .any(|l| !source.allowed_logins.contains(l))
                 || (!source.submit_logins.is_empty() && source.control_workspace.is_none())
+                || source.decision_logins.iter().collect::<HashSet<_>>().len()
+                    != source.decision_logins.len()
+                || source
+                    .decision_logins
+                    .iter()
+                    .any(|l| !source.allowed_logins.contains(l))
+                || (!source.decision_logins.is_empty() && source.control_workspace.is_none())
                 || source
                     .control_workspace
                     .as_ref()

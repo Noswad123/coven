@@ -1,8 +1,9 @@
 # Coven Web
 
-Coven's read-only, phone-first browser client. The authoritative API is
+Coven's phone-first browser client. The authoritative API is
 `docs/COVEN_WEB.md` at the repository root. This directory has no framework,
-build step, dependencies, external assets, telemetry or persistent browser storage.
+build step, dependencies, external assets or telemetry. Private content is memory-only;
+browser notification permission and push subscription state are narrow exceptions.
 Node fixtures are synthetic tests only, never a fallback production fleet.
 
 ## Static Asset Interface
@@ -14,15 +15,17 @@ The parent HTTP server needs exactly these same-origin GET asset routes:
 | `/` (and optionally `/index.html`) | `index.html` | `text/html; charset=utf-8` |
 | `/app.js` | `app.js` | `text/javascript; charset=utf-8` |
 | `/styles.css` | `styles.css` | `text/css; charset=utf-8` |
+| `/service-worker.js` | `service-worker.js` | `text/javascript; charset=utf-8` |
 
 No `model.js` or additional runtime assets are required. `app.js` exports pure
 helpers and bootstraps only when `document` exists. Do not embed the tests,
 package metadata or this README as public routes. Assets assume root hosting,
 not a path-prefix deployment. Use authenticated, no-store responses; do not add
-a service worker or public hosting. Deployment remains private Tailscale Serve,
+offline caching or public hosting. The opt-in push worker has no fetch handler.
+Deployment remains private Tailscale Serve,
 never Funnel or Vercel. The client supplies no identity headers or credentials.
 
-API calls are GET only, same-origin with `cache: 'no-store'`, same-origin
+API calls are same-origin with `cache: 'no-store'`, same-origin
 credentials and redirects refused:
 
 - `/api/v1/fleet`: exact `coven.fleet-observer.v1` DTO.
@@ -30,7 +33,7 @@ credentials and redirects refused:
   gesture only. No output prefetching or output polling.
 
 `output_available: false` is authoritative regardless of activity. No additional
-configuration endpoint or UI-control API is assumed. HTTP 401/403 explains
+native authority is inferred from these observations. HTTP 401/403 explains
 Tailscale/allowlist/origin access, rather than displaying dummy observations.
 Other errors expect `{ "error": { "code": "fixed_safe_code" } }`; server error
 text is never displayed. HTTP 403 codes `output_disabled` and `output_unsupported`
@@ -109,8 +112,9 @@ the actual backend. They have not been replaced by fixture success:
   live connection/error announcements. Check zoom and reduced-motion settings.
 - Observe normal interval, failed-refresh backoff, age progression, timeout,
   offline/reconnect and background/foreground behavior in the network inspector.
-  Verify only same-origin GETs, no overlapping fleet requests, no output prefetch,
-  no-store fetches and no new browser storage/service workers.
+   Verify same-origin calls, no overlapping fleet requests, no output prefetch,
+   no-store fetches and no content storage/offline cache. Push registration and
+   permission requests occur only after Enable alerts, never on page load.
 - Delay output A, close/reopen A or open B, replace/disconnect its reference and
   resolve the old response. No old text may appear. Let output age out while
   inventory stays fresh; a new read must require a gesture.
@@ -124,4 +128,60 @@ the actual backend. They have not been replaced by fixture success:
 - Confirm real 401/403 guidance, intended tailnet identity forwarding, HTTPS
   phone/cellular access, exact origin checks and absence of public/direct access.
   The operator owns deployment and best-effort-output opt-in. Browser checks
-  cannot establish atomic attribution or remove the documented ABA race.
+   cannot establish atomic attribution or remove the documented ABA race.
+
+## Requests And Alerts
+
+`GET /api/v1/attention` separately polls bounded request metadata while visible.
+Needs-response badges never come from blocked/idle heuristics. Unknown/partial
+coverage is not confirmed zero. Original verified root cards still open once into
+the same conversation dialog; no chooser or extra cards. Explicit card/request
+opens use `GET /api/v1/decisions/<opaque-id>` for full inert-text detail, never
+background transcript/detail polls. Reader-only requests remain inspectable.
+
+Answers support native ordered single/multiple selections and allowed custom text.
+Permission controls are only Allow once and Deny pending session permissions;
+denial affects all currently pending permissions in that native session, not future
+ones. Follow-ups remain separate. Each response obtains fresh CSRF and posts once
+to `/api/v1/decisions/<id>/responses`. Applied means native wait settled, not tool
+success. Lost receipts retain bounded answer-free per-occurrence/attempt notices;
+another request cannot resolve them. Reinspect the exact request and separately
+choose before any new attempt. Closing, stale bindings and auth loss fence callbacks.
+
+Enable alerts explicitly requests browser permission, registers the same-origin
+worker and subscribes via browser PushManager using `/api/v1/push/config`. Fresh
+CSRF protects subscription/unsubscription POSTs. Disable alerts attempts local
+browser removal first, even when server config, CSRF or removal fails. Local and
+server results are reported separately. Only opaque subscription IDs remain for
+another explicit server-cleanup click; there is no automatic mutation retry.
+Unknown creation attempts are tracked separately: absent config or an ordinary
+delete receipt cannot prove an older blocking create will not commit afterward.
+After a lost creation receipt, browser opt-out still works, but server cleanup
+remains unverified for this page even after explicit cleanup succeeds. Further
+cleanup requires another click; status polling never retries it. These bounded
+records contain only opaque subscription IDs, not endpoints or browser keys.
+Alert setup, browser promises and network/body waits have a 10-second deadline;
+a timeout after subscription POST means unverified, not proof of non-registration.
+Subscription-enabled state is separate from advisory/degraded/unverified delivery.
+Passive inspection is fenced by each new user operation, so an old status response
+cannot undo a completed Disable action. Identity hashing accepts only bounded HTTPS
+browser endpoints and saves the opaque ID before waiting for local unsubscription.
+Existing endpoints owned by
+another principal are never silently attached; explicit re-enable replaces them.
+There is no automatic permission request or subscription on reload. Denied,
+unsupported or unverified background state does not disable in-page attention.
+
+The server collector runs independently of an open tab. Worker payloads contain
+only a version and opaque alert ID; lock-screen title/body are constant generic
+text, without provider content or approval actions. Clicking navigates only to
+`/#attention=<alert-id>` on this origin. The page reauthorizes fresh metadata and
+the exact verified occurrence; it never chooses a newer request. Missing alerts,
+including incomplete coverage, mean cannot currently verify, not resolved. Fresh
+metadata can later verify that same stable alert, including a new grant-bound
+decision reference. A successfully opened and dismissed alert stays dismissed.
+
+Browser HTTPS/permission/platform support, native sharing policy, grant lifetime,
+server connectivity and vendor delivery still apply. iOS may require an installed
+home-screen web app. Delivery is advisory, not guaranteed. Synthetic worker-VM
+tests prove handler behavior without an open page; they do not prove actual phone
+delivery or live native settlement. Real subscription remains an explicit user step.

@@ -18,6 +18,10 @@ struct Link {
     fingerprint: String,
     binding: String,
     expires: Instant,
+    cache_generation: u64,
+    inventory_generation: String,
+    terminal: model::Agent,
+    proof: String,
 }
 
 struct Card {
@@ -31,8 +35,8 @@ struct Card {
 impl Observer {
     /// Refresh native grants normally, then acquire bounded, transcript-free metadata.
     pub fn conversation_list(&self, login: &str) -> Value {
-        let mut value = self.conversations.list(login);
-        self.enrich_cards(login, &mut value);
+        let (mut value, proof) = self.conversations.list_with_proof(login);
+        self.enrich_cards(login, &mut value, proof);
         value
     }
 
@@ -81,7 +85,10 @@ impl Observer {
             })
     }
 
-    fn enrich_cards(&self, login: &str, value: &mut Value) {
+    fn enrich_cards(&self, login: &str, value: &mut Value, proof: Option<String>) {
+        if !self.conversations.admitted(login) {
+            return;
+        }
         let deadline = Instant::now() + Duration::from_secs(2);
         let revision = self
             .cardlinks
@@ -94,9 +101,11 @@ impl Observer {
         // Display truncation hides authorized competitors, so uniqueness cannot
         // be proven from these rows. Keep the native handles, but do no join I/O.
         let omitted = value["omitted_conversations"].as_u64().unwrap_or(0) > 0;
-        let mut complete = !value["sources"]
-            .as_array()
-            .is_some_and(|sources| sources.iter().any(|s| s["status"] == "unavailable"));
+        let proof = proof.unwrap_or_default();
+        let mut complete = !proof.is_empty()
+            && !value["sources"]
+                .as_array()
+                .is_some_and(|sources| sources.iter().any(|s| s["status"] == "unavailable"));
         let Some(rows) = value["conversations"].as_array_mut() else {
             return;
         };
@@ -202,6 +211,7 @@ impl Observer {
                 let card = &cards[card_index];
                 let endpoint = &self.endpoints[card.endpoint];
                 let fingerprint = digest(&[
+                    &proof,
                     login,
                     &id,
                     &format!("{:?}", selected.endpoint),
@@ -234,10 +244,15 @@ impl Observer {
                         fingerprint,
                         binding: String::new(),
                         expires,
+                        cache_generation: card.cache_generation,
+                        inventory_generation: card.generation.clone(),
+                        terminal: card.terminal.clone(),
+                        proof: proof.clone(),
                     },
                 ));
             }
         }
+        complete &= self.conversations.card_proof(login).as_deref() == Some(proof.as_str());
         let mut links = Vec::new();
         for (row, card_index, link) in &candidates {
             let count_row = candidates.iter().filter(|(r, _, _)| r == row).count();
@@ -261,6 +276,9 @@ impl Observer {
             }
         }
         let mut state = self.cardlinks.lock().unwrap_or_else(|p| p.into_inner());
+        if self.conversations.card_proof(login).as_deref() != Some(proof.as_str()) {
+            links.clear();
+        }
         let superseded = state.revisions.get(login).copied().unwrap_or_default() != revision;
         for (row, link) in &mut links {
             if link.expires <= Instant::now() {
@@ -297,20 +315,76 @@ impl Observer {
         }
     }
 
-    fn bound(&self, login: &str, agent: &str, conversation: &str, binding: &str) -> bool {
-        self.cardlinks
+    pub(super) fn bound(
+        &self,
+        login: &str,
+        agent: &str,
+        conversation: &str,
+        binding: &str,
+    ) -> bool {
+        let link = self
+            .cardlinks
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .links
             .get(login)
             .into_iter()
             .flatten()
-            .any(|l| {
+            .find(|l| {
                 l.agent == agent
                     && l.conversation == conversation
                     && l.binding == binding
                     && l.expires > Instant::now()
             })
+            .cloned();
+        link.is_some_and(|link| {
+            let fleet_current = self.endpoints.iter().any(|endpoint| {
+                if endpoint.config.id != link.endpoint {
+                    return false;
+                }
+                let cache = endpoint.cache.lock().unwrap_or_else(|p| p.into_inner());
+                cache.generation == link.cache_generation
+                    && cache.fresh.is_some_and(|at| at.elapsed() < STALE)
+                    && cache.inventory.as_ref().is_some_and(|i| {
+                        i.generation == link.inventory_generation
+                            && i.agents
+                                .iter()
+                                .zip(&cache.ids)
+                                .any(|(a, id)| id == agent && a.same_terminal(&link.terminal))
+                    })
+            });
+            fleet_current
+                && self.conversations.card_proof(login).as_deref() == Some(link.proof.as_str())
+        })
+    }
+
+    /// Revalidate only source/grant/card metadata. Never fetch a transcript.
+    pub(super) fn verify_card_binding(
+        &self,
+        login: &str,
+        agent: &str,
+        conversation: &str,
+        binding: &str,
+    ) -> Result<()> {
+        if ![agent, conversation, binding].iter().all(|id| valid_id(id))
+            || self.conversations.selected(login, conversation).is_err()
+            || !self.bound(login, agent, conversation, binding)
+        {
+            return Err(Error("invalid_reference"));
+        }
+        let value = self.conversation_list(login);
+        if !value["conversations"].as_array().is_some_and(|rows| {
+            rows.iter().any(|row| {
+                row["id"] == conversation
+                    && row["association_status"] == "verified"
+                    && row["card"]["fleet_agent_id"] == agent
+                    && row["card"]["binding_id"] == binding
+            })
+        }) || !self.bound(login, agent, conversation, binding)
+        {
+            return Err(Error("stale_reference"));
+        }
+        Ok(())
     }
 
     pub fn linked_conversation(

@@ -216,6 +216,81 @@ export function validateConversation(value, target) {
   return value;
 }
 
+export function validateAttention(value) {
+  if (!record(value) || value.contract !== 'coven.attention.v1'
+    || !['observed', 'partial', 'unavailable'].includes(value.state)
+    || !Array.isArray(value.items) || value.items.length > 256
+    || !(value.omitted_count === null || timestamp(value.omitted_count))
+    || !timestamp(value.unavailable_count) || !timestamp(value.unlinked_count)) throw new Error('invalid_attention');
+  const ids = new Set(), alerts = new Set();
+  for (const item of value.items) {
+    if (!record(item) || !['id', 'alert_id', 'conversation_id', 'fleet_agent_id', 'binding_id'].every(k => string(item[k]) && AGENT_ID.test(item[k]))
+      || ids.has(item.id) || alerts.has(item.alert_id)
+      || !string(item.fleet_endpoint_id) || !/^[a-zA-Z0-9_.-]{1,128}$/.test(item.fleet_endpoint_id)
+      || !string(item.team) || !/^[a-zA-Z0-9_.-]{1,128}$/.test(item.team)
+      || !['question', 'permission'].includes(item.kind) || typeof item.can_respond !== 'boolean'
+      || typeof item.details_available !== 'boolean') throw new Error('invalid_attention');
+    ids.add(item.id); alerts.add(item.alert_id);
+  }
+  return value;
+}
+
+export function attentionLabel(value) {
+  if (!value) return 'Attention unknown';
+  const count = new Set(value.items.map(item => item.alert_id)).size;
+  const complete = value.state === 'observed' && value.omitted_count === 0
+    && value.unavailable_count === 0 && value.unlinked_count === 0;
+  return `${count ? `${count} needs response` : complete ? 'No pending requests observed' : 'Attention unknown'}${!complete && count ? ' / coverage partial' : ''}`;
+}
+
+export function validateDecision(value, item) {
+  const closed = (v, keys) => record(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
+  const text = (s, max) => string(s) && new TextEncoder().encode(s).length <= max;
+  if (!closed(value, ['contract', 'id', 'alert_id', 'kind', 'can_respond', 'decision'])
+    || value.contract !== 'coven.decision.v1' || value.id !== item.id || value.alert_id !== item.alert_id
+    || value.kind !== item.kind || typeof value.can_respond !== 'boolean'
+    || new TextEncoder().encode(JSON.stringify(value.decision)).length > 32768) throw new Error('invalid_decision');
+  const d = value.decision;
+  if (item.kind === 'question') {
+    if (!closed(d, ['kind', 'questions']) || d.kind !== 'question' || !Array.isArray(d.questions)
+      || !d.questions.length || d.questions.length > 8) throw new Error('invalid_decision');
+    for (const q of d.questions) {
+      if (!closed(q, ['question', 'header', 'options', 'multiple', 'custom']) || !text(q.question, 4096)
+        || !text(q.header, 256) || typeof q.multiple !== 'boolean' || typeof q.custom !== 'boolean'
+        || !Array.isArray(q.options) || q.options.length > 16
+        || q.options.some(o => !closed(o, ['label', 'description']) || !text(o.label, 256) || !o.label.trim() || !text(o.description, 1024))
+        || new Set(q.options.map(o => o.label)).size !== q.options.length) throw new Error('invalid_decision');
+    }
+  } else {
+    if (!closed(d, ['kind', 'permission', 'patterns', 'always_patterns', 'metadata_json', 'deny_scope'])
+      || d.kind !== 'permission' || !text(d.permission, 1024) || !text(d.metadata_json, 4096)
+      || d.deny_scope !== 'session_pending' || !['patterns', 'always_patterns'].every(k => Array.isArray(d[k])
+        && d[k].length <= 32 && d[k].every(s => text(s, 1024)))) throw new Error('invalid_decision');
+  }
+  return value;
+}
+
+export function questionAnswers(questions, fields) {
+  const answers = questions.map((q, i) => {
+    const row = fields[i].options.filter(f => f.checked).map(f => f.value);
+    if (q.custom && fields[i].custom?.value) row.push(fields[i].custom.value);
+    if ((!q.multiple && row.length !== 1) || row.length > q.options.length + 1 || new Set(row).size !== row.length
+      || row.some(s => !s.trim() || new TextEncoder().encode(s).length > 4096
+        || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(s))) throw new Error('invalid_answers');
+    return row;
+  });
+  if (answers.flat().reduce((n, s) => n + new TextEncoder().encode(s).length, 0) > 8192) throw new Error('invalid_answers');
+  return answers;
+}
+
+export async function subscriptionID(endpoint) {
+  if (!string(endpoint) || endpoint.length > 2048 || new TextEncoder().encode(endpoint).length > 2048) throw new Error('invalid_subscription');
+  const url = new URL(endpoint);
+  if (url.protocol !== 'https:' || url.username || url.password || url.hash || (url.port && url.port !== '443')) throw new Error('invalid_subscription');
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint));
+  return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 if (typeof document !== 'undefined') bootstrap();
 
 function bootstrap() {
@@ -236,6 +311,22 @@ function bootstrap() {
   let outputRequest = null;
   let renderedOutput = null;
   let authRevision = 0;
+  let attention = null, attentionAt = null, attentionRequest = null;
+  let attentionTimer;
+  let requestListKey = null;
+  let decisionRevision = 0, decisionRequest = null, decisionItem = null, decisionDetail = null;
+  let decisionBusy = false;
+  const uncertainDecisions = new Map();
+  const attentionFresh = () => attentionAt !== null && Date.now() - attentionAt < 15000;
+  const decisionNotice = 'Response uncertain. Inspect this exact request before a new deliberate choice. No automatic retry.';
+  let alertNavigation = null;
+  let alertUnverified = false;
+  const alertHash = () => globalThis.location?.hash?.match(/^#attention=([a-f0-9]{64})$/)?.[1] ?? null;
+  let alertsBusy = false;
+  let pushOperationRevision = 0;
+  const pendingPushRemovals = new Set();
+  const unresolvedPushCreations = new Set();
+  let unidentifiedPushRemoval = false;
   const outputGate = createOutputGate();
   const dialog = $('output-dialog');
   const cardNodes = new Map();
@@ -476,6 +567,7 @@ function bootstrap() {
   }
 
   function closeConversation() {
+    fenceDecision();
     fencePrompt();
     clearConversation();
     conversationTarget = null;
@@ -500,6 +592,9 @@ function bootstrap() {
   }
 
   function invalidateAuthentication() {
+    attentionRequest?.abort(); attentionRequest = null; attention = null; attentionAt = null;
+    $('enable-alerts').hidden = false; $('disable-alerts').hidden = false;
+    setText($('alerts-status'), 'Background state unverified after access loss.');
     authRevision++;
     fleetRequest?.abort();
     clearOutput();
@@ -563,9 +658,10 @@ function bootstrap() {
     }
   }
 
-  function openConversation(card) {
+  function openConversation(card, exactRequest = null) {
     const target = card.target;
-    if (!target?.binding || !conversationMetadataFresh()) return;
+    if (!target?.binding || !conversationMetadataFresh()) return false;
+    fenceDecision();
     clearConversation();
     fencePrompt();
     conversationTarget = target;
@@ -574,7 +670,12 @@ function bootstrap() {
     setText($('conversation-link-status'), 'Verified terminal link');
     if (!conversationDialog.open) conversationDialog.showModal();
     renderComposer();
+    renderRequests();
+    const requests = currentRequests();
+    if (exactRequest?.details_available) void openDecision(exactRequest);
+    else if (!exactRequest && requests.length === 1 && requests[0].details_available) void openDecision(requests[0]);
     void readConversation();
+    return true;
   }
 
   async function loadConversations() {
@@ -626,6 +727,356 @@ function bootstrap() {
       if (conversationListRequest === controller) conversationListRequest = null;
     }
   }
+
+  function matchesTarget(item, target) {
+    return !!target?.binding && item.conversation_id === target.id && item.team === target.team
+      && item.binding_id === target.binding.binding_id && item.fleet_agent_id === target.binding.fleet_agent_id
+      && item.fleet_endpoint_id === target.binding.fleet_endpoint_id;
+  }
+  function currentRequests() {
+    return attentionFresh() && currentConversation() ? attention.items.filter(item => matchesTarget(item, conversationTarget)) : [];
+  }
+  function fenceDecision() {
+    decisionRevision++;
+    decisionRequest?.abort(); decisionRequest = null;
+    decisionItem = null; decisionDetail = null;
+    $('decision-details').replaceChildren();
+    $('decision-requests').replaceChildren();
+    requestListKey = null;
+    setText($('decision-status'), '');
+  }
+  function renderAttention() {
+    setText($('attention-status'), alertUnverified ? 'Cannot currently verify this alert. No request opened.' : attentionLabel(attentionFresh() ? attention : null));
+    setText($('decision-attempt-status'), uncertainDecisions.size
+      ? `${uncertainDecisions.size} unresolved response receipt(s). ${decisionNotice}` : '');
+    if (decisionItem && !currentRequests().some(item => item.id === decisionItem.id
+      && item.alert_id === decisionItem.alert_id && item.can_respond === decisionItem.can_respond
+      && item.details_available)) { fenceDecision(); renderRequests(); }
+    const hash = alertHash();
+    if (hash && hash !== alertNavigation && attentionFresh() && conversationMetadataFresh() && state.snapshot && !state.failed) {
+      const item = attention.items.find(item => item.alert_id === hash);
+      const card = item && sessions().find(card => matchesTarget(item, card.target));
+      if (card && item.details_available && openConversation(card, item)) { alertNavigation = hash; alertUnverified = false; }
+      else { alertUnverified = true; setText($('attention-status'), 'Cannot currently verify this alert. No request opened.'); }
+    }
+  }
+  function renderRequests() {
+    const items = currentRequests();
+    const key = JSON.stringify([conversationDialog.open, readKey(conversationTarget), items]);
+    if (key === requestListKey) return;
+    requestListKey = key;
+    $('decision-requests').replaceChildren();
+    if (!conversationDialog.open) return;
+    for (const item of items) {
+      const button = element('button', 'quiet-button', item.details_available
+        ? `Open ${item.kind}${item.can_respond ? '' : ' / read-only'}` : `${item.kind} / use source UI`);
+      button.type = 'button'; button.disabled = !item.details_available;
+      button.addEventListener('click', () => void openDecision(item));
+      $('decision-requests').append(button);
+    }
+    if (!items.length && !decisionItem) setText($('decision-status'), attentionFresh()
+      ? 'No linked requests observed. Coverage may be incomplete.' : 'Requests unavailable.');
+  }
+  async function loadAttention() {
+    if (document.hidden || attentionRequest) return;
+    clearTimeout(attentionTimer);
+    const controller = new AbortController(); attentionRequest = controller;
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const value = validateAttention(await fetchJSON('/api/v1/attention', controller.signal));
+      if (controller.signal.aborted || document.hidden || attentionRequest !== controller) return;
+      attention = value; attentionAt = Date.now();
+    } catch {
+      if (attentionRequest !== controller) return;
+      attention = null; attentionAt = null; fenceDecision();
+    } finally {
+      clearTimeout(timer);
+      if (attentionRequest === controller) {
+        attentionRequest = null; render(); renderRequests();
+        if (!document.hidden) attentionTimer = setTimeout(loadAttention, 3000);
+      }
+    }
+  }
+  async function openDecision(item) {
+    fenceDecision(); decisionItem = item;
+    const revision = decisionRevision;
+    const controller = new AbortController(); decisionRequest = controller;
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const current = () => revision === decisionRevision && conversationDialog.open && currentRequests().some(row => row.id === item.id
+      && row.can_respond === item.can_respond && row.details_available);
+    setText($('decision-status'), 'Reading exact request...');
+    try {
+      const detail = validateDecision(await fetchJSON(`/api/v1/decisions/${item.id}`, controller.signal), item);
+      if (!current() || controller.signal.aborted) return;
+      decisionDetail = detail;
+      renderDecision(item, detail);
+    } catch {
+      if (!current()) return;
+      $('decision-details').replaceChildren();
+      setText($('decision-status'), 'Request changed, unsupported or unavailable. Use source UI.');
+    } finally { clearTimeout(timer); if (decisionRequest === controller) decisionRequest = null; }
+  }
+  function renderDecision(item, detail) {
+    const root = $('decision-details'); root.replaceChildren();
+    const d = detail.decision;
+    const writable = item.can_respond && detail.can_respond;
+    setText($('decision-status'), writable ? 'Respond to this exact request.' : 'Read-only request. Respond at source.');
+    const fields = [];
+    if (d.kind === 'question') {
+      d.questions.forEach((q, index) => {
+        const group = element('fieldset'); group.append(element('legend', '', q.header), element('pre', '', q.question));
+        const row = {options: [], custom: null};
+        q.options.forEach((option, n) => {
+          const label = element('label', 'decision-option');
+          const input = element('input'); input.type = q.multiple ? 'checkbox' : 'radio';
+          input.name = `question-${index}`; input.id = `decision-${index}-${n}`;
+          input.value = option.label; input.disabled = !writable;
+          label.append(input, element('span', '', option.label), element('span', 'muted small', option.description));
+          group.append(label); row.options.push(input);
+        });
+        if (q.custom) {
+          const label = element('label', '', q.multiple ? 'Custom answer (optional)' : 'Custom answer (instead of selection)');
+          const input = element('textarea'); input.rows = 2; input.disabled = !writable; input.autocomplete = 'off';
+          input.addEventListener('input', () => { if (!q.multiple && input.value) row.options.forEach(o => { o.checked = false; }); });
+          row.options.forEach(o => o.addEventListener('change', () => { if (!q.multiple && o.checked) input.value = ''; }));
+          label.append(input); group.append(label); row.custom = input;
+        }
+        root.append(group); fields.push(row);
+      });
+    } else {
+      root.append(element('h3', '', d.permission), element('h4', '', 'Patterns'), element('pre', '', d.patterns.join('\n')),
+        element('h4', '', 'Native rule patterns (no remembered approval)'), element('pre', '', d.always_patterns.join('\n')),
+        element('pre', '', d.metadata_json), element('p', 'warning', 'Deny rejects all currently pending permissions in this session, not future requests. Allow once remembers no rule.'));
+    }
+    if (!writable) return;
+    const prior = [...uncertainDecisions.values()].filter(a => a.alert_id === item.alert_id);
+    let deliberate = null;
+    if (prior.length) {
+      const label = element('label', '', 'I inspected this exact request and separately choose a new response. This is not a retry.');
+      deliberate = element('input'); deliberate.type = 'checkbox'; label.append(deliberate); root.append(label);
+      setText($('decision-status'), decisionNotice);
+    }
+    const buttons = [];
+    const add = (label, action) => {
+      const button = element('button', 'quiet-button', label); button.type = 'button';
+      button.disabled = decisionBusy || uncertainDecisions.size >= 32 || !!deliberate;
+      button.addEventListener('click', () => {
+        if (button.disabled || decisionBusy || (deliberate && !deliberate.checked)) return;
+        let value;
+        try { value = action(); } catch { setText($('decision-status'), 'Choose valid answers for every question.'); return; }
+        void respondDecision(item, detail, value);
+      });
+      root.append(button); buttons.push(button);
+    };
+    deliberate?.addEventListener('change', () => buttons.forEach(b => { b.disabled = !deliberate.checked || decisionBusy || uncertainDecisions.size >= 32; }));
+    if (d.kind === 'question') {
+      add('Answer once', () => ({type: 'question_answer', answers: questionAnswers(d.questions, fields)}));
+      add('Reject question', () => ({type: 'question_reject'}));
+    } else {
+      add('Allow once', () => ({type: 'permission_once'}));
+      add('Deny pending session permissions', () => ({type: 'permission_deny', scope: 'session_pending'}));
+    }
+  }
+  async function respondDecision(item, detail, action) {
+    const revision = decisionRevision;
+    const current = () => revision === decisionRevision && decisionDetail === detail && conversationDialog.open
+      && currentRequests().some(row => row.id === item.id && row.can_respond && row.details_available);
+    if (!current() || decisionBusy || uncertainDecisions.size >= 32) return;
+    const controller = new AbortController(); decisionRequest = controller; decisionBusy = true;
+    const timer = setTimeout(() => controller.abort(), 20000);
+    let attempt = null;
+    // Clear all answer drafts before any asynchronous boundary.
+    $('decision-details').replaceChildren();
+    setText($('decision-status'), 'Obtaining a fresh response token.');
+    try {
+      const token = await fetchJSON('/api/v1/csrf', controller.signal);
+      if (!current() || controller.signal.aborted || token?.contract !== 'coven.csrf.v1'
+        || !string(token.token) || !/^[0-9]+-[a-f0-9]{64}-[a-f0-9]{64}$/.test(token.token)) throw new Error('unsent');
+      const id = crypto.randomUUID();
+      if (uncertainDecisions.has(id)) throw new Error('unsent');
+      attempt = {id: item.id, alert_id: item.alert_id, attempt_id: id, action: action.type};
+      uncertainDecisions.set(id, attempt);
+      const body = JSON.stringify({contract: 'coven.decision-response.v1', attempt_id: id, execute: true, action});
+      action = null;
+      const response = await fetch(`/api/v1/decisions/${item.id}/responses`, {
+        method: 'POST', credentials: 'same-origin', mode: 'same-origin', redirect: 'error', cache: 'no-store', signal: controller.signal,
+        headers: {'Content-Type': 'application/json', Accept: 'application/json', 'X-Coven-CSRF': token.token}, body,
+      });
+      if (response.status === 401 || response.status === 403) invalidateAuthentication();
+      const report = await response.json();
+      if (!current() || !response.ok || report?.contract !== 'coven.decision-response.v1'
+        || report.id !== item.id || report.attempt_id !== id || report.action !== attempt.action) throw new Error('uncertain');
+      if (report.outcome === 'applied' && report.delivery === 'applied') {
+        uncertainDecisions.delete(id);
+        setText($('decision-status'), 'Applied: native wait settled, not tool completion.');
+      } else if ((report.outcome === 'rejected' && report.delivery === 'rejected')
+        || (report.outcome === 'unavailable' && report.delivery === 'unsent')) {
+        uncertainDecisions.delete(id); setText($('decision-status'), 'Not applied. Inspect current request before another choice.');
+      } else throw new Error('uncertain');
+    } catch {
+      if (current()) setText($('decision-status'), attempt ? decisionNotice : 'Not sent. Inspect request again.');
+    } finally {
+      action = null; clearTimeout(timer); decisionBusy = false;
+      if (decisionRequest === controller) decisionRequest = null;
+      renderAttention(); renderRequests();
+      if (revision !== decisionRevision && decisionItem && decisionDetail) renderDecision(decisionItem, decisionDetail);
+    }
+  }
+
+  function alertWait(promise, signal) {
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(new Error('alert_timeout'));
+      if (signal.aborted) { Promise.resolve(promise).catch(() => {}); abort(); return; }
+      signal.addEventListener('abort', abort, {once: true});
+      Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    });
+  }
+  function pushConfig(value) {
+    if (value?.contract !== 'coven.web-push.v1' || typeof value.enabled !== 'boolean'
+      || !Array.isArray(value.subscriptions) || value.subscriptions.length > 8
+      || !value.subscriptions.every(id => string(id) && AGENT_ID.test(id))) throw new Error('config');
+    return value;
+  }
+  function deliveryLabel(config) {
+    if (['idle', 'sent'].includes(config?.delivery_status)) return 'delivery advisory';
+    if (['unavailable', 'queue_limit', 'history_or_state_limit', 'crypto_failed', 'subscription_expired', 'retrying', 'delivery_failed', 'state_unavailable'].includes(config?.delivery_status)) return 'delivery degraded';
+    return 'delivery unverified';
+  }
+  async function pushMutation(path, data, revision, operation, signal, creation = null) {
+    if (signal.aborted || revision !== authRevision || operation !== pushOperationRevision) throw new Error('auth');
+    const token = await alertWait(fetchJSON('/api/v1/csrf', signal), signal);
+    if (signal.aborted || revision !== authRevision || operation !== pushOperationRevision || token?.contract !== 'coven.csrf.v1' || !string(token.token) || !/^[0-9]+-[a-f0-9]{64}-[a-f0-9]{64}$/.test(token.token)) throw new Error('csrf');
+    // A lost create receipt may hide a blocking commit even after a later delete.
+    if (creation) unresolvedPushCreations.add(creation);
+    const response = await alertWait(fetch(path, {method: 'POST', cache: 'no-store', credentials: 'same-origin', mode: 'same-origin', redirect: 'error', signal,
+      headers: {'Content-Type': 'application/json', Accept: 'application/json', 'X-Coven-CSRF': token.token},
+      body: JSON.stringify({contract: 'coven.web-push.v1', execute: true, ...data})}), signal);
+    if (response.status === 401 || response.status === 403) invalidateAuthentication();
+    const value = await alertWait(response.json(), signal);
+    if (signal.aborted || revision !== authRevision || operation !== pushOperationRevision || !response.ok || value?.contract !== 'coven.web-push.v1' || !AGENT_ID.test(value.subscription_id)
+      || value.subscribed !== (path === '/api/v1/push/subscriptions')) throw new Error('push_unavailable');
+    if (creation) {
+      if (value.subscription_id !== creation.id) throw new Error('receipt');
+      unresolvedPushCreations.delete(creation);
+    }
+    return value;
+  }
+  async function toggleAlerts(enable) {
+    if (alertsBusy) return;
+    const operation = ++pushOperationRevision;
+    if (!globalThis.navigator?.serviceWorker || (enable && (!globalThis.PushManager || !globalThis.Notification))) {
+      setText($('alerts-status'), 'Background alerts unsupported. In-page attention still works.'); return;
+    }
+    const controller = new AbortController(), signal = controller.signal;
+    const timer = setTimeout(() => controller.abort(), 10000);
+    alertsBusy = true; $('enable-alerts').disabled = true; $('disable-alerts').disabled = true;
+    const revision = authRevision;
+    try {
+      if (!enable) {
+        let localDisabled = false;
+        let unidentifiedSubscription = false;
+        try {
+          const registration = await alertWait(navigator.serviceWorker.getRegistration('/'), signal);
+          const sub = registration && await alertWait(registration.pushManager.getSubscription(), signal);
+          if (sub) {
+            // Local removal must not depend on any server or CSRF request succeeding.
+            unidentifiedSubscription = true;
+            const id = subscriptionID(sub.endpoint).catch(() => null);
+            const removal = Promise.resolve().then(() => sub.unsubscribe()).catch(() => false);
+            // Hash completion is independent of a stalled/canceled local removal.
+            const value = await alertWait(id, signal);
+            if (value) { pendingPushRemovals.add(value); unidentifiedSubscription = false; }
+            localDisabled = await alertWait(removal, signal) === true;
+          } else localDisabled = true;
+        } catch { /* Keep local state unverified; server cleanup is still deliberate. */ }
+        unidentifiedPushRemoval ||= unidentifiedSubscription;
+        let serverVerified = false;
+        try {
+          if (signal.aborted || revision !== authRevision || operation !== pushOperationRevision) throw new Error('auth');
+          const config = pushConfig(await alertWait(fetchJSON('/api/v1/push/config', signal), signal));
+          const creations = new Set([...unresolvedPushCreations].map(creation => creation.id));
+          for (const id of new Set([...pendingPushRemovals, ...creations])) {
+            if (config.subscriptions.includes(id) || creations.has(id)) {
+              const result = await pushMutation('/api/v1/push/unsubscribe', {subscription_id: id}, revision, operation, signal);
+              if (result.subscription_id !== id) throw new Error('receipt');
+            }
+            pendingPushRemovals.delete(id);
+          }
+          serverVerified = revision === authRevision && operation === pushOperationRevision
+            && !unidentifiedPushRemoval && unresolvedPushCreations.size === 0;
+        } catch { /* No automatic mutation retries, including after lost receipts. */ }
+        $('enable-alerts').hidden = false;
+        $('disable-alerts').hidden = localDisabled && serverVerified;
+        setText($('disable-alerts'), localDisabled ? 'Remove server registration' : 'Disable alerts');
+        setText($('alerts-status'), localDisabled
+          ? serverVerified ? 'Browser alerts disabled' : 'Browser alerts disabled; server removal unverified'
+          : 'Browser removal unverified. Check browser settings.');
+        return;
+      }
+      if (pendingPushRemovals.size >= 32 || unresolvedPushCreations.size >= 32) throw new Error('cleanup_capacity');
+      // Called only from a deliberate click, before awaiting network I/O.
+      if (await alertWait(Notification.requestPermission(), signal) !== 'granted') {
+        setText($('alerts-status'), 'Background permission denied. In-page attention still works.'); return;
+      }
+      const config = pushConfig(await alertWait(fetchJSON('/api/v1/push/config', signal), signal));
+      if (!config.enabled || !string(config.public_key) || !/^[A-Za-z0-9_-]{87}$/.test(config.public_key)) {
+        setText($('alerts-status'), 'Background alerts not configured. In-page attention still works.'); return;
+      }
+      await alertWait(navigator.serviceWorker.register('/service-worker.js', {scope: '/'}), signal);
+      const registration = await alertWait(navigator.serviceWorker.ready, signal);
+      if (signal.aborted || revision !== authRevision) throw new Error('auth');
+      let sub = await alertWait(registration.pushManager.getSubscription(), signal);
+      if (sub && !config.subscriptions.includes(await alertWait(subscriptionID(sub.endpoint), signal))) {
+        // This explicit re-enable must create a new endpoint, never transfer ownership.
+        if (!await alertWait(sub.unsubscribe(), signal)) throw new Error('unsubscribe'); sub = null;
+      }
+      if (!sub) {
+        const key = Uint8Array.from(atob(config.public_key.replace(/-/g, '+').replace(/_/g, '/') + '='), c => c.charCodeAt(0));
+        sub = await alertWait(registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: key}), signal);
+      }
+      if (signal.aborted || revision !== authRevision) throw new Error('auth');
+      const serialized = sub.toJSON();
+      const id = await alertWait(subscriptionID(sub.endpoint), signal);
+      pendingPushRemovals.add(id);
+      const result = await pushMutation('/api/v1/push/subscriptions', {subscription: {endpoint: sub.endpoint, keys: {p256dh: serialized.keys?.p256dh, auth: serialized.keys?.auth}}}, revision, operation, signal, {id});
+      if (revision !== authRevision || result.subscription_id !== id) throw new Error('auth');
+      pendingPushRemovals.delete(id);
+      $('enable-alerts').hidden = true; $('disable-alerts').hidden = false;
+      setText($('disable-alerts'), 'Disable alerts');
+      setText($('alerts-status'), `Background subscription enabled / ${deliveryLabel(config)}${unresolvedPushCreations.size ? '; earlier registration unverified' : ''}`);
+    } catch {
+      $('disable-alerts').hidden = false;
+      setText($('alerts-status'), 'Background state unverified. Check browser settings; in-page attention still works.');
+    } finally { controller.abort(); clearTimeout(timer); alertsBusy = false; $('enable-alerts').disabled = false; $('disable-alerts').disabled = false; }
+  }
+  $('enable-alerts').addEventListener('click', () => void toggleAlerts(true));
+  $('disable-alerts').addEventListener('click', () => void toggleAlerts(false));
+  async function inspectAlerts() {
+    if (!globalThis.navigator?.serviceWorker || !globalThis.PushManager || globalThis.Notification?.permission !== 'granted') return;
+    const revision = authRevision;
+    const operation = pushOperationRevision;
+    const controller = new AbortController(), signal = controller.signal;
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const registration = await alertWait(navigator.serviceWorker.getRegistration('/'), signal);
+      const sub = registration && await alertWait(registration.pushManager.getSubscription(), signal);
+      if (!sub || alertsBusy || revision !== authRevision || operation !== pushOperationRevision) return;
+      const config = pushConfig(await alertWait(fetchJSON('/api/v1/push/config', signal), signal));
+      const id = await alertWait(subscriptionID(sub.endpoint), signal);
+      if (alertsBusy || revision !== authRevision || operation !== pushOperationRevision) return;
+      if (config?.contract === 'coven.web-push.v1' && config.enabled === true
+        && Array.isArray(config.subscriptions) && config.subscriptions.includes(id)) {
+        $('enable-alerts').hidden = true; $('disable-alerts').hidden = false;
+        setText($('alerts-status'), `Background subscription enabled / ${deliveryLabel(config)}${unresolvedPushCreations.size ? '; earlier registration unverified' : ''}`);
+      } else {
+        $('disable-alerts').hidden = false;
+        setText($('alerts-status'), 'Browser subscription not verified for this account. Enable alerts to replace it.');
+      }
+    } catch { if (!alertsBusy && revision === authRevision && operation === pushOperationRevision) setText($('alerts-status'), 'Background state unverified. In-page attention still works.'); }
+    finally { controller.abort(); clearTimeout(timer); }
+  }
+  void inspectAlerts();
+  globalThis.addEventListener?.('hashchange', () => { alertNavigation = null; alertUnverified = false; attentionAt = null; fenceDecision(); void loadAttention(); });
 
   $('read-conversation').addEventListener('click', () => void readConversation(true));
   $('prompt-composer').addEventListener('submit', event => void sendPrompt(event));
@@ -703,6 +1154,7 @@ function bootstrap() {
       const updated = cards.find(card => card.key === dialogReturnTargets.get(conversationDialog)?.key
         && conversationKey(card.target) === conversationKey(conversationTarget))?.target;
       if (!updated || readKey(updated) !== readKey(conversationTarget)) {
+        fenceDecision();
         fencePrompt();
         clearConversation();
         if (!updated) { closeConversation(); conversationDialog.close(); }
@@ -710,6 +1162,7 @@ function bootstrap() {
       if (updated) conversationTarget = updated;
     }
     renderComposer();
+    renderAttention();
     const snapshot = state.snapshot;
     const snapshotOld = snapshot && (snapshot.generated_at_ms > now + 5000 || now - snapshot.generated_at_ms >= snapshot.stale_after_ms);
     const stale = state.failed || snapshotOld;
@@ -741,7 +1194,7 @@ function bootstrap() {
         const body = element('span');
         body.append(element('span', 'card-title'), element('span', 'card-project'), element('span', 'card-project card-evidence'));
         const bottom = element('span', 'card-bottom');
-        bottom.append(element('span', 'card-age'), element('span', 'card-action'));
+        bottom.append(element('span', 'card-age'), element('span', 'attention-badge', 'Needs response'), element('span', 'card-action'));
         primary.append(top, body, bottom);
         const details = element('button', 'quiet-button card-details', 'Details / terminal output');
         details.type = 'button';
@@ -759,6 +1212,8 @@ function bootstrap() {
         ? 'Chat capable / Verified terminal link'
         : `Chat unavailable: ${card.chatUnavailable}`}`);
       setText(node.querySelector('.card-age'), card.age);
+      const needsResponse = attentionFresh() && attention.items.some(item => matchesTarget(item, card.target));
+      node.querySelector('.attention-badge').hidden = !needsResponse;
       setText(node.querySelector('.card-action'), card.target ? 'Open conversation +' : 'Chat unavailable');
       node.querySelector('.agent-card').setAttribute('aria-disabled', String(!card.target));
       node.querySelector('.card-details').hidden = false;
@@ -817,6 +1272,7 @@ function bootstrap() {
     const controller = new AbortController();
     fleetRequest = controller;
     void loadConversations();
+    void loadAttention();
     const timeout = setTimeout(() => controller.abort(), 10000);
     render();
     try {
@@ -865,11 +1321,14 @@ function bootstrap() {
   document.addEventListener('visibilitychange', () => {
     clearTimeout(pollTimer);
     if (document.hidden) {
+      clearTimeout(attentionTimer);
+      attentionRequest?.abort(); attentionRequest = null; attention = null; attentionAt = null;
       invalidateConversations('Conversation metadata paused while hidden. Revalidated on return; reopen to read messages.');
       refreshOnResume = false;
       fleetRequest?.abort();
       if (outputRequest) { clearOutput(); setText($('output-status'), 'Read paused while hidden. Read again when ready.'); }
     } else {
+      void loadAttention();
       void loadConversations();
       if (fleetRequest) refreshOnResume = true;
       else void poll();
@@ -882,6 +1341,7 @@ function bootstrap() {
         invalidateConversations('Conversation metadata lease expired. Revalidating access; reopen to read messages.');
         void loadConversations();
       }
+      if (attentionAt !== null && !attentionFresh()) { attention = null; attentionAt = null; fenceDecision(); }
       render();
     }
   }, 1000);

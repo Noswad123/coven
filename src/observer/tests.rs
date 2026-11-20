@@ -46,6 +46,7 @@ impl Transport for FixtureTransport {
 }
 fn observer(endpoints: Vec<Arc<Endpoint>>, reply: Result<Value>) -> Observer {
     Observer {
+        attention: Mutex::new(attention::State::default()),
         cardlinks: Mutex::new(cardlinks::State::default()),
         conversations: conversations::Conversations::default(),
         endpoints,

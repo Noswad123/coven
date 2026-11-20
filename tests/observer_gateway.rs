@@ -11,6 +11,10 @@ use std::{
 mod djinn_producer;
 
 #[cfg(unix)]
+#[path = "observer_gateway/decisions_producer.rs"]
+mod decisions_producer;
+
+#[cfg(unix)]
 #[path = "observer_gateway/prompts.rs"]
 mod prompts;
 
@@ -279,6 +283,30 @@ fn http_auth_assets_fleet_and_origin_boundary() {
     let script = gateway.request("/app.js", auth);
     assert!(script.starts_with("HTTP/1.1 200"));
     assert!(script.contains("text/javascript"));
+    let worker = gateway.request("/service-worker.js", auth);
+    assert!(worker.starts_with("HTTP/1.1 200"));
+    assert!(worker.contains("text/javascript"));
+    assert!(worker.contains("worker-src 'self'"));
+    assert!(
+        worker
+            .to_ascii_lowercase()
+            .contains("cache-control: no-store")
+    );
+    assert!(worker.contains("Coven needs your attention"));
+    assert!(!worker.contains("addEventListener('fetch'"));
+    let push = gateway.request("/api/v1/push/config", auth);
+    assert!(push.starts_with("HTTP/1.1 200"));
+    let push: serde_json::Value =
+        serde_json::from_str(push.split_once("\r\n\r\n").unwrap().1).unwrap();
+    assert_eq!(
+        push,
+        serde_json::json!({"contract":"coven.web-push.v1","enabled":false,"public_key":null,"subscriptions":[]})
+    );
+    let attention = gateway.request("/api/v1/attention", auth);
+    assert!(attention.starts_with("HTTP/1.1 200"));
+    let attention: serde_json::Value =
+        serde_json::from_str(attention.split_once("\r\n\r\n").unwrap().1).unwrap();
+    assert_eq!(attention["contract"], "coven.attention.v1");
     let fleet = gateway.request("/api/v1/fleet", auth);
     assert!(fleet.starts_with("HTTP/1.1 200"));
     let body = fleet.split_once("\r\n\r\n").expect("HTTP body").1;

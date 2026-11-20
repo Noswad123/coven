@@ -1,11 +1,13 @@
 //! Memory-only fleet observation and explicitly gated shared conversations.
 //! Construction never attaches or starts agents.
+mod attention;
 mod cardlinks;
 pub mod config;
 mod conversations;
 mod discovery;
 pub mod http;
 mod model;
+pub(super) mod push;
 mod source;
 mod transport;
 
@@ -230,6 +232,7 @@ fn valid_id(id: &str) -> bool {
 }
 
 pub struct Observer {
+    attention: Mutex<attention::State>,
     cardlinks: Mutex<cardlinks::State>,
     conversations: conversations::Conversations,
     endpoints: Vec<Arc<Endpoint>>,
@@ -245,6 +248,7 @@ impl Observer {
         let epoch =
             crate::platform::random_uuid_hex().map_err(|_| Error("observer_start_failed"))?;
         let mut observer = Self {
+            attention: Mutex::new(attention::State::default()),
             cardlinks: Mutex::new(cardlinks::State::default()),
             conversations: conversations::Conversations::new(config, &epoch)?,
             endpoints: config

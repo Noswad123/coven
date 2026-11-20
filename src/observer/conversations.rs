@@ -24,15 +24,33 @@ struct Cached {
     selected: discovery::Selected,
 }
 
+#[derive(Clone)]
+pub(super) struct DecisionTarget {
+    pub source_id: String,
+    pub team: String,
+    pub selected: discovery::Selected,
+    pub workspace: Option<String>,
+    pub writable: bool,
+    pub epoch: String,
+}
+
 #[derive(Default)]
 struct State {
     generation: u64,
     refs: Vec<Cached>,
     attempts: HashSet<String>,
     active: HashSet<(String, String)>,
+    coverage: Vec<Coverage>,
 }
 
-struct Flight<'a> {
+#[derive(Clone, Default)]
+struct Coverage {
+    unavailable: usize,
+    failed: bool,
+    revision: u64,
+}
+
+pub(super) struct Flight<'a> {
     state: &'a Mutex<State>,
     key: (String, String),
 }
@@ -47,6 +65,103 @@ impl Drop for Flight<'_> {
 }
 
 impl Conversations {
+    pub(super) fn card_proof(&self, login: &str) -> Option<String> {
+        self.proof(&self.state.lock().unwrap_or_else(|p| p.into_inner()), login)
+    }
+    fn proof(&self, state: &State, login: &str) -> Option<String> {
+        let mut parts = vec![self.epoch.clone(), login.to_owned()];
+        for (index, source) in self
+            .sources
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.config.allowed_logins.iter().any(|l| l == login))
+        {
+            let coverage = state.coverage.get(index)?;
+            // Expiration invalidates the whole proof; it never elects a new winner.
+            if coverage.failed
+                || state
+                    .refs
+                    .iter()
+                    .any(|r| r.source == index && r.selected.expires <= Instant::now())
+            {
+                return None;
+            }
+            parts.push(source.config.id.clone());
+            parts.push(coverage.revision.to_string());
+            parts.extend(Self::candidate_ids(state, index));
+        }
+        Some(digest(
+            &parts.iter().map(String::as_str).collect::<Vec<_>>(),
+        ))
+    }
+    fn candidate_ids(state: &State, source: usize) -> Vec<String> {
+        let mut ids = state
+            .refs
+            .iter()
+            .filter(|r| r.source == source)
+            .map(|r| r.id.clone())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids
+    }
+    pub(super) fn attention_unavailable(&self, login: &str) -> usize {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        self.sources
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.config.allowed_logins.iter().any(|l| l == login))
+            .map(|(i, _)| state.coverage.get(i).map_or(0, |c| c.unavailable))
+            .sum()
+    }
+    pub(super) fn known_attempt(&self, attempt: &str) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .attempts
+            .contains(attempt)
+    }
+    pub(super) fn claim(&self, attempt: &str, runtime: &str, session: &str) -> Result<Flight<'_>> {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if state.attempts.contains(attempt) {
+            return Err(Error("request_already_seen"));
+        }
+        if state.attempts.len() >= 4096 {
+            return Err(Error("request_capacity"));
+        }
+        state.attempts.insert(attempt.into());
+        let key = (runtime.into(), session.into());
+        if state.active.len() >= 8 || !state.active.insert(key.clone()) {
+            return Err(Error("submission_busy"));
+        }
+        Ok(Flight {
+            state: &self.state,
+            key,
+        })
+    }
+
+    pub(super) fn admitted(&self, login: &str) -> bool {
+        self.sources
+            .iter()
+            .any(|s| s.config.allowed_logins.iter().any(|l| l == login))
+            || self
+                .registered
+                .iter()
+                .any(|(_, t)| t.allowed_logins.iter().any(|l| l == login))
+    }
+
+    pub(super) fn decision_target(&self, login: &str, id: &str) -> Result<DecisionTarget> {
+        let r = self.cached(login, id)?;
+        let source = &self.sources[r.source].config;
+        Ok(DecisionTarget {
+            source_id: source.id.clone(),
+            team: source.team.clone(),
+            selected: r.selected,
+            workspace: source.control_workspace.clone(),
+            writable: source.decision_logins.iter().any(|l| l == login)
+                && source.control_workspace.is_some(),
+            epoch: self.epoch.clone(),
+        })
+    }
     pub(super) fn new(config: &Config, epoch: &str) -> Result<Self> {
         // Full validated configuration plus per-process entropy invalidates every
         // reference on configuration changes/restarts, including ACL-only changes.
@@ -80,11 +195,25 @@ impl Conversations {
                 })
                 .collect(),
             epoch: digest(&[epoch, &generation]),
-            state: Mutex::new(State::default()),
+            state: Mutex::new(State {
+                coverage: vec![
+                    Coverage {
+                        failed: true,
+                        ..Coverage::default()
+                    };
+                    config.conversation_sources.len()
+                ],
+                ..State::default()
+            }),
         })
     }
 
+    #[cfg(test)]
     pub(super) fn list(&self, login: &str) -> Value {
+        self.list_with_proof(login).0
+    }
+
+    pub(super) fn list_with_proof(&self, login: &str) -> (Value, Option<String>) {
         let deadline = crate::shared_native::deadline();
         let mut statuses = Vec::new();
         for (index, source) in self.sources.iter().enumerate() {
@@ -112,17 +241,20 @@ impl Conversations {
                     source.generation.store(state.generation, Ordering::Release);
                     (old, state.generation)
                 };
-                let result = discovery::scan(&source.config.directory, deadline);
+                let result = discovery::scan_coverage(&source.config.directory, deadline);
                 let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
                 if source.generation.load(Ordering::Acquire) != generation {
                     "busy"
                 } else {
+                    let previous_ids = Self::candidate_ids(&state, index);
+                    let previous_coverage = state.coverage[index].clone();
                     state.refs.retain(|r| r.source != index);
-                    match result {
-                        Ok(selected) => {
+                    let status = match result {
+                        Ok((selected, mut unavailable)) => {
                             let mut refs = Vec::new();
                             for target in selected {
                                 if target.expires <= Instant::now() {
+                                    unavailable += 1;
                                     continue;
                                 }
                                 let previous = old.iter().find(|r| {
@@ -152,10 +284,24 @@ impl Conversations {
                             }
                             state.refs.extend(refs);
                             state.refs.sort_by_key(|r| r.source);
+                            state.coverage[index].unavailable = unavailable;
+                            state.coverage[index].failed = unavailable > 0;
                             "observed"
                         }
-                        Err(_) => "unavailable",
+                        Err(_) => {
+                            state.coverage[index].unavailable = 0;
+                            state.coverage[index].failed = true;
+                            "unavailable"
+                        }
+                    };
+                    let coverage = &state.coverage[index];
+                    if previous_ids != Self::candidate_ids(&state, index)
+                        || previous_coverage.failed != coverage.failed
+                        || previous_coverage.unavailable != coverage.unavailable
+                    {
+                        state.coverage[index].revision = previous_coverage.revision.wrapping_add(1);
                     }
+                    status
                 }
             } else {
                 "busy"
@@ -179,7 +325,10 @@ impl Conversations {
                 "can_submit":Self::writable(source, cached, login),"max_prompt_bytes":65536}),
             );
         }
-        json!({"contract":"coven.conversations.v1","conversations":rows,"sources":statuses,"omitted_conversations":omitted})
+        (
+            json!({"contract":"coven.conversations.v1","conversations":rows,"sources":statuses,"omitted_conversations":omitted}),
+            self.proof(&state, login),
+        )
     }
 
     fn discovered<'a>(
@@ -248,31 +397,21 @@ impl Conversations {
         if !Self::writable(source, &cached, login) {
             return Err(Error("invalid_reference"));
         }
-        let key = (
-            cached.selected.runtime.clone(),
-            cached.selected.grant.session_id.clone(),
-        );
         let report = |outcome: &str, delivery: &str, code: &str| {
             json!({"contract":"coven.conversation-submit.v1",
             "id":id,"request_id":request_id,"outcome":outcome,"delivery":delivery,"diagnostics":[code],
             "prompt_bytes":text.len(),"prompt_sha256":format!("{:x}",Sha256::digest(text.as_bytes())),"native_prompt_acceptance":"unestablished"})
         };
-        {
-            let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-            if state.attempts.contains(request_id) {
-                return Ok(report("uncertain", "uncertain", "request_already_seen"));
+        let _flight = match self.claim(
+            request_id,
+            &cached.selected.runtime,
+            &cached.selected.grant.session_id,
+        ) {
+            Ok(flight) => flight,
+            Err(e) if e.code() == "request_already_seen" => {
+                return Ok(report("uncertain", "uncertain", e.code()));
             }
-            if state.attempts.len() >= 4096 {
-                return Ok(report("unavailable", "unsent", "request_capacity"));
-            }
-            state.attempts.insert(request_id.into());
-            if state.active.len() >= 8 || !state.active.insert(key.clone()) {
-                return Ok(report("unavailable", "unsent", "submission_busy"));
-            }
-        }
-        let _flight = Flight {
-            state: &self.state,
-            key,
+            Err(e) => return Ok(report("unavailable", "unsent", e.code())),
         };
         let mut value = crate::session_prompts::shared_submit(
             std::path::Path::new(

@@ -19,6 +19,7 @@ pub mod codex_hooks;
 pub mod collection;
 pub mod console;
 pub mod copilot_hooks;
+mod decision_native;
 pub mod djinn_live_observation;
 pub mod djinn_observation;
 pub mod doctor;

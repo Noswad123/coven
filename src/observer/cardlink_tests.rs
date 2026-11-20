@@ -1,11 +1,15 @@
 use super::*;
 
+#[path = "attention_workflow_tests.rs"]
+mod attention_workflow_tests;
+
 struct Kit {
     socket: String,
     state: Arc<Mutex<Value>>,
     requests: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    pause: Arc<Mutex<Option<(usize, StatusPause)>>>,
 }
 
 impl Kit {
@@ -19,6 +23,8 @@ impl Kit {
         ));
         let requests = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
+        let pause: Arc<Mutex<Option<(usize, StatusPause)>>> = Arc::new(Mutex::new(None));
+        let paused = pause.clone();
         let (s, r, stopping) = (state.clone(), requests.clone(), stop.clone());
         let thread = std::thread::spawn(move || {
             while !stopping.load(Ordering::Acquire) {
@@ -55,6 +61,27 @@ impl Kit {
                     }
                     _ => panic!("unexpected Kit method {method}"),
                 };
+                drop(state);
+                let wait = {
+                    let mut slot = paused.lock().unwrap();
+                    match slot.as_mut() {
+                        Some((skip, _)) if *skip > 0 => {
+                            *skip -= 1;
+                            None
+                        }
+                        Some(_) => slot.take().map(|(_, pause)| pause),
+                        None => None,
+                    }
+                };
+                if let Some(wait) = wait {
+                    let mut flags = wait.0.lock().unwrap();
+                    flags.0 = true;
+                    wait.1.notify_all();
+                    let _ = wait
+                        .1
+                        .wait_timeout_while(flags, Duration::from_secs(2), |f| !f.1)
+                        .unwrap();
+                }
                 let mut bytes =
                     serde_json::to_vec(&json!({"id":request["id"],"result":result})).unwrap();
                 bytes.push(b'\n');
@@ -67,6 +94,7 @@ impl Kit {
             requests,
             stop,
             thread: Some(thread),
+            pause,
         }
     }
 
@@ -130,6 +158,7 @@ impl Kit {
             })
             .collect();
         Observer {
+            attention: Mutex::new(super::super::super::attention::State::default()),
             conversations: Conversations::new(&config, "epoch").unwrap(),
             cardlinks: Mutex::new(cardlinks::State::default()),
             endpoints,

@@ -64,6 +64,7 @@ fn native_source_package_boundary() {
         "clients/web/index.html",
         "clients/web/app.js",
         "clients/web/styles.css",
+        "clients/web/service-worker.js",
         "build.rs",
         "src/hook_files/platform.rs",
         "src/private_access.rs",
@@ -131,7 +132,8 @@ fn native_source_package_boundary() {
         BTreeSet::from([
             "clients/web/index.html",
             "clients/web/app.js",
-            "clients/web/styles.css"
+            "clients/web/styles.css",
+            "clients/web/service-worker.js"
         ]),
         "only the Coven Web runtime assets belong in the source package"
     );

@@ -99,6 +99,7 @@ pub(crate) struct Connection<'a> {
     deadline: Instant,
     budget: ReadBudget,
     card_association: bool,
+    decision_control: bool,
 }
 
 fn invalid() -> Failure {
@@ -113,6 +114,18 @@ impl<'a> Connection<'a> {
             deadline,
             budget: ReadBudget::new(65536),
             card_association: false,
+            decision_control: false,
+        }
+    }
+
+    pub(crate) fn decision_workflow(
+        endpoint: &'a Endpoint,
+        runtime: &'a str,
+        deadline: Instant,
+    ) -> Self {
+        Self {
+            budget: ReadBudget::new(256 * 1024),
+            ..Self::new(endpoint, runtime, deadline)
         }
     }
 
@@ -138,6 +151,13 @@ impl<'a> Connection<'a> {
             if frame.len() > 400 * 1024 {
                 return Err(Failure::new("request_limit"));
             }
+            if matches!(
+                method,
+                "shared_attention" | "shared_decision" | "shared_decide"
+            ) && frame.len() + 1 > 65536
+            {
+                return Err(Failure::new("request_limit"));
+            }
             frame.push(b'\n');
             let socket = crate::platform::observation_socket::Socket::connect(
                 &self.endpoint.socket,
@@ -149,7 +169,12 @@ impl<'a> Connection<'a> {
             before_send()?;
             possible_send = true;
             socket.send(&frame, self.deadline, &NoCancel)?;
-            let payload = socket.receive(self.deadline, &mut self.budget, &NoCancel)?;
+            // A workflow may span several large replies, but no single frame grows.
+            let limit = self.budget.remaining().min(65536);
+            let mut frame_budget = ReadBudget::new(limit);
+            let received = socket.receive(self.deadline, &mut frame_budget, &NoCancel);
+            self.budget.charge(limit - frame_budget.remaining())?;
+            let payload = received?;
             self.endpoint.fence()?;
             check(self.deadline, &NoCancel)?;
             let root = crate::session_conversations::decode(&payload).map_err(|_| invalid())?;
@@ -177,6 +202,11 @@ impl<'a> Connection<'a> {
                     }
                     Some("grant_unavailable") => ("grant_unavailable", Delivery::Rejected),
                     Some("sharing_read_only") => ("sharing_read_only", Delivery::Rejected),
+                    Some("decision_unsupported") => ("decision_unsupported", Delivery::Rejected),
+                    Some("decision_unavailable") => ("decision_unavailable", Delivery::Rejected),
+                    Some("decision_stale") => ("decision_stale", Delivery::Rejected),
+                    Some("invalid_decision") => ("invalid_decision", Delivery::Rejected),
+                    Some("decision_uncertain") => ("decision_uncertain", Delivery::Uncertain),
                     Some("conversation_unsupported") => {
                         ("conversation_unsupported", Delivery::Rejected)
                     }
@@ -207,7 +237,7 @@ impl<'a> Connection<'a> {
         match result {
             Ok(reply) => reply,
             Err(mut e) => {
-                if possible_send && method == "shared_submit" {
+                if possible_send && matches!(method, "shared_submit" | "shared_decide") {
                     e.delivery = Delivery::Uncertain;
                 }
                 Err(e)
@@ -217,6 +247,7 @@ impl<'a> Connection<'a> {
 
     pub(crate) fn capabilities(&mut self) -> WireResult<()> {
         self.card_association = false;
+        self.decision_control = false;
         let value = self.call("capabilities", json!({}), &fresh_id()?)?;
         if value["type"] != "capabilities"
             || value["runtime_id"] != self.runtime
@@ -229,7 +260,18 @@ impl<'a> Connection<'a> {
         }
         self.card_association = value.get("card_association")
             == Some(&json!({"contract":ASSOCIATION_CONTRACT,"version":1}));
+        self.decision_control =
+            value.get("decision_control") == Some(&crate::decision_native::capability());
         Ok(())
+    }
+
+    pub(crate) fn require_decisions(&mut self, grant: &Grant) -> WireResult<()> {
+        self.capabilities()?;
+        if !self.decision_control {
+            return Err(Failure::new("decision_unsupported"));
+        }
+        // can_submit is model-dependent follow-up authority, NOT decision authority.
+        self.require_grant(grant, false)
     }
 
     pub(crate) fn association(&mut self, grant: &Grant) -> WireResult<Option<Association>> {

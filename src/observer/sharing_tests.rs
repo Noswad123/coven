@@ -15,6 +15,11 @@ const REQUEST: &str = "41111111-2222-4333-8444-555555555555";
 type StatusPause = Arc<(Mutex<(bool, bool)>, Condvar)>;
 
 struct PeerState {
+    decisions: Option<Vec<Value>>,
+    decision_writable: bool,
+    decision_complete: bool,
+    decision_omitted: Option<u64>,
+    decision_error: Option<String>,
     association: Option<Value>,
     association_delay_ms: u64,
     status_pause_skip: usize,
@@ -27,6 +32,7 @@ struct PeerState {
     delay: bool,
     requests: Vec<Value>,
     status_pause: Option<StatusPause>,
+    attention_pause: Option<StatusPause>,
 }
 
 struct Peer {
@@ -51,6 +57,11 @@ impl Peer {
         listener.set_nonblocking(true).unwrap();
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600)).unwrap();
         let state = Arc::new(Mutex::new(PeerState {
+            decisions: None,
+            decision_writable: true,
+            decision_complete: true,
+            decision_omitted: Some(0),
+            decision_error: None,
             association: None,
             association_delay_ms: 0,
             status_pause_skip: 0,
@@ -68,6 +79,7 @@ impl Peer {
             delay: false,
             requests: Vec::new(),
             status_pause: None,
+            attention_pause: None,
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let submits = Arc::new(AtomicUsize::new(0));
@@ -100,6 +112,7 @@ impl Peer {
                 state.requests.push(request.clone());
                 let method = request["method"].as_str().unwrap();
                 let native_runtime = state.runtime.clone();
+                let mut wire_error = None;
                 let mut result = match method {
                     "capabilities" => {
                         let mut caps = json!({"type":"capabilities","contract":"djinn.interactive-prompt.v1","version":1,
@@ -107,7 +120,36 @@ impl Peer {
                         if state.association.is_some() {
                             caps["card_association"] = json!({"contract":crate::shared_native::ASSOCIATION_CONTRACT,"version":1});
                         }
+                        if state.decisions.is_some() { caps["decision_control"] = crate::decision_native::capability(); }
                         caps
+                    }
+                    "shared_attention" => {
+                        let grant = state.grant.as_ref().unwrap();
+                        assert_eq!(request["params"],json!({"expected_runtime_id":native_runtime,"session_id":grant.session_id,"grant_id":grant.grant_id}));
+                        let requests: Vec<_> = state.decisions.as_ref().unwrap().iter().map(|d| json!({"kind":d["kind"],"request_id":d["request_id"],"occurrence_id":d["occurrence_id"],"details_sha256":d["details_sha256"],"details_available":!d["details_sha256"].is_null()})).collect();
+                        json!({"type":"shared_attention","contract":crate::decision_native::CONTRACT,
+                            "grant_id":grant.grant_id,"session_id":grant.session_id,"requests":requests,
+                            "complete":state.decision_complete,"omitted_count":state.decision_omitted,"can_respond":state.decision_writable})
+                    }
+                    "shared_decision" | "shared_decide" => {
+                        let p = &request["params"];
+                        let grant = state.grant.as_ref().unwrap().clone();
+                        let matched = state.decisions.as_ref().unwrap().iter().position(|d|
+                            ["kind","request_id","occurrence_id","details_sha256"].iter().all(|k| d[*k] == p[*k]));
+                        let code = if p["expected_runtime_id"] != native_runtime || p["session_id"] != grant.session_id || p["grant_id"] != grant.grant_id { Some("grant_unavailable".to_owned()) }
+                            else if method == "shared_decide" && state.decision_error.is_some() { state.decision_error.clone() }
+                            else if matched.is_none() { Some("decision_stale".into()) }
+                            else if method == "shared_decide" && !state.decision_writable { Some("sharing_read_only".into()) }
+                            else { None };
+                        if let Some(code) = code { wire_error = Some(json!({"code":code,"delivery":"rejected"})); Value::Null }
+                        else if method == "shared_decision" {
+                            json!({"type":"shared_decision","contract":crate::decision_native::CONTRACT,"grant_id":grant.grant_id,"session_id":grant.session_id,"decision":state.decisions.as_ref().unwrap()[matched.unwrap()]})
+                        } else {
+                            // Synthetic source-side compare-and-remove, not a gateway acceptance.
+                            state.decisions.as_mut().unwrap().remove(matched.unwrap());
+                            count.fetch_add(1,Ordering::AcqRel);
+                            json!({"type":"shared_decision_applied","contract":crate::decision_native::CONTRACT,"grant_id":grant.grant_id,"session_id":grant.session_id,"request_id":p["request_id"],"occurrence_id":p["occurrence_id"],"action":p["action"]["type"]})
+                        }
                     }
                     "share_association" => {
                         let grant = state.grant.as_ref().unwrap();
@@ -149,11 +191,11 @@ impl Peer {
                     }
                     _ => panic!("unexpected method"),
                 };
-                let lose = state.lose_receipt && method == "shared_submit";
+                let lose = state.lose_receipt && matches!(method,"shared_submit" | "shared_decide");
                 let duplicate = state.duplicate_frame && method == "shared_submit";
                 let delay = state.delay && method == "shared_submit";
                 let association_delay_ms = if method == "share_association" { state.association_delay_ms } else { 0 };
-                if state.corrupt_receipt && method == "shared_submit" {
+                if state.corrupt_receipt && matches!(method,"shared_submit" | "shared_decide") {
                     result["grant_id"] = json!(OTHER);
                 }
                 let runtime = if state.wrong_runtime {
@@ -167,6 +209,7 @@ impl Peer {
                         None
                     }
                     "share_status" => state.status_pause.take(),
+                    "shared_attention" => state.attention_pause.take(),
                     _ => None,
                 };
                 drop(state);
@@ -185,9 +228,9 @@ impl Peer {
                 if lose {
                     return;
                 }
-                let mut frame = serde_json::to_vec(
-                    &json!({"version":1,"id":request["id"],"runtime_id":runtime,"result":result}),
-                )
+                let mut envelope = json!({"version":1,"id":request["id"],"runtime_id":runtime});
+                if let Some(error) = wire_error { envelope["error"] = error; } else { envelope["result"] = result; }
+                let mut frame = serde_json::to_vec(&envelope)
                 .unwrap();
                 frame.push(b'\n');
                 if duplicate {

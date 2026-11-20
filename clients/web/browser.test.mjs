@@ -27,6 +27,8 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
     const targets = [target];
     let metadataStatus = 200;
     let fleetStatus = 200;
+    let requestPending = true;
+    const decisionID = '1'.repeat(64), alertID = '2'.repeat(64);
     let agents = ['e', 'f'].map((letter, index) => ({id: letter.repeat(64), title: index ? 'Megatron full root' : 'Bumblebee full root',
       provider: 'djinn', project: 'Original project', activity: 'unknown', evidence: 'kitsune_snapshot', output_available: false}));
     try {
@@ -43,11 +45,31 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
           if (status !== 200) { res.writeHead(status); res.end(JSON.stringify({error: {code: 'unavailable'}})); return; }
           const now = Date.now();
           const selected = targets.find(row => req.url.includes(`/conversations/${row.id}/bindings/`)) ?? target;
+          const linked = targets.find(row => row.card?.fleet_agent_id === agents[0]?.id);
+          if (req.url === `/api/v1/decisions/${decisionID}/responses` && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+              const value = JSON.parse(body);
+              assert.deepEqual(value.action, {type: 'question_answer', answers: [['First'], ['Second', 'Custom literal']]});
+              requestPending = false;
+              res.end(JSON.stringify({contract: 'coven.decision-response.v1', id: decisionID, attempt_id: value.attempt_id,
+                action: 'question_answer', outcome: 'applied', delivery: 'applied'}));
+            }); return;
+          }
           const value = req.url === '/api/v1/fleet'
             ? {contract: 'coven.fleet-observer.v1', generated_at_ms: now, refresh_interval_ms: 3000, stale_after_ms: 15000,
               endpoints: [{id: 'desktop', label: 'Synthetic host', connection: 'reachable', last_attempt_at_ms: now,
                 observed_at_ms: now, error: null, agents: agents.map(agent => ({...agent, observed_at_ms: now}))}]}
             : req.url === '/api/v1/conversations' ? {contract: 'coven.conversations.v1', conversations: targets}
+              : req.url === '/api/v1/attention' ? {contract: 'coven.attention.v1', state: 'observed', omitted_count: 0, unavailable_count: 0, unlinked_count: 0,
+                items: linked && requestPending ? [{id: decisionID, alert_id: alertID, conversation_id: linked.id, team: linked.team,
+                  ...linked.card, kind: 'question', can_respond: true, details_available: true}] : []}
+              : req.url === '/api/v1/csrf' ? {contract: 'coven.csrf.v1', token: `0-${'a'.repeat(64)}-${'b'.repeat(64)}`}
+              : req.url === `/api/v1/decisions/${decisionID}` ? {contract: 'coven.decision.v1', id: decisionID, alert_id: alertID, kind: 'question', can_respond: true,
+                decision: {kind: 'question', questions: [{question: '<script>Full first question</script>', header: 'Single',
+                  options: [{label: 'First', description: '<b>Complete description</b>'}], multiple: false, custom: false},
+                {question: 'Full second question', header: 'Multiple', options: [{label: 'Second', description: 'Complete second choice'}], multiple: true, custom: true}]}}
               : {contract: 'coven.conversations.v1', id: selected.id, team: selected.team, source: 'djinn.conversation-read.v1',
                 messages: [{role: 'assistant', text: '', truncated: false}, {role: 'user', text: '<script>literal</script>', truncated: false}],
                 has_older: false, truncated: false, omitted_parts: true, projection_sha256: 'b'.repeat(64)};
@@ -134,7 +156,9 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       targets.splice(0, 1, {...target, id: '9'.repeat(64)}); // Unlinked history never creates another root or a chooser.
       await evaluate(`document.getElementById('refresh').click()`);
       await wait(`document.querySelector('.agent-card').getAttribute('aria-disabled') === 'false'`);
+      await wait(`document.querySelector('.agent-card').textContent.includes('Needs response')`);
       assert.equal(reads().length, 0);
+      assert.equal(requests.some(req => req.path.startsWith('/api/v1/decisions/')), false);
       await evaluate(`document.querySelector('.agent-card').focus(); document.querySelector('.agent-card').click()`);
       await wait(`document.querySelectorAll('.conversation-message').length === 1`);
       assert.equal(reads().length, 1);
@@ -144,6 +168,15 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       assert.equal(await evaluate(`document.querySelector('.card-title').textContent`), 'Bumblebee full root');
       assert.match(await evaluate(`document.getElementById('conversation-link-status').textContent`), /Verified terminal link/);
       assert.equal(await evaluate(`document.activeElement.id`), 'close-conversation');
+      await wait(`document.querySelectorAll('#decision-details fieldset').length === 2`);
+      assert.equal(await evaluate(`document.querySelector('#decision-details pre').textContent`), '<script>Full first question</script>');
+      assert.equal(await evaluate(`document.querySelector('#decision-details script') === null`), true);
+      assert.equal(await evaluate(`document.querySelectorAll('#decision-details input[type=radio]').length`), 1);
+      assert.equal(await evaluate(`document.querySelectorAll('#decision-details input[type=checkbox]').length`), 1);
+      await evaluate(`document.querySelector('#decision-details input[type=radio]').click(); document.querySelector('#decision-details input[type=checkbox]').click(); document.querySelector('#decision-details textarea').value = 'Custom literal'; [...document.querySelectorAll('#decision-details button')].find(b => b.textContent === 'Answer once').click()`);
+      await wait(`document.getElementById('decision-status').textContent.includes('native wait settled, not tool completion')`);
+      assert.equal(requests.filter(req => req.method === 'POST').length, 1);
+      assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
       await evaluate(`document.getElementById('close-conversation').click()`);
       await wait(`document.activeElement === document.querySelector('.agent-card')`);
       await call('browsingContext.setViewport', {context, viewport: {width: 1280, height: 900}, devicePixelRatio: 1});
@@ -193,7 +226,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       await evaluate(`document.getElementById('refresh').click()`);
       await wait(`document.getElementById('conversation-list-status').textContent.includes('Access denied')`);
       assert.equal(reads().length, 4);
-      assert.equal(requests.some(req => req.method === 'POST'), false);
+      assert.equal(requests.filter(req => req.method === 'POST').length, 1);
     } finally {
       const errors = [];
       for (const timer of timers) cancelTimer(timer);
