@@ -13,6 +13,29 @@ pub struct Config {
     pub endpoints: Vec<EndpointConfig>,
     #[serde(default)]
     pub conversations: Vec<ConversationConfig>,
+    #[serde(default)]
+    pub conversation_sources: Vec<ConversationSourceConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConversationSourceConfig {
+    pub id: String,
+    pub label: String,
+    pub team: String,
+    pub directory: String,
+    pub allowed_logins: Vec<String>,
+    #[serde(default)]
+    pub submit_logins: Vec<String>,
+    #[serde(default)]
+    pub control_workspace: Option<String>,
+}
+
+fn local_directory(value: &str) -> bool {
+    value.starts_with('/')
+        && value.len() <= 4096
+        && !value.chars().any(char::is_control)
+        && !value.split('/').any(|s| matches!(s, "." | ".."))
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -150,6 +173,40 @@ impl Config {
             }
             // Local Unix sockets only. Remote native conversation targets are unsupported.
             crate::observation_socket::validate_path(&target.native_socket)?;
+        }
+        if self.conversation_sources.len() > 8 {
+            return Err(Error("conversation_source_limit"));
+        }
+        for source in &self.conversation_sources {
+            if !token(&source.id)
+                || !ids.insert(&source.id)
+                || !token(&source.team)
+                || source.label.is_empty()
+                || source.label.len() > 256
+                || source.label.chars().any(char::is_control)
+                || !local_directory(&source.directory)
+                || source.allowed_logins.is_empty()
+                || source.allowed_logins.len() > 64
+                || source.allowed_logins.iter().collect::<HashSet<_>>().len()
+                    != source.allowed_logins.len()
+                || source
+                    .allowed_logins
+                    .iter()
+                    .any(|l| !self.allowed_logins.contains(l))
+                || source.submit_logins.iter().collect::<HashSet<_>>().len()
+                    != source.submit_logins.len()
+                || source
+                    .submit_logins
+                    .iter()
+                    .any(|l| !source.allowed_logins.contains(l))
+                || (!source.submit_logins.is_empty() && source.control_workspace.is_none())
+                || source
+                    .control_workspace
+                    .as_ref()
+                    .is_some_and(|p| !local_directory(p) || !Path::new(p).is_dir())
+            {
+                return Err(Error("invalid_conversation_source"));
+            }
         }
         ids.clear();
         for endpoint in &self.endpoints {

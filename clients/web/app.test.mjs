@@ -9,12 +9,29 @@ test('Coven Web assets and package retain their canonical branding and API contr
   const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
   const metadata = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
   assert.match(import.meta.url, /\/clients\/web\/app\.test\.mjs$/);
-  assert.match(html, /<title>Coven Web · Fleet Observer<\/title>/);
+  assert.match(html, /<title>Coven Web · Sessions<\/title>/);
+  assert.equal((html.match(/class="agent-grid"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /id="(?:conversation-list|refresh-conversations|conversations-title|chat-picker|shared-chats)"/);
   assert.match(html, /<h1>Coven Web<\/h1>/);
   assert.match(html, /class="brand-mark" aria-hidden="true">C<span>/);
   assert.match(html, /<noscript><p class="notice">Coven Web needs JavaScript/);
   assert.equal(metadata.name, 'coven-web-client');
   assert.equal(CONTRACT, 'coven.fleet-observer.v1');
+});
+
+test('user-marked explanatory elements are removed while retained copy and compact spacing remain', () => {
+  const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /delete this/i);
+  assert.doesNotMatch(html, /<footer\b/i);
+  assert.match(html, /<p class="eyebrow">Agent Management<\/p>/);
+  assert.match(html, /<span class="read-only">Private<\/span>/);
+  assert.match(html, /Coverage is incomplete\./);
+  assert.match(html, /A quiet view of your sessions\./);
+  assert.doesNotMatch(css, /\bfooter\b|\.intro > p:last-child/);
+  assert.match(css, /\.shell \{[^}]*padding: 0 20px 32px;/);
+  assert.match(css, /\.shell \{ padding: 0 16px 24px; \}/);
+  assert.match(css, /\.shell \{ padding: 0 36px 40px; \}/);
 });
 
 const A = 'a'.repeat(64);

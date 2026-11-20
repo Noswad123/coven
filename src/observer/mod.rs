@@ -1,6 +1,9 @@
-//! Memory-only, read-only fleet observer. Construction never attaches or starts agents.
+//! Memory-only fleet observation and explicitly gated shared conversations.
+//! Construction never attaches or starts agents.
+mod cardlinks;
 pub mod config;
 mod conversations;
+mod discovery;
 pub mod http;
 mod model;
 mod source;
@@ -227,6 +230,7 @@ fn valid_id(id: &str) -> bool {
 }
 
 pub struct Observer {
+    cardlinks: Mutex<cardlinks::State>,
     conversations: conversations::Conversations,
     endpoints: Vec<Arc<Endpoint>>,
     allow_output: bool,
@@ -241,6 +245,7 @@ impl Observer {
         let epoch =
             crate::platform::random_uuid_hex().map_err(|_| Error("observer_start_failed"))?;
         let mut observer = Self {
+            cardlinks: Mutex::new(cardlinks::State::default()),
             conversations: conversations::Conversations::new(config, &epoch)?,
             endpoints: config
                 .endpoints

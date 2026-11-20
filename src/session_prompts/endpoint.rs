@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Endpoint {
     pub(crate) socket: crate::observation_socket::Endpoint,
     parent_device: u64,
@@ -92,15 +92,7 @@ pub(super) fn prompt_file(address: &str) -> WireResult<String> {
         .read_to_end(&mut raw)
         .map_err(io)?;
     let text = String::from_utf8(raw).map_err(|_| Failure::new("invalid_prompt_text"))?;
-    if text.len() > LIMIT
-        || text.trim().is_empty()
-        || text.chars().any(|c| {
-            (c <= '\u{1f}' && !matches!(c, '\t' | '\r' | '\n'))
-                || ('\u{7f}'..='\u{9f}').contains(&c)
-        })
-    {
-        return Err(Failure::new("invalid_prompt_text"));
-    }
+    validate_text(&text).map_err(|e| Failure::new(e.code()))?;
     Ok(text)
 }
 

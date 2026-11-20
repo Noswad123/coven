@@ -42,7 +42,7 @@ struct Conversation {
 
 // Authority parser rejects duplicate keys and nonfinite values. This dedicated
 // profile permits 8 KiB text leaves, unlike the ordinary 4K observation profile.
-fn decode(payload: &[u8]) -> Result<Value> {
+pub(crate) fn decode(payload: &[u8]) -> Result<Value> {
     fn walk(value: &crate::values::Value, depth: usize) -> Result<()> {
         use crate::values::Value as V;
         if depth > 32 || (depth == 32 && matches!(value, V::Object(_) | V::Array(_))) {
@@ -150,7 +150,7 @@ fn exchange(
     })
 }
 
-fn projection(result: Value, session: &str) -> Result<Value> {
+pub(crate) fn projection(result: Value, session: &str) -> Result<Value> {
     let value: Conversation =
         serde_json::from_value(result).map_err(|_| Error("invalid_conversation"))?;
     let mut ids = HashSet::new();

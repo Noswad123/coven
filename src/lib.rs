@@ -78,6 +78,7 @@ pub mod session_resume_plans;
 mod session_support;
 pub mod session_views;
 pub mod session_watch;
+mod shared_native;
 pub mod state_commands;
 pub mod storage;
 mod strict_json;

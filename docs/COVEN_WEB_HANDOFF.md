@@ -1,5 +1,239 @@
 # Coven Web: progress and integration handoff
 
+## BASIC one-click UI and approved copy cleanup deployed, 2026-11-19
+
+This is the current record and supersedes the picker/manual-choice fallback below.
+Basic root cards now open their one exact verified conversation on the first click.
+There is no picker, manual binding, Shared chats chooser or third native fallback
+card. Unlinked, stale, ambiguous or unsupported observations show **Chat unavailable**
+with Details separate; no identity is guessed to make the card look ready.
+
+The user confirmed concurrent HTML edits and requested deletion of elements marked
+"Delete This". Those paragraphs and the marked footer were removed. "Agent
+Management", "Private", the shorter coverage text and the retained heading were
+preserved. Orphan footer/paragraph CSS was removed and shell bottom padding supplies
+phone/desktop breathing room without an empty footer.
+
+The gateway now runs `~/.local/libexec/coven-web/2bc5cde074cbb2d3/bin/coven`, SHA256
+`2bc5cde074cbb2d33c0eaee0f4e1cf6bb258f8d7c0ff5234d460228189db2a96`.
+Future dev Coven selection is `coven-native-3ba7akbi`; the exact preceding unit is
+`~/.config/systemd/user/coven-web.service.rollback-26e48daf`. Configuration, source
+ACLs, Serve and native processes were not changed by the gateway deployment.
+
+Native startup now has bounded read-only initial readiness/target-capture recovery
+until its first pinned context. Unchanged heartbeats no longer starve slow valid
+qualification; true selection/context changes still revoke immediately. Future UI
+launches select bundle
+`de541eb6dc173317ff1eec142b5448b3e78a0a4538110a6e05ede4a67e17be99`.
+Its CLI bytes are unchanged; older bundles remain retained. These changes cannot
+retrofit the old compiled worker. The last live metadata showed two roots, one
+unlinked shared chat and zero verified links: one-click live reading is **not yet
+established** until a deliberate updated-UI relaunch supplies provenance. No active
+agent was restarted or signaled. Refreshing the phone loads the new UI contract;
+it does not itself activate native matching.
+
+Validation: 89 Node checks including real Firefox, eight gateway and two packaging
+tests passed; three producer opt-ins were not rerun for this UI-only release.
+Formatting, syntax, release build and candidate/live HTTPS asset/copy/metadata
+checks passed. Native final combined scope passed 151 tests and typecheck; an
+initial receipt-timing failure needed an unchanged-budget rerun and is not claimed
+as a root-cause fix. The overlapping thread suite passed 11 tests again. Network-
+denied compiled normal-startup checks passed before/after native publication with
+automatic capabilities and no grant before selection, without dependency reification,
+model calls or user chats. This is not real selected-session/phone chat acceptance.
+All owned test/build/browser/helper artifacts were cleaned. No worktrees, source
+commits or pushes were created; existing unrelated edits were preserved.
+
+## Root-card conversation correction deployed, 2026-11-19
+
+This supersedes the native-only root-card fallback below, which duplicated the
+user's existing session card. Root cards now come **only from fleet observations**:
+the live rollout's two observations plus one shared chat produce exactly two root
+cards. Chat availability no longer appends a third tile.
+
+Verified root links still open their pinned conversation directly. An unlinked
+root opens an explicit conversation picker, even if there is only one candidate.
+The user may choose an exact authorized ID/team for that root; subsequent clicks
+reuse that page-local choice while valid. It is labeled as user-selected, not a
+verified terminal association. Choices move rather than alias between roots, and
+expiry, revocation, reference replacement, hiding or conflicting verified metadata
+clears/fences them. A small Shared chats button preserves access without fleet
+rows; it does not create another root card. No session is chosen by label/order.
+
+Gateway artifact: `~/.local/libexec/coven-web/26e48daf7be7b788/bin/coven`, SHA256
+`26e48daf7be7b7888fd57e132c896618576c6f240462b863031c7e1ddf29d981`.
+Future dev selection is `coven-native-uvp_ofhc`. The previous unit is retained at
+`~/.config/systemd/user/coven-web.service.rollback-1d0e4b56`.
+
+Validation passed 85 Node tests, including installed Firefox real-DOM phone/desktop
+coverage, eight gateway tests and two packaging tests. Three producer opt-ins were
+not rerun for this frontend-only change. Syntax, formatting, release build and live
+HTTPS assets/metadata checks passed. Only the gateway was restarted: **no Djinn
+restart is needed for this interaction**, and no native/backend association was
+forged. Source/configuration policies, Serve and active agents were preserved.
+Owned test/build/browser artifacts were cleaned; no worktrees, commits or pushes
+were created. Refresh the phone page to load the correction.
+
+## Unified session cards deployed, 2026-11-19
+
+The site now has one **Sessions** grid, shared Host/Team filters, and one refresh
+flow. There is no separate Conversations section. Chat-capable cards open the exact
+authorized conversation; verified associations merge the chat and fleet observation
+into one card, with terminal details secondary. Unlinked chats remain usable as
+clearly labeled native-only cards. Unsupported/ambiguous observations show honest
+details rather than opening a guessed conversation.
+
+The private association contract and gateway checks are documented in
+[CARD_CONVERSATION_NAVIGATION.md](CARD_CONVERSATION_NAVIGATION.md). Matching requires
+qualified native reporter/SID provenance, a current sharing grant, configured local
+Kit endpoint identity, exact terminal/pane/workspace/tab mapping, live terminal
+incarnation, bounded leases and bidirectional uniqueness. Pinned bound reads reject
+stale clicks instead of following a newly selected session. Existing source ACLs,
+CSRF, prompt admission and no-retry/uncertainty semantics are unchanged.
+
+Gateway artifact:
+`~/.local/libexec/coven-web/1d0e4b56d4631f4c/bin/coven`, SHA256
+`1d0e4b56d4631f4c152356adf7db6419eacad0f28980bf5624274dccea0ce337`.
+The exact previous unit is retained at
+`~/.config/systemd/user/coven-web.service.rollback-8b1d3f7a`.
+Future public dev Coven launches select `coven-native-v8qc2lx_`.
+
+Future native launches select bundle
+`e4112eb7ee01153a0d3fcc0c0ce52a1d90af910ea4853345d176b6dbd6868e5d`;
+the CLI bytes are unchanged and the preceding bundle remains retained. A compiled
+normal-TUI sandbox advertised the new optional association capability. Existing UI
+processes were not restarted: the live rollout observed two fleet cards, one
+unlinked writable native card and zero merged cards because the running UI lacked
+that optional capability. Refreshing the phone immediately gives the unified grid;
+a later deliberate Djinn restart enables provenance for merging its existing card.
+No restart is required merely to use an unlinked native chat card. Remote native
+association/chat, including Megatron, remains unsupported rather than inferred.
+
+Validation: 76 Node tests; all 12 card-link tests within the scoped observer suite;
+shared-native, prompt, conversation, HTTP, installation/package, and separately
+invoked actual sharing/read-producer fixtures passed. All-target check, formatting
+and release build passed. Clippy retained only the five known unchanged warnings.
+Native final scoped validation passed 249 distinct tests and package typecheck.
+Candidate/installed compiled startup and real gateway HTTPS asset/metadata/refusal
+checks passed. Real-browser keyboard/visual and real merged-user-chat acceptance
+were not performed. No transcripts or live prompts were used for rollout checks.
+
+Only the web gateway was restarted; configuration, policy, Serve, remote helpers and
+active native agents were preserved. All owned build/test artifacts were cleaned.
+No new worktrees, commits or pushes were created; changes remain in the normal main
+checkouts alongside the previously uncommitted implementation.
+
+## Blank-entry presentation fix deployed, 2026-11-19
+
+The gateway now runs `~/.local/libexec/coven-web/8b1d3f7aa9b7121f/bin/coven`
+(SHA256 `8b1d3f7aa9b7121fc3a4c5872f7d626ce1895ea2de640d4b4f359dc8d3872420`).
+The browser hides entries without displayable text, reports their count, preserves
+real text and omission/truncation labels, and explains all-empty samples. This is
+presentation-only; native projection/digest/API and sharing policy are unchanged.
+Refresh the browser; **no Djinn restart is needed** for this fix. Only the gateway
+was restarted, with an exact unit backup at
+`~/.config/systemd/user/coven-web.service.rollback-e0857322`. Future dev Coven launches
+select `coven-native-obx75bs4`; the previous payload is retained.
+
+Validation: 56 Node tests, eight HTTP gateway tests and two native-package tests
+passed; three opt-in gateway tests were not rerun for this frontend-only change.
+Syntax, formatting, whitespace, offline release build, candidate and real Serve
+HTTPS assets/health/metadata checks passed. Observer configuration and Serve were
+unchanged; no live prompts/model calls or native restarts were performed. Owned
+build/test artifacts were cleaned. No worktrees, source commits or pushes were
+created for this fix.
+
+## Normal-launch sharing and follow-ups deployed, 2026-11-19
+
+This is the current record; the deployment and implementation overlays below are
+historical. The previous read-only/manual-registration gap is now addressed for
+normal **local** full-TUI launches after one explicit user-level enablement.
+
+### User workflow and scope
+
+1. Finish/save current work, exit the old UI, and relaunch Djinn normally on
+   Bumblebee (`djinn --ui` through the existing dev selection). No per-launch socket
+   variable or manual session/runtime ID is needed.
+2. Open the desired root session in the local Chat view. Its hydrated selection
+   publishes a short-lived native grant; leaving/deselecting expires/revokes it.
+3. Reload the phone page at `https://bumblebee.tail97624b.ts.net` and use
+   **Conversations**, not process-discovery fleet cards. Authorized writable
+   conversations have a follow-up composer. Read refresh never sends a prompt.
+
+The new setting is captured at worker startup. Existing processes were not
+restarted/signaled and cannot gain the integration by rebuilding or changing the
+setting alone. No live-chat or live-model acceptance is claimed until a real new
+session is deliberately selected. Permission/question answering, remote native
+adapters (including Megatron), mini/headless/explicit HTTP and full-history views
+remain outside this slice. A follow-up is not approval of an outstanding request.
+
+### Installed setup
+
+- Gateway: `~/.local/libexec/coven-web/e085732203c643c5/bin/coven`, SHA256
+  `e085732203c643c53c070bbca012181a9d548115479905d33c68c6782c050b71`.
+  Future public dev Coven launches use `coven-native-vvurzumu`.
+- Future native UI launches select bundle
+  `f92f874abcea6255d269d19d0b1b3114dbdf737244e3bc70a8a8e45f15031078`
+  under `~/.local/libexec/arcana-dev/djinn/bin/.djinn/`. The CLI bytes are unchanged.
+- `~/.config/djinn/coven-web.json` is owned/0600, mode `read_write`, registry
+  `/run/user/1000/coven-web` (0700). The dotfile-managed parent symlink is preserved;
+  the loader validates/fences its trusted canonical directory and no-follow leaf.
+- The observer has one `local-djinn` source for team `development`, with the
+  existing sole owner as reader/writer. The control workspace is
+  `~/.local/state/coven-web/control` (0700), initialized blank without launching
+  any agent, provider or tmux runtime. Native working directories remain separate.
+- The two fleet endpoints, global allowlist, disabled best-effort terminal output,
+  Serve route, public wrappers and Arcana source registry were preserved. Only the
+  gateway was restarted. Same-user local processes remain trusted; this is not
+  hostile-local-user isolation.
+
+Native authority is now a five-second selected-root/context grant, not knowledge
+of a SID. Old references cannot retarget on selection/reload/runtime changes.
+HTTP submissions require resource writer permission, exact Origin and CSRF, bounded
+strict JSON, and the existing control-workspace admission gate. Lost receipts remain
+uncertain; attempts are not automatically retried. The browser retains sanitized
+uncertainty independently per originating conversation, without retaining prompt text.
+
+### Validation, rollback and cleanup
+
+- Main-checkout Node suite: 53 passed. Scoped Coven Rust checks passed, including
+  68 observer units, 19 prompt workflows, all-target check and release build.
+  The two separately invoked actual sharing-producer HTTP tests and the older
+  read-producer fixture passed. They use synthetic native services, not user chats.
+- Native main-checkout baseline: 219 distinct tests passed, one optional hosting
+  test skipped, and package typecheck passed. After the config-alias fix, 22 sharing
+  tests and package typecheck were rerun. These counts overlap; do not sum them.
+- Compiled normal-TUI sandbox checks passed before/after publication with a
+  symlinked config parent, automatic endpoint publication, shared capability and
+  no grant until selection. No socket/SID override, transcript or model call.
+- Candidate, live loopback and actual Serve HTTPS checks passed for health,
+  assets/composer, metadata, CSRF and unauthenticated/unknown-target write refusal.
+  There were zero real native grants at rollout; a deliberate UI restart remains
+  the activation boundary. Full regression/phone-prompt/model acceptance is not claimed.
+- Strict Clippy still reports only the five known unchanged-code style findings.
+  All owned test/build/smoke directories and children were cleaned.
+
+Immediate gateway rollback copies are
+`~/.config/coven-web/observer.pre-web-sharing.json` and
+`~/.config/systemd/user/coven-web.service.rollback-f0904e1d` (both 0600).
+Restore only those config/unit contents, reload the user manager and restart only
+`coven-web.service`; leave Serve and active native agents alone. Previous binaries
+and older rollback copies remain retained.
+
+Source is integrated into main checkouts at Coven `c907fd5` and Djinn `9b33615`
+as uncommitted changes. The three new effort worktrees were removed normally after
+verified integration and complete recovery snapshots:
+
+| Removed worktree | Repository | Recovery stash object |
+| --- | --- | --- |
+| `coven-web-sharing-client` | Coven | `85778eed50cffa8a079b642a5e099722a076dbbb` |
+| `coven-web-sharing-core` | Coven | `24cc1b6653101617d5e3b8b68c0f539ef1b894d4` |
+| `djinn-web-sharing` | Djinn | `0674788474ccbf85fc3bfd436bedf5e89c840507` |
+
+Retain these exact recovery entries until integrated source is committed and no
+longer needs recovery. Unrelated worktrees, branches, old recovery stashes and
+remote worktrees were not removed. No source commits or pushes were made.
+
 ## Current deployment and cleanup, 2026-11-19
 
 This section supersedes the historical worker/reconciliation/deployment records

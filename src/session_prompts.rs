@@ -1,4 +1,4 @@
-//! Explicit native prompt admission. No discovery, retries, or terminal input.
+//! Explicit native prompt admission and gated in-memory sharing; no retries or terminal input.
 use crate::observation_socket::{
     Cancel, Delivery, Failure, InterruptGuard, ReadBudget, WireResult, check,
 };
@@ -255,6 +255,90 @@ pub(crate) fn fresh_id() -> WireResult<String> {
         &raw[16..20],
         &raw[20..]
     ))
+}
+
+pub(crate) fn validate_text(text: &str) -> Result<()> {
+    crate::error::require(
+        text.len() <= LIMIT
+            && !text.trim().is_empty()
+            && !text.chars().any(|c| {
+                (c <= '\u{1f}' && !matches!(c, '\t' | '\r' | '\n'))
+                    || ('\u{7f}'..='\u{9f}').contains(&c)
+            }),
+        "invalid_prompt_text",
+    )
+}
+
+/// The caller runs this entire operation on its owned blocking mutation job.
+/// The non-Send transport guard remains on this thread through the final receipt.
+pub(crate) fn shared_submit(
+    workspace: &Path,
+    endpoint: &endpoint::Endpoint,
+    runtime: &str,
+    grant: &crate::shared_native::Grant,
+    request_id: &str,
+    text: &str,
+    still_authorized: impl FnOnce() -> bool,
+) -> Result<JsonValue> {
+    validate_text(text)?;
+    crate::error::require(
+        protocol::uuid(request_id)
+            && protocol::uuid(runtime)
+            && protocol::uuid(&grant.grant_id)
+            && protocol::identifier(&grant.session_id, "ses_"),
+        "invalid_prompt_uuid",
+    )?;
+    // Refuse runtime-launch/orphan authority before selecting or fencing an endpoint.
+    let deadline = crate::shared_native::deadline();
+    let gate = crate::session_support::admit(workspace)?;
+    crate::session_support::validate_admission(workspace, &gate)?;
+    let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+    let mut report = json!({"outcome":"unavailable","delivery":"unsent","diagnostics":[],
+        "prompt_bytes":text.len(),"prompt_sha256":digest,"native_prompt_acceptance":"unestablished"});
+    let result: WireResult<()> = (|| {
+        let mut connection = crate::shared_native::Connection::new(endpoint, runtime, deadline);
+        connection.capabilities()?;
+        connection.require_grant(grant, true)?;
+        crate::session_support::validate_admission(workspace, &gate)
+            .map_err(|_| Failure::new("authority_unavailable"))?;
+        let mut params = connection.params(grant);
+        params["text"] = json!(text);
+        let reply = connection.call_checked("shared_submit", params, request_id, || {
+            if still_authorized() {
+                Ok(())
+            } else {
+                Err(Failure::new("grant_unavailable"))
+            }
+        })?;
+        crate::shared_native::receipt(&reply, grant, &digest, text.len())?;
+        report["outcome"] = json!("accepted");
+        report["delivery"] = json!("accepted");
+        report["native_prompt_acceptance"] = json!("accepted");
+        Ok(())
+    })();
+    if let Err(mut error) = result {
+        // Only this closed vocabulary is browser-visible, never a peer string/path.
+        error.code = match error.code.as_str() {
+            "grant_unavailable"
+            | "sharing_read_only"
+            | "sharing_unsupported"
+            | "native_runtime_mismatch"
+            | "native_request_capacity"
+            | "native_session_unavailable"
+            | "native_request_unavailable"
+            | "native_request_already_seen"
+            | "native_admission_uncertain"
+            | "invalid_native_frame"
+            | "invalid_native_receipt"
+            | "authority_unavailable"
+            | "timeout"
+            | "response_limit" => error.code,
+            _ => "native_unavailable".into(),
+        };
+        failure(&mut report, error);
+    }
+    drop(gate);
+    Ok(report)
 }
 
 fn exchange(

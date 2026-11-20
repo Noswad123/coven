@@ -208,6 +208,72 @@ fn project_snapshot(reply: &socket::Reply) -> Result<(Inventory, N)> {
     ))
 }
 
+/// Card-only closed reads. The publisher's socket is compared, never selected.
+pub(super) fn verify_card(
+    path: &str,
+    generation: &str,
+    agent: &Agent,
+    target: &crate::shared_native::CardTarget,
+    deadline: Instant,
+) -> Result<()> {
+    let invalid = || Error("stale_reference");
+    socket::check(deadline, &NoCancel).map_err(|_| invalid())?;
+    let endpoint = socket::select(path).map_err(|_| invalid())?;
+    if endpoint.resolved != target.socket
+        || endpoint.device != target.device
+        || endpoint.inode != target.inode
+        || agent.terminal_id != target.terminal_id
+    {
+        return Err(invalid());
+    }
+    let mut budget = ReadBudget::new(4 * 1024 * 1024);
+    let reply = socket::naming_snapshot(&endpoint, deadline, &mut budget, &NoCancel)
+        .map_err(|_| invalid())?;
+    let (inventory, snapshot) = project_snapshot(&reply)?;
+    if inventory.generation != generation
+        || crate::observation_wire::to_json(field(&snapshot, "terminal_navigation")?)?["version"]
+            != 1
+    {
+        return Err(invalid());
+    }
+    let panes = field(&snapshot, "panes")?.as_array().ok_or_else(invalid)?;
+    if !panes.iter().any(|p| {
+        [
+            ("terminal_id", &agent.terminal_id),
+            ("pane_id", &agent.pane_id),
+            ("workspace_id", &agent.workspace_id),
+            ("tab_id", &agent.tab_id),
+        ]
+        .iter()
+        .all(|(key, value)| string(p, key).ok() == Some(value.as_str()))
+    }) {
+        return Err(invalid());
+    }
+    let reply = socket::naming_inspect(
+        &endpoint,
+        &agent.terminal_id,
+        deadline,
+        &mut budget,
+        &NoCancel,
+    )
+    .map_err(|_| invalid())?;
+    let root = crate::observation_wire::decode_native(&reply.payload).map_err(|_| invalid())?;
+    let inspected = result(&root, &reply.request_id, "terminal_inspected")?;
+    let inspected = crate::observation_wire::to_json(&inspected)?;
+    if inspected.as_object().is_none_or(|o| o.len() != 7)
+        || inspected["availability"] != "live"
+        || inspected["terminal_id"] != agent.terminal_id
+        || inspected["pane_id"] != agent.pane_id
+        || inspected["workspace_id"] != agent.workspace_id
+        || inspected["tab_id"] != agent.tab_id
+        || inspected["runtime_generation"] != target.runtime_generation
+        || socket::select(path).ok().as_ref() != Some(&endpoint)
+    {
+        return Err(invalid());
+    }
+    socket::check(deadline, &NoCancel).map_err(|_| invalid())
+}
+
 fn inventory(path: &str, deadline: Instant, budget: &mut ReadBudget) -> Result<Inventory> {
     let acquisition = crate::agent_discovery::acquire(
         crate::agent_discovery::AcquisitionRequest {

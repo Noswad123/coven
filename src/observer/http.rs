@@ -1,7 +1,7 @@
 //! Same-origin loopback HTTP facade. Serve is trusted; local processes are trusted too.
 use super::{Config, Observer};
 use crate::{Error, Result};
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::{
     Request, Response,
     body::{Bytes, Incoming},
@@ -9,13 +9,18 @@ use hyper::{
     service::service_fn,
 };
 use hyper_util::rt::{TokioIo, TokioTimer};
+use ring::{
+    hmac,
+    rand::{SecureRandom, SystemRandom},
+};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -25,6 +30,7 @@ use tokio::{
 };
 
 const MAX_JSON: usize = 2 * 1024 * 1024;
+const MAX_BODY: usize = 400 * 1024;
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'";
 
 trait Api: Send + Sync {
@@ -34,15 +40,45 @@ trait Api: Send + Sync {
     fn conversation(&self, _login: &str, _id: &str) -> Result<Value> {
         Err(Error("invalid_reference"))
     }
+    fn linked_conversation(
+        &self,
+        _login: &str,
+        _agent: &str,
+        _conversation: &str,
+        _binding: &str,
+    ) -> Result<Value> {
+        Err(Error("invalid_reference"))
+    }
+    fn submission_allowed(&self, _login: &str, _id: &str) -> bool {
+        false
+    }
+    fn submit(&self, _login: &str, _id: &str, _request_id: &str, _text: &str) -> Result<Value> {
+        Err(Error("submission_disabled"))
+    }
     fn fleet(&self) -> Value;
     fn output(&self, id: &str) -> Result<Value>;
 }
 impl Api for Observer {
     fn conversations(&self, login: &str) -> Value {
-        self.conversations.list(login)
+        self.conversation_list(login)
     }
     fn conversation(&self, login: &str, id: &str) -> Result<Value> {
         self.conversations.read(login, id)
+    }
+    fn linked_conversation(
+        &self,
+        login: &str,
+        agent: &str,
+        conversation: &str,
+        binding: &str,
+    ) -> Result<Value> {
+        Observer::linked_conversation(self, login, agent, conversation, binding)
+    }
+    fn submission_allowed(&self, login: &str, id: &str) -> bool {
+        self.conversations.submission_allowed(login, id)
+    }
+    fn submit(&self, login: &str, id: &str, request_id: &str, text: &str) -> Result<Value> {
+        self.conversations.submit(login, id, request_id, text)
     }
     fn fleet(&self) -> Value {
         Observer::fleet(self)
@@ -56,14 +92,82 @@ struct Policy {
     authority: String,
     origin: String,
     logins: Vec<String>,
+    csrf: Csrf,
+}
+
+struct Csrf {
+    key: hmac::Key,
+    started: Instant,
+}
+impl Csrf {
+    fn new() -> Result<Self> {
+        Ok(Self {
+            key: hmac::Key::generate(hmac::HMAC_SHA256, &SystemRandom::new())
+                .map_err(|_| Error("csrf_unavailable"))?,
+            started: Instant::now(),
+        })
+    }
+    fn issue(&self, login: &str) -> Result<String> {
+        let mut nonce = [0u8; 32];
+        SystemRandom::new()
+            .fill(&mut nonce)
+            .map_err(|_| Error("csrf_unavailable"))?;
+        let payload = format!("{}-{}", self.started.elapsed().as_secs(), hex(&nonce));
+        let tag = hmac::sign(&self.key, format!("{login}\0{payload}").as_bytes());
+        Ok(format!("{payload}-{}", hex(tag.as_ref())))
+    }
+    fn verify(&self, login: &str, token: &str) -> bool {
+        let Some((payload, tag)) = token.rsplit_once('-') else {
+            return false;
+        };
+        let Some((seconds, nonce)) = payload.split_once('-') else {
+            return false;
+        };
+        let Ok(seconds) = seconds.parse::<u64>() else {
+            return false;
+        };
+        let now = self.started.elapsed().as_secs();
+        if seconds > now
+            || now - seconds >= 60
+            || nonce.len() != 64
+            || !nonce
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return false;
+        }
+        let Some(tag) = unhex(tag) else { return false };
+        hmac::verify(&self.key, format!("{login}\0{payload}").as_bytes(), &tag).is_ok()
+    }
+}
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+fn unhex(value: &str) -> Option<Vec<u8>> {
+    if value.len() != 64 {
+        return None;
+    }
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let digit = |b| match b {
+                b'0'..=b'9' => Some(b - b'0'),
+                b'a'..=b'f' => Some(b - b'a' + 10),
+                _ => None,
+            };
+            Some(digit(pair[0])? * 16 + digit(pair[1])?)
+        })
+        .collect()
 }
 impl Policy {
-    fn from_config(config: &Config) -> Self {
-        Self {
+    fn from_config(config: &Config) -> Result<Self> {
+        Ok(Self {
             authority: config.public_origin["https://".len()..].to_owned(),
             origin: config.public_origin.clone(),
             logins: config.allowed_logins.clone(),
-        }
+            csrf: Csrf::new()?,
+        })
     }
 
     fn authorize(&self, meta: &Metadata) -> std::result::Result<(), u16> {
@@ -98,11 +202,6 @@ impl Policy {
             if !matches!(site, "same-origin" | "none") {
                 return Err(403);
             }
-        }
-        if header("transfer-encoding")?.is_some()
-            || header("content-length")?.is_some_and(|length| length != "0")
-        {
-            return Err(400);
         }
         Ok(())
     }
@@ -228,6 +327,12 @@ fn route(api: &dyn Api, policy: &Policy, slots: &AtomicUsize, meta: &Metadata) -
             },
         );
     }
+    if meta.header("transfer-encoding") != Ok(None)
+        || meta.header("content-encoding") != Ok(None)
+        || !matches!(meta.header("content-length"), Ok(None | Some("0")))
+    {
+        return Reply::error(400, "invalid_request");
+    }
     if meta.method != "GET" {
         return Reply::error(405, "method_not_allowed");
     }
@@ -237,8 +342,24 @@ fn route(api: &dyn Api, policy: &Policy, slots: &AtomicUsize, meta: &Metadata) -
         .ok()
         .flatten()
         .unwrap_or("");
+    if meta.url == "/api/v1/csrf" {
+        return match policy.csrf.issue(login) {
+            Ok(token) => Reply::json(200, &json!({"contract":"coven.csrf.v1","token":token})),
+            Err(_) => Reply::error(503, "csrf_unavailable"),
+        };
+    }
     if meta.url == "/api/v1/conversations" {
         return Reply::json(200, &api.conversations(login));
+    }
+    if let Some((agent, conversation, binding)) = linked_route(&meta.url) {
+        let Some(_slot) = OutputSlot::acquire(slots) else {
+            return Reply::error(429, "observer_busy");
+        };
+        return match api.linked_conversation(login, agent, conversation, binding) {
+            Ok(value) => Reply::json(200, &value),
+            Err(e) if e.code() == "invalid_reference" => Reply::error(404, "invalid_reference"),
+            Err(_) => Reply::error(409, "stale_reference"),
+        };
     }
     if let Some(id) = meta
         .url
@@ -340,14 +461,15 @@ pub fn serve(config: Config) -> Result<()> {
     config.validate()?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
-        .max_blocking_threads(2)
+        .max_blocking_threads(4)
         .enable_all()
         .build()
         .map_err(|_| Error("observer_start_failed"))?;
-    let policy = Arc::new(Policy::from_config(&config));
+    let policy = Arc::new(Policy::from_config(&config)?);
     let observer = Arc::new(Observer::start(&config)?);
     let slots = Arc::new(AtomicUsize::new(0));
     let outputs = Arc::new(Semaphore::new(2));
+    let mutations = Arc::new(Semaphore::new(2));
     let connections = Arc::new(Semaphore::new(64));
     let interrupt = crate::observation_socket::InterruptGuard::install()?;
     let result = runtime.block_on(async {
@@ -372,15 +494,25 @@ pub fn serve(config: Config) -> Result<()> {
                 drop(stream);
                 continue;
             };
-            let (api, policy, slots, outputs) = (
+            let (api, policy, slots, outputs, mutations) = (
                 observer.clone(),
                 policy.clone(),
                 slots.clone(),
                 outputs.clone(),
+                mutations.clone(),
             );
             tasks.spawn(async move {
                 let _permit = permit;
-                connection(stream, peer.ip().is_loopback(), api, policy, slots, outputs).await;
+                connection(
+                    stream,
+                    peer.ip().is_loopback(),
+                    api,
+                    policy,
+                    slots,
+                    outputs,
+                    mutations,
+                )
+                .await;
             });
         }
         drop(listener);
@@ -404,16 +536,68 @@ async fn connection(
     policy: Arc<Policy>,
     slots: Arc<AtomicUsize>,
     outputs: Arc<Semaphore>,
+    mutations: Arc<Semaphore>,
 ) {
+    let started = Instant::now();
+    // Hyper coalesces identical Content-Length fields. Preserve the closed
+    // framing rule before its parser normalizes them, without consuming bytes.
+    let invalid_length = match timeout(Duration::from_secs(5), async {
+        let mut headers = vec![0u8; 32768];
+        loop {
+            let length = stream.peek(&mut headers).await.ok()?;
+            if length == 0 {
+                return None;
+            }
+            if let Some(end) = headers[..length].windows(4).position(|w| w == b"\r\n\r\n") {
+                let lengths: Vec<_> = headers[..end]
+                    .split(|b| *b == b'\n')
+                    .skip(1)
+                    .filter(|line| {
+                        line.split(|b| *b == b':')
+                            .next()
+                            .is_some_and(|name| name.eq_ignore_ascii_case(b"content-length"))
+                    })
+                    .collect();
+                let invalid = lengths.iter().any(|line| {
+                    let value = line.splitn(2, |b| *b == b':').nth(1).unwrap_or_default();
+                    let value = value.trim_ascii();
+                    value.is_empty() || !value.iter().all(u8::is_ascii_digit)
+                });
+                return Some(lengths.len() > 1 || invalid);
+            }
+            if length == headers.len() {
+                return None;
+            }
+            // A peek of an incomplete header remains readable; avoid spinning.
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    {
+        Ok(Some(value)) => value,
+        _ => return,
+    };
     let service = service_fn(move |request: Request<Incoming>| {
         let meta = Metadata::from_request(&request, loopback);
-        // Never poll, collect or drain the peer's body, including on rejection.
-        drop(request);
-        let (api, policy, slots, outputs) =
-            (api.clone(), policy.clone(), slots.clone(), outputs.clone());
+        let (api, policy, slots, outputs, mutations) = (
+            api.clone(),
+            policy.clone(),
+            slots.clone(),
+            outputs.clone(),
+            mutations.clone(),
+        );
         async move {
-            dispatch(api, policy, slots, outputs, meta)
-                .await
+            let reply = if invalid_length {
+                drop(request);
+                Reply::error(400, "invalid_request")
+            } else if meta.method == "POST" {
+                submit_request(api, policy, mutations, meta, request.into_body()).await
+            } else {
+                // Refused GET bodies are never polled or drained.
+                drop(request);
+                dispatch(api, policy, slots, outputs, meta).await
+            };
+            reply
                 .response()
                 .map_err(|_| std::io::Error::other("http_header_error"))
         }
@@ -427,10 +611,177 @@ async fn connection(
         .header_read_timeout(Duration::from_secs(5));
     // Dropping the connection at the deadline closes its socket without draining.
     let _ = timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(20).saturating_sub(started.elapsed()),
         builder.serve_connection(TokioIo::new(stream), service),
     )
     .await;
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PromptBody {
+    contract: String,
+    request_id: String,
+    execute: bool,
+    text: String,
+}
+fn parse_prompt(body: &[u8]) -> Option<PromptBody> {
+    let prompt: PromptBody = serde_json::from_str(std::str::from_utf8(body).ok()?).ok()?;
+    if prompt.contract != "coven.conversation-submit.v1"
+        || !prompt.execute
+        || !crate::session_prompts::protocol::uuid(&prompt.request_id)
+        || prompt.text.len() > 65536
+        || prompt.text.trim().is_empty()
+        || prompt
+            .text
+            .chars()
+            .any(|c| c.is_control() && !matches!(c, '\t' | '\r' | '\n'))
+    {
+        return None;
+    }
+    Some(prompt)
+}
+
+// Cache/metadata only: no native I/O and no body polling on refusal.
+fn submit_preflight<'a>(
+    api: &dyn Api,
+    policy: &Policy,
+    meta: &'a Metadata,
+) -> std::result::Result<(&'a str, &'a str, usize), Reply> {
+    policy
+        .authorize(meta)
+        .map_err(|status| Reply::error(status, "access_denied"))?;
+    let id = meta
+        .url
+        .strip_prefix("/api/v1/conversations/")
+        .and_then(|s| s.strip_suffix("/prompts"))
+        .ok_or_else(|| Reply::error(405, "method_not_allowed"))?;
+    if !super::valid_id(id) {
+        return Err(Reply::error(400, "invalid_reference"));
+    }
+    let login = meta
+        .header("tailscale-user-login")
+        .ok()
+        .flatten()
+        .unwrap_or("");
+    if !api.submission_allowed(login, id) {
+        return Err(Reply::error(403, "submission_disabled"));
+    }
+    if meta.header("origin") != Ok(Some(policy.origin.as_str()))
+        || !matches!(
+            meta.header("sec-fetch-site"),
+            Ok(None | Some("same-origin"))
+        )
+        || !matches!(
+            meta.header("sec-fetch-mode"),
+            Ok(None | Some("cors" | "same-origin"))
+        )
+        || !matches!(meta.header("sec-fetch-dest"), Ok(None | Some("empty")))
+    {
+        return Err(Reply::error(403, "access_denied"));
+    }
+    if !meta
+        .header("x-coven-csrf")
+        .ok()
+        .flatten()
+        .is_some_and(|token| policy.csrf.verify(login, token))
+    {
+        return Err(Reply::error(403, "invalid_csrf"));
+    }
+    if !matches!(
+        meta.header("content-type"),
+        Ok(Some("application/json" | "application/json; charset=utf-8"))
+    ) || meta.header("transfer-encoding") != Ok(None)
+        || meta.header("content-encoding") != Ok(None)
+    {
+        return Err(Reply::error(400, "invalid_request"));
+    }
+    let length = meta
+        .header("content-length")
+        .ok()
+        .flatten()
+        .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n > 0 && *n <= MAX_BODY)
+        .ok_or_else(|| Reply::error(400, "invalid_request"))?;
+    Ok((login, id, length))
+}
+
+async fn submit_request<B>(
+    api: Arc<dyn Api>,
+    policy: Arc<Policy>,
+    mutations: Arc<Semaphore>,
+    meta: Metadata,
+    mut body: B,
+) -> Reply
+where
+    B: hyper::body::Body<Data = Bytes> + Unpin,
+{
+    let (login, id, length) = match submit_preflight(api.as_ref(), &policy, &meta) {
+        Ok(value) => value,
+        Err(reply) => return reply,
+    };
+    let Ok(permit) = mutations.try_acquire_owned() else {
+        return Reply::error(429, "observer_busy");
+    };
+    let collected = timeout(Duration::from_secs(2), async {
+        let mut bytes = Vec::with_capacity(length);
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|_| ())?;
+            let data = frame.into_data().map_err(|_| ())?;
+            if data.len() > length - bytes.len() {
+                return Err(());
+            }
+            bytes.extend_from_slice(&data);
+        }
+        if bytes.len() != length {
+            return Err(());
+        }
+        Ok(bytes)
+    })
+    .await;
+    let bytes = match collected {
+        Ok(Ok(bytes)) => bytes,
+        Err(_) => return Reply::error(408, "body_timeout"),
+        _ => return Reply::error(400, "invalid_request"),
+    };
+    let Some(prompt) = parse_prompt(&bytes) else {
+        return Reply::error(400, "invalid_prompt");
+    };
+    let (login, id) = (login.to_owned(), id.to_owned());
+    tokio::task::spawn_blocking(move || {
+        // The blocking job, not the HTTP waiter, owns mutation capacity.
+        let _permit = permit;
+        match api.submit(&login, &id, &prompt.request_id, &prompt.text) {
+            Ok(report) => Reply::json(200, &report),
+            // Never describe a missing receipt as proof of non-delivery.
+            Err(_) => Reply::error(503, "receipt_unavailable"),
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Reply::error(503, "receipt_unavailable"))
+}
+
+fn linked_route(path: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = path.strip_prefix("/api/v1/agents/")?.split('/');
+    let agent = parts.next()?;
+    if parts.next()? != "conversations" {
+        return None;
+    }
+    let conversation = parts.next()?;
+    if parts.next()? != "bindings" {
+        return None;
+    }
+    let binding = parts.next()?;
+    if parts.next()? != "messages"
+        || parts.next().is_some()
+        || ![agent, conversation, binding]
+            .iter()
+            .all(|id| super::valid_id(id))
+    {
+        return None;
+    }
+    Some((agent, conversation, binding))
 }
 
 async fn dispatch(
@@ -442,16 +793,18 @@ async fn dispatch(
 ) -> Reply {
     let output = meta.method == "GET"
         && policy.authorize(&meta).is_ok()
-        && (meta
-            .url
-            .strip_prefix("/api/v1/agents/")
-            .and_then(|s| s.strip_suffix("/output"))
-            .is_some_and(|id| {
-                id.len() == 64
-                    && id
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            })
+        && (meta.url == "/api/v1/conversations"
+            || linked_route(&meta.url).is_some()
+            || meta
+                .url
+                .strip_prefix("/api/v1/agents/")
+                .and_then(|s| s.strip_suffix("/output"))
+                .is_some_and(|id| {
+                    id.len() == 64
+                        && id
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                })
             || meta
                 .url
                 .strip_prefix("/api/v1/conversations/")
@@ -473,9 +826,53 @@ async fn dispatch(
 }
 
 #[cfg(test)]
-mod tests {
+#[path = "http/prompt_tests.rs"]
+mod prompt_tests;
+
+#[cfg(test)]
+pub(super) mod tests {
     use super::*;
-    struct Fake(AtomicUsize);
+
+    /// Real HTTP framing/dispatch with a synthetic observer and no daemon/pollers.
+    pub(in crate::observer) fn card_request(
+        api: Arc<Observer>,
+        path: &str,
+        login: Option<&str>,
+    ) -> (u16, Value) {
+        use std::io::{Read, Write};
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .max_blocking_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let auth = login.map(|l| format!("Tailscale-User-Login: {l}\r\n")).unwrap_or_default();
+            let request = format!("GET {path} HTTP/1.1\r\nHost: host.example.ts.net\r\n{auth}Connection: close\r\n\r\n");
+            let client = tokio::task::spawn_blocking(move || {
+                let mut stream = std::net::TcpStream::connect(addr).unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+                stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+                stream.write_all(request.as_bytes()).unwrap();
+                let mut response = String::new();
+                stream.read_to_string(&mut response).unwrap();
+                response
+            });
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut policy = policy();
+            policy.logins = vec!["alice".into(), "bob".into()];
+            connection(stream, true, api, Arc::new(policy), Arc::new(AtomicUsize::new(0)),
+                Arc::new(Semaphore::new(2)), Arc::new(Semaphore::new(2))).await;
+            let response = client.await.unwrap();
+            let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+            assert!(headers.to_ascii_lowercase().contains("cache-control: no-store"));
+            let status = headers.split_whitespace().nth(1).unwrap().parse().unwrap();
+            (status, serde_json::from_str(body).unwrap())
+        })
+    }
+    pub(super) struct Fake(pub(super) AtomicUsize);
     impl Api for Fake {
         fn fleet(&self) -> Value {
             self.0.fetch_add(1, Ordering::Relaxed);
@@ -486,14 +883,15 @@ mod tests {
             Err(Error("output_disabled"))
         }
     }
-    fn policy() -> Policy {
+    pub(super) fn policy() -> Policy {
         Policy {
             authority: "host.example.ts.net".into(),
             origin: "https://host.example.ts.net".into(),
             logins: vec!["owner@example.invalid".into()],
+            csrf: Csrf::new().expect("fixture entropy"),
         }
     }
-    fn meta(path: &str) -> Metadata {
+    pub(super) fn meta(path: &str) -> Metadata {
         Metadata {
             loopback: true,
             method: "GET".into(),
@@ -605,6 +1003,80 @@ mod tests {
         let mut request = meta("/");
         request.url = "x".repeat(2049);
         assert_eq!(status(&request), 431);
+    }
+
+    #[test]
+    fn exact_card_route_is_closed_authenticated_and_read_admitted() {
+        struct Bound(AtomicUsize);
+        impl Api for Bound {
+            fn fleet(&self) -> Value {
+                json!({})
+            }
+            fn output(&self, _: &str) -> Result<Value> {
+                panic!("not output")
+            }
+            fn linked_conversation(
+                &self,
+                login: &str,
+                agent: &str,
+                conversation: &str,
+                binding: &str,
+            ) -> Result<Value> {
+                assert_eq!(login, "owner@example.invalid");
+                assert_eq!(
+                    (agent, conversation, binding),
+                    (
+                        "a".repeat(64).as_str(),
+                        "b".repeat(64).as_str(),
+                        "c".repeat(64).as_str()
+                    )
+                );
+                self.0.fetch_add(1, Ordering::Relaxed);
+                Err(Error("stale_reference"))
+            }
+        }
+        let api = Arc::new(Bound(AtomicUsize::new(0)));
+        let path = format!(
+            "/api/v1/agents/{}/conversations/{}/bindings/{}/messages",
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64)
+        );
+        let slots = AtomicUsize::new(0);
+        let policy = policy();
+        let mut request = meta(&path);
+        request.headers.clear();
+        assert_eq!(route(api.as_ref(), &policy, &slots, &request).status, 403);
+        assert_eq!(api.0.load(Ordering::Relaxed), 0);
+        for path in [
+            format!("{path}?socket=/private"),
+            path.replace("/bindings/", "/binding/"),
+            path.replace(&"c".repeat(64), "current"),
+        ] {
+            assert!(linked_route(&path).is_none());
+            assert_eq!(
+                route(api.as_ref(), &policy, &slots, &meta(&path)).status,
+                404
+            );
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let reply = runtime.block_on(dispatch(
+            api.clone(),
+            Arc::new(policy),
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(Semaphore::new(0)),
+            meta(&path),
+        ));
+        assert_eq!(reply.status, 429);
+        assert_eq!(api.0.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            route(api.as_ref(), &self::policy(), &slots, &meta(&path)).status,
+            409
+        );
+        assert_eq!(api.0.load(Ordering::Relaxed), 1);
     }
     #[test]
     fn every_response_is_inert_uncached_and_same_origin() {

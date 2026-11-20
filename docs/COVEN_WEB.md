@@ -19,7 +19,7 @@ Coven executable are not replaced as a prerequisite.
   snapshot removes them. Reconnect/replacement invalidates output references.
 - Output is explicit and bounded, never prefetched, persisted, logged, rendered as
   HTML or interpreted as a terminal. No service-worker caching or analytics.
-- No prompts, approval emulation, keyboard input, focus, launch, stop, handoff,
+- Terminal-only cards offer no prompts, approval emulation, keyboard input, focus, launch, stop, handoff,
   generic RPC, browser-selected socket/host/command or automatic server startup.
 
 This is protocol/security-sensitive additive work. Characterization tests cover
@@ -125,10 +125,83 @@ Process-only cards reject forced output with `output_unsupported` before transpo
 
 ### Native conversations (new builds only)
 
-The separate **Conversations** list is a registry, not discovery or a claim of
-availability. Nothing is bound to fleet cards, process IDs, terminal titles,
-panes or native observations. Existing configurations remain valid and default
-to `"conversations": []`. Keep `allow_best_effort_output` false for this slice.
+The single **Sessions** grid contains only fleet observations. Authorized native
+chats never add a third/fallback root card or hide a fleet agent. It is not a claim
+of execution readiness or a unique-agent count. Verified cards open the pinned
+bound conversation immediately on the first primary click. Unlinked, ambiguous,
+stale or unsupported links say **Chat unavailable**, with a concise reason.
+Unavailable primary buttons retain keyboard focus with guarded `aria-disabled`;
+clicking them does not open a dialog, read messages or submit anything. There is
+no picker, manual association, global Shared chats chooser or native fallback card.
+Every root keeps a separate Details / terminal output action. Fleet titles,
+providers and projects remain intact, never replaced by a source/chat label. Existing
+configurations remain valid and default to `"conversations": []` and
+`"conversation_sources": []`. Keep `allow_best_effort_output` false for this slice.
+
+Conversation list rows may include `association_status` (`verified`, `unavailable`,
+`ambiguous`) and `card: null | {fleet_agent_id, fleet_endpoint_id, binding_id}`.
+Agent and binding references are lowercase 64-hex IDs; endpoint IDs are opaque
+configured tokens. Only a verified, exact fleet-agent plus endpoint match that is
+one-to-one in the authorized visible metadata automatically links a fleet card.
+Competing claims never auto-select. Labels, hostnames, providers,
+order and single-candidate guesses never establish identity. Missing fields on old
+or static rows mean unavailable association. Native sharing can still exist at
+the source, but BASIC monitoring cannot honestly open it from an unrelated card.
+Both fleet observations and authorized conversation metadata must be fresh.
+
+Merged-card reads use exactly
+`GET /api/v1/agents/<fleet_agent_id>/conversations/<id>/bindings/<binding_id>/messages`.
+The monitoring UI never falls back to the ordinary native-only read API. It validates
+the response against the pinned conversation ID and team. Binding changes fence
+pending reads and clear transcript/draft content, including A-to-B-to-A changes.
+Prompt POSTs always retain the exact native conversation handle, independently of
+display association; unresolved delivery notices survive metadata/auth fences.
+
+There are no page-local association preferences. Metadata expiry/failure, auth
+loss, hiding, stale fleet observations, root removal and ID/team replacement clear
+affected views and fence pending reads/tokens/posts. Exact binding changes clear
+transcript content and drafts without automatically fetching the replacement.
+A different conversation closes the old view, never retargeting it. A stale
+server-side binding can refuse a read; it never selects the source's latest chat.
+Details explains the connection status independently of terminal output capability,
+not through a selection action. Native ACL, grant, CSRF, permission and
+uncertain-delivery gates remain unchanged. There is no localStorage or persistence.
+
+One global Host/Team toolbar and Refresh action refresh fleet and authorized chat
+metadata independently, never transcripts or submissions. Shared source health and
+sanitized counts such as `1 shared session awaiting association` remain diagnostic
+metadata only, with no selection action. Zero fleet observations mean zero root
+cards, even when native sharing metadata exists. Host options are configured fleet
+endpoint IDs only, with no Unlinked native bucket. Team filters include only verified
+chat team metadata and explain unassigned terminal observations. Empty native
+metadata, unavailable metadata and absent fleet configuration remain distinct.
+
+Unchanged opaque root nodes preserve keyboard focus. Root-origin views track their
+original verified root through its focus reference and close/fence if that mapping
+changes; they never follow a replacement chat. Modal focus stays inside the dialog;
+closing returns to the original visible root primary (even after it becomes
+unavailable) or its Details action. Removed/filtered roots fall back
+to Host. Health, incomplete coverage and metadata errors stay separately visible.
+
+Older running endpoints without provenance correctly show **Chat unavailable**.
+The currently running old native `f92` lacks that provenance; fixture success does
+not establish live one-click chat readiness. A deliberate relaunch with the new
+native UI may be needed before verified links become available. The browser does
+not restart anything. Deployment/build and relaunch remain separate operator steps.
+This frontend policy follows the current BASIC contract at the top of
+`CARD_CONVERSATION_NAVIGATION.md`, superseding earlier picker/fallback designs. The
+backend's optional verified metadata and bound route remain unchanged; no alternate
+association endpoint or inferred linkage is used.
+
+Frontend coverage includes pure projection and real bootstrap-handler tests. The
+opt-in `clients/web/browser.test.mjs` uses an installed Firefox and synthetic local
+HTTP fixtures for actual DOM, phone/desktop overflow, unavailable-state guards, one-click exact bound
+routes, blank filtering and modal focus. In a unique disk-backed `TMPDIR` with
+exact-directory cleanup, run
+`COVEN_WEB_FIREFOX=/usr/bin/firefox node --test clients/web/*.test.mjs`.
+Without that variable only the browser test is explicitly skipped; no dependency
+download is performed. The fixture reaps Firefox before deleting its owned profile
+and produces no screenshots, snapshots or live chat traffic.
 
 Add explicit operator registrations to the configuration, for example these
 synthetic values (not a usable live runtime or session):
@@ -233,14 +306,24 @@ not complete history or authenticity. Native message IDs are removed after diges
 verification, so the browser does not recompute this native digest.
 
 Opening a registered target reads once. Refresh is explicit. No transcript
-polling, prefetch, localStorage, HTML/Markdown/ANSI interpretation, composer or
-writes are provided. Text is cleared immediately on target/team changes, close,
-manual list refresh, new reads and refusals; request-generation checks reject late results,
+polling, prefetch, localStorage or HTML/Markdown/ANSI interpretation is provided.
+Static registrations remain read-only. Text is cleared immediately on target, binding,
+host/team or write-permission changes, close, new reads and refusals;
+request-generation checks reject late results,
 including close/reopen of the same target. Partial/older/omitted/truncation labels
 are separate from availability. An empty authorized list explicitly requires
 operator native setup rather than showing fake availability.
 
-The **metadata-only** authorized list is revalidated alongside successful visible
+Entries containing only whitespace, control characters or default-ignorable Unicode
+characters are not rendered as empty message cards. The status reports how many
+entries have no displayable text; an all-empty sample has an explanatory empty
+state. This filtering is presentation-only: displayed text is preserved exactly,
+the validated native projection/digest is unchanged, and no extra private content
+is fetched. Native history includes non-text/tool steps, and bounded reads can omit
+unsupported or oversized content; a hidden entry is not proof that the assistant
+produced no content. Existing partial/truncation/omission warnings remain visible.
+
+The **metadata-only** authorized list is revalidated alongside visible
 fleet refreshes (normally every three seconds) and on visibility resume. Matching
 references preserve the open view without fetching messages. Removed/changed
 references clear the view and invalidate pending reads. Metadata has a 15-second
@@ -257,6 +340,67 @@ cannot restore them. Resource/configuration changes are acted on when the next
 metadata response observes them, not before. These client-side safeguards cannot
 recall already-delivered or copied data and do not replace server-side ACL checks
 on every read.
+
+### Shared Follow-Ups
+
+New shared-source rows may advertise `can_submit: true` and
+`max_prompt_bytes: 65536`. Missing write metadata means read-only. Source reader
+and writer ACLs, current native selected-session grants and the configured control
+workspace determine this permission; fleet activity and blocked hints do not.
+See [the implementation contract](WEB_SHARING_IMPLEMENTATION.md) for source setup
+and native selection/lease requirements. No browser socket, SID, workspace, model
+or command selectors are accepted.
+
+`GET /api/v1/csrf` returns `{"contract":"coven.csrf.v1","token":"..."}`.
+The unpredictable HMAC-authenticated token is bound to the principal and gateway
+epoch and expires in 60 seconds. All responses are no-store. The browser obtains
+a fresh token immediately before each deliberate submission and never retries a
+mutation automatically.
+
+`POST /api/v1/conversations/<opaque-id>/prompts` accepts only:
+
+```json
+{"contract":"coven.conversation-submit.v1","request_id":"11111111-2222-4333-8444-555555555555","execute":true,"text":"Exact follow-up text."}
+```
+
+The UUID must be canonical lowercase. The request requires an exact same Origin,
+trusted Host/login, same-origin Fetch Metadata when supplied, `X-Coven-CSRF`, JSON
+Content-Type, exactly one Content-Length, and no transfer/content encoding.
+Authorization, target write permission, token and framing are checked before body
+polling; rejected bodies are never drained. Body reads have a two-second deadline
+and 400 KiB encoded cap. Strict UTF-8 JSON rejects duplicate/unknown fields. Text
+is nonblank, at most 65,536 UTF-8 bytes and permits no controls except tab/CR/LF.
+Connections have five-second header and 20-second overall bounds. Two mutation
+jobs retain their permits until blocking work finishes, even if HTTP is canceled;
+native runtime/session single-flight and attempt suppression remain core-owned.
+Discovery/list reads share bounded blocking capacity with other native reads,
+without blocking cached fleet or asset responses.
+
+Receipts use `coven.conversation-submit.v1`, opaque `id`, `request_id`,
+`outcome`/`delivery`, fixed diagnostics and optional byte count/digest, never prompt
+text or private native identifiers. Accepted means persisted/scheduled, **not
+completed**. Missing/invalid HTTP receipts after sending mean uncertainty, not
+rejection. Closing, hiding or losing authorization clears drafts/transcripts and
+fences late callbacks; it does not cancel or recall native work. A non-content
+attempt notice remains. After uncertainty, the composer requires an explicit
+message refresh and a separate checked decision before a new prompt, with a new
+UUID. There is no Retry action. Drafts are memory-only, not persisted or logged.
+Unresolved receipts retain only originating opaque ID, team, request UUID and
+attempt-state flags, never prompt or transcript text. Only a successful explicit
+read of that exact ID/team, begun after uncertainty, counts as inspection. Reading
+another target or a replacement reference does not inspect the original attempt.
+Independent targets remain writable; their accepted/unsent receipts or token
+failures cannot clear another attempt's uncertainty. A new accepted prompt on the
+same target is also not proof of what happened to an earlier uncertain prompt.
+The page retains at most 32 unresolved receipts, including inspected attempts;
+at capacity it refuses new sends explicitly rather than silently evicting unknown
+outcomes. A sanitized global count/uncertainty notice survives navigation, auth
+loss, hiding and reference expiry, without exposing old target labels or text.
+These safeguards are in-memory for this page only, not durable across reloads or
+tabs. Reloading does not establish delivery or make a retry safe; inspect native
+history at the source when an original reference is no longer available.
+Refresh messages never sends a prompt. Native permission/question answering,
+terminal input, full history and remote native adapters are outside this scope.
 
 ### Optional cross-language acceptance
 

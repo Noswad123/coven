@@ -242,12 +242,17 @@ mod unix {
         ] {
             std::fs::write(&file, raw).unwrap();
             assert!(endpoint::prompt_file(address).is_err());
+            if let Ok(text) = std::str::from_utf8(raw) {
+                assert!(validate_text(text).is_err());
+            }
         }
         for text in [
             "Literal λ 🦊\r\n$(not a command); @not-an-attachment\n".to_owned(),
             "x".repeat(LIMIT),
+            "\u{1f642}".repeat(LIMIT / 4),
         ] {
             std::fs::write(&file, &text).unwrap();
+            validate_text(&text).unwrap();
             assert_eq!(endpoint::prompt_file(address).unwrap(), text);
         }
         let alias = temp.path().join("alias");

@@ -10,6 +10,14 @@ use std::{
 #[path = "observer_gateway/djinn_producer.rs"]
 mod djinn_producer;
 
+#[cfg(unix)]
+#[path = "observer_gateway/prompts.rs"]
+mod prompts;
+
+#[cfg(unix)]
+#[path = "observer_gateway/shared_producer.rs"]
+mod shared_producer;
+
 struct Gateway {
     child: Child,
     port: u16,
@@ -26,6 +34,12 @@ impl Gateway {
         Self::start_with(None)
     }
     fn start_with(native: Option<(&std::path::Path, &str, &str)>) -> Self {
+        Self::start_options(native, None)
+    }
+    fn start_options(
+        native: Option<(&std::path::Path, &str, &str)>,
+        source: Option<(&std::path::Path, &std::path::Path)>,
+    ) -> Self {
         let directory = tempfile::tempdir().expect("fixture directory");
         let default_socket = directory.path().join("native.sock");
         let (socket, runtime, session) = native.unwrap_or((
@@ -37,7 +51,7 @@ impl Gateway {
         let port = listener.local_addr().expect("port").port();
         drop(listener);
         let config = directory.path().join("observer.json");
-        std::fs::write(&config, serde_json::to_vec(&serde_json::json!({
+        let mut value = serde_json::json!({
             "listen":format!("127.0.0.1:{port}"),
             "public_origin":"https://coven-web.example.invalid",
             "allowed_logins":["fixture@example.invalid","other@example.invalid"],
@@ -45,7 +59,14 @@ impl Gateway {
                 "allowed_logins":["fixture@example.invalid"],"native_socket":socket,
                 "expected_runtime":runtime,"session":session}],
             "endpoints":[{"id":"fixture","label":"Synthetic endpoint","socket":directory.path().join("absent.sock")}]
-        })).expect("encode")).expect("fixture config");
+        });
+        if let Some((registry, workspace)) = source {
+            value["conversations"] = serde_json::json!([]);
+            value["conversation_sources"] = serde_json::json!([{"id":"shared","label":"Shared fixture","team":"research",
+                "directory":registry,"allowed_logins":["fixture@example.invalid"],"submit_logins":["fixture@example.invalid"],"control_workspace":workspace}]);
+        }
+        std::fs::write(&config, serde_json::to_vec(&value).expect("encode"))
+            .expect("fixture config");
         let check = Command::new(env!("CARGO_BIN_EXE_coven"))
             .args(["observer", "check", "--config"])
             .arg(&config)
@@ -343,12 +364,13 @@ fn incomplete_headers_expire_without_blocking_cached_fleet() {
     assert!(fleet.starts_with("HTTP/1.1 200"));
     for mut stream in streams {
         let mut byte = [0];
-        assert_eq!(
-            stream
-                .read(&mut byte)
-                .expect("header deadline closes socket"),
-            0
-        );
+        // Closing without consuming incomplete peer headers can produce a TCP
+        // reset rather than an orderly EOF. Both terminate the bounded request.
+        match stream.read(&mut byte) {
+            Ok(0) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
+            result => panic!("header deadline must close socket: {result:?}"),
+        }
     }
     assert!(started.elapsed() < Duration::from_secs(7));
 }
