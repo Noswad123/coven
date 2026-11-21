@@ -2,9 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CONTRACT, validateFleet, initialState, receiveFleet, failFleet, projectFleet,
-  ageLabel, validateOutput, createOutputGate, setText, displaySessionTitle, errorMessage, endpointCoverage, responseError } from './app.js';
+  ageLabel, validateOutput, createOutputGate, setText, displaySessionTitle, displayPaneName, displayProvider, errorMessage, endpointCoverage, responseError } from './app.js';
 
 const NOW = 1900000000000;
+test('full session titles remain complete across former cutoffs and UTF-8 boundaries', () => {
+  for (const title of ['x'.repeat(41), 'x'.repeat(513), 'x'.repeat(4096), 'é'.repeat(2048), '😀'.repeat(1024), 'A literal title...']) {
+    const value = fleet([endpoint('desktop', [agent('a'.repeat(64), {provider: 'djinn', title})])]);
+    assert.equal(validateFleet(value), value);
+    const projected = projectFleet(receiveFleet(initialState(), value, NOW), '', NOW).cards[0];
+    assert.equal(displaySessionTitle(projected.agent), title);
+    assert.equal(projected.agent.title, title);
+  }
+  for (const title of ['x'.repeat(4097), 'é'.repeat(2049), '😀'.repeat(1025)]) {
+    assert.throws(() => validateFleet(fleet([endpoint('desktop', [agent('a'.repeat(64), {title})])])));
+  }
+});
+
 test('Djinn display titles remove one legacy decoration without changing identity or unrelated titles', () => {
   const agent = {id: 'a'.repeat(64), provider: 'djinn', title: 'OC | Improve notifications'};
   assert.equal(displaySessionTitle(agent), 'Improve notifications');
@@ -70,6 +83,38 @@ function fleet(endpoints = [endpoint()], changes = {}) {
     stale_after_ms: 15000, endpoints, ...changes };
 }
 function loaded(value = fleet()) { return receiveFleet(initialState(), value, NOW); }
+
+test('optional pane names enforce UTF-8 bounds and inert safe Unicode without inferring a name', () => {
+  for (const pane_name of [undefined, null, '', 'OC | <script>literal</script>', 'a'.repeat(160), '\u00e9'.repeat(80), '\u{1f680}'.repeat(40)]) {
+    const value = fleet([endpoint('desktop', [agent(A, {pane_name})])]);
+    const before = structuredClone(value);
+    assert.equal(validateFleet(value), value);
+    assert.equal(displayPaneName(value.endpoints[0].agents[0]), pane_name || 'Unnamed pane');
+    assert.deepEqual(value, before);
+  }
+  const old = agent();
+  assert.equal(Object.hasOwn(old, 'pane_name'), false);
+  assert.equal(displayPaneName(old), 'Unnamed pane');
+  assert.equal(validateFleet(fleet([endpoint('desktop', [old])])).endpoints[0].agents[0], old);
+  for (const pane_name of [false, 1, {}, [], 'a'.repeat(161), '\u00e9'.repeat(81), '\u{1f680}'.repeat(41), '\ud800', '\udfff',
+    ...Array.from({length: 160}, (_, i) => String.fromCharCode(i)).filter(c => /\p{Cc}/u.test(c)),
+    ...[0x61c, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069].map(c => `name${String.fromCharCode(c)}`)]) {
+    assert.throws(() => validateFleet(fleet([endpoint('desktop', [agent(A, {pane_name})])])), 'invalid pane name');
+  }
+});
+
+test('provider display is separate from diagnostic labels and never changes capability or native association', () => {
+  for (const provider of ['djinn', 'opencode', 'claude', 'codex', 'gemini', 'custom-provider']) {
+    assert.equal(displayProvider({provider, provider_candidates: ['other']}), provider);
+  }
+  assert.equal(displayProvider({}), 'Unknown provider');
+  assert.equal(displayProvider({provider: '', provider_candidates: ['claude']}), 'claude');
+  assert.equal(displayProvider({provider: '', provider_candidates: ['claude', 'codex']}), 'Multiple providers');
+  const card = projectFleet(loaded(fleet([discoveredEndpoint([processAgent(A, {provider: '', provider_candidates: ['djinn']})])])), '', NOW).cards[0];
+  assert.equal(displayProvider(card.agent), 'djinn');
+  assert.equal(card.providerLabel, 'Provider identity unconfirmed');
+  assert.equal(card.outputEnabled, false);
+});
 function output(changes = {}) {
   return { contract: CONTRACT, agent_id: A, observed_at_ms: NOW, text: 'Text\n',
     truncated: false, attribution: 'matching_snapshot_brackets_best_effort', ...changes };

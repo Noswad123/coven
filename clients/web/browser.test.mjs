@@ -34,7 +34,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
     const latestText = `${'Long latest message, not a nested scroll box.\n'.repeat(100)}LATEST MARKER`;
     assert.ok(Buffer.byteLength(latestText) + 1200 < 8192);
     const decisionID = '1'.repeat(64), alertID = '2'.repeat(64);
-    let agents = ['e', 'f'].map((letter, index) => ({id: letter.repeat(64), title: index ? 'Megatron full root' : 'Bumblebee full root',
+    let agents = ['e', 'f'].map((letter, index) => ({id: letter.repeat(64), pane_name: index ? 'Megatron' : 'OC | Bumblebee <b>literal</b>', title: index ? 'Megatron full root' : 'OC | Bumblebee full root',
       provider: 'djinn', project: 'Original project', activity: 'unknown', evidence: 'kitsune_snapshot', output_available: false}));
     try {
       const browserTmp = join(profile, 'tmp');
@@ -149,6 +149,39 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       assert.equal(await evaluate(`document.querySelectorAll('.agent-grid').length === 1 && !document.querySelector('button button')`), true);
       assert.equal(await evaluate(`document.getElementById('alerts-toggle').textContent === 'Alerts off' && document.getElementById('alerts-toggle').getAttribute('aria-pressed') === 'false' && document.getElementById('alerts-error').hidden`), true);
       assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
+      for (const width of [390, 320, 1280]) {
+        await call('browsingContext.setViewport', {context, viewport: {width, height: 844}, devicePixelRatio: 1});
+        assert.equal(await evaluate(`(() => {
+          const card = document.querySelector('.agent-card');
+          const lines = ['.card-title', '.card-provider', '.card-session-title'].map(s => card.querySelector(s));
+          return lines.map(n => n.textContent).join('\\n') === 'OC | Bumblebee <b>literal</b>\\ndjinn\\nBumblebee full root'
+            && lines[0].getBoundingClientRect().bottom <= lines[1].getBoundingClientRect().top
+            && lines[1].getBoundingClientRect().bottom <= lines[2].getBoundingClientRect().top
+            && !card.querySelector('b') && !/Provider identity|Coven process evidence|Process family hints|Original project|Chat team/.test(card.textContent)
+            && document.documentElement.scrollWidth <= innerWidth;
+        })()`), true, `pane/provider/session hierarchy at ${width}px`);
+      }
+      const originalTitle = agents[0].title;
+      for (const title of ['x'.repeat(4096), '😀'.repeat(1024)]) {
+        agents[0].title = title;
+        await evaluate(`document.getElementById('refresh').click()`);
+        await wait(`document.querySelector('.card-session-title').textContent === ${JSON.stringify(title)}`);
+        for (const width of [320, 390, 1280]) {
+          await call('browsingContext.setViewport', {context, viewport: {width, height: 844}, devicePixelRatio: 1});
+          assert.equal(await evaluate(`(() => {
+            const line = document.querySelector('.card-session-title');
+            return line.textContent === ${JSON.stringify(title)}
+              && line.scrollHeight <= line.clientHeight + 1
+              && getComputedStyle(line).textOverflow !== 'ellipsis'
+              && getComputedStyle(line).maxHeight === 'none'
+              && document.documentElement.scrollWidth <= innerWidth;
+          })()`), true, `complete 4096-byte title wraps at ${width}px`);
+        }
+      }
+      agents[0].title = originalTitle;
+      await evaluate(`document.getElementById('refresh').click()`);
+      await wait(`document.querySelector('.card-session-title').textContent === 'Bumblebee full root'`);
+      assert.equal(reads().length, 0);
       await call('browsingContext.setViewport', {context, viewport: {width: 1280, height: 900}, devicePixelRatio: 1});
       assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
       await evaluate(`document.querySelector('.agent-card').click()`);
@@ -161,6 +194,8 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       assert.equal(await evaluate(`document.activeElement === document.querySelector('.agent-card')`), true);
       await evaluate(`document.querySelector('.card-details').click()`);
       assert.match(await evaluate(`document.getElementById('detail-chat-status').textContent`), /Chat unavailable/);
+      assert.equal(await evaluate(`document.getElementById('detail-title').textContent`), agents[0].pane_name);
+      assert.match(await evaluate(`document.getElementById('detail-meta').textContent`), /Kitsune metadata.*Original project.*Process discovery/);
       assert.equal(reads().length, 0);
       await evaluate(`document.getElementById('close-detail').click()`);
       const linked = {...target, association_status: 'verified', card: {fleet_agent_id: agents[0].id,
@@ -180,7 +215,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       assert.equal(reads()[0].path, `/api/v1/agents/${linked.card.fleet_agent_id}/conversations/${target.id}/bindings/${linked.card.binding_id}/messages`);
       assert.equal(await evaluate(`document.getElementById('prompt-composer').hidden`), true);
       assert.equal(await evaluate(`document.querySelector('.conversation-message pre').textContent`), '<script>literal</script>');
-      assert.equal(await evaluate(`document.querySelector('.card-title').textContent`), 'Bumblebee full root');
+      assert.equal(await evaluate(`document.querySelector('.card-title').textContent`), 'OC | Bumblebee <b>literal</b>');
       assert.equal(await evaluate(`document.getElementById('conversation-link-status') === null`), true);
       assert.equal(await evaluate(`document.activeElement.id`), 'close-conversation');
       await wait(`document.querySelectorAll('#decision-details fieldset').length === 2`);
@@ -194,7 +229,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       const polish = async () => {
       // Long history and late layouts are exercised on the actual outer scroller.
       fleetStatus = 200; metadataStatus = 200; longHistory = true;
-      agents = ['e', 'f'].map((letter, index) => ({id: letter.repeat(64), title: index ? 'Megatron full root' : 'Bumblebee full root',
+      agents = ['e', 'f'].map((letter, index) => ({id: letter.repeat(64), pane_name: index ? 'Megatron' : 'Bumblebee', title: index ? 'Megatron full root' : 'Bumblebee full root',
         provider: 'djinn', project: 'Original project', activity: 'unknown', evidence: 'kitsune_snapshot', output_available: false}));
       await evaluate(`document.getElementById('refresh').click()`);
       await wait(`document.querySelectorAll('.agent-card').length === 2 && document.querySelectorAll('.agent-card')[1].getAttribute('aria-disabled') === 'false'`);
@@ -262,7 +297,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       requestPending = true;
       for (const kind of ['question', 'permission']) {
         requestKind = kind;
-        if (kind === 'permission') agents[0].title = 'Bumblebee coordinating the extended research review across several independent project workstreams';
+        if (kind === 'permission') agents[0].pane_name = 'Bumblebee coordinating the extended research review across several independent project workstreams';
         await evaluate(`document.getElementById('refresh').click()`);
         await wait(`document.querySelector('.agent-card').textContent.includes('Needs response')`);
         // Let the explicit refresh finish before opening the current occurrence.
@@ -282,7 +317,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
             assert.ok(geometry.bottom <= geometry.dialogBottom, 'full request heading is visible, not just response buttons');
             if (kind === 'permission') {
               assert.ok(geometry.titleLines >= 3, `long title really wraps at ${width}px`);
-              assert.equal(await evaluate(`document.getElementById('conversation-title').textContent`), `${agents[0].title} / research`);
+              assert.equal(await evaluate(`document.getElementById('conversation-title').textContent`), agents[0].pane_name);
               assert.equal(await evaluate(`document.activeElement.id`), 'close-conversation');
               t.diagnostic(`${width}px ${first}-first ${phase}: header bottom ${geometry.headerBottom.toFixed(1)}, permission top ${geometry.top.toFixed(1)}, title ${geometry.titleLines} lines`);
             }
@@ -342,10 +377,13 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       await evaluate(`document.getElementById('close-conversation').click()`);
       targets.push({...linked, id: '8'.repeat(64)});
       await evaluate(`document.getElementById('refresh').click()`);
-      await wait(`document.querySelector('.agent-card').textContent.includes('Multiple conversations claim')`);
+      await wait(`document.querySelector('.agent-card').getAttribute('aria-disabled') === 'true'`);
       await evaluate(`document.querySelector('.agent-card').focus(); document.querySelector('.agent-card').click()`);
       assert.equal(reads().length, 3);
       assert.equal(await evaluate(`document.getElementById('conversation-dialog').open`), false);
+      await evaluate(`document.querySelector('.card-details').click()`);
+      assert.match(await evaluate(`document.getElementById('detail-chat-status').textContent`), /Multiple conversations claim this terminal/);
+      await evaluate(`document.getElementById('close-detail').click()`);
       targets.pop();
       metadataStatus = 503;
       await evaluate(`document.getElementById('refresh').click()`);

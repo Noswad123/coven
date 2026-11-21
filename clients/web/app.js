@@ -6,6 +6,8 @@ const timestamp = value => Number.isSafeInteger(value) && value >= 0;
 const positive = value => Number.isSafeInteger(value) && value > 0;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const string = value => typeof value === 'string';
+const safePaneName = value => string(value) && new TextEncoder().encode(value).length <= 160
+  && !/[\p{Cc}\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069\ud800-\udfff]/u.test(value);
 
 export function validateFleet(value) {
   if (!record(value) || value.contract !== CONTRACT || !timestamp(value.generated_at_ms)
@@ -25,7 +27,9 @@ export function validateFleet(value) {
     endpoints.add(endpoint.id);
     for (const agent of endpoint.agents) {
       if (!record(agent) || !string(agent.id) || !AGENT_ID.test(agent.id) || agents.has(agent.id)
-        || !string(agent.title) || !string(agent.provider) || !string(agent.project)
+        || !string(agent.title) || new TextEncoder().encode(agent.title).length > 4096
+        || !string(agent.provider) || !string(agent.project)
+        || !(agent.pane_name === undefined || agent.pane_name === null || safePaneName(agent.pane_name))
         || !Object.hasOwn(ACTIVITIES, agent.activity) || !['kitsune_snapshot', 'coven_process_discovery'].includes(agent.evidence)
         || !(agent.provider_candidates === undefined || (Array.isArray(agent.provider_candidates)
           && agent.provider_candidates.length <= 22 && agent.provider_candidates.every(family => string(family) && family.length > 0)))
@@ -157,6 +161,17 @@ export function displaySessionTitle(agent) {
   const title = agent.title || 'Untitled session';
   return agent.provider === 'djinn' && title.startsWith('OC | ')
     ? title.slice(5) || 'Untitled session' : title;
+}
+
+export function displayPaneName(agent) {
+  return agent.pane_name || 'Unnamed pane';
+}
+
+// Family hints are display-only; they never establish native identity or capability.
+export function displayProvider(agent) {
+  if (string(agent.provider) && agent.provider.trim()) return agent.provider;
+  const families = [...new Set(agent.provider_candidates ?? [])];
+  return families.length === 1 ? families[0] : families.length ? 'Multiple providers' : 'Unknown provider';
 }
 
 export function validateConversations(value) {
@@ -399,8 +414,8 @@ function bootstrap() {
     setText($('detail-chat-status'), session?.target ? 'Chat available. Open chat from the session card.'
       : `Chat unavailable: ${session?.chatUnavailable ?? 'This fleet reference was removed.'}`);
     if (card) {
-      setText($('detail-title'), displaySessionTitle(card.agent));
-      setText($('detail-meta'), `${card.evidenceLabel} / ${card.providerLabel} / ${card.agent.project || 'No project'} / ${card.endpoint.label} / ${card.age}${card.familyHints ? ` / ${card.familyHints}` : ''} / ${endpointCoverage(card.endpoint)}`);
+      setText($('detail-title'), displayPaneName(card.agent));
+      setText($('detail-meta'), `${displaySessionTitle(card.agent)} / ${card.evidenceLabel} / ${card.providerLabel} / ${card.agent.project || 'No project'} / ${card.endpoint.label} / ${card.activityLabel} / ${card.age}${session?.target ? ` / Chat team: ${session.target.team}` : ''}${card.familyHints ? ` / ${card.familyHints}` : ''} / ${endpointCoverage(card.endpoint)}`);
     }
     if (!card?.outputEnabled) {
       clearOutput();
@@ -717,7 +732,7 @@ function bootstrap() {
     fencePrompt();
     conversationTarget = target;
     dialogReturnTargets.set(conversationDialog, focusReference(card));
-    setText($('conversation-title'), `${displaySessionTitle(card.agent)} / ${target.team}`);
+    setText($('conversation-title'), displayPaneName(card.agent));
     scrollIntent = {kind: 'latest', interaction: interactionRevision};
     if (!conversationDialog.open) conversationDialog.showModal();
     renderComposer();
@@ -1205,7 +1220,7 @@ function bootstrap() {
     if (!card) return;
     const session = sessions(host, $('conversation-team').value).find(card => card.key === key);
     if (session) dialogReturnTargets.set(dialog, focusReference(session, 'details'));
-    setText($('detail-title'), displaySessionTitle(card.agent));
+    setText($('detail-title'), displayPaneName(card.agent));
     setText($('output-status'), unavailableReason(card));
     if (!dialog.open) dialog.showModal();
     updateDetail();
@@ -1221,15 +1236,19 @@ function bootstrap() {
     const focusedReference = focusedNode ? {...focusedNode.focusReference,
       action: focusedNode.querySelector('.card-details') === document.activeElement ? 'details' : 'primary'} : null;
     if (conversationTarget) {
-      const updated = cards.find(card => card.key === dialogReturnTargets.get(conversationDialog)?.key
-        && conversationKey(card.target) === conversationKey(conversationTarget))?.target;
+      const currentCard = cards.find(card => card.key === dialogReturnTargets.get(conversationDialog)?.key
+        && conversationKey(card.target) === conversationKey(conversationTarget));
+      const updated = currentCard?.target;
       if (!updated || readKey(updated) !== readKey(conversationTarget)) {
         fenceDecision();
         fencePrompt();
         clearConversation();
         if (!updated) { closeConversation(); conversationDialog.close(); }
       }
-      if (updated) conversationTarget = updated;
+      if (updated) {
+        conversationTarget = updated;
+        setText($('conversation-title'), displayPaneName(currentCard.agent));
+      }
     }
     renderComposer();
     renderAttention();
@@ -1265,7 +1284,7 @@ function bootstrap() {
         const top = element('span', 'card-top');
         top.append(element('span', 'host-badge'), element('span', 'activity'));
         const body = element('span');
-        body.append(element('span', 'card-title'), element('span', 'card-project'), element('span', 'card-project card-evidence'));
+        body.append(element('span', 'card-title'), element('span', 'card-provider'), element('span', 'card-session-title'));
         const bottom = element('span', 'card-bottom');
         bottom.append(element('span', 'card-age'), element('span', 'attention-badge', 'Needs response'), element('span', 'card-action'));
         primary.append(top, body, bottom);
@@ -1279,15 +1298,13 @@ function bootstrap() {
       node.dataset.stale = String(!card.fresh);
       setText(node.querySelector('.host-badge'), card.endpoint.label || card.endpoint.id);
       setText(node.querySelector('.activity'), card.fresh ? card.activityLabel : `Stale / ${card.activityLabel}`);
-      setText(node.querySelector('.card-title'), displaySessionTitle(card.agent));
-      setText(node.querySelector('.card-project'), `${card.providerLabel} / ${card.agent.project || 'No project'} / ${card.target ? `Chat team: ${card.target.team}` : 'Team unassigned'}`);
-      setText(node.querySelector('.card-evidence'), `${card.evidenceLabel}${card.familyHints ? ` / ${card.familyHints}` : ''} / ${card.target
-        ? 'Chat available'
-        : `Chat unavailable: ${card.chatUnavailable}`}`);
+      setText(node.querySelector('.card-title'), displayPaneName(card.agent));
+      setText(node.querySelector('.card-provider'), displayProvider(card.agent));
+      setText(node.querySelector('.card-session-title'), displaySessionTitle(card.agent));
       setText(node.querySelector('.card-age'), card.age);
       const needsResponse = attentionFresh() && attention.items.some(item => matchesTarget(item, card.target));
       node.querySelector('.attention-badge').hidden = !needsResponse;
-      setText(node.querySelector('.card-action'), card.target ? 'Open conversation +' : 'Chat unavailable');
+      setText(node.querySelector('.card-action'), card.target ? 'Chat available / Open conversation +' : 'Chat unavailable');
       node.querySelector('.agent-card').setAttribute('aria-disabled', String(!card.target));
       node.querySelector('.card-details').hidden = false;
       const current = $('agent-grid').children[position++];

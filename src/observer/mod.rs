@@ -183,7 +183,8 @@ fn parse_inventory(value: Value) -> Result<Inventory> {
         .iter()
         .any(|s| {
             s.is_empty() || s.len() > 256 || s.chars().any(|c| c.is_control() || c.is_whitespace())
-        }) || agent.title.len() > 512
+        }) || agent.title.len() > model::TITLE_LIMIT
+            || agent.title.chars().any(char::is_control)
             || agent.pane_name.as_ref().is_some_and(|name| {
                 !crate::agent_management_presentation::safe_display_text(name, 160)
             })

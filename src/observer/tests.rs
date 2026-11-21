@@ -62,18 +62,78 @@ fn observer(endpoints: Vec<Arc<Endpoint>>, reply: Result<Value>) -> Observer {
 }
 
 #[test]
+fn helper_titles_are_whole_bounded_strings_without_widening_other_fields() {
+    let old = serde_json::to_value(inventory("terminal")).unwrap();
+    for title in [
+        "x".repeat(40),
+        "x".repeat(41),
+        "x".repeat(512),
+        "x".repeat(513),
+        "x".repeat(4096),
+        "\u{1f600}".repeat(1024),
+        "literal...".into(),
+    ] {
+        let mut value = old.clone();
+        value["agents"][0]["title"] = json!(title);
+        let decoded = transport::decode_helper(
+            &serde_json::to_vec(&json!({"result":value})).unwrap(),
+            &Request::Inventory {},
+        )
+        .unwrap();
+        assert_eq!(parse_inventory(decoded).unwrap().agents[0].title, title);
+    }
+    for title in [
+        json!("x".repeat(4097)),
+        json!(format!("{}x", "\u{1f600}".repeat(1024))),
+        json!("bad\ntext"),
+        json!(42),
+    ] {
+        let mut value = old.clone();
+        value["agents"][0]["title"] = title;
+        assert!(parse_inventory(value).is_err());
+    }
+    for field in ["provider", "project"] {
+        let mut value = old.clone();
+        value["agents"][0][field] = json!("x".repeat(513));
+        assert!(parse_inventory(value).is_err());
+    }
+}
+
+#[test]
 fn helper_pane_name_is_optional_safe_and_other_fields_remain_closed() {
     let old = serde_json::to_value(inventory("terminal")).unwrap();
     assert!(old["agents"][0].get("pane_name").is_none());
-    assert_eq!(parse_inventory(old.clone()).unwrap().agents[0].pane_name, None);
-    for name in [Value::Null, json!("Label15"), json!("<b>literal</b>"), json!(" x "), json!("\u{00e9}".repeat(80))] {
+    assert_eq!(
+        parse_inventory(old.clone()).unwrap().agents[0].pane_name,
+        None
+    );
+    for name in [
+        Value::Null,
+        json!("Label15"),
+        json!("<b>literal</b>"),
+        json!(" x "),
+        json!("\u{00e9}".repeat(80)),
+    ] {
         let mut value = old.clone();
         value["agents"][0]["pane_name"] = name.clone();
         let parsed = parse_inventory(value).unwrap();
         assert_eq!(parsed.agents[0].pane_name.as_deref(), name.as_str());
     }
-    let mut invalid = vec![json!(true), json!(42), json!({}), json!([]), json!(""), json!("  "), json!("x".repeat(161)), json!("\u{00e9}".repeat(81))];
-    for c in ['\0', '\n', '\r', '\t', '\u{001b}', '\u{007f}', '\u{0085}', '\u{061c}', '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}', '\u{2028}', '\u{2029}'] {
+    let mut invalid = vec![
+        json!(true),
+        json!(42),
+        json!({}),
+        json!([]),
+        json!(""),
+        json!("  "),
+        json!("x".repeat(161)),
+        json!("\u{00e9}".repeat(81)),
+    ];
+    for c in [
+        '\0', '\n', '\r', '\t', '\u{001b}', '\u{007f}', '\u{0085}', '\u{061c}', '\u{200e}',
+        '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}',
+        '\u{2067}', '\u{2068}', '\u{2069}', '\u{2028}', '\u{2029}',
+    ] {
         invalid.push(json!(format!("left{c}right")));
     }
     for name in invalid {
@@ -99,14 +159,15 @@ fn presentation_rename_and_clear_preserve_terminal_identity_and_fleet_ids() {
     for name in [Some("Label15"), Some("Renamed"), None] {
         let mut changed = original.clone();
         changed.agents[0].pane_name = name.map(str::to_owned);
-        changed.agents[0].title = "Changed long title".into();
+        changed.agents[0].title = format!("{}...", "T".repeat(4093));
+        changed.agents[0].provider = Some("renamed-provider".into());
         assert!(original.agents[0].same_terminal(&changed.agents[0]));
         e.accept("epoch", changed);
         assert_eq!(terminal_references(&e), ids);
         let fleet = o.fleet();
         let card = &fleet["endpoints"][0]["agents"][0];
         assert_eq!(card["pane_name"], json!(name));
-        assert_eq!(card["title"], "Changed long title");
+        assert_eq!(card["title"], format!("{}...", "T".repeat(4093)));
     }
 }
 
@@ -584,7 +645,7 @@ fn helper_projection_rejects_oversized_duplicates_and_unknown_fields() {
     i.agents.push(i.agents[0].clone());
     assert!(parse_inventory(serde_json::to_value(i).unwrap()).is_err());
     let mut i = inventory("t");
-    i.agents[0].title = "x".repeat(513);
+    i.agents[0].title = "x".repeat(4097);
     assert!(parse_inventory(serde_json::to_value(i).unwrap()).is_err());
     let mut value = serde_json::to_value(inventory("t")).unwrap();
     value["command"] = json!("bad");
@@ -937,10 +998,106 @@ mod unix {
     }
 
     #[test]
+    fn whole_titles_for_native_and_process_agents_preserve_priority_and_metadata() {
+        let mut cases: Vec<(Value, String)> = [40, 41, 512, 513, 4096]
+            .into_iter()
+            .map(|n| (json!("x".repeat(n)), "x".repeat(n)))
+            .collect();
+        for n in [10, 128, 129, 1024] {
+            let text = "\u{1f600}".repeat(n);
+            cases.push((json!(text), text));
+        }
+        cases.extend([
+            (json!("literal..."), "literal...".into()),
+            (
+                json!(" \t left\n middle\r right\u{007f}  "),
+                "left middle right".into(),
+            ),
+            (
+                json!(format!("{}x", "\u{1f600}".repeat(1024))),
+                "Title unavailable (too long)".into(),
+            ),
+            (
+                json!("\u{00e9}".repeat(2049)),
+                "Title unavailable (too long)".into(),
+            ),
+            (json!(42), "Title unavailable (invalid)".into()),
+        ]);
+        // Exercise every candidate, including the native agent's matched-pane fallbacks.
+        for candidate in 0..6 {
+            for (input, expected) in &cases {
+                let mut snapshot = discovery_snapshot(&[0], 2);
+                for pane in snapshot["snapshot"]["panes"].as_array_mut().unwrap() {
+                    for key in ["name", "terminal_title", "title"] {
+                        pane.as_object_mut().unwrap().remove(key);
+                    }
+                    pane["label"] = json!("Stable pane name");
+                }
+                for key in ["name", "terminal_title", "title"] {
+                    snapshot["snapshot"]["agents"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove(key);
+                }
+                let key = ["name", "terminal_title", "title"][candidate % 3];
+                if candidate < 3 {
+                    snapshot["snapshot"]["agents"][0][key] = input.clone();
+                } else {
+                    snapshot["snapshot"]["panes"][0][key] = input.clone();
+                }
+                snapshot["snapshot"]["panes"][1][key] = input.clone();
+                // Lower-priority text must not conceal an unavailable preferred title.
+                if key != "title" {
+                    snapshot["snapshot"]["panes"][0]["title"] = json!("lower priority");
+                    snapshot["snapshot"]["panes"][1]["title"] = json!("lower priority");
+                }
+                let server = Server::new(
+                    discovery_replies(&snapshot, &[vec!["codex"], vec!["djinn"]]),
+                    Duration::ZERO,
+                );
+                let value = probe(&server.path, br#"{"operation":"inventory"}"#).unwrap();
+                let inventory = parse_inventory(value).unwrap();
+                for agent in &inventory.agents {
+                    assert_eq!(&agent.title, expected, "candidate {candidate}");
+                    assert!(!agent.title.contains('\u{fffd}'));
+                    assert_eq!(agent.pane_name.as_deref(), Some("Stable pane name"));
+                    assert_eq!(agent.provider.as_deref(), Some("djinn"));
+                    assert!(agent.project.is_some());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn titles_above_global_character_cap_remain_wire_errors() {
+        // This guard precedes title projection, unlike multibyte byte-limit overflow.
+        let mut snapshot = snapshot("t", "working");
+        snapshot["snapshot"]["agents"][0]["name"] = json!("x".repeat(4097));
+        let wire = serde_json::to_vec(&json!({"id":"r","result":snapshot})).unwrap();
+        assert!(crate::observation_wire::decode_native(&wire).is_err());
+    }
+
+    #[test]
     fn matched_pane_label_is_the_only_name_source_for_both_ingress_paths() {
         let mut previous = None;
         // Each inventory is freshly projected, including after rename and clear.
-        for label in [Some(json!("Label15")), Some(json!("Renamed")), None, Some(Value::Null), Some(json!(" ")), Some(json!(42)), Some(json!({})), Some(json!(true)), Some(json!([])), Some(json!("bad\nname")), Some(json!("bad\u{202e}name")), Some(json!("x".repeat(161))), Some(json!("\u{00e9}".repeat(81))), Some(json!("\u{00e9}".repeat(80))), Some(json!("<b>literal</b>"))] {
+        for label in [
+            Some(json!("Label15")),
+            Some(json!("Renamed")),
+            None,
+            Some(Value::Null),
+            Some(json!(" ")),
+            Some(json!(42)),
+            Some(json!({})),
+            Some(json!(true)),
+            Some(json!([])),
+            Some(json!("bad\nname")),
+            Some(json!("bad\u{202e}name")),
+            Some(json!("x".repeat(161))),
+            Some(json!("\u{00e9}".repeat(81))),
+            Some(json!("\u{00e9}".repeat(80))),
+            Some(json!("<b>literal</b>")),
+        ] {
             let mut snapshot = discovery_snapshot(&[0], 2);
             for pane in snapshot["snapshot"]["panes"].as_array_mut().unwrap() {
                 pane["terminal_title"] = json!("OSC title is not a name");
@@ -951,8 +1108,14 @@ mod unix {
                 }
             }
             snapshot["snapshot"]["agents"][0]["label"] = json!("Wrong source");
-            let expected = label.as_ref().and_then(Value::as_str).filter(|s| crate::agent_management_presentation::safe_display_text(s, 160));
-            let server = Server::new(discovery_replies(&snapshot, &[vec!["codex"], vec!["djinn"]]), Duration::ZERO);
+            let expected = label
+                .as_ref()
+                .and_then(Value::as_str)
+                .filter(|s| crate::agent_management_presentation::safe_display_text(s, 160));
+            let server = Server::new(
+                discovery_replies(&snapshot, &[vec!["codex"], vec!["djinn"]]),
+                Duration::ZERO,
+            );
             let value = probe(&server.path, br#"{"operation":"inventory"}"#).unwrap();
             for agent in value["agents"].as_array().unwrap() {
                 assert_eq!(agent.get("pane_name").and_then(Value::as_str), expected);

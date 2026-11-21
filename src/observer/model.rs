@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) const CONTRACT: &str = "coven.fleet-observer.v1";
 pub(super) const OUTPUT_LIMIT: usize = 64 * 1024;
+pub(super) const TITLE_LIMIT: usize = 4096;
 
 pub(super) fn now_ms() -> u64 {
     SystemTime::now()

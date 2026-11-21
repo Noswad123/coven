@@ -16,7 +16,7 @@ let serial = 0;
 // Real bootstrap, real handlers; deferred fetch ignores abort deliberately.
 async function browser(rows = [target], fleetEndpoints = [{id: 'desktop', label: 'Fleet host', connection: 'reachable',
   last_attempt_at_ms: Date.now(), observed_at_ms: Date.now(), error: null,
-  agents: ['e', 'f'].map(letter => ({id: letter.repeat(64), title: `Fleet ${letter}`, provider: 'djinn', project: 'Project',
+  agents: ['e', 'f'].map(letter => ({id: letter.repeat(64), pane_name: `Fleet ${letter}`, title: `Fleet ${letter}`, provider: 'djinn', project: 'Project',
     activity: 'unknown', evidence: 'kitsune_snapshot', observed_at_ms: Date.now(), output_available: false}))}]) {
   class Node {
     children = []; listeners = new Map(); dataset = {}; value = ''; open = false; text = ''; checked = false;
@@ -108,7 +108,7 @@ test('merged card posts to the exact native handle; changed bindings cannot insp
   const fleetID = 'e'.repeat(64), binding = 'f'.repeat(64);
   const linked = {...target, association_status: 'verified', card: {fleet_agent_id: fleetID, fleet_endpoint_id: 'desktop', binding_id: binding}};
   const endpoint = {id: 'desktop', label: 'Desktop', connection: 'reachable', last_attempt_at_ms: Date.now(), observed_at_ms: Date.now(), error: null,
-    agents: [{id: fleetID, title: target.label, provider: 'djinn', project: '', activity: 'unknown', evidence: 'kitsune_snapshot', observed_at_ms: Date.now(), output_available: true}]};
+    agents: [{id: fleetID, pane_name: target.label, title: target.label, provider: 'djinn', project: '', activity: 'unknown', evidence: 'kitsune_snapshot', observed_at_ms: Date.now(), output_available: true}]};
   const path = id => `/api/v1/agents/${fleetID}/conversations/${target.id}/bindings/${id}/messages`;
   const b = await browser([linked], [endpoint]);
   try {
@@ -431,7 +431,7 @@ test('same opaque ID under a different team is not an inspection of the original
 test('verified root removal or conflicting verification fences a pending token without posting or retargeting', async () => {
   for (const change of ['remove-root', 'verify-other', 'replace-reference']) {
     const endpoints = [{id: 'desktop', label: 'Fleet', connection: 'reachable', last_attempt_at_ms: Date.now(), observed_at_ms: Date.now(), error: null,
-      agents: [{id: 'e'.repeat(64), title: 'Original root', provider: 'djinn', project: '', activity: 'unknown', evidence: 'kitsune_snapshot', observed_at_ms: Date.now(), output_available: false}]}];
+      agents: [{id: 'e'.repeat(64), pane_name: 'Original root', title: 'Original root', provider: 'djinn', project: '', activity: 'unknown', evidence: 'kitsune_snapshot', observed_at_ms: Date.now(), output_available: false}]}];
     const b = await browser([target], endpoints);
     try {
       b.open(); b.draft('must not send'); b.send();

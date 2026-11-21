@@ -52,6 +52,7 @@ All routes are authenticated, same-origin and `Cache-Control: no-store`.
     "agents": [{
       "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "title": "Example project agent",
+      "pane_name": "Research",
       "provider": "djinn",
       "project": "example-project",
       "activity": "working",
@@ -69,6 +70,41 @@ safe code, never upstream text or a command/path. Activity is `working`, `idle`,
 `blocked` or `unknown`. The endpoint ID is configured server-side; agent ID is a
 gateway-issued lowercase 64-hex opaque reference that includes endpoint and
 connection/generation scope. Never infer job success from source `done`.
+
+`pane_name` is optional: absent/null supports older remote helpers. A supplied
+string is at most 160 UTF-8 bytes, without Unicode controls, U+061C, U+200E/F,
+U+2028/29, U+202A-E or U+2066-9. It comes only from the matched Kitsune pane's
+manual `label`, never a tab/workspace name, CWD, title or provider guess. Missing
+or empty names display **Unnamed pane**. Names are inert text, including literal
+`OC | ` prefixes and HTML-like characters; they carry no identity or authority.
+
+Each card body has three ordered lines: manual pane name, plain provider, and
+the existing session title. Only that third title removes the known leading
+legacy `OC | ` decoration for Djinn. Long values wrap without changing backing
+data. Provider display uses the reported provider, otherwise a single process
+family hint, **Multiple providers** for ambiguity, or **Unknown provider**.
+This display-only fallback does not verify identity or enable any capability.
+Evidence, family disclaimers, project/team and coverage diagnostics stay in
+Details, alongside chat/output status. Card, chat and Details headings use the
+same pane name. Renames and duplicate names never change opaque keys, bindings,
+read routes, availability, or trigger transcript reads/submissions. Native session
+metadata titles are unchanged. Upgrade readers before remote helpers; release and
+deployment remain separate operator steps.
+
+Session-title candidates are forwarded completely through 4096 UTF-8 bytes,
+without the former 512-byte shortening or added ellipsis. Existing control removal
+and outer-whitespace cleanup remain; literal `...` in a supplied title is retained.
+Unsupported values within the wire profile have an explicit unavailable placeholder,
+not a sliced value claiming to be complete. Other display-field limits and the
+global 4096-character wire guard/response budgets are unchanged.
+
+The web title line has no ellipsis, line clamp or clipped-height rule. A title
+already shortened by a running native application cannot be reconstructed by the
+gateway. Updated Djinn source removes its 40-character application cutoff and emits
+the session title directly; existing running instances require a deliberate updated
+UI relaunch. OpenTUI's current native title path also has an approximately 1019-byte
+transport ceiling, so this is not a claim of end-to-end 4 KiB Djinn OSC fidelity.
+Ordinary titles within that transport limit are not deliberately shortened.
 
 Evidence is `kitsune_snapshot` or `coven_process_discovery`. Process evidence
 provides only bounded provider-family hints, not native identity or activity:

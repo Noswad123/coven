@@ -15,7 +15,7 @@ const linked = (changes = {}) => ({...target, association_status: 'verified',
 const readPath = `/api/v1/agents/${agentID}/conversations/${target.id}/bindings/${bindingID}/messages`;
 const endpoints = () => ['desktop', 'other'].map((id, index) => ({id, label: 'Same host', connection: 'reachable',
   last_attempt_at_ms: Date.now(), observed_at_ms: Date.now(), error: null,
-  agents: [{id: index ? 'd'.repeat(64) : agentID, title: target.label, provider: 'djinn', project: '', activity: 'unknown',
+   agents: [{id: index ? 'd'.repeat(64) : agentID, pane_name: 'Research', title: target.label, provider: 'djinn', project: '', activity: 'unknown',
     observed_at_ms: Date.now(), evidence: 'kitsune_snapshot', output_available: false}]}));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 let serial = 0;
@@ -137,23 +137,45 @@ async function browser(rows = [linked()], fleetEndpoints = endpoints(), metadata
   };
 }
 
-test('legacy Djinn decoration is absent from card, chat and details headings while the exact route stays pinned', async () => {
+test('manual pane names stay literal in all headings; only the third session line loses legacy decoration', async () => {
   const fleet = endpoints();
+  fleet[0].agents[0].pane_name = 'OC | <script>Manual pane</script>';
   fleet[0].agents[0].title = 'OC | <script>Actual session</script>';
   const b = await browser([linked()], fleet);
   try {
     const card = b.$('agent-grid').children[0];
-    assert.equal(card.querySelector('.card-title').textContent, '<script>Actual session</script>');
+    assert.equal(card.querySelector('.card-title').textContent, 'OC | <script>Manual pane</script>');
     assert.equal(card.querySelector('.card-title').innerHTML, undefined);
+    assert.deepEqual(card.children[0].children[1].children.map(n => n.textContent),
+      ['OC | <script>Manual pane</script>', 'djinn', '<script>Actual session</script>']);
+    assert.equal(card.querySelector('.card-session-title').innerHTML, undefined);
     b.open();
-    assert.equal(b.$('conversation-title').textContent, '<script>Actual session</script> / research');
+    assert.equal(b.$('conversation-title').textContent, 'OC | <script>Manual pane</script>');
     assert.ok(b.pending(readPath));
     await b.respond(readPath, messages());
     b.$('close-conversation').emit('click'); await flush();
     card.querySelector('.card-details').emit('click');
-    assert.equal(b.$('detail-title').textContent, '<script>Actual session</script>');
+    assert.equal(b.$('detail-title').textContent, 'OC | <script>Manual pane</script>');
     assert.equal(fleet[0].agents[0].title, 'OC | <script>Actual session</script>');
     assert.equal(b.requests.filter(r => r.path.endsWith('/messages')).length, 1);
+    assert.equal(b.requests.filter(r => r.options.method === 'POST').length, 0);
+  } finally { b.restore(); }
+});
+
+test('the full session title wraps as the third line without replacing the short pane heading', async () => {
+  const fleet = endpoints();
+  const fullTitle = 'A complete session title: ' + 'preserve all of these words '.repeat(30) + 'END OF TITLE';
+  fleet[0].agents[0].pane_name = 'Short pane';
+  fleet[0].agents[0].title = fullTitle;
+  const b = await browser([linked()], fleet);
+  try {
+    const card = b.$('agent-grid').children[0];
+    assert.equal(card.querySelector('.card-title').textContent, 'Short pane');
+    assert.equal(card.querySelector('.card-session-title').textContent, fullTitle);
+    assert.equal(card.querySelector('.card-session-title').innerHTML, undefined);
+    assert.equal(fleet[0].agents[0].title, fullTitle);
+    b.open(); assert.ok(b.pending(readPath));
+    assert.equal(b.$('conversation-title').textContent, 'Short pane');
     assert.equal(b.requests.filter(r => r.options.method === 'POST').length, 0);
   } finally { b.restore(); }
 });
@@ -172,6 +194,59 @@ test('one grid merges only verified exact endpoint identity and primary click us
     await b.respond(path, messages());
     assert.match(b.$('conversation-messages').textContent, /inert/);
     assert.equal(b.requests.some(r => /\/output$/.test(r.path)), false);
+  } finally { b.restore(); }
+});
+
+test('three ordered body lines preserve provider/title data, ambiguity and old-helper fallback without diagnostic walls', async () => {
+  for (const [provider, provider_candidates, expected] of [
+    ...['pi', 'claude', 'codex', 'gemini', 'cursor', 'devin', 'agy', 'cline', 'omp', 'mastracode', 'opencode',
+      'copilot', 'kimi', 'kiro', 'droid', 'amp', 'grok', 'hermes', 'kilo', 'qodercli', 'maki', 'djinn', 'custom-provider'].map(p => [p, ['other'], p]),
+    ['', ['djinn'], 'djinn'], ['', ['claude', 'codex'], 'Multiple providers'], ['', [], 'Unknown provider']]) {
+    const fleet = endpoints();
+    const agent = fleet[0].agents[0];
+    Object.assign(agent, {provider, provider_candidates, pane_name: 'x'.repeat(160), title: 'OC | <b>Long session</b>'.repeat(20)});
+    if (!provider) {
+      agent.evidence = 'coven_process_discovery';
+      Object.assign(fleet[0], {discovery_status: 'observed', unclassified_panes: 0});
+    }
+    const original = structuredClone(agent);
+    const b = await browser([linked()], fleet);
+    try {
+      const card = b.$('agent-grid').children[0];
+      const title = provider === 'djinn' ? agent.title.slice(5) : agent.title;
+      assert.deepEqual(card.children[0].children[1].children.map(n => n.textContent), ['x'.repeat(160), expected, title]);
+      assert.doesNotMatch(card.textContent, /Provider identity|Coven process evidence|Process family hints|No project|Chat team|Team unassigned/);
+      assert.deepEqual(agent, original);
+      if (!provider) {
+        card.querySelector('.card-details').emit('click');
+        assert.match(b.$('detail-meta').textContent, /Coven process evidence.*Provider identity unconfirmed.*Process family hints/);
+        assert.equal(b.$('read-output').hidden, true);
+        b.$('close-detail').emit('click'); await flush();
+      }
+      delete agent.pane_name;
+      await b.fleet();
+      assert.equal(card.querySelector('.card-title').textContent, 'Unnamed pane');
+      assert.equal(b.requests.some(r => /messages|output|prompts/.test(r.path)), false);
+    } finally { b.restore(); }
+  }
+});
+
+test('renames and duplicate pane labels update open headings without rerouting, reads, lost focus or changed availability', async () => {
+  const fleet = endpoints();
+  const b = await browser([linked()], fleet);
+  try {
+    const card = b.$('agent-grid').children[0], primary = card.children[0];
+    primary.focus(); b.open(); await b.respond(readPath, messages());
+    fleet.forEach(endpoint => { endpoint.agents[0].pane_name = 'Same renamed pane'; });
+    await b.fleet();
+    assert.equal(b.$('conversation-title').textContent, 'Same renamed pane');
+    assert.equal(b.$('agent-grid').children.length, 2);
+    assert.equal(b.$('agent-grid').children[0], card);
+    assert.equal(b.requests.filter(r => r.path.endsWith('/messages')).length, 1);
+    assert.equal(b.requests.some(r => r.options.method === 'POST'), false);
+    b.$('close-conversation').emit('click'); await flush();
+    assert.equal(b.document.activeElement, primary);
+    primary.emit('click'); assert.ok(b.pending(readPath));
   } finally { b.restore(); }
 });
 
@@ -700,8 +775,8 @@ test('multiple native history targets do not add cards or introduce a chooser fo
     assert.equal(b.requests.filter(r => r.path.endsWith('/messages')).length, 1);
     assert.equal(b.document.activeElement, b.$('close-conversation'));
     other.focus(); assert.equal(b.document.activeElement, b.$('close-conversation'));
-    assert.equal(grid.children[0].querySelector('.card-title').textContent, target.label);
-    assert.match(b.$('conversation-title').textContent, /Private target.*research/);
+    assert.equal(grid.children[0].querySelector('.card-title').textContent, 'Research');
+    assert.equal(b.$('conversation-title').textContent, 'Research');
     b.$('close-conversation').emit('click'); await flush();
     assert.equal(b.document.activeElement, a);
     other.emit('click');
@@ -754,7 +829,7 @@ test('competing exact verified claims fail closed with a concise reason and no r
     b.$('agent-grid').children[0].children[0].emit('click');
     assert.equal(b.$('conversation-dialog').open, false);
     assert.equal(b.requests.some(r => r.path.endsWith('/messages')), false);
-    assert.match(b.$('agent-grid').textContent, /Multiple conversations claim this terminal/);
+    assert.match(b.$('agent-grid').textContent, /Chat unavailable/);
     b.$('agent-grid').children[0].children[1].emit('click');
     assert.match(b.$('detail-chat-status').textContent, /Multiple conversations claim this terminal/);
     assert.equal(b.requests.some(r => r.path.endsWith('/messages')), false);

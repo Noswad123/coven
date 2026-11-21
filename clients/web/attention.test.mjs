@@ -79,7 +79,7 @@ async function browser({rows = [item], push = {}, hash = '', attentionExtra = {}
     can_submit: false, association_status: 'verified', card: {fleet_agent_id: item.fleet_agent_id, fleet_endpoint_id: 'desktop', binding_id: item.binding_id}}]};
   const fleet = () => ({contract: 'coven.fleet-observer.v1', generated_at_ms: now, refresh_interval_ms: 3000, stale_after_ms: 15000,
     endpoints: [{id: 'desktop', label: 'Host', connection: 'reachable', last_attempt_at_ms: now, observed_at_ms: now, error: null,
-      agents: ['e', 'd'].map(c => ({id: hex(c), title: 'Original root', provider: 'djinn', project: 'Project', activity: 'idle',
+      agents: ['e', 'd'].map(c => ({id: hex(c), pane_name: 'Original root', title: 'Original root', provider: 'djinn', project: 'Project', activity: 'idle',
         evidence: 'kitsune_snapshot', observed_at_ms: now, output_available: false}))}]});
   vm.runInContext(app.replace(/^export /gm, ''), context);
   await respond('/api/v1/fleet', fleet()); await respond('/api/v1/conversations', list); await respond('/api/v1/attention', metadata(rows, attentionExtra));

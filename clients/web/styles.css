@@ -68,7 +68,7 @@ select { background: #181917; color: #e8e1d3; border: 1px solid #505145; border-
 .host-badge { font: 10px/1.6 ui-monospace, "SFMono-Regular", Consolas, monospace; color: var(--muted); border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .activity { font-size: 11px; color: var(--accent); text-align: right; flex-shrink: 0; }
 .card-title { display: block; font: 23px/1.25 Georgia, serif; overflow-wrap: anywhere; }
-.card-project { display: block; font-size: 12px; color: var(--muted); margin-top: 9px; line-height: 1.6; overflow-wrap: anywhere; }
+.card-provider, .card-session-title { display: block; font-size: 12px; color: var(--muted); margin-top: 9px; line-height: 1.6; overflow-wrap: anywhere; }
 .card-bottom { border-top: 1px solid var(--line); padding-top: 13px; margin-top: auto; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
 .card-action { color: var(--accent); }
 .empty-state { text-align: center; border: 1px dashed var(--line); border-radius: 5px; padding: 36px 20px; color: var(--muted); }

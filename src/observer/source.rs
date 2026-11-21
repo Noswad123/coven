@@ -47,11 +47,24 @@ fn locator(v: &N, key: &str) -> Result<String> {
     }
     Ok(s.into())
 }
+fn title(v: &N, key: &str) -> Option<String> {
+    // Bound source bytes before cleanup; the global wire character cap still applies.
+    match v.as_object().and_then(|o| o.get(key)) {
+        None | Some(N::Null) => None,
+        Some(N::String(s)) if s.len() <= super::model::TITLE_LIMIT => {
+            // Preserve the existing display cleanup, but never slice a title.
+            let text: String = s.chars().filter(|c| !c.is_control()).collect();
+            let text = text.trim();
+            (!text.is_empty()).then(|| text.to_owned())
+        }
+        Some(N::String(_)) => Some("Title unavailable (too long)".into()),
+        _ => Some("Title unavailable (invalid)".into()),
+    }
+}
 fn pane_name(pane: &N) -> Option<String> {
     // A malformed optional label must not discard otherwise valid fleet metadata.
     let label = pane.as_object()?.get("label")?.as_str()?;
-    crate::agent_management_presentation::safe_display_text(label, 160)
-        .then(|| label.to_owned())
+    crate::agent_management_presentation::safe_display_text(label, 160).then(|| label.to_owned())
 }
 fn result(root: &N, id: &str, kind: &str) -> Result<N> {
     if string(root, "id")? != id {
@@ -177,12 +190,12 @@ fn project_snapshot(reply: &socket::Reply) -> Result<(Inventory, N)> {
             "unknown"
         };
         let provider = optional(a, "agent")?;
-        let title = optional(a, "name")?
-            .or(optional(a, "terminal_title")?)
-            .or(optional(a, "title")?)
-            .or(optional(pane, "name")?)
-            .or(optional(pane, "terminal_title")?)
-            .or(optional(pane, "title")?)
+        let title = title(a, "name")
+            .or_else(|| title(a, "terminal_title"))
+            .or_else(|| title(a, "title"))
+            .or_else(|| title(pane, "name"))
+            .or_else(|| title(pane, "terminal_title"))
+            .or_else(|| title(pane, "title"))
             .or_else(|| provider.clone())
             .unwrap_or_else(|| "Agent".into());
         agents.push(Agent {
@@ -343,9 +356,9 @@ fn inventory(path: &str, deadline: Instant, budget: &mut ReadBudget) -> Result<I
             } else {
                 None
             };
-            let title = optional(pane, "name")?
-                .or(optional(pane, "terminal_title")?)
-                .or(optional(pane, "title")?)
+            let title = title(pane, "name")
+                .or_else(|| title(pane, "terminal_title"))
+                .or_else(|| title(pane, "title"))
                 .or_else(|| provider.clone())
                 .unwrap_or_else(|| "Agent".into());
             inventory.agents.push(Agent {

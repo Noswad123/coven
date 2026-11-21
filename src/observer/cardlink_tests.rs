@@ -216,12 +216,20 @@ fn cardlinks_presentation_rename_and_clear_keep_exact_binding() {
     for name in [Some("Label15"), Some("Renamed"), None] {
         let mut changed = original.clone();
         changed.agents[0].pane_name = name.map(str::to_owned);
-        changed.agents[0].title = "Renamed long title".into();
+        changed.agents[0].title = format!("{}...", "T".repeat(4093));
+        changed.agents[0].provider = Some("renamed-provider".into());
         e.accept("epoch", changed);
         let list = observer.conversation_list("alice");
         assert_eq!(list["conversations"][0]["association_status"], "verified");
         assert_eq!(list["conversations"][0]["card"], card);
-        observer.verify_card_binding("alice", card["fleet_agent_id"].as_str().unwrap(), list["conversations"][0]["id"].as_str().unwrap(), card["binding_id"].as_str().unwrap()).unwrap();
+        observer
+            .verify_card_binding(
+                "alice",
+                card["fleet_agent_id"].as_str().unwrap(),
+                list["conversations"][0]["id"].as_str().unwrap(),
+                card["binding_id"].as_str().unwrap(),
+            )
+            .unwrap();
     }
 }
 
