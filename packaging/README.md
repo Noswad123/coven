@@ -161,7 +161,7 @@ overrides generated commands; absent that override, generation uses canonical
   and all production modules retained. Root release build and cleared-environment,
   empty-PATH native help pass. Strict all-target Clippy and Rust **1.85.0** all-target
   check pass after the two MSRV fixes, without production-policy changes.
-  [Final split validation](../RUST_MIGRATION.md#final-local-acceptance) totals **1,225
+  [Final split validation](../docs/plans/RUST_MIGRATION.md#final-local-acceptance) totals **1,225
   native passes**, plus the standalone **941 Python tests in 191.978s** and **22 tool
   tests in 156.071s**; it is not a single fresh all-command green invocation.
   Ready for local review and manual native use within documented profiles.
@@ -274,4 +274,4 @@ Python. Partial prefixes are preserved; retries require a different new prefix.
 - `../src/example_assets.rs`: relocatable asset resolver and `AssetBundle`.
 - `../tests/native_entrypoint.rs`, `../tests/native_package.rs`, `../tests/native_install.rs`:
   independent runtime, inventory and relocation guards.
-- [../RUST_RETIREMENT.md](../RUST_RETIREMENT.md): release vs source-cleanup gates.
+- [../RUST_RETIREMENT.md](../docs/plans/RUST_RETIREMENT.md): release vs source-cleanup gates.

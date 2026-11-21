@@ -142,7 +142,7 @@ install's help, blank/demo init and refresh with cleared environment/empty PATH.
 Independent entrypoint (5), package (2) and install (9) tests pass and cover runtime
 guards. Root release/native help, strict all-target Clippy and Rust 1.85.0 all-target
 check pass after the two MSRV fixes, without production-policy changes.
-[Final local acceptance](../RUST_MIGRATION.md#final-local-acceptance) records **1,225
+[Final local acceptance](../docs/plans/RUST_MIGRATION.md#final-local-acceptance) records **1,225
 native passes via split validation**, not one fresh all-command green run, plus
 the standalone **941 Python tests in 191.978s** and **22 tool tests in 156.071s**.
 Ready for local review and manual native use within documented profiles. macOS and actual Homebrew
@@ -156,7 +156,7 @@ No changes have been committed, pushed or merged.
 
 ## Related files
 
-- [../RUST_MIGRATION.md](../RUST_MIGRATION.md#native-workspace-init): native API,
+- [../RUST_MIGRATION.md](../docs/plans/RUST_MIGRATION.md#native-workspace-init): native API,
   publication, durability limits and validation status.
 - `src/init.rs`, `src/storage/bootstrap.rs`, `src/platform/unix/init.rs`: native
   preparation, exclusive reservation and root resolution.

@@ -1,8 +1,8 @@
 # Normal Workflow Acceptance
 
 Opt-in, development-only Linux acceptance harness for
-[`docs/NORMAL_AGENT_WORKFLOW.md`](../../docs/NORMAL_AGENT_WORKFLOW.md) and
-[`docs/INTEGRATION_SETUP_CONTRACT.md`](../../docs/INTEGRATION_SETUP_CONTRACT.md).
+[`docs/NORMAL_AGENT_WORKFLOW.md`](../../docs/guides/NORMAL_AGENT_WORKFLOW.md) and
+[`docs/INTEGRATION_SETUP_CONTRACT.md`](../../docs/architecture/INTEGRATION_SETUP_CONTRACT.md).
 Nothing here is installed, automatically run, or imported by Coven production code.
 All runtime dependencies are explicit paths. Python 3 uses only its standard library;
 Bun imports Djinn's actual built-in `KitsuneAgentStatePlugin` and its native reporter.

@@ -1,7 +1,10 @@
 # Coven Web
 
-Coven's phone-first browser client. The authoritative API is
-`docs/COVEN_WEB.md` at the repository root. This directory has no framework,
+Coven's phone-first browser client. The authoritative API is the
+[Coven Web contract](../../docs/architecture/COVEN_WEB_CONTRACT.md); see the
+[browser guide](../../docs/guides/COVEN_WEB.md) for usage and the
+[deployment runbook](../../docs/operations/COVEN_WEB_DEPLOYMENT.md) for operation.
+This directory has no framework,
 build step, dependencies, external assets or telemetry. Private content is memory-only;
 browser notification permission and push subscription state are narrow exceptions.
 Node fixtures are synthetic tests only, never a fallback production fleet.

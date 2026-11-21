@@ -1,0 +1,305 @@
+# Agent receipt management contract
+
+## Overview
+
+For ordinary native invocation after one-time opt-in, use the
+[normal workflow and managed setup](../guides/NORMAL_AGENT_WORKFLOW.md). Its attached
+`agent run` accepts existing five-provider receipts plus separate volatile Djinn
+and explicitly installed Pi/OpenCode native-profile events, separate unordered
+Codex/Copilot hook facts and local Djinn producer attachments, and publishes
+Coven-attributed plain rows. External Kit ownership
+suppresses legacy status/detectors and automatic resume even on helper failure;
+runtime changes/rollback require restart, new panes and provider reload. No launcher,
+group/artifact join, automatic installation, PID inference or native
+attestation is required or claimed. [Checked CLI navigation](AGENT_NAVIGATION_CONTRACT.md)
+supports unchanged temporary user assertions and source-qualified local Djinn
+selected-root producer associations. [Native profiles](NATIVE_PROVIDER_EVENTS_CONTRACT.md)
+do not change old reference assets/receipts or the doctor's closed-v1 capabilities.
+See the [adoption status](../changelog/FEATURE_ADOPTION_STATUS.md); full migration/macOS native qualification remain open.
+The v1 receipt/inventory and bounded `serve` contract below is unchanged.
+
+[Native attachment](NATIVE_ATTACHMENT_CONTRACT.md) defines the closed capture/report
+frames, fixed Kit endpoint/terminal/incarnation and receiver epoch, exact reporter
+instance/SID join and five-second producer lease with mounted-only one-second
+observations. Quiet roots are metadata-only UNKNOWN with null activity age;
+attachment never renews native status/decision clocks. Conflicting targets refuse,
+releases/expiry invalidate navigation, and replacement targets are never auto-bound.
+This is normal local Djinn full-TUI/default-worker/implicit-local scope, not remote
+hosting, caller authentication, physical display or provider execution ownership.
+
+[Native hook facts](NATIVE_HOOK_FACTS_CONTRACT.md) defines `coven.provider-facts.v1`
+and `agent report-fact`: Codex source-qualified and Copilot documentation-qualified
+unordered facts with public state always UNKNOWN. Codex source age is unknown;
+Copilot UTC-Z source time anchors monotonic freshness, equal timestamps never
+renew and conflicting equal-time events are ambiguous. No fake ordered UUID/
+sequence, current-state inference or tool-name decision pairing. Bounded volatile
+facts are separate from old reference journals, native profiles and attachment
+clocks. Best-effort native hooks emit zero stdout and exit zero on report failure.
+`agent native-hooks plan` generates inert manual snippets only: managed native-hook
+install/uninstall/rollback is not implemented. Exact-image journals, approvals and
+credentials are untouched. Frozen `agent serve` accepts neither new contract.
+
+Coven owns an independent, foreground Claude/Codex/Copilot native-hook and Pi/OpenCode
+extension-envelope receiver and redacted inventory.
+Private receiver support is Linux/macOS only (Windows unsupported; other Unix
+refuses before binding); macOS is source-enabled but not natively qualified.
+This is distinct from [private hook-file mutation](HOOK_FILE_BACKEND_CONTRACT.md):
+Linux and provisional local-APFS macOS apply are source-enabled, but Kit installer
+retirement remains Linux-only. Receiver storage and hook files now share OS
+privacy admission through `private_access.rs`, not hook transaction machinery.
+The [private storage and endpoint contract](AGENT_PRIVATE_STORAGE_CONTRACT.md)
+defines descriptor-rooted storage, provisional local-APFS macOS ACL admission,
+socket admission and native qualification limits. Linux receiver startup requires
+available/permitted `fchmodat2` (Linux 6.5 or backport), not a minimum for all Coven
+commands. Configuration-backend support alone does not qualify broader management.
+Contract: `coven.agent-management.v1`. These are **caller-supplied, unverified
+receipts**, not an authenticated native-session registry or task authority. See
+[the migration matrix](../plans/AGENT_MANAGEMENT_MIGRATION.md) for the all-provider target
+and remaining full ownership/qualification transfers, distinct from delivered
+16-adapter interactive submission and bounded explicit recovery.
+
+Separate [ephemeral discovery](AGENT_DISCOVERY_CONTRACT.md) admits Linux v1 and
+source-enabled provisional macOS v2 generic foreground-cohort evidence, not native
+runtime certification. It keeps `acquisition_completeness: unknown` and neither
+joins receipts nor changes this receiver, provider, wire/store or receipt contract.
+
+## API / Interfaces
+
+```text
+coven agent run WORKSPACE --socket ABS_COVEN_SOCKET --kitsune-socket ABS_KITSUNE_SOCKET --source coven [--json]
+coven agent report-native --socket ABS_COVEN_SOCKET [--json]
+coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 [--kitsune-socket ABS_KITSUNE_SOCKET --source coven] [--json]
+coven agent report --provider claude --socket ABS_COVEN_SOCKET [--event EVENT] [--json]
+coven agent report --provider codex --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
+coven agent report --provider copilot --socket ABS_COVEN_SOCKET [--event SessionStart] [--json]
+coven agent report-extension --provider pi --socket ABS_COVEN_SOCKET --event session_start [--json]
+coven agent report-extension --provider opencode --socket ABS_COVEN_SOCKET --event session.created [--json]
+coven agent inventory --socket ABS_COVEN_SOCKET [--json]
+```
+
+- `serve`: duration defaults to 60 seconds; accepted range 1–3600. Explicit existing
+  workspace with a regular `coven.json` marker, not a complete task/configuration
+  authority check. Core startup never launches a provider or daemon.
+- `report`: native JSON on stdin, at most **1 MiB**, depth bounded and typed-decoded.
+  Requires `session_id` and `hook_event_name`. Session ID is nonblank, at most 512
+  UTF-8 bytes, with no controls or leading hyphen after leading whitespace.
+  Optional `--event` must match the payload event.
+- Claude main-session events (unchanged): `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+  `PostToolUse`, `Stop`, `SessionEnd`. `SubagentStop`, or a nonempty string
+  `agent_id`, is ignored without sending a report. Non-null, non-string `agent_id` is invalid.
+- Codex accepts **only `SessionStart`** in domain validation, even though the
+  shared CLI event parser also lists Claude events. It captures a reference, never
+  working/idle/ended lifecycle. No `thread_id`/`thread-id` session alias exists.
+  Native SessionStart has seven required fields; Coven intentionally requires only
+  session ID/event and ignores/drops the rest before RPC. See the pinned native
+  schema and complete native example in [the Codex contract](CODEX_HOOKS_CONTRACT.md#data-flow).
+- No implicit HOME/config roots, provider executable discovery, PATH lookup,
+  probes, native-store inspection or automatic adoption.
+
+Copilot also accepts **only exact `SessionStart`**, requiring `session_id` and
+`hook_event_name`; no `sessionId`, camelCase aliases or inferred events. `--event`
+cannot supply a missing event. Unknown fields including `initial_prompt`, `cwd`,
+native `timestamp`/`source` and agent metadata are dropped before RPC. Claude's
+subagent suppression does **not** apply to Copilot; `agent_id` is ignored regardless
+of type. The [Copilot contract](COPILOT_HOOKS_CONTRACT.md) pins native documentation,
+not an implementation/binary or operational certification.
+
+Library entry points use `ServeRequest { workspace, socket, duration }`,
+`ReportRequest { socket, provider, event }`, `InventoryRequest { socket }` and
+`serve_arguments`, `report_arguments`/`report_payload`, `inventory_arguments`,
+returning `Result<TaskOutput>`. `TaskOutput` carries stdout, warnings and exit code.
+The optional presentation entry point additionally takes
+`PresentationRequest { socket, source }`.
+
+Pi uses separate `extension_report_arguments`/`extension_report_payload`, not
+`report` (which still accepts only the three native-hook providers). Stdin must
+contain exactly `{"contract":"coven.pi-extension.v1","event":"session_start","session_id":"ID"}`.
+All three fields and required `--event session_start` must match; unknown fields
+refuse rather than being dropped. The same payload/ID bounds apply. This is a
+Coven-owned envelope, not Pi-native hook JSON. Provider `pi` and event
+`session_start` map the `getSessionId` interpretation, not authentication. See
+[Pi extension contract](PI_EXTENSION_CONTRACT.md) for producer and placement limits.
+
+OpenCode uses the same separate `extension_report_arguments`/`extension_report_payload`
+entry points but requires exactly three string fields
+`{"contract":"coven.opencode-extension.v1","event":"session.created","session_id":"ID"}`,
+with exact event `session.created` or `session.updated`. Required request `--event`
+must equal the payload event and cannot supply a missing one. Unknown fields,
+aliases and wrong types refuse. Provider/event maps contract interpretation, not
+authenticated origin. The [OpenCode contract](OPENCODE_EXTENSION_CONTRACT.md) pins
+release v1.19.5 and documents server-instance scope, conservative full-DTO producer
+validation, 32-pending-plus-one-active FIFO, and placement/restart limits. Native
+`agent report` still accepts only Claude/Codex/Copilot; extension contracts remain
+separate from native hook JSON and from each other.
+
+### Private wire and output
+
+The Unix stream uses bounded newline-delimited requests with exactly `id`,
+`contract`, `method`, `params`; correlation IDs are 32 hex characters. Methods are
+only `report` and `inventory`. Report params contain exactly `provider`, `event`,
+`session_id`; inventory params are empty. Requests are bounded to 8192 bytes;
+frozen v1 `agent serve` retains one whole-connection deadline of at most 200 ms,
+capped by its serve deadline, for receive, handling and reply. Normal `agent run`
+instead uses 200 ms for receive/admission, then starts a separate fixed 200 ms
+reply-write window after the handler completes, before the existing endpoint
+privacy fence. Persisted receipt replies follow actual commit handling, never
+an early ACK; native volatile replies use the same phase policy without becoming
+durable. Storage/filesystem syscalls are not bounded by these 200 ms windows.
+Client calls still share one unchanged one-second deadline across connect, send
+and receive, with at most 256 KiB reply budget, endpoint fences and closed result
+validation before stdout. Slow storage can exceed that client deadline even after
+commit, leaving delivery uncertain; no resend or mutation retry follows.
+
+`report --json` returns `type: accepted`, a 64-hex `record_id`, and delivery
+`committed` or `durability_uncertain`; ignored subagents return `type: ignored`,
+`reason: subagent`. Human accepted output is `Accepted RECORD_ID`.
+Inventory returns `contract`, `server_epoch`, `authorization: none`, and `records`.
+Each record contains only:
+
+```text
+record_id, provider, last_event, reported_state, age_ms,
+reference_trust: caller_supplied_unverified,
+native_identity: unestablished, job_completion: unestablished
+```
+
+The record ID is SHA-256 of provider (`claude`, `codex`, `copilot`, `pi` or `opencode`), NUL, then the exact
+session ID. Existing Claude hashes are unchanged; equal session IDs from different
+providers yield distinct records. It is a stable pseudonymous reference, not
+authentication or anonymization against guessing.
+Native IDs are omitted from inventory, acknowledgements and optional UI rows.
+Default inventory/serve output is pretty JSON; `--json` is compact. The CLI adds
+a terminal LF. Graceful duration expiry or Ctrl-C returns exit **0** with
+`type: stopped`; this route does not promise the watch command's exit-130 policy.
+
+## Data Flow
+
+1. Decode and validate the native root payload or strict Pi/OpenCode envelope, then construct a **new** minimal
+   object. Prompt, transcript, cwd and all unknown fields are dropped **before
+   transport, storage or stdout**; Claude subagent events never revive the main record.
+2. Validate the private endpoint and send one correlated request. No automatic retry.
+3. Receiver retains root/state/lock/lease descriptors, takes the ordinary workspace
+   lock for each update, rereads from the same admitted private FD, then publishes
+   with held-state-relative `renameat`. It releases that guard between reports.
+   Temporary files are privacy-admitted before secret writes. Best-effort cleanup
+   can leave one private, potentially secret-bearing orphan per failed attempt;
+   fences are not CAS against hostile same-UID/root or old-FD writes.
+4. Persist `state/agent-management.json` with unchanged `schema_version: 1` as private
+   **0600**, at most **128 records aggregate across five providers** (not per provider)
+   and **256 KiB**. Private records retain full native IDs, last events, receipt
+   timestamps and receiver epochs. Capacity exhaustion refuses a new record; no eviction
+   or pruning API is supplied. Stored record fields remain `provider`, `session_id`,
+   `last_event`, `timestamp_ms`, `server_epoch`; no schema migration is required.
+5. Publish a redacted projection using receipt-local monotonic ages, not native
+   event timestamps. Receipt order wins; delayed/spoofed reports are possible.
+
+| Claude last event received in this receiver epoch | Reported state |
+| --- | --- |
+| `SessionStart` | `unknown` |
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `working` |
+| `Stop` | `idle` |
+| `SessionEnd` | `ended` |
+| Persisted record after restart, until a new receipt | `unknown`, `age_ms: null` |
+
+These states are **last reported**, not current jobs/readiness/identity/completion.
+The unchanged v1 inventory has no freshness threshold turning them into live
+guarantees. The separate normal view bounds Claude last-reported activity to
+30 seconds; repaint does not refresh facts. Its independent UI lease is five seconds.
+Codex, Copilot, Pi and OpenCode v1 receipt records are always **unknown**, even when fresh with a known receipt age.
+After restart **all providers'** persisted records have unknown state and null age
+until another receipt; a new Codex/Copilot/Pi/OpenCode receipt still does not establish activity.
+
+Upgrade receivers before new Pi/OpenCode producers. Older binaries reject newly
+supported providers' wire/store records despite unchanged schema-v1 fields; once
+those records are stored, downgrade to those
+readers is unsupported without separately preserving/removing incompatible state.
+There is no automatic downgrade conversion or reset.
+
+### Receiver lifetime and optional presentation
+
+Linux/macOS transport requires an existing owned socket parent with **exact 0700**
+mode and a private **0600** socket. Aliased/unsafe paths are refused. Bind never
+unlinks an existing leaf, even a stale socket. Parent/socket inode fences detect
+replacement; cleanup removes only the still-owned endpoint. A SIGINT guard is
+installed **before bind**, including startup error cleanup. SIGTERM/SIGKILL cleanup
+is not promised: verify no live owner before manually removing a stale socket.
+
+Bind starts listening before chmod; the admitted private parent protects that
+interval even with umask 000. No-follow descriptor-relative chmod has no
+pathname-following fallback. Missing/blocked Linux `fchmodat2` returns
+`agent_socket_chmod_failed`, attempts owned-node cleanup and precedes Store private
+writes. Changed parent privacy/namespace can prevent cleanup and leave a stale node.
+Clients admit before connect and first send; later privacy/identity faults are
+uncertain delivery without resend. See the private storage contract for macOS's
+parent-FD/basename metadata query, not a socket-FD ACL check.
+
+A separate persistent `state/.agent-management.receiver.lock` lease admits only
+one receiver per workspace, even on different sockets. Its 0600 inode stays after
+exit and is protected from generic replacement by its reserved basename; never
+remove/replace it to bypass a live receiver. Startup synchronizes `state/` and the
+workspace root before admitting report commits. State/workspace-lock/lease identity
+is fenced during service.
+
+Root/state require ownership and no group/other write bits, not exact 0700;
+existing 0755 directories and a 0640 workspace lock can be valid without repair.
+The private lease is never truncated/replaced/unlinked. Agent paths refuse symlink
+ancestors and `..`; relative workspaces use physical cwd, without automatic user-
+alias canonicalization. Generic storage policies remain unchanged.
+
+Optional `--kitsune-socket` and `--source` must be supplied together. An independent
+worker waits for initialized receiver projection before UI IO. It reads only generic
+snapshot discovery and uses `integration.view.open/replace/poll/close`, not Kitsune
+agent APIs. It sends bounded last-reported label/detail rows with dynamic provider
+labels for Claude, Codex, Copilot, Pi and OpenCode; Kitsune gains no provider-specific knowledge. Selecting one adds
+read-only trust details. No pane binding, launch, resume, adoption or role follows.
+Unavailable/failed Kitsune presentation does not stop core capture; the final report
+adds a separate `presentation` outcome. Configure a dedicated generic source
+manually and avoid another publisher contending for its lease. Uncertain UI writes
+are not replayed; lease expiry is the fallback cleanup.
+
+## Edge Cases
+
+- From first send onward, missing/invalid acknowledgements can be
+  `agent_delivery_uncertain`: receipt may already be persisted. Do not retry
+  automatically. `durability_uncertain` also means replacement occurred, not
+  permission to retry or roll back. Peer error bodies are not echoed.
+- Local socket ownership is not native producer authentication. Anyone able to
+  call the selected endpoint can make unverified claims. Private IDs never grant
+  resume authority or terminal association.
+- The workspace marker admits storage, not task execution, readiness or approval.
+  Existing task/launch/checkpoint contracts remain independent.
+- Receiver availability is optional for installed best-effort hooks; offline
+  failure is suppressed by the generated shell command, not turned into native
+  provider failure. Bound socket existence alone is not receiver readiness.
+- Pi instead uses a best-effort Node child with a two-second kill request, no shell,
+  queue or retry; overlaps drop and the slot remains held until child close.
+- OpenCode uses a best-effort FIFO of 32 pending plus one active Node child, drops
+  incoming events when full, and never deduplicates or retries. Capacity precedes
+  DTO work; dispose clears pending work and requests kill without guaranteeing exit.
+
+## Example usage
+
+Reference syntax; select inspected absolute paths and prepare the existing owned
+0700 socket parent separately. This starts only Coven's foreground receiver:
+
+```text
+coven agent serve WORKSPACE --socket ABS_COVEN_SOCKET --duration 60 --json
+coven agent inventory --socket ABS_COVEN_SOCKET --json
+```
+
+In a separate invocation, `agent report --provider claude --socket ABS_COVEN_SOCKET
+--event Stop --json` accepts stdin such as
+`{"session_id":"example-unverified-id","hook_event_name":"Stop"}`. This writes
+receipt state, not native status. Add the paired Kitsune options to `serve` only
+for optional generic presentation; core inventory requires no Kitsune installation.
+
+## Related files
+
+- [Private storage and endpoints](AGENT_PRIVATE_STORAGE_CONTRACT.md)
+- `src/agent_management.rs`, `src/agent_management/{files,store,unix}.rs`, `src/private_access.rs`
+- `src/agent_management_presentation.rs`, `src/main.rs`
+- `src/{read_fs,strict_json,session_support,observation_socket}.rs`,
+  `src/storage/replacement.rs`, `src/group_presenter/wire.rs`
+- `tests/{agent_management_workflow,agent_management_presentation,claude_agent_migration_workflow}.rs`
+- [Claude hooks](CLAUDE_HOOKS_CONTRACT.md), [Codex hooks](CODEX_HOOKS_CONTRACT.md), [migration ownership](../plans/AGENT_MANAGEMENT_MIGRATION.md)
+- [Copilot hooks](COPILOT_HOOKS_CONTRACT.md), `tests/copilot_agent_migration_workflow.rs`
+- [OpenCode extension](OPENCODE_EXTENSION_CONTRACT.md), [Pi extension](PI_EXTENSION_CONTRACT.md)
