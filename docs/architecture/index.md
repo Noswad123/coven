@@ -88,6 +88,8 @@ Current contracts take precedence over historical migration summaries.
 
 ### Workspace authority and preparation
 
+- [Workspace records](WORKSPACE_RECORDS.md): managed paths, persisted record shapes,
+  configuration authority and editable labels versus stable identity.
 - [Snapshot storage](STORAGE_CONTRACT.md): local task authority, cooperative
   locking, atomic replacement and secondary projections.
 - [Task ledger](TASK_LEDGER_CONTRACT.md): explicit task-only import,

@@ -32,12 +32,18 @@ notes do not override them.
 - Plans and history are not standing instructions. Historical approvals do not
   authorize new builds, installation, configuration changes, provider execution,
   staging, commits, releases or deployment.
-- Legacy files directly under `docs/` are forwarding pages that preserve existing
-  README and handoff links. Prefer canonical category paths in new documentation.
+- Keep only this index directly under `docs/`. Documents live in their category
+  folders; links point directly to their authoritative destinations, not forwarding
+  pages. When moving a section, update its incoming links and fragments together.
 - Commands, paths and headings in retained historical content preserve their
   original context; they are not automatically current operating instructions.
 
 ## Suggested first reads
+
+For local workspace coordination, start with
+[workspace basics](guides/WORKSPACE_BASICS.md), then
+[task workflows](guides/TASK_WORKFLOWS.md) and
+[preparation workflows](guides/PREPARATION_WORKFLOWS.md).
 
 For ordinary native-agent invocation, begin with
 [the normal workflow](guides/NORMAL_AGENT_WORKFLOW.md), then consult
@@ -50,6 +56,6 @@ For deployment and recovery, use the [operations index](operations/index.md).
 
 ## Project entry point
 
-- [Root README](../README.md): unchanged project entry point; legacy documentation
-  links are supported by forwarding pages.
+- [Root README](../README.md): concise project overview, installation entry points
+  and a local-files-only quick start.
 - Each category index links to its canonical documents and their stated limits.

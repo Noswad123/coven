@@ -347,22 +347,22 @@ sh scripts/install-native.sh --binary /abs/prebuilt/coven --prefix /abs/existing
 
 Paths are placeholders; the stage prefix must be absent with an existing trusted
 parent. The installer never builds, upgrades or rolls back partial installation.
-Help is titled `Manage multi-agent coven workspaces`. Use inspected tokens/IDs in the README's
-[standalone](../../README.md#fresh-native-standalone-loop) and
-[reviewed graph](../../README.md#fresh-native-reviewed-two-node-loop) flows. Those examples
+Help is titled `Manage multi-agent coven workspaces`. Use inspected tokens/IDs in the preparation guide's
+[standalone](../guides/PREPARATION_WORKFLOWS.md#fresh-native-standalone-loop) and
+[reviewed graph](../guides/PREPARATION_WORKFLOWS.md#fresh-native-reviewed-two-node-loop) flows. Those examples
 are labeled pseudocode where manual document/variable setup is required. The
-[bounded observation examples](../../README.md#native-bounded-local-observation) show
+[bounded observation examples](../guides/OBSERVATION_AND_GROUPS.md#native-bounded-local-observation) show
 functional repository/readiness/persisted-Djinn CLI commands with inert reference
 selectors; real-Git validation belongs in disposable local checkouts. After
 release validation, repeat accepted workflows through the installed `coven` with Python absent;
 unsupported-route refusal alone is not a successful workflow smoke test.
-The README's [reviewed cold-launch pseudocode](../../README.md#optional-reviewed-runtime-startup)
+The runtime guide's [reviewed cold-launch pseudocode](../guides/RUNTIME_WORKFLOWS.md#optional-reviewed-runtime-startup)
 uses explicit native paths and manually inspected placeholder pins; it is not
 automatic approval or a recommendation to validate against real installed runtimes.
 
 ## Related files
 
-- [README.md](../../README.md): user-visible native availability, examples and current install.
+- [Project overview](../../README.md): native availability, quick start and installation entry points.
 - [RUST_MIGRATION.md](RUST_MIGRATION.md): code map, limits, validation and coverage matrix.
 - `src/main.rs`, `src/execution/mutation/`: native routing and preparation writers.
 - `src/actions/mutation/`, `src/launch{.rs,/executable.rs}`, `src/runtime{.rs,/transport.rs}`,
@@ -393,7 +393,7 @@ automatic approval or a recommendation to validate against real installed runtim
 - `tests/native_entrypoint.rs`, `tests/native_package.rs`, `tests/native_install.rs`:
   independent non-delegation, source-payload and installed-runtime guards.
 - `scripts/install-native.sh`, `packaging/coven.rb`: staged native installer and
-  unpromoted local formula candidate; see [staged usage](../../README.md#native-only-staged-installation-not-cutover).
+  unpromoted local formula candidate; see [staged usage](../../packaging/README.md#install-a-prebuilt-binary).
 - `tests/retirement/coverage.json`, `tools/retirement_coverage.py`,
   `tests/session_views_vectors.rs`: original IDs, audit and independent frozen vectors.
 - `src/workspace_assets{,/init}.rs`, `examples/README.md`, `examples/interactive-demo/`:

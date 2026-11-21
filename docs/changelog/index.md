@@ -2,6 +2,12 @@
 
 [Documentation index](../index.md)
 
+## Documentation provenance
+
+- [README extraction source map](readme-27cc6ae-evidence.md) — where the former
+  README's historical validation and migration claims are preserved; not a new
+  test run or qualification report.
+
 ## Coven Web (newest first)
 
 Same-day order follows the original handoff's reverse chronology. Historical

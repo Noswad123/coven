@@ -854,7 +854,7 @@ contracts remain necessary for future execution, not for observing existing agen
 
 ## Related files
 
-- [README.md](../../README.md) — current behavior and existing safety contracts.
+- [Architecture index](index.md) — current behavior and existing safety contracts.
 - [KITSUNE_AGENT_COMPARISON_CONTRACT.md](KITSUNE_AGENT_COMPARISON_CONTRACT.md) — native bounded comparison and extraction decision matrix.
 - [GROUP_LIVE_STATUS_CONTRACT.md](GROUP_LIVE_STATUS_CONTRACT.md) — schema-3 declarations, status expiry and no-authority boundaries.
 - [ROADMAP.md](../plans/ROADMAP.md) — longer-term orchestration backlog.

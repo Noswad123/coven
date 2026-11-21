@@ -1280,8 +1280,8 @@ errors 1 (parser errors can also exit 2). Keep exact original arguments for retr
 
 ### Example usage
 
-See the README's [fresh standalone loop](../../README.md#fresh-native-standalone-loop)
-and [reviewed two-node loop](../../README.md#fresh-native-reviewed-two-node-loop). They
+See the preparation guide's [fresh standalone loop](../guides/PREPARATION_WORKFLOWS.md#fresh-native-standalone-loop)
+and [reviewed two-node loop](../guides/PREPARATION_WORKFLOWS.md#fresh-native-reviewed-two-node-loop). They
 explicitly label setup as pseudocode and require inspected tokens/IDs. Rebinding
 uses the enrollment route with `--rebind-source`, not implicit source adoption.
 
@@ -2189,7 +2189,7 @@ describes CLI transport, not worker health or task success.
 
 ### Example usage
 
-See the README's [reviewed startup pseudocode](../../README.md#optional-reviewed-runtime-startup).
+See the runtime guide's [reviewed startup pseudocode](../guides/RUNTIME_WORKFLOWS.md#optional-reviewed-runtime-startup).
 All IDs, manifest/snapshot/decision/claim tokens require manual inspection and
 substitution. Review does not automatically submit; checkpoint approval, execution
 preparation and observations cannot substitute for fresh durable action admission.
@@ -2335,7 +2335,7 @@ become `SpawnError`, not successful observations; adapters do not leak transcrip
 
 ### Example usage
 
-The README's [native bounded local observation](../../README.md#native-bounded-local-observation)
+The observation guide's [native bounded local observation](../guides/OBSERVATION_AND_GROUPS.md#native-bounded-local-observation)
 examples exercise actual commands with every mode/flag shown above. Paths and full
 commit selectors there are **inert reference values**, not runnable fixture IDs.
 For real-Git validation use a fresh disposable local checkout with Git >=2.48 and
@@ -2450,8 +2450,8 @@ agent selections must all validate against today's roster before backend creatio
 
 ### Example usage
 
-Use explicit `target/debug/coven` paths as in the README's
-[legacy examples](../../README.md#native-legacy-lifecycle). Plan appends an event; lead
+Use explicit `target/debug/coven` paths as in the runtime guide's
+[legacy examples](../guides/RUNTIME_WORKFLOWS.md#native-legacy-lifecycle). Plan appends an event; lead
 clear mutates metadata. `up`/`start`, restart and agent start/restart may launch
 unrestricted tools; bootstrap sends input. Do not validate them against actual user
 workspaces or installed runtimes merely to reproduce the acceptance batch.
@@ -2998,10 +2998,10 @@ are not interruptible hard deadlines and read requests may cause server housekee
 
 ### Example usage
 
-See [all seven placeholder command examples](../../README.md#native-session-workflows).
+See [all seven placeholder command examples](../guides/SESSION_WORKFLOWS.md#native-session-workflows).
 These are reference syntax, not instructions to contact live user endpoints;
 capabilities/read/watch do I/O, while start/resume/prompt without execute are pure.
-See [staged installer usage](../../README.md#native-only-staged-installation-not-cutover)
+See [staged installer usage](../../packaging/README.md#install-a-prebuilt-binary)
 for actual `--binary`, `--prefix`, optional `--examples` flags. The installer requires
 a prebuilt executable and absent prefix with existing parent; it never builds,
 selects the default wrapper, copies/deletes the runner or performs an upgrade.

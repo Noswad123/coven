@@ -23,8 +23,11 @@ COVEN_NATIVE_BIN=/abs/prebuilt/coven /abs/checkout/bin/coven --help
 `/abs/...` values are placeholders. The launcher selects absolute `COVEN_NATIVE_BIN`
 when set, otherwise only the normal checkout's `target/release/coven`. Missing
 selection fails with explicit build guidance; no Cargo, Python, debug-binary or
-PATH fallback exists. Symlinked/relocated launchers require explicit absolute
-native selection. Help is titled `Manage multi-agent coven workspaces`.
+PATH fallback exists. Default checkout discovery follows relative or absolute
+launcher symlinks, bounded to 40 links; `readlink` is needed only for symlinks
+(fixed system paths are tried when PATH is empty). Relocated launcher copies
+require explicit absolute native selection. Help is titled
+`Manage multi-agent coven workspaces`.
 
 ### Install the Development Checkout
 
@@ -145,9 +148,18 @@ use the selected asset root. Blank initialization needs no example content.
 Relocation does not depend on a compiled-in checkout path.
 
 The checkout launcher preserves, rather than overwrites, both `COVEN_HOME` and
-`COVEN_COMMAND`. `COVEN_HOME` selects assets, not a native binary. `COVEN_COMMAND`
-overrides generated commands; absent that override, generation uses canonical
-`coven`. Installed binaries have no launcher or checkout dependency.
+`COVEN_COMMAND`. `COVEN_HOME` selects assets, not a native binary. Installed binaries
+have no launcher or checkout dependency.
+
+### Public callback compatibility
+
+Native init, refresh and lifecycle monitor callbacks select nonempty
+`COVEN_COMMAND`, then nonempty `ARCANA_PUBLIC_COVEN`, then portable `coven`.
+Empty values are unset; `ARCANA_PUBLIC_COMMAND` and `ARCANA_PUBLIC_NUMEN` are
+ignored. Selected public path spelling is shell-quoted without canonicalization
+or an executable probe. This also applies to installed direct binaries: it keeps
+the Arcana fallback without embedding a checkout wrapper or granting execution
+authority. Non-UTF-8 selected values retain their domain-profile errors.
 
 ## Completed locally vs External checklist
 

@@ -80,7 +80,6 @@ and does not authorize either.
 
 ## Related files
 
-- [Plans index](index.md), [history index](../changelog/index.md),
-  [old handoff navigation](../COVEN_WEB_HANDOFF.md),
+- [Plans index](index.md), [handoff history](../changelog/index.md),
   [runbook](../operations/COVEN_WEB_DEPLOYMENT.md),
   [dated state](../operations/COVEN_WEB_DEPLOYMENT_STATE.md).

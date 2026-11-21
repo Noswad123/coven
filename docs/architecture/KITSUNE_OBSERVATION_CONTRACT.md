@@ -190,7 +190,7 @@ malformed-legacy payloads from this slice's offline coverage.
 - [tests/test_observe_commands.py](../../tests/test_observe_commands.py) — CLI, wrapper,
   explicit selection, authority independence, and workspace preservation.
 - [tests/test_process_snapshot_contract.py](../../tests/test_process_snapshot_contract.py) — generic projection and strict-path isolation.
-- [README.md](../../README.md), [APP_BOUNDARIES.md](APP_BOUNDARIES.md).
+- [Observation and groups](../guides/OBSERVATION_AND_GROUPS.md), [APP_BOUNDARIES.md](APP_BOUNDARIES.md).
 - Optional sibling navigation, not a dependency:
   [Kitsune inspection](../../../kitsune/AGENT_TRACKING_INSPECTION.md),
   [snapshot builder](../../../kitsune/src/app/api/session.rs),
