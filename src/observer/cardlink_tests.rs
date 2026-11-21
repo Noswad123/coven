@@ -144,6 +144,7 @@ impl Kit {
                             workspace_id: "workspace".into(),
                             tab_id: "tab".into(),
                             title: "Djinn".into(),
+                            pane_name: None,
                             provider: Some("djinn".into()),
                             project: None,
                             activity: "idle".into(),
@@ -199,6 +200,29 @@ fn wait_for_pause(pause: &StatusPause) {
 fn resume(pause: &StatusPause) {
     pause.0.lock().unwrap().1 = true;
     pause.1.notify_all();
+}
+
+#[test]
+fn cardlinks_presentation_rename_and_clear_keep_exact_binding() {
+    let peer = Peer::new();
+    let kit = Kit::new(&peer);
+    peer.state.lock().unwrap().association = Some(kit.association());
+    let observer = kit.observer(&peer, 1);
+    let first = observer.conversation_list("alice");
+    let card = first["conversations"][0]["card"].clone();
+    assert_eq!(first["conversations"][0]["association_status"], "verified");
+    let e = &observer.endpoints[0];
+    let original = e.cache.lock().unwrap().inventory.clone().unwrap();
+    for name in [Some("Label15"), Some("Renamed"), None] {
+        let mut changed = original.clone();
+        changed.agents[0].pane_name = name.map(str::to_owned);
+        changed.agents[0].title = "Renamed long title".into();
+        e.accept("epoch", changed);
+        let list = observer.conversation_list("alice");
+        assert_eq!(list["conversations"][0]["association_status"], "verified");
+        assert_eq!(list["conversations"][0]["card"], card);
+        observer.verify_card_binding("alice", card["fleet_agent_id"].as_str().unwrap(), list["conversations"][0]["id"].as_str().unwrap(), card["binding_id"].as_str().unwrap()).unwrap();
+    }
 }
 
 #[test]

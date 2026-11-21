@@ -2,9 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CONTRACT, validateFleet, initialState, receiveFleet, failFleet, projectFleet,
-  ageLabel, validateOutput, createOutputGate, setText, errorMessage, endpointCoverage, responseError } from './app.js';
+  ageLabel, validateOutput, createOutputGate, setText, displaySessionTitle, errorMessage, endpointCoverage, responseError } from './app.js';
 
 const NOW = 1900000000000;
+test('Djinn display titles remove one legacy decoration without changing identity or unrelated titles', () => {
+  const agent = {id: 'a'.repeat(64), provider: 'djinn', title: 'OC | Improve notifications'};
+  assert.equal(displaySessionTitle(agent), 'Improve notifications');
+  assert.equal(agent.title, 'OC | Improve notifications');
+  assert.equal(agent.id, 'a'.repeat(64));
+  for (const title of ['A normal title', 'Use OC | in the middle', 'OC tooling', 'OC|A title', ' OC | A title', '<script>literal</script>']) {
+    assert.equal(displaySessionTitle({...agent, title}), title);
+  }
+  assert.equal(displaySessionTitle({...agent, title: 'OC | OC | Deliberate title'}), 'OC | Deliberate title');
+  for (const provider of ['opencode', 'claude', '']) {
+    assert.equal(displaySessionTitle({...agent, provider}), agent.title);
+  }
+  assert.equal(displaySessionTitle({...agent, title: ''}), 'Untitled session');
+  assert.equal(displaySessionTitle({...agent, title: 'OC | '}), 'Untitled session');
+});
+
 test('Coven Web assets and package retain their canonical branding and API contract', () => {
   const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
   const metadata = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -25,8 +41,13 @@ test('user-marked explanatory elements are removed while retained copy and compa
   assert.doesNotMatch(html, /delete this/i);
   assert.doesNotMatch(html, /<footer\b/i);
   assert.match(html, /<p class="eyebrow">Agent Management<\/p>/);
-  assert.match(html, /<span class="read-only">Private<\/span>/);
-  assert.match(html, /Coverage is incomplete\./);
+  assert.match(html, /id="alerts-toggle"[^>]*aria-pressed="false">Alerts off<\/button>/);
+  assert.equal((html.match(/id="alerts-toggle"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /id="(?:host-health|conversation-link-status|enable-alerts|disable-alerts)"|Coverage is incomplete|>Private</);
+  assert.doesNotMatch(css, /\.host-(?:health|chip)|\.read-only/);
+  assert.ok(html.indexOf('id="conversation-messages"') < html.indexOf('id="decision-details"'));
+  assert.ok(html.indexOf('id="decision-details"') < html.indexOf('id="prompt-composer"'));
+  assert.match(css, /\.conversation-message pre \{ max-height: none; overflow: visible; \}/);
   assert.match(html, /A quiet view of your sessions\./);
   assert.doesNotMatch(css, /\bfooter\b|\.intro > p:last-child/);
   assert.match(css, /\.shell \{[^}]*padding: 0 20px 32px;/);

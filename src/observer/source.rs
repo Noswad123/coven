@@ -47,6 +47,12 @@ fn locator(v: &N, key: &str) -> Result<String> {
     }
     Ok(s.into())
 }
+fn pane_name(pane: &N) -> Option<String> {
+    // A malformed optional label must not discard otherwise valid fleet metadata.
+    let label = pane.as_object()?.get("label")?.as_str()?;
+    crate::agent_management_presentation::safe_display_text(label, 160)
+        .then(|| label.to_owned())
+}
 fn result(root: &N, id: &str, kind: &str) -> Result<N> {
     if string(root, "id")? != id {
         return Err(Error("schema_error"));
@@ -185,6 +191,7 @@ fn project_snapshot(reply: &socket::Reply) -> Result<(Inventory, N)> {
             workspace_id,
             tab_id,
             title,
+            pane_name: pane_name(pane),
             provider_candidates: provider
                 .iter()
                 .filter(|s| super::model::provider_token(s))
@@ -347,6 +354,7 @@ fn inventory(path: &str, deadline: Instant, budget: &mut ReadBudget) -> Result<I
                 workspace_id: locator(pane, "workspace_id")?,
                 tab_id: locator(pane, "tab_id")?,
                 title,
+                pane_name: pane_name(pane),
                 provider,
                 project: optional(pane, "cwd")?,
                 activity: "unknown".into(),

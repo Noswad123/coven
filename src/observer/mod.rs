@@ -184,6 +184,9 @@ fn parse_inventory(value: Value) -> Result<Inventory> {
         .any(|s| {
             s.is_empty() || s.len() > 256 || s.chars().any(|c| c.is_control() || c.is_whitespace())
         }) || agent.title.len() > 512
+            || agent.pane_name.as_ref().is_some_and(|name| {
+                !crate::agent_management_presentation::safe_display_text(name, 160)
+            })
             || agent.provider.as_ref().is_some_and(|s| s.len() > 512)
             || agent.project.as_ref().is_some_and(|s| s.len() > 512)
             || !matches!(
@@ -299,7 +302,7 @@ impl Observer {
             let cache = endpoint.cache.lock().unwrap_or_else(|p| p.into_inner());
             let fresh = cache.fresh.is_some_and(|at| at.elapsed() < STALE);
             let agents: Vec<Value> = cache.inventory.iter().flat_map(|i| &i.agents).zip(&cache.ids).map(|(agent,id)| json!({
-                "id":id,"title":agent.title,"provider":agent.provider.as_deref().unwrap_or(""),"project":agent.project.as_deref().unwrap_or(""),
+                "id":id,"title":agent.title,"pane_name":agent.pane_name,"provider":agent.provider.as_deref().unwrap_or(""),"project":agent.project.as_deref().unwrap_or(""),
                 "activity":agent.activity,"evidence":agent.evidence,"provider_candidates":agent.provider_candidates,"observed_at_ms":cache.observed.unwrap_or(0),
                 "output_available":self.allow_output && fresh && agent.evidence == "kitsune_snapshot"
             })).collect();

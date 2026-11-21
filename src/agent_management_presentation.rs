@@ -811,7 +811,7 @@ fn explicit_name(value: &Value) -> Option<&str> {
     safe_display_text(text, 160).then_some(text)
 }
 
-fn safe_display_text(text: &str, limit: usize) -> bool {
+pub(crate) fn safe_display_text(text: &str, limit: usize) -> bool {
     !text.trim().is_empty() && text.len() <= limit && !text.chars().any(|c|
         c.is_control() || matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{2028}' | '\u{2029}'))
 }

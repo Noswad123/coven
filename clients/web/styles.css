@@ -24,7 +24,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .brand-mark span { position: absolute; bottom: -7px; right: -5px; background: #181917; font: 19px Georgia, serif; }
 .eyebrow { margin: 0 0 8px; color: var(--accent); font: 10px ui-monospace, "SFMono-Regular", Consolas, monospace; text-transform: uppercase; letter-spacing: .15em; }
 h1 { font: 34px/1 Georgia, "Times New Roman", serif; margin: 0; font-weight: normal; letter-spacing: -.025em; }
-.read-only { margin-left: auto; border: 1px solid var(--line); padding: 7px 9px; border-radius: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+#alerts-toggle { margin-left: auto; flex-shrink: 0; min-width: 88px; white-space: nowrap; }
+#alerts-toggle[aria-pressed="true"] { color: var(--green); border-color: var(--green); }
+#alerts-error { margin-top: 12px; }
+#alerts-cleanup { margin-left: 8px; }
+.notice:empty, .warning:empty, [role="status"]:empty { display: none; }
 .intro { margin: 38px 0 26px; }
 h2 { font-size: 20px; font-weight: 500; margin: 0; }
 .intro h2 { font: 30px/1.2 Georgia, "Times New Roman", serif; max-width: 500px; }
@@ -43,10 +47,6 @@ select { background: #181917; color: #e8e1d3; border: 1px solid #505145; border-
 .notice, .warning { border-left: 2px solid var(--amber); background: #e1b57509; padding: 12px 14px; color: #e1cfae; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 15px; margin: 32px 0 16px; }
 .section-heading h2 { font: 23px Georgia, serif; }
-.host-health { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.host-chip { border: 1px solid var(--line); border-radius: 3px; font-size: 11px; padding: 7px 10px; color: var(--muted); overflow-wrap: anywhere; max-width: 100%; }
-.host-chip[data-state="reachable"] { color: var(--green); }
-.host-chip[data-state="unavailable"], .host-chip[data-state="unsupported"] { color: var(--amber); }
 .agent-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .agent-card { text-align: left; width: 100%; padding: 20px; background: linear-gradient(140deg, #292a23, #20211d); color: inherit; border: 1px solid #45463a; border-radius: 5px; display: flex; flex-direction: column; gap: 17px; min-width: 0; transition: border-color .15s, background .15s; }
 .agent-card:hover { border-color: #9a8b6b; background: #2a2b23; }
@@ -55,6 +55,9 @@ select { background: #181917; color: #e8e1d3; border: 1px solid #505145; border-
 .card-details { align-self: flex-start; }
 #conversation-status { flex: 1 1 160px; font-size: 13px; line-height: 1.6; }
 .conversation-message h3 { font-size: 13px; color: var(--accent); font-weight: 500; }
+.conversation-message pre { max-height: none; overflow: visible; }
+#conversation-dialog { overflow-anchor: none; scroll-behavior: auto; }
+#conversation-dialog > .dialog-heading { position: sticky; top: -1px; z-index: 1; background: #20211d; padding-bottom: 10px; }
 #prompt-composer { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
 #prompt-composer h3 { font: 23px Georgia, serif; }
 #prompt-composer label { display: block; font-size: 13px; line-height: 1.6; margin: 12px 0; }
@@ -90,14 +93,12 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; font: 12px/1.
   .brand-mark { width: 36px; height: 43px; font-size: 27px; }
   .masthead .eyebrow { font-size: 8px; letter-spacing: .08em; }
   h1 { font-size: 30px; }
-  .read-only { padding: 6px; font-size: 8px; }
   .intro { margin: 18px 0; }
   .intro > .eyebrow { display: none; }
   .intro h2 { font-size: 23px; }
   .connection-panel { padding: 12px; }
   .toolbar { margin-top: 10px; gap: 8px; }
   .section-heading { margin-top: 22px; gap: 10px; }
-  .host-health { margin-bottom: 12px; }
   .agent-card { padding: 16px; gap: 12px; }
   .card-title { font-size: 21px; }
 }
@@ -106,7 +107,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; font: 12px/1.
   .masthead { padding: 32px 0; }
   h1 { font-size: 42px; }
   .eyebrow { font-size: 11px; }
-  .read-only { font-size: 11px; padding: 8px 12px; }
   .intro { margin-top: 48px; }
   .intro h2 { font-size: 39px; }
   .agent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

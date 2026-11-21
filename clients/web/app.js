@@ -151,6 +151,14 @@ export function responseError(status, body) {
 // All server strings, including terminal text, cross one inert text boundary.
 export function setText(node, value) { node.textContent = value; return node; }
 
+// Older Djinn UIs decorate terminal titles, not the native session's actual name.
+// Remove only that exact leading decoration for known Djinn observations.
+export function displaySessionTitle(agent) {
+  const title = agent.title || 'Untitled session';
+  return agent.provider === 'djinn' && title.startsWith('OC | ')
+    ? title.slice(5) || 'Untitled session' : title;
+}
+
 export function validateConversations(value) {
   if (!record(value) || value.contract !== 'coven.conversations.v1'
     || !Array.isArray(value.conversations) || value.conversations.length > 64) throw new Error('invalid_conversations');
@@ -323,6 +331,8 @@ function bootstrap() {
   let alertUnverified = false;
   const alertHash = () => globalThis.location?.hash?.match(/^#attention=([a-f0-9]{64})$/)?.[1] ?? null;
   let alertsBusy = false;
+  let alertsChecking = false;
+  let localAlerts = 'off';
   let pushOperationRevision = 0;
   const pendingPushRemovals = new Set();
   const unresolvedPushCreations = new Set();
@@ -386,10 +396,10 @@ function bootstrap() {
     if (!dialog.open || !selectedKey) return;
     const card = selectedCard();
     const session = sessions().find(card => card.key === selectedKey);
-    setText($('detail-chat-status'), session?.target ? 'Verified terminal link. Open chat from the monitoring card.'
+    setText($('detail-chat-status'), session?.target ? 'Chat available. Open chat from the session card.'
       : `Chat unavailable: ${session?.chatUnavailable ?? 'This fleet reference was removed.'}`);
     if (card) {
-      setText($('detail-title'), card.agent.title || 'Untitled agent');
+      setText($('detail-title'), displaySessionTitle(card.agent));
       setText($('detail-meta'), `${card.evidenceLabel} / ${card.providerLabel} / ${card.agent.project || 'No project'} / ${card.endpoint.label} / ${card.age}${card.familyHints ? ` / ${card.familyHints}` : ''} / ${endpointCoverage(card.endpoint)}`);
     }
     if (!card?.outputEnabled) {
@@ -443,6 +453,39 @@ function bootstrap() {
   const conversationMetadataFresh = () => conversationMetadataAt !== null
     && Date.now() - conversationMetadataAt < conversationLease;
   const currentConversation = () => sessions().some(card => readKey(card.target) === readKey(conversationTarget));
+  let scrollRevision = 0;
+  let interactionRevision = 0;
+  let scrollIntent = null;
+  const nearLatest = () => conversationDialog.scrollHeight - conversationDialog.clientHeight - conversationDialog.scrollTop <= 96;
+  const stopFollowing = () => { interactionRevision++; scrollIntent = null; };
+  for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+    conversationDialog.addEventListener(event, stopFollowing, {passive: true});
+  }
+  // Scrollbar dragging and assistive scrolling also cancel an outstanding intent.
+  conversationDialog.addEventListener('scroll', () => {
+    if (scrollIntent?.appliedTop !== undefined && conversationDialog.scrollTop !== scrollIntent.appliedTop) stopFollowing();
+  });
+  function positionConversation(current = () => true) {
+    const intent = scrollIntent;
+    if (!intent) return;
+    const view = scrollRevision, interaction = intent.interaction;
+    const key = readKey(conversationTarget), decision = decisionRevision;
+    const apply = () => {
+      if (intent !== scrollIntent || view !== scrollRevision || interaction !== interactionRevision
+        || decision !== decisionRevision || key !== readKey(conversationTarget) || document.hidden
+        || !conversationDialog.open || !conversationMetadataFresh() || !currentConversation() || !current()) return;
+      if (intent.kind === 'request') {
+        const heading = $('decision-details').firstElementChild;
+        const anchor = heading ?? $('decision-status');
+        const header = conversationDialog.querySelector('.dialog-heading').getBoundingClientRect();
+        conversationDialog.scrollTop += anchor.getBoundingClientRect().top
+          - header.bottom - 8;
+      } else if (intent.kind === 'latest') conversationDialog.scrollTop = conversationDialog.scrollHeight;
+      else conversationDialog.scrollTop = intent.top;
+      intent.appliedTop = conversationDialog.scrollTop;
+    };
+    if (globalThis.requestAnimationFrame) requestAnimationFrame(apply);
+  }
   let promptRevision = 0;
   let promptRequest = null;
   let pendingAttempt = null;
@@ -558,15 +601,19 @@ function bootstrap() {
   }
 
   function clearConversation() {
+    scrollRevision++;
     conversationRequest?.abort();
     conversationRequest = null;
     conversationGate.invalidate();
     $('conversation-messages').replaceChildren();
     setText($('conversation-status'), '');
     $('read-conversation').disabled = false;
+    // Clearing private DOM can clamp scrollTop; that is not a user scroll.
+    if (scrollIntent) scrollIntent.appliedTop = conversationDialog.scrollTop;
   }
 
   function closeConversation() {
+    scrollIntent = null;
     fenceDecision();
     fencePrompt();
     clearConversation();
@@ -593,8 +640,8 @@ function bootstrap() {
 
   function invalidateAuthentication() {
     attentionRequest?.abort(); attentionRequest = null; attention = null; attentionAt = null;
-    $('enable-alerts').hidden = false; $('disable-alerts').hidden = false;
-    setText($('alerts-status'), 'Background state unverified after access loss.');
+    localAlerts = 'unknown';
+    renderAlerts('Background state unverified after access loss.');
     authRevision++;
     fleetRequest?.abort();
     clearOutput();
@@ -610,6 +657,10 @@ function bootstrap() {
   }
 
   async function readConversation(inspect = false) {
+    const top = conversationDialog.scrollTop;
+    const follow = nearLatest();
+    const interaction = interactionRevision;
+    if (inspect) scrollIntent = {kind: follow ? 'latest' : 'restore', top, interaction};
     clearConversation();
     const target = conversationTarget;
     const inspectedAttempts = inspect ? targetAttempts(target) : [];
@@ -636,17 +687,17 @@ function bootstrap() {
       // Hide only entries with no displayable text; never trim or reinterpret the
       // actual message, and do not invent text for content the reader omitted.
       const displayed = value.messages.filter(message => /[^\p{White_Space}\p{Default_Ignorable_Code_Point}\p{Cc}]/u.test(message.text));
-      const hidden = value.messages.length - displayed.length;
       for (const message of displayed) {
         const article = element('article', 'conversation-message');
         article.append(element('h3', '', `${message.role === 'user' ? 'User' : 'Assistant'}${message.truncated ? ' / truncated' : ''}`), element('pre', '', message.text));
         $('conversation-messages').append(article);
       }
       if (!displayed.length) {
-        $('conversation-messages').append(element('p', 'muted small', 'No displayable text in this sample. Non-text or truncated content may not be included.'));
+        $('conversation-messages').append(element('p', 'muted small', 'No text messages to display.'));
       }
       const partial = value.truncated || value.omitted_parts || value.messages.some(m => m.truncated);
-      setText($('conversation-status'), `${displayed.length} text messages shown / native projection${hidden ? ` / ${hidden} entries without displayable text hidden` : ''}${partial ? ' / partial' : ''}${value.has_older ? ' / older messages not shown' : ''}${value.truncated ? ' / truncated' : ''}${value.omitted_parts ? ' / non-text or unsupported parts omitted' : ''}. Refresh explicitly for changes.`);
+      setText($('conversation-status'), [value.has_older ? 'Earlier messages not shown.' : '', partial ? 'Some content omitted.' : ''].filter(Boolean).join(' '));
+      positionConversation(current);
     } catch (error) {
       if (!current()) return;
       $('conversation-messages').replaceChildren();
@@ -666,8 +717,8 @@ function bootstrap() {
     fencePrompt();
     conversationTarget = target;
     dialogReturnTargets.set(conversationDialog, focusReference(card));
-    setText($('conversation-title'), `${card.agent.title} / ${target.team}`);
-    setText($('conversation-link-status'), 'Verified terminal link');
+    setText($('conversation-title'), `${displaySessionTitle(card.agent)} / ${target.team}`);
+    scrollIntent = {kind: 'latest', interaction: interactionRevision};
     if (!conversationDialog.open) conversationDialog.showModal();
     renderComposer();
     renderRequests();
@@ -714,10 +765,9 @@ function bootstrap() {
       $('conversation-team').replaceChildren(...options);
       $('conversation-team').value = conversationTargets.some(t => t.team === selectedTeam) ? selectedTeam : '';
       render();
-      const coverage = (value.sources ?? []).map(source => `${source.label} (${source.id}) / ${source.team}: ${source.status}`).join('; ');
-      const awaiting = conversationTargets.filter(target => !sessions().some(card => card.target?.id === target.id)).length;
-      setText($('conversation-list-status'), `${conversationTargets.length ? `Authorized chat metadata, not execution readiness.${awaiting ? ` ${awaiting} shared session${awaiting === 1 ? '' : 's'} awaiting association.` : ''} Verified monitoring cards open directly; follow-ups require explicit write sharing.`
-        : 'No authorized conversations currently available. The operator must configure a read-only registration or an authorized native sharing source and current selection.'}${coverage ? ` Native source health: ${coverage}.` : ''}${value.omitted_conversations ? ` ${value.omitted_conversations} authorized conversations omitted by the list limit.` : ''}`);
+      setText($('conversation-list-status'), [value.sources?.some(source => source.status !== 'observed')
+        ? 'Some chats unavailable. Check the native source.' : '', value.omitted_conversations
+        ? 'Some sessions are not shown. Narrow your selection at the source.' : ''].filter(Boolean).join(' '));
     } catch (error) {
       if (revision !== conversationListRevision) return;
       invalidateConversations(error.message === 'auth' ? errorMessage('auth')
@@ -774,8 +824,7 @@ function bootstrap() {
       button.addEventListener('click', () => void openDecision(item));
       $('decision-requests').append(button);
     }
-    if (!items.length && !decisionItem) setText($('decision-status'), attentionFresh()
-      ? 'No linked requests observed. Coverage may be incomplete.' : 'Requests unavailable.');
+    if (!items.length && !decisionItem) setText($('decision-status'), attentionFresh() ? '' : 'Requests unavailable. Refresh to check.');
   }
   async function loadAttention() {
     if (document.hidden || attentionRequest) return;
@@ -799,6 +848,7 @@ function bootstrap() {
   }
   async function openDecision(item) {
     fenceDecision(); decisionItem = item;
+    scrollIntent = {kind: 'request', interaction: interactionRevision, appliedTop: conversationDialog.scrollTop};
     const revision = decisionRevision;
     const controller = new AbortController(); decisionRequest = controller;
     const timer = setTimeout(() => controller.abort(), 10000);
@@ -810,6 +860,7 @@ function bootstrap() {
       if (!current() || controller.signal.aborted) return;
       decisionDetail = detail;
       renderDecision(item, detail);
+      positionConversation(current);
     } catch {
       if (!current()) return;
       $('decision-details').replaceChildren();
@@ -938,9 +989,24 @@ function bootstrap() {
     return value;
   }
   function deliveryLabel(config) {
-    if (['idle', 'sent'].includes(config?.delivery_status)) return 'delivery advisory';
-    if (['unavailable', 'queue_limit', 'history_or_state_limit', 'crypto_failed', 'subscription_expired', 'retrying', 'delivery_failed', 'state_unavailable'].includes(config?.delivery_status)) return 'delivery degraded';
-    return 'delivery unverified';
+    if (config?.delivery_status === undefined || ['idle', 'sent'].includes(config.delivery_status)) return '';
+    if (['unavailable', 'queue_limit', 'history_or_state_limit', 'crypto_failed', 'subscription_expired', 'retrying', 'delivery_failed', 'state_unavailable'].includes(config?.delivery_status)) return 'Alert delivery degraded. Check the gateway.';
+    return 'Alert delivery unverified. Check the gateway.';
+  }
+  function renderAlerts(message = $('alerts-status').textContent) {
+    const busy = alertsBusy || alertsChecking;
+    setText($('alerts-toggle'), busy ? 'Alerts checking' : `Alerts ${localAlerts}`);
+    $('alerts-toggle').setAttribute('aria-pressed', localAlerts === 'unknown' ? 'mixed' : String(localAlerts === 'on'));
+    $('alerts-toggle').title = busy ? 'Checking alert settings'
+      : localAlerts === 'off' ? 'Enable alerts'
+      : localAlerts === 'on' ? 'Disable alerts' : 'Alert state unverified; disable browser alerts';
+    $('alerts-toggle').setAttribute('aria-busy', String(busy));
+    // Inspection is passive and may be superseded by an explicit user choice.
+    $('alerts-toggle').disabled = alertsBusy;
+    $('alerts-cleanup').disabled = alertsBusy;
+    $('alerts-cleanup').hidden = !pendingPushRemovals.size && !unresolvedPushCreations.size && !unidentifiedPushRemoval;
+    setText($('alerts-status'), message);
+    $('alerts-error').hidden = !message && $('alerts-cleanup').hidden;
   }
   async function pushMutation(path, data, revision, operation, signal, creation = null) {
     if (signal.aborted || revision !== authRevision || operation !== pushOperationRevision) throw new Error('auth');
@@ -961,21 +1027,21 @@ function bootstrap() {
     }
     return value;
   }
-  async function toggleAlerts(enable) {
+  async function toggleAlerts(enable, cleanupOnly = false) {
     if (alertsBusy) return;
     const operation = ++pushOperationRevision;
     if (!globalThis.navigator?.serviceWorker || (enable && (!globalThis.PushManager || !globalThis.Notification))) {
-      setText($('alerts-status'), 'Background alerts unsupported. In-page attention still works.'); return;
+      renderAlerts('Background alerts unsupported. In-page attention still works.'); return;
     }
     const controller = new AbortController(), signal = controller.signal;
     const timer = setTimeout(() => controller.abort(), 10000);
-    alertsBusy = true; $('enable-alerts').disabled = true; $('disable-alerts').disabled = true;
+    alertsBusy = true; alertsChecking = false; renderAlerts('');
     const revision = authRevision;
     try {
       if (!enable) {
         let localDisabled = false;
         let unidentifiedSubscription = false;
-        try {
+        if (!cleanupOnly) try {
           const registration = await alertWait(navigator.serviceWorker.getRegistration('/'), signal);
           const sub = registration && await alertWait(registration.pushManager.getSubscription(), signal);
           if (sub) {
@@ -990,6 +1056,8 @@ function bootstrap() {
           } else localDisabled = true;
         } catch { /* Keep local state unverified; server cleanup is still deliberate. */ }
         unidentifiedPushRemoval ||= unidentifiedSubscription;
+        if (!cleanupOnly) localAlerts = localDisabled ? 'off' : 'unknown';
+        renderAlerts('');
         let serverVerified = false;
         try {
           if (signal.aborted || revision !== authRevision || operation !== pushOperationRevision) throw new Error('auth');
@@ -1005,27 +1073,26 @@ function bootstrap() {
           serverVerified = revision === authRevision && operation === pushOperationRevision
             && !unidentifiedPushRemoval && unresolvedPushCreations.size === 0;
         } catch { /* No automatic mutation retries, including after lost receipts. */ }
-        $('enable-alerts').hidden = false;
-        $('disable-alerts').hidden = localDisabled && serverVerified;
-        setText($('disable-alerts'), localDisabled ? 'Remove server registration' : 'Disable alerts');
-        setText($('alerts-status'), localDisabled
-          ? serverVerified ? 'Browser alerts disabled' : 'Browser alerts disabled; server removal unverified'
-          : 'Browser removal unverified. Check browser settings.');
+        const message = cleanupOnly ? 'Server removal unverified. Check the gateway or retry cleanup.'
+          : localDisabled ? 'Browser alerts disabled; server removal unverified'
+          : 'Browser removal unverified. Check browser settings.';
+        renderAlerts(serverVerified && (cleanupOnly || localDisabled) ? '' : message);
         return;
       }
       if (pendingPushRemovals.size >= 32 || unresolvedPushCreations.size >= 32) throw new Error('cleanup_capacity');
       // Called only from a deliberate click, before awaiting network I/O.
       if (await alertWait(Notification.requestPermission(), signal) !== 'granted') {
-        setText($('alerts-status'), 'Background permission denied. In-page attention still works.'); return;
+        renderAlerts('Background permission denied. Check browser settings.'); return;
       }
       const config = pushConfig(await alertWait(fetchJSON('/api/v1/push/config', signal), signal));
       if (!config.enabled || !string(config.public_key) || !/^[A-Za-z0-9_-]{87}$/.test(config.public_key)) {
-        setText($('alerts-status'), 'Background alerts not configured. In-page attention still works.'); return;
+        renderAlerts('Background alerts not configured. Ask the operator to enable push.'); return;
       }
       await alertWait(navigator.serviceWorker.register('/service-worker.js', {scope: '/'}), signal);
       const registration = await alertWait(navigator.serviceWorker.ready, signal);
       if (signal.aborted || revision !== authRevision) throw new Error('auth');
       let sub = await alertWait(registration.pushManager.getSubscription(), signal);
+      localAlerts = 'unknown';
       if (sub && !config.subscriptions.includes(await alertWait(subscriptionID(sub.endpoint), signal))) {
         // This explicit re-enable must create a new endpoint, never transfer ownership.
         if (!await alertWait(sub.unsubscribe(), signal)) throw new Error('unsubscribe'); sub = null;
@@ -1041,40 +1108,43 @@ function bootstrap() {
       const result = await pushMutation('/api/v1/push/subscriptions', {subscription: {endpoint: sub.endpoint, keys: {p256dh: serialized.keys?.p256dh, auth: serialized.keys?.auth}}}, revision, operation, signal, {id});
       if (revision !== authRevision || result.subscription_id !== id) throw new Error('auth');
       pendingPushRemovals.delete(id);
-      $('enable-alerts').hidden = true; $('disable-alerts').hidden = false;
-      setText($('disable-alerts'), 'Disable alerts');
-      setText($('alerts-status'), `Background subscription enabled / ${deliveryLabel(config)}${unresolvedPushCreations.size ? '; earlier registration unverified' : ''}`);
+      localAlerts = 'on';
+      renderAlerts([deliveryLabel(config), unresolvedPushCreations.size ? 'Earlier registration unverified. Retry cleanup.' : ''].filter(Boolean).join('; '));
     } catch {
-      $('disable-alerts').hidden = false;
-      setText($('alerts-status'), 'Background state unverified. Check browser settings; in-page attention still works.');
-    } finally { controller.abort(); clearTimeout(timer); alertsBusy = false; $('enable-alerts').disabled = false; $('disable-alerts').disabled = false; }
+      localAlerts = 'unknown';
+      renderAlerts('Background state unverified. Check browser settings; in-page attention still works.');
+    } finally { controller.abort(); clearTimeout(timer); alertsBusy = false; renderAlerts(); }
   }
-  $('enable-alerts').addEventListener('click', () => void toggleAlerts(true));
-  $('disable-alerts').addEventListener('click', () => void toggleAlerts(false));
+  $('alerts-toggle').addEventListener('click', () => void toggleAlerts(localAlerts === 'off'));
+  $('alerts-cleanup').addEventListener('click', () => void toggleAlerts(false, true));
   async function inspectAlerts() {
     if (!globalThis.navigator?.serviceWorker || !globalThis.PushManager || globalThis.Notification?.permission !== 'granted') return;
     const revision = authRevision;
     const operation = pushOperationRevision;
     const controller = new AbortController(), signal = controller.signal;
     const timer = setTimeout(() => controller.abort(), 10000);
+    alertsChecking = true; renderAlerts();
     try {
       const registration = await alertWait(navigator.serviceWorker.getRegistration('/'), signal);
       const sub = registration && await alertWait(registration.pushManager.getSubscription(), signal);
-      if (!sub || alertsBusy || revision !== authRevision || operation !== pushOperationRevision) return;
+      if (alertsBusy || revision !== authRevision || operation !== pushOperationRevision) return;
+      if (!sub) { localAlerts = 'off'; renderAlerts(''); return; }
+      localAlerts = 'unknown';
       const config = pushConfig(await alertWait(fetchJSON('/api/v1/push/config', signal), signal));
       const id = await alertWait(subscriptionID(sub.endpoint), signal);
       if (alertsBusy || revision !== authRevision || operation !== pushOperationRevision) return;
       if (config?.contract === 'coven.web-push.v1' && config.enabled === true
         && Array.isArray(config.subscriptions) && config.subscriptions.includes(id)) {
-        $('enable-alerts').hidden = true; $('disable-alerts').hidden = false;
-        setText($('alerts-status'), `Background subscription enabled / ${deliveryLabel(config)}${unresolvedPushCreations.size ? '; earlier registration unverified' : ''}`);
+        localAlerts = 'on';
+        renderAlerts(deliveryLabel(config));
       } else {
-        $('disable-alerts').hidden = false;
-        setText($('alerts-status'), 'Browser subscription not verified for this account. Enable alerts to replace it.');
+        localAlerts = 'off';
+        renderAlerts('Browser subscription not verified for this account. Turn alerts on to replace it.');
       }
-    } catch { if (!alertsBusy && revision === authRevision && operation === pushOperationRevision) setText($('alerts-status'), 'Background state unverified. In-page attention still works.'); }
-    finally { controller.abort(); clearTimeout(timer); }
+    } catch { if (!alertsBusy && revision === authRevision && operation === pushOperationRevision) { localAlerts = 'unknown'; renderAlerts('Background state unverified. Check browser settings.'); } }
+    finally { controller.abort(); clearTimeout(timer); if (operation === pushOperationRevision) { alertsChecking = false; renderAlerts(); } }
   }
+  renderAlerts('');
   void inspectAlerts();
   globalThis.addEventListener?.('hashchange', () => { alertNavigation = null; alertUnverified = false; attentionAt = null; fenceDecision(); void loadAttention(); });
 
@@ -1135,7 +1205,7 @@ function bootstrap() {
     if (!card) return;
     const session = sessions(host, $('conversation-team').value).find(card => card.key === key);
     if (session) dialogReturnTargets.set(dialog, focusReference(session, 'details'));
-    setText($('detail-title'), card.agent.title || 'Untitled agent');
+    setText($('detail-title'), displaySessionTitle(card.agent));
     setText($('output-status'), unavailableReason(card));
     if (!dialog.open) dialog.showModal();
     updateDetail();
@@ -1171,8 +1241,11 @@ function bootstrap() {
     setText($('connection-status'), document.hidden ? `${connectivity} / polling paused` : connectivity);
     $('connection-dot').dataset.state = snapshot && !stale ? 'fresh' : 'stale';
     setText($('poll-status'), `${snapshot ? `Fleet ${ageLabel(snapshot.generated_at_ms, now).toLowerCase()}. ` : ''}${document.hidden ? 'Polling paused while hidden.' : `Polling every ${Math.max(1, Math.round(pollDelay() / 1000))}s${failures ? ' with failure backoff' : ''}.`}`);
-    $('notice').hidden = !state.failed;
-    if (state.failed) setText($('notice'), errorMessage(state.error));
+    const emptyHostErrors = view.endpoints.filter(endpoint => endpoint.connection !== 'reachable' && !endpoint.agents.length)
+      .map(endpoint => `${endpoint.label || endpoint.id} ${endpoint.connection}.`).join(' ');
+    const notice = state.failed ? errorMessage(state.error) : emptyHostErrors;
+    setText($('notice'), notice);
+    $('notice').hidden = !notice;
     $('refresh').disabled = fleetRequest !== null || document.hidden;
     // Reconcile by opaque identity instead of replacing focused cards every second.
     const keys = new Set(cards.map(card => card.key));
@@ -1206,10 +1279,10 @@ function bootstrap() {
       node.dataset.stale = String(!card.fresh);
       setText(node.querySelector('.host-badge'), card.endpoint.label || card.endpoint.id);
       setText(node.querySelector('.activity'), card.fresh ? card.activityLabel : `Stale / ${card.activityLabel}`);
-      setText(node.querySelector('.card-title'), card.agent.title || 'Untitled session');
+      setText(node.querySelector('.card-title'), displaySessionTitle(card.agent));
       setText(node.querySelector('.card-project'), `${card.providerLabel} / ${card.agent.project || 'No project'} / ${card.target ? `Chat team: ${card.target.team}` : 'Team unassigned'}`);
       setText(node.querySelector('.card-evidence'), `${card.evidenceLabel}${card.familyHints ? ` / ${card.familyHints}` : ''} / ${card.target
-        ? 'Chat capable / Verified terminal link'
+        ? 'Chat available'
         : `Chat unavailable: ${card.chatUnavailable}`}`);
       setText(node.querySelector('.card-age'), card.age);
       const needsResponse = attentionFresh() && attention.items.some(item => matchesTarget(item, card.target));
@@ -1222,14 +1295,6 @@ function bootstrap() {
     }
     if (focusedReference) restoreCardFocus(focusedReference);
     setText($('agent-count'), `${cards.length} session card${cards.length === 1 ? '' : 's'}${stale ? ' / fleet last known' : ''}`);
-    const chips = view.endpoints.map(endpoint => {
-      const endpointStale = state.failed || snapshotOld || endpoint.observed_at_ms === null || now - endpoint.observed_at_ms >= snapshot.stale_after_ms || endpoint.observed_at_ms > now + 5000;
-      const status = endpoint.connection === 'reachable' && endpointStale ? 'stale' : endpoint.connection;
-      const chip = element('span', 'host-chip', `${endpoint.label || endpoint.id} / ${status} / ${endpointCoverage(endpoint)}`);
-      chip.dataset.state = status;
-      return chip;
-    });
-    $('host-health').replaceChildren(...chips);
     $('empty-state').hidden = cards.length !== 0;
     const nativeCoverage = !conversationMetadataFresh()
       ? 'Native chat metadata is unavailable or awaiting revalidation; absence is not confirmed.'

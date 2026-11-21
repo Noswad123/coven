@@ -16,6 +16,7 @@ fn inventory(terminal: &str) -> Inventory {
             workspace_id: "ws-1".into(),
             tab_id: "tab-1".into(),
             title: "Synthetic".into(),
+            pane_name: None,
             provider: Some("djinn".into()),
             project: None,
             activity: "working".into(),
@@ -57,6 +58,55 @@ fn observer(endpoints: Vec<Arc<Endpoint>>, reply: Result<Value>) -> Observer {
         }),
         shutdown: Arc::new((Mutex::new(false), Condvar::new())),
         pollers: Vec::new(),
+    }
+}
+
+#[test]
+fn helper_pane_name_is_optional_safe_and_other_fields_remain_closed() {
+    let old = serde_json::to_value(inventory("terminal")).unwrap();
+    assert!(old["agents"][0].get("pane_name").is_none());
+    assert_eq!(parse_inventory(old.clone()).unwrap().agents[0].pane_name, None);
+    for name in [Value::Null, json!("Label15"), json!("<b>literal</b>"), json!(" x "), json!("\u{00e9}".repeat(80))] {
+        let mut value = old.clone();
+        value["agents"][0]["pane_name"] = name.clone();
+        let parsed = parse_inventory(value).unwrap();
+        assert_eq!(parsed.agents[0].pane_name.as_deref(), name.as_str());
+    }
+    let mut invalid = vec![json!(true), json!(42), json!({}), json!([]), json!(""), json!("  "), json!("x".repeat(161)), json!("\u{00e9}".repeat(81))];
+    for c in ['\0', '\n', '\r', '\t', '\u{001b}', '\u{007f}', '\u{0085}', '\u{061c}', '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}', '\u{2028}', '\u{2029}'] {
+        invalid.push(json!(format!("left{c}right")));
+    }
+    for name in invalid {
+        let mut value = old.clone();
+        value["agents"][0]["pane_name"] = name;
+        assert_eq!(parse_inventory(value).unwrap_err().code(), "schema_error");
+    }
+    let mut extra = old.clone();
+    extra["agents"][0]["manual_label"] = json!("unsupported");
+    assert!(parse_inventory(extra).is_err());
+    let mut extra = old;
+    extra["unexpected"] = json!(true);
+    assert!(parse_inventory(extra).is_err());
+}
+
+#[test]
+fn presentation_rename_and_clear_preserve_terminal_identity_and_fleet_ids() {
+    let e = endpoint("a");
+    let original = inventory("terminal");
+    e.accept("epoch", original.clone());
+    let ids = terminal_references(&e);
+    let o = observer(vec![e.clone()], Err(Error("unused")));
+    for name in [Some("Label15"), Some("Renamed"), None] {
+        let mut changed = original.clone();
+        changed.agents[0].pane_name = name.map(str::to_owned);
+        changed.agents[0].title = "Changed long title".into();
+        assert!(original.agents[0].same_terminal(&changed.agents[0]));
+        e.accept("epoch", changed);
+        assert_eq!(terminal_references(&e), ids);
+        let fleet = o.fleet();
+        let card = &fleet["endpoints"][0]["agents"][0];
+        assert_eq!(card["pane_name"], json!(name));
+        assert_eq!(card["title"], "Changed long title");
     }
 }
 
@@ -884,6 +934,40 @@ mod unix {
         replies.extend(process_replies);
         replies.push(("session.snapshot", snapshot.clone()));
         replies
+    }
+
+    #[test]
+    fn matched_pane_label_is_the_only_name_source_for_both_ingress_paths() {
+        let mut previous = None;
+        // Each inventory is freshly projected, including after rename and clear.
+        for label in [Some(json!("Label15")), Some(json!("Renamed")), None, Some(Value::Null), Some(json!(" ")), Some(json!(42)), Some(json!({})), Some(json!(true)), Some(json!([])), Some(json!("bad\nname")), Some(json!("bad\u{202e}name")), Some(json!("x".repeat(161))), Some(json!("\u{00e9}".repeat(81))), Some(json!("\u{00e9}".repeat(80))), Some(json!("<b>literal</b>"))] {
+            let mut snapshot = discovery_snapshot(&[0], 2);
+            for pane in snapshot["snapshot"]["panes"].as_array_mut().unwrap() {
+                pane["terminal_title"] = json!("OSC title is not a name");
+                pane["title"] = json!("Tab title is not a name");
+                pane["manual_label"] = json!("Not a snapshot field");
+                if let Some(label) = &label {
+                    pane["label"] = label.clone();
+                }
+            }
+            snapshot["snapshot"]["agents"][0]["label"] = json!("Wrong source");
+            let expected = label.as_ref().and_then(Value::as_str).filter(|s| crate::agent_management_presentation::safe_display_text(s, 160));
+            let server = Server::new(discovery_replies(&snapshot, &[vec!["codex"], vec!["djinn"]]), Duration::ZERO);
+            let value = probe(&server.path, br#"{"operation":"inventory"}"#).unwrap();
+            for agent in value["agents"].as_array().unwrap() {
+                assert_eq!(agent.get("pane_name").and_then(Value::as_str), expected);
+                assert_eq!(agent.get("pane_name").is_some(), expected.is_some());
+            }
+            let inventory = parse_inventory(value).unwrap();
+            assert_eq!(inventory.agents[0].title, "Project 0");
+            assert_eq!(inventory.agents[1].title, "Project 1");
+            assert_eq!(inventory.agents[0].evidence, "kitsune_snapshot");
+            assert_eq!(inventory.agents[1].evidence, "coven_process_discovery");
+            if let Some(old) = &previous {
+                assert!(inventory.agents[0].same_terminal(old));
+            }
+            previous = Some(inventory.agents[0].clone());
+        }
     }
 
     #[test]

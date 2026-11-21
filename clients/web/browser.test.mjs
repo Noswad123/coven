@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 
 // Opt-in real DOM coverage using an installed Firefox, without browser downloads.
 test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes and focus fences',
-  {skip: !process.env.COVEN_WEB_FIREFOX, timeout: 45000}, async () => {
+  {skip: !process.env.COVEN_WEB_FIREFOX, timeout: 45000}, async t => {
     assert.notEqual(process.platform, 'win32', 'COVEN_WEB_FIREFOX automation requires Unix process-group cleanup; Windows is unsupported');
     assert.equal(typeof globalThis.WebSocket, 'function', 'COVEN_WEB_FIREFOX requires Node with built-in WebSocket support (Node 22+; validated with Node 26)');
     assert.ok(process.env.TMPDIR, 'run with a unique disk-backed TMPDIR');
@@ -27,7 +27,12 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
     const targets = [target];
     let metadataStatus = 200;
     let fleetStatus = 200;
+    let emptyHostState = null;
     let requestPending = true;
+    let longHistory = false, holdMessages = false, holdDecisions = false, requestKind = 'question';
+    const delayedMessages = [], delayedDecisions = [];
+    const latestText = `${'Long latest message, not a nested scroll box.\n'.repeat(100)}LATEST MARKER`;
+    assert.ok(Buffer.byteLength(latestText) + 1200 < 8192);
     const decisionID = '1'.repeat(64), alertID = '2'.repeat(64);
     let agents = ['e', 'f'].map((letter, index) => ({id: letter.repeat(64), title: index ? 'Megatron full root' : 'Bumblebee full root',
       provider: 'djinn', project: 'Original project', activity: 'unknown', evidence: 'kitsune_snapshot', output_available: false}));
@@ -60,20 +65,29 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
           const value = req.url === '/api/v1/fleet'
             ? {contract: 'coven.fleet-observer.v1', generated_at_ms: now, refresh_interval_ms: 3000, stale_after_ms: 15000,
               endpoints: [{id: 'desktop', label: 'Synthetic host', connection: 'reachable', last_attempt_at_ms: now,
-                observed_at_ms: now, error: null, agents: agents.map(agent => ({...agent, observed_at_ms: now}))}]}
+                observed_at_ms: now, error: null, agents: agents.map(agent => ({...agent, observed_at_ms: now}))},
+                ...(emptyHostState ? [{id: 'empty-host', label: 'Megatron', connection: emptyHostState,
+                  last_attempt_at_ms: now, observed_at_ms: now, error: null, agents: []}] : [])]}
             : req.url === '/api/v1/conversations' ? {contract: 'coven.conversations.v1', conversations: targets}
               : req.url === '/api/v1/attention' ? {contract: 'coven.attention.v1', state: 'observed', omitted_count: 0, unavailable_count: 0, unlinked_count: 0,
                 items: linked && requestPending ? [{id: decisionID, alert_id: alertID, conversation_id: linked.id, team: linked.team,
-                  ...linked.card, kind: 'question', can_respond: true, details_available: true}] : []}
+                  ...linked.card, kind: requestKind, can_respond: true, details_available: true}] : []}
               : req.url === '/api/v1/csrf' ? {contract: 'coven.csrf.v1', token: `0-${'a'.repeat(64)}-${'b'.repeat(64)}`}
-              : req.url === `/api/v1/decisions/${decisionID}` ? {contract: 'coven.decision.v1', id: decisionID, alert_id: alertID, kind: 'question', can_respond: true,
-                decision: {kind: 'question', questions: [{question: '<script>Full first question</script>', header: 'Single',
+              : req.url === `/api/v1/decisions/${decisionID}` ? {contract: 'coven.decision.v1', id: decisionID, alert_id: alertID, kind: requestKind, can_respond: true,
+                decision: requestKind === 'permission' ? {kind: 'permission', permission: 'Run deployment?', patterns: ['complete pattern'],
+                  always_patterns: ['native pattern'], metadata_json: 'Diagnostic\n'.repeat(200), deny_scope: 'session_pending'}
+                : {kind: 'question', questions: [{question: '<script>Full first question</script>', header: 'Single',
                   options: [{label: 'First', description: '<b>Complete description</b>'}], multiple: false, custom: false},
                 {question: 'Full second question', header: 'Multiple', options: [{label: 'Second', description: 'Complete second choice'}], multiple: true, custom: true}]}}
               : {contract: 'coven.conversations.v1', id: selected.id, team: selected.team, source: 'djinn.conversation-read.v1',
-                messages: [{role: 'assistant', text: '', truncated: false}, {role: 'user', text: '<script>literal</script>', truncated: false}],
+                messages: longHistory ? [{role: 'user', text: 'Earlier history\n'.repeat(70), truncated: false},
+                  {role: 'assistant', text: latestText, truncated: false}]
+                  : [{role: 'assistant', text: '', truncated: false}, {role: 'user', text: '<script>literal</script>', truncated: false}],
                 has_older: false, truncated: false, omitted_parts: true, projection_sha256: 'b'.repeat(64)};
-          res.end(JSON.stringify(value));
+          const send = () => res.end(JSON.stringify(value));
+          if (req.url.endsWith('/messages') && holdMessages) delayedMessages.push(send);
+          else if (req.url === `/api/v1/decisions/${decisionID}` && holdDecisions) delayedDecisions.push(send);
+          else send();
         } else {
           const path = req.url === '/' ? '/index.html' : req.url;
           res.setHeader('Content-Type', path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'text/html');
@@ -128,11 +142,12 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
         assert.fail(`DOM condition timed out: ${expression}`);
       };
       const reads = () => requests.filter(req => req.path.endsWith('/messages'));
-      await wait(`document.querySelectorAll('.session-card').length === 2 && document.getElementById('conversation-list-status').textContent.includes('1 shared session awaiting association')`);
+      await wait(`document.querySelectorAll('.session-card').length === 2 && document.getElementById('conversation-list-status').textContent === ''`);
       assert.equal(reads().length, 0);
       assert.equal(await evaluate(`!document.getElementById('chat-picker') && !document.getElementById('shared-chats')`), true);
       assert.equal(await evaluate(`[...document.querySelectorAll('.agent-card')].every(node => node.getAttribute('aria-disabled') === 'true' && node.textContent.includes('Chat unavailable'))`), true);
       assert.equal(await evaluate(`document.querySelectorAll('.agent-grid').length === 1 && !document.querySelector('button button')`), true);
+      assert.equal(await evaluate(`document.getElementById('alerts-toggle').textContent === 'Alerts off' && document.getElementById('alerts-toggle').getAttribute('aria-pressed') === 'false' && document.getElementById('alerts-error').hidden`), true);
       assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
       await call('browsingContext.setViewport', {context, viewport: {width: 1280, height: 900}, devicePixelRatio: 1});
       assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
@@ -166,7 +181,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       assert.equal(await evaluate(`document.getElementById('prompt-composer').hidden`), true);
       assert.equal(await evaluate(`document.querySelector('.conversation-message pre').textContent`), '<script>literal</script>');
       assert.equal(await evaluate(`document.querySelector('.card-title').textContent`), 'Bumblebee full root');
-      assert.match(await evaluate(`document.getElementById('conversation-link-status').textContent`), /Verified terminal link/);
+      assert.equal(await evaluate(`document.getElementById('conversation-link-status') === null`), true);
       assert.equal(await evaluate(`document.activeElement.id`), 'close-conversation');
       await wait(`document.querySelectorAll('#decision-details fieldset').length === 2`);
       assert.equal(await evaluate(`document.querySelector('#decision-details pre').textContent`), '<script>Full first question</script>');
@@ -176,6 +191,140 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       await evaluate(`document.querySelector('#decision-details input[type=radio]').click(); document.querySelector('#decision-details input[type=checkbox]').click(); document.querySelector('#decision-details textarea').value = 'Custom literal'; [...document.querySelectorAll('#decision-details button')].find(b => b.textContent === 'Answer once').click()`);
       await wait(`document.getElementById('decision-status').textContent.includes('native wait settled, not tool completion')`);
       assert.equal(requests.filter(req => req.method === 'POST').length, 1);
+      const polish = async () => {
+      // Long history and late layouts are exercised on the actual outer scroller.
+      fleetStatus = 200; metadataStatus = 200; longHistory = true;
+      agents = ['e', 'f'].map((letter, index) => ({id: letter.repeat(64), title: index ? 'Megatron full root' : 'Bumblebee full root',
+        provider: 'djinn', project: 'Original project', activity: 'unknown', evidence: 'kitsune_snapshot', output_available: false}));
+      await evaluate(`document.getElementById('refresh').click()`);
+      await wait(`document.querySelectorAll('.agent-card').length === 2 && document.querySelectorAll('.agent-card')[1].getAttribute('aria-disabled') === 'false'`);
+      const frames = () => evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+      const visible = selector => evaluate(`(() => {
+        const node = document.querySelector(${JSON.stringify(selector)}), r = node.getBoundingClientRect();
+        const d = document.getElementById('conversation-dialog').getBoundingClientRect();
+        return r.top >= d.top + 60 && r.bottom <= d.bottom && r.height > 0;
+      })()`);
+      const latestVisible = () => evaluate(`(() => {
+        const pre = document.querySelector('.conversation-message:last-child pre');
+        const range = document.createRange(); range.setStart(pre.firstChild, pre.textContent.indexOf('LATEST MARKER')); range.setEnd(pre.firstChild, pre.textContent.length);
+        const r = range.getBoundingClientRect(), d = document.getElementById('conversation-dialog').getBoundingClientRect();
+        return r.top >= d.top + 60 && r.bottom <= d.bottom;
+      })()`);
+      for (const width of [320, 390, 1280]) {
+        await call('browsingContext.setViewport', {context, viewport: {width, height: width === 1280 ? 900 : 844}, devicePixelRatio: 1});
+        assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth && document.getElementById('alerts-toggle').getBoundingClientRect().height >= 44`), true);
+        assert.equal(await evaluate(`document.querySelectorAll('.masthead button').length === 1 && !document.getElementById('host-health')`), true);
+        assert.equal(await evaluate(`document.getElementById('alerts-toggle').textContent === 'Alerts unknown' && document.getElementById('alerts-toggle').getAttribute('aria-pressed') === 'mixed' && !document.getElementById('alerts-error').hidden`), true, 'access loss keeps one honest header control');
+      }
+      for (const connection of ['unavailable', 'unsupported']) {
+        emptyHostState = connection;
+        await evaluate(`document.getElementById('refresh').click()`);
+        await wait(`!document.getElementById('refresh').disabled && document.getElementById('notice').textContent === 'Megatron ${connection}.'`);
+        assert.equal(await evaluate(`!document.getElementById('notice').hidden && document.getElementById('notice').getBoundingClientRect().height > 0 && document.querySelectorAll('.session-card').length === 2 && document.getElementById('empty-state').hidden`), true);
+        await evaluate(`document.getElementById('host-filter').value = 'desktop'; document.getElementById('host-filter').dispatchEvent(new Event('change'))`);
+        assert.equal(await evaluate(`document.getElementById('notice').hidden && document.getElementById('notice').textContent === ''`), true);
+        await evaluate(`document.getElementById('host-filter').value = ''; document.getElementById('host-filter').dispatchEvent(new Event('change'))`);
+        assert.equal(await evaluate(`!document.getElementById('notice').hidden`), true);
+      }
+      emptyHostState = 'reachable';
+      await evaluate(`document.getElementById('refresh').click()`);
+      await wait(`!document.getElementById('refresh').disabled && document.getElementById('notice').hidden`);
+      assert.equal(await evaluate(`document.getElementById('notice').textContent === ''`), true);
+      for (const width of [390, 1280]) {
+        await call('browsingContext.setViewport', {context, viewport: {width, height: width === 1280 ? 900 : 844}, devicePixelRatio: 1});
+        await evaluate(`document.querySelectorAll('.agent-card')[1].click()`);
+        await wait(`document.querySelectorAll('.conversation-message').length === 2`); await frames();
+        assert.equal(await latestVisible(), true, `latest marker visible at ${width}`);
+        assert.equal(await visible('#prompt-text'), true, `composer visible at ${width}`);
+        assert.equal(await visible('#send-prompt'), true);
+        assert.equal(await evaluate(`document.activeElement.id`), 'close-conversation');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('.conversation-message pre')).maxHeight`), 'none');
+        await evaluate(`(() => { const d = document.getElementById('conversation-dialog'); d.dispatchEvent(new WheelEvent('wheel', {deltaY: -600})); d.scrollTop = 250; })()`);
+        await frames();
+        const top = await evaluate(`document.getElementById('conversation-dialog').scrollTop`);
+        const readCount = reads().length;
+        await evaluate(`document.getElementById('refresh').click()`);
+        await wait(`!document.getElementById('refresh').disabled`); await frames();
+        assert.equal(await evaluate(`document.getElementById('conversation-dialog').scrollTop`), top, 'metadata never repositions history');
+        assert.equal(reads().length, readCount, 'metadata refresh never reads transcripts');
+        await evaluate(`document.getElementById('read-conversation').click()`);
+        await wait(`document.querySelectorAll('.conversation-message').length === 2 && !document.getElementById('read-conversation').disabled`); await frames();
+        assert.equal(await evaluate(`document.getElementById('conversation-dialog').scrollTop`), top, 'explicit refresh restores numeric history position');
+        await evaluate(`document.getElementById('close-conversation').click(); document.querySelectorAll('.agent-card')[1].click()`);
+        await wait(`document.querySelectorAll('.conversation-message').length === 2`); await frames();
+        assert.equal(await latestVisible(), true, 'new opening resets to latest');
+        await evaluate(`document.getElementById('prompt-text').focus()`);
+        await call('browsingContext.setViewport', {context, viewport: {width, height: 650}, devicePixelRatio: 1});
+        assert.equal(await evaluate(`document.activeElement.id`), 'prompt-text', 'resize preserves composer focus');
+        await evaluate(`document.getElementById('close-conversation').click()`);
+      }
+      await call('browsingContext.setViewport', {context, viewport: {width: 390, height: 844}, devicePixelRatio: 1});
+      requestPending = true;
+      for (const kind of ['question', 'permission']) {
+        requestKind = kind;
+        if (kind === 'permission') agents[0].title = 'Bumblebee coordinating the extended research review across several independent project workstreams';
+        await evaluate(`document.getElementById('refresh').click()`);
+        await wait(`document.querySelector('.agent-card').textContent.includes('Needs response')`);
+        // Let the explicit refresh finish before opening the current occurrence.
+        await wait(`!document.getElementById('refresh').disabled`); await frames();
+        for (const width of kind === 'permission' ? [390, 320] : [390]) {
+        await call('browsingContext.setViewport', {context, viewport: {width, height: 844}, devicePixelRatio: 1});
+        for (const first of ['messages', 'decision']) {
+          const assertMeaning = async phase => {
+            const geometry = JSON.parse(await evaluate(`(() => {
+              const n = document.querySelector('#decision-details legend, #decision-details h3'), r = n.getBoundingClientRect();
+              const header = document.querySelector('#conversation-dialog > .dialog-heading').getBoundingClientRect();
+              const title = document.getElementById('conversation-title'), d = document.getElementById('conversation-dialog').getBoundingClientRect();
+              return JSON.stringify({top: r.top, bottom: r.bottom, headerBottom: header.bottom, dialogBottom: d.bottom,
+                titleLines: Math.round(title.getBoundingClientRect().height / parseFloat(getComputedStyle(title).lineHeight))});
+            })()`));
+            assert.ok(geometry.top >= geometry.headerBottom + 7, `${kind} meaning clears the actual header: ${JSON.stringify(geometry)}`);
+            assert.ok(geometry.bottom <= geometry.dialogBottom, 'full request heading is visible, not just response buttons');
+            if (kind === 'permission') {
+              assert.ok(geometry.titleLines >= 3, `long title really wraps at ${width}px`);
+              assert.equal(await evaluate(`document.getElementById('conversation-title').textContent`), `${agents[0].title} / research`);
+              assert.equal(await evaluate(`document.activeElement.id`), 'close-conversation');
+              t.diagnostic(`${width}px ${first}-first ${phase}: header bottom ${geometry.headerBottom.toFixed(1)}, permission top ${geometry.top.toFixed(1)}, title ${geometry.titleLines} lines`);
+            }
+          };
+          holdMessages = true; holdDecisions = true;
+          await evaluate(`document.querySelector('.agent-card').click()`);
+          await wait(`document.getElementById('conversation-dialog').open`);
+          for (let i = 0; i < 100 && (!delayedMessages.length || !delayedDecisions.length); i++) await new Promise(resolve => timerAfter(resolve, 10));
+          assert.equal(delayedMessages.length, 1); assert.equal(delayedDecisions.length, 1);
+          const release = which => (which === 'messages' ? delayedMessages : delayedDecisions).shift()();
+          release(first);
+          await wait(first === 'messages' ? `document.querySelectorAll('.conversation-message').length === 2` : `document.getElementById('decision-details').children.length > 0`);
+          await frames();
+          if (first === 'decision') await assertMeaning('before history');
+          release(first === 'messages' ? 'decision' : 'messages');
+          await wait(`document.querySelectorAll('.conversation-message').length === 2 && document.getElementById('decision-details').children.length > 0`); await frames();
+          await assertMeaning('complete');
+          assert.notEqual(await evaluate(`document.activeElement.tagName`), 'TEXTAREA');
+          await evaluate(`document.getElementById('close-conversation').click()`);
+          holdMessages = false; holdDecisions = false;
+        }
+        }
+      }
+      // User interaction after the request arrives must beat a later history read.
+      holdMessages = true;
+      await evaluate(`document.querySelector('.agent-card').click()`);
+      await wait(`document.querySelector('#decision-details h3')?.textContent === 'Run deployment?'`); await frames();
+      await evaluate(`(() => { const d = document.getElementById('conversation-dialog'); d.dispatchEvent(new KeyboardEvent('keydown', {key: 'Home'})); d.scrollTop = 0; })()`); await frames();
+      delayedMessages.shift()();
+      await wait(`document.querySelectorAll('.conversation-message').length === 2`); await frames();
+      assert.equal(await evaluate(`document.getElementById('conversation-dialog').scrollTop`), 0);
+      await evaluate(`document.getElementById('close-conversation').click()`); holdMessages = false;
+      // Hold an actual layout callback across close/reopen and a different target.
+      await evaluate(`window.savedRAF = window.requestAnimationFrame; window.heldFrames = []; window.requestAnimationFrame = callback => { heldFrames.push(callback); return heldFrames.length; }; document.querySelector('.agent-card').click()`);
+      await wait(`document.querySelectorAll('.conversation-message').length === 2 && heldFrames.length >= 1`);
+      await evaluate(`window.staleFrames = heldFrames.splice(0); document.getElementById('close-conversation').click(); document.querySelectorAll('.agent-card')[1].click()`);
+      await wait(`document.querySelectorAll('.conversation-message').length === 2`);
+      await evaluate(`document.getElementById('conversation-dialog').scrollTop = 123; staleFrames.forEach(callback => callback()); window.requestAnimationFrame = savedRAF`);
+      assert.equal(await evaluate(`document.getElementById('conversation-dialog').scrollTop`), 123, 'closed-view frame cannot scroll a new target');
+      await evaluate(`document.getElementById('close-conversation').click()`);
+      assert.equal(requests.filter(req => req.method === 'POST').length, 1, 'scrolling, layout and metadata never perform actions');
+      };
       assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
       await evaluate(`document.getElementById('close-conversation').click()`);
       await wait(`document.activeElement === document.querySelector('.agent-card')`);
@@ -227,6 +376,7 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       await wait(`document.getElementById('conversation-list-status').textContent.includes('Access denied')`);
       assert.equal(reads().length, 4);
       assert.equal(requests.filter(req => req.method === 'POST').length, 1);
+      await polish();
     } finally {
       const errors = [];
       for (const timer of timers) cancelTimer(timer);

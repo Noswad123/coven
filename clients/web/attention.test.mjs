@@ -29,6 +29,9 @@ async function browser({rows = [item], push = {}, hash = '', attentionExtra = {}
   let document;
   class Node {
     children = []; listeners = new Map(); dataset = {}; value = ''; open = false; text = ''; checked = false;
+    attributes = new Map(); _scrollTop = 0; scrollHeight = 3000; clientHeight = 700; layoutTop = 1800;
+    get scrollTop() { return this._scrollTop; }
+    set scrollTop(value) { this._scrollTop = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)); }
     constructor(tag = '') { this.tagName = tag; }
     get textContent() { return this.text + this.children.map(n => n.textContent).join(''); }
     set textContent(v) { this.replaceChildren(); this.text = v; }
@@ -40,22 +43,29 @@ async function browser({rows = [item], push = {}, hash = '', attentionExtra = {}
     emit(e) { this.listeners.get(e)?.forEach(h => h({target: this, preventDefault() {}})); }
     showModal() { this.open = true; }
     close() { const was = this.open; this.open = false; if (was) this.emit('close'); }
-    setAttribute() {}
+    setAttribute(name, value) { this.attributes.set(name, value); }
+    getAttribute(name) { return this.attributes.get(name); }
+    get firstElementChild() { return this.children[0] ?? null; }
+    getBoundingClientRect() { return {top: this === nodes.get('conversation-dialog') ? 0 : this.layoutTop - nodes.get('conversation-dialog').scrollTop}; }
     querySelector(s) { return this.all().find(n => s.startsWith('.') ? n.className?.split(' ').includes(s.slice(1)) : n.tagName === s) ?? null; }
     all() { return this.children.flatMap(n => [n, ...n.all()]); }
     remove() { if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1); this.parentNode = null; }
     insertBefore(n, before) { n.remove(); n.parentNode = this; this.children.splice(before ? this.children.indexOf(before) : this.children.length, 0, n); }
   }
   const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(m => [m[1], new Node()]));
+  const heading = new Node('div'); heading.className = 'dialog-heading'; heading.bottom = 72;
+  heading.getBoundingClientRect = () => ({bottom: heading.bottom});
+  nodes.get('conversation-dialog').append(heading);
   document = new Node(); document.hidden = false;
   document.getElementById = id => { assert.ok(nodes.has(id), `missing ${id}`); return nodes.get(id); };
   document.createElement = tag => new Node(tag);
-  const requests = [], intervals = [], timers = new Map(); let timer = 0, now = Date.now();
+  const requests = [], intervals = [], timers = new Map(), frames = []; let timer = 0, now = Date.now();
   class Clock extends Date { static now() { return now; } }
   const context = vm.createContext({document, Date: Clock, TextEncoder, AbortController, URL, console,
     crypto: webcrypto, atob, location: {hash}, ...push,
     setTimeout: (handler, ms) => { timers.set(++timer, {handler, ms}); return timer; }, clearTimeout: id => timers.delete(id),
     setInterval: h => intervals.push(h),
+    requestAnimationFrame: callback => { frames.push(callback); return frames.length; },
     fetch: (path, options) => new Promise((resolve, reject) => requests.push({path, options, resolve, reject, done: false})),
   });
   const $ = id => nodes.get(id);
@@ -73,7 +83,8 @@ async function browser({rows = [item], push = {}, hash = '', attentionExtra = {}
         evidence: 'kitsune_snapshot', observed_at_ms: now, output_available: false}))}]});
   vm.runInContext(app.replace(/^export /gm, ''), context);
   await respond('/api/v1/fleet', fleet()); await respond('/api/v1/conversations', list); await respond('/api/v1/attention', metadata(rows, attentionExtra));
-  return {$, document, context, requests, pending, respond,
+  return {$, document, context, requests, pending, respond, heading,
+    frames, layout: () => { for (const callback of frames.splice(0)) callback(); },
     open: () => $('agent-grid').children.find(n => n.textContent.includes('Open conversation')).children[0].emit('click'),
     fields: () => $('decision-details').all().filter(n => n.tagName === 'input'),
     button: text => $('decision-details').all().find(n => n.tagName === 'button' && n.textContent === text),
@@ -203,12 +214,12 @@ test('notification navigation verifies stable alert against current exact root, 
 });
 
 test('alerts never request permission or register at page load; unsupported and denied are honest', async () => {
-  const b = await browser(); b.$('enable-alerts').emit('click');
+  const b = await browser(); b.$('alerts-toggle').emit('click');
   assert.match(b.$('alerts-status').textContent, /unsupported/);
   let prompts = 0, registrations = 0;
   const denied = await browser({push: {Notification: {requestPermission: async () => { prompts++; return 'denied'; }}, PushManager: class {},
     navigator: {serviceWorker: {register: async () => { registrations++; }}}}});
-  assert.equal(prompts, 0); assert.equal(registrations, 0); denied.$('enable-alerts').emit('click'); await flush();
+  assert.equal(prompts, 0); assert.equal(registrations, 0); denied.$('alerts-toggle').emit('click'); await flush();
   assert.equal(prompts, 1); assert.equal(registrations, 0); assert.match(denied.$('alerts-status').textContent, /denied/);
 });
 
@@ -219,18 +230,20 @@ test('explicit push opt-in and disable use browser-only keys and fresh CSRF for 
   const registration = {pushManager: {getSubscription: async () => subscriptions ? sub : null, subscribe: async options => { assert.equal(options.userVisibleOnly, true); subscriptions++; return sub; }}};
   const b = await browser({push: {Notification: {requestPermission: async () => { permissions++; return 'granted'; }}, PushManager: class {},
     navigator: {serviceWorker: {ready: Promise.resolve(registration), register: async (path, options) => { assert.equal(path, '/service-worker.js'); assert.equal(options.scope, '/'); registrations++; return registration; }, getRegistration: async () => registration}}}});
-  b.$('enable-alerts').emit('click'); await flush();
+  b.$('alerts-toggle').emit('click'); await flush();
   await b.respond('/api/v1/push/config', {contract: 'coven.web-push.v1', enabled: true, public_key: 'A'.repeat(87), subscriptions: []});
   await b.respond('/api/v1/csrf', token);
   const body = JSON.parse(b.posts()[0].options.body); assert.deepEqual(body.subscription, {endpoint: sub.endpoint, keys: sub.toJSON().keys});
   await b.respond('/api/v1/push/subscriptions', {contract: 'coven.web-push.v1', subscription_id: id, subscribed: true});
-  assert.equal(permissions, 1); assert.equal(registrations, 1); assert.match(b.$('alerts-status').textContent, /enabled/);
-  b.$('disable-alerts').emit('click'); await flush();
+  assert.equal(permissions, 1); assert.equal(registrations, 1); assert.equal(b.$('alerts-toggle').textContent, 'Alerts on');
+  b.$('alerts-toggle').emit('click'); await flush();
   await b.respond('/api/v1/push/config', {contract: 'coven.web-push.v1', enabled: true, public_key: 'A'.repeat(87), subscriptions: [id]});
   await b.respond('/api/v1/csrf', token);
   await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: id, subscribed: false});
   assert.equal(unsubscribed, 1); assert.equal(b.requests.filter(r => r.path === '/api/v1/csrf').length, 2);
-  assert.match(b.$('alerts-status').textContent, /disabled/);
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts off');
+  assert.equal(b.$('alerts-status').textContent, '');
+  assert.equal(b.$('alerts-error').hidden, true);
 });
 
 test('a late applied receipt after closing a decision remains uncertain, never restores answers', async () => {
@@ -273,10 +286,14 @@ test('existing owned subscriptions are inspected on reload without permission, r
   const registration = {pushManager: {getSubscription: async () => ({endpoint}), subscribe: () => { actions++; }}};
   const b = await browser({push: {Notification: {permission: 'granted', requestPermission: () => { actions++; }}, PushManager: class {},
     navigator: {serviceWorker: {getRegistration: async () => registration, register: () => { actions++; }}}}});
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts checking');
+  assert.equal(b.$('alerts-toggle').getAttribute('aria-busy'), 'true');
   await b.respond('/api/v1/push/config', {contract: 'coven.web-push.v1', enabled: true, public_key: 'A'.repeat(87), subscriptions: [id]});
-  for (let n = 0; n < 100 && b.$('disable-alerts').hidden !== false; n++) await flush();
-  assert.equal(actions, 0); assert.equal(b.posts().length, 0); assert.equal(b.$('disable-alerts').hidden, false);
-  assert.match(b.$('alerts-status').textContent, /enabled/);
+  await waitFor(() => b.$('alerts-toggle').textContent === 'Alerts on');
+  assert.equal(actions, 0); assert.equal(b.posts().length, 0);
+  assert.equal(b.$('alerts-status').textContent, '');
+  assert.equal(b.$('alerts-toggle').getAttribute('aria-pressed'), 'true');
+  assert.equal(b.$('alerts-error').hidden, true);
 });
 
 test('explicit re-enable replaces an unowned browser subscription rather than attaching it to another principal', async () => {
@@ -287,7 +304,7 @@ test('explicit re-enable replaces an unowned browser subscription rather than at
   const b = await browser({push: {Notification: {requestPermission: async () => 'granted'}, PushManager: class {},
     navigator: {serviceWorker: {ready: Promise.resolve(registration), register: async () => registration}}}});
   assert.equal(removed, 0); assert.equal(created, 0);
-  b.$('enable-alerts').emit('click'); await flush();
+  b.$('alerts-toggle').emit('click'); await flush();
   await b.respond('/api/v1/push/config', {contract: 'coven.web-push.v1', enabled: true, public_key: 'A'.repeat(87), subscriptions: []});
   await b.respond('/api/v1/csrf', token);
   assert.equal(removed, 1); assert.equal(created, 1);
@@ -299,7 +316,7 @@ test('known authentication loss fences a pending subscription token before any r
   const registration = {pushManager: {getSubscription: async () => null, subscribe: async () => sub}};
   const b = await browser({push: {Notification: {requestPermission: async () => 'granted'}, PushManager: class {},
     navigator: {serviceWorker: {ready: Promise.resolve(registration), register: async () => registration}}}});
-  b.$('enable-alerts').emit('click'); await flush();
+  b.$('alerts-toggle').emit('click'); await flush();
   await b.respond('/api/v1/push/config', {contract: 'coven.web-push.v1', enabled: true, public_key: 'A'.repeat(87), subscriptions: []});
   for (let n = 0; n < 100 && !b.pending('/api/v1/csrf'); n++) await flush();
   assert.ok(b.pending('/api/v1/csrf'));
@@ -326,7 +343,7 @@ test('an initially missing partial alert retries exact verification on refresh, 
   assert.equal(b.posts().length, 0);
 });
 
-async function alertsFixture({local = true, stall = '', passive = false} = {}) {
+async function alertsFixture({local = true, stall = '', passive = false, off = false} = {}) {
   let removals = 0, hashes = 0, present = stall !== 'subscribe', finishRemoval;
   const endpoint = 'https://push.services.mozilla.com/disable-fixture';
   const id = Buffer.from(await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint))).toString('hex');
@@ -340,46 +357,59 @@ async function alertsFixture({local = true, stall = '', passive = false} = {}) {
     subscribe: async () => stall === 'subscribe' ? never() : sub}};
   const b = await browser({push: {crypto: {randomUUID: () => webcrypto.randomUUID(), subtle: {digest: async (...args) => {
     const bytes = await webcrypto.subtle.digest(...args); hashes++; return bytes;
-  }}}, Notification: {permission: passive ? 'granted' : 'default', requestPermission: async () => 'granted'}, PushManager: class {},
+  }}}, Notification: {permission: off ? 'default' : 'granted', requestPermission: async () => 'granted'}, PushManager: class {},
     navigator: {serviceWorker: {ready: stall === 'ready' ? never() : Promise.resolve(registration),
       register: async () => stall === 'register' ? never() : registration,
       getRegistration: async () => stall === 'getRegistration' ? never() : registration}}}});
   const config = {contract: 'coven.web-push.v1', enabled: true, public_key: 'A'.repeat(87), subscriptions: [id]};
+  // Start disable tests from a real, passively inspected subscription.
+  if (!off && !passive) {
+    if (['getSubscription', 'getRegistration'].includes(stall)) await b.deadline();
+    else {
+      await b.respond('/api/v1/push/config', config);
+      await waitFor(() => b.$('alerts-toggle').textContent === 'Alerts on');
+      hashes = 0;
+    }
+  }
   return {...b, config, id, removals: () => removals, hashes: () => hashes, completeRemoval: () => finishRemoval()};
 }
 
 test('Disable removes the browser subscription even when config, CSRF or server removal fails; server cleanup needs another click', async () => {
   for (const failure of ['config', 'csrf', 'post']) {
-    const b = await alertsFixture(); b.$('disable-alerts').emit('click');
+    const b = await alertsFixture(); b.$('alerts-toggle').emit('click');
     await b.respond('/api/v1/push/config', failure === 'config' ? {error: {code: 'unavailable'}} : b.config, failure === 'config' ? 503 : 200);
     assert.equal(b.removals(), 1);
     if (failure !== 'config') await b.respond('/api/v1/csrf', failure === 'csrf' ? {} : token, failure === 'csrf' ? 503 : 200);
     if (failure === 'post') await b.respond('/api/v1/push/unsubscribe', {}, 503);
     assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled; server removal unverified');
-    assert.equal(b.$('disable-alerts').disabled, false);
+    assert.equal(b.$('alerts-toggle').disabled, false);
     const posts = b.posts().length;
     await b.refresh([item]); assert.equal(b.posts().length, posts, 'polling must not retry server cleanup');
-    b.$('disable-alerts').emit('click');
+    assert.equal(b.$('alerts-toggle').textContent, 'Alerts off');
+    assert.equal(b.$('alerts-cleanup').hidden, false);
+    b.$('alerts-cleanup').emit('click');
     await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
     const post = b.posts().at(-1);
     assert.deepEqual(JSON.parse(post.options.body), {contract: 'coven.web-push.v1', execute: true, subscription_id: b.id});
     await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
-    assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled');
+    assert.equal(b.$('alerts-status').textContent, '');
+    assert.equal(b.$('alerts-cleanup').hidden, true);
   }
 });
 
 test('failed local unsubscription never reports browser disabled even after verified server removal', async () => {
-  const b = await alertsFixture({local: false}); b.$('disable-alerts').emit('click');
+  const b = await alertsFixture({local: false}); b.$('alerts-toggle').emit('click');
   await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
   await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
   assert.match(b.$('alerts-status').textContent, /Browser removal unverified/);
   assert.doesNotMatch(b.$('alerts-status').textContent, /disabled/);
-  assert.equal(b.$('disable-alerts').disabled, false);
+  assert.equal(b.$('alerts-toggle').disabled, false);
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts unknown');
 });
 
 test('stalled config, token, POST headers and POST body release controls at the deadline, without retry or late enabled claims', async () => {
   for (const stage of ['config', 'csrf', 'headers', 'body']) {
-    const b = await alertsFixture(); b.$('disable-alerts').emit('click');
+    const b = await alertsFixture(); b.$('alerts-toggle').emit('click');
     for (let n = 0; n < 100 && !b.pending('/api/v1/push/config'); n++) await flush();
     assert.equal(b.removals(), 1);
     if (stage !== 'config') await b.respond('/api/v1/push/config', b.config);
@@ -390,7 +420,7 @@ test('stalled config, token, POST headers and POST body release controls at the 
       request.resolve({ok: true, status: 200, json: () => new Promise(resolve => { finishBody = resolve; })}); await flush();
     }
     await b.deadline();
-    assert.equal(b.$('enable-alerts').disabled, false); assert.equal(b.$('disable-alerts').disabled, false);
+    assert.equal(b.$('alerts-toggle').disabled, false); assert.equal(b.$('alerts-cleanup').disabled, false);
     assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled; server removal unverified');
     const posts = b.posts().length;
     if (finishBody) { finishBody({contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false}); await flush(); }
@@ -400,81 +430,84 @@ test('stalled config, token, POST headers and POST body release controls at the 
 
 test('stalled browser registration, ready, subscription lookup and local unsubscription also release controls', async () => {
   for (const stall of ['register', 'ready', 'subscribe', 'getSubscription', 'getRegistration', 'unsubscribe']) {
-    const b = await alertsFixture({stall});
     const enable = ['register', 'ready', 'subscribe'].includes(stall);
-    b.$(enable ? 'enable-alerts' : 'disable-alerts').emit('click');
+    const b = await alertsFixture({stall, off: enable});
+    b.$('alerts-toggle').emit('click');
     if (enable) { await flush(); await b.respond('/api/v1/push/config', b.config); }
     for (let n = 0; n < 10; n++) await flush();
     await b.deadline();
-    assert.equal(b.$('enable-alerts').disabled, false); assert.equal(b.$('disable-alerts').disabled, false);
+    assert.equal(b.$('alerts-toggle').disabled, false); assert.equal(b.$('alerts-cleanup').disabled, false);
     assert.match(b.$('alerts-status').textContent, /unverified/);
     assert.equal(b.posts().length, 0);
   }
 });
 
 test('subscription creation with a lost receipt stays unverified, never auto-reposts, and can be explicitly disabled', async () => {
-  const b = await alertsFixture(); b.$('enable-alerts').emit('click'); await flush();
+  const b = await alertsFixture({off: true}); b.$('alerts-toggle').emit('click'); await flush();
   await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
   assert.equal(b.posts().length, 1);
   await b.deadline(); assert.match(b.$('alerts-status').textContent, /Background state unverified/);
-  assert.equal(b.$('enable-alerts').disabled, false);
+  assert.equal(b.$('alerts-toggle').disabled, false);
+  assert.equal(b.$('alerts-toggle').getAttribute('aria-pressed'), 'mixed');
+  assert.match(b.$('alerts-toggle').title, /unverified; disable browser alerts/);
   await b.respond('/api/v1/push/subscriptions', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: true});
   await b.refresh([item]); assert.equal(b.posts().length, 1);
   assert.match(b.$('alerts-status').textContent, /unverified/);
-  b.$('disable-alerts').emit('click'); await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
+  b.$('alerts-toggle').emit('click'); await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
   await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
   assert.equal(b.removals(), 1); assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled; server removal unverified');
 });
 
 test('subscription enabled state is separate from closed delivery degradation and arbitrary provider errors never display', async () => {
   for (const [code, label] of [['sent', 'advisory'], ['retrying', 'degraded'], ['delivery_failed', 'degraded'], ['private/path/provider-error', 'unverified']]) {
-    const b = await alertsFixture(); b.$('enable-alerts').emit('click'); await flush();
+    const b = await alertsFixture({off: true}); b.$('alerts-toggle').emit('click'); await flush();
     await b.respond('/api/v1/push/config', {...b.config, delivery_status: code}); await b.respond('/api/v1/csrf', token);
     await b.respond('/api/v1/push/subscriptions', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: true});
-    assert.match(b.$('alerts-status').textContent, new RegExp(`subscription enabled / delivery ${label}`));
+    assert.equal(b.$('alerts-toggle').textContent, 'Alerts on');
+    assert.equal(b.$('alerts-status').textContent, label === 'advisory' ? '' : `Alert delivery ${label}. Check the gateway.`);
     assert.doesNotMatch(b.$('alerts-status').textContent, /private|provider-error/);
   }
 });
 
 test('an unknown create may commit after absent config and a successful delete; neither clears its uncertainty', async () => {
-  const b = await alertsFixture(); b.$('enable-alerts').emit('click'); await flush();
+  const b = await alertsFixture({off: true}); b.$('alerts-toggle').emit('click'); await flush();
   await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
   const create = b.pending('/api/v1/push/subscriptions'); assert.ok(create);
   await b.deadline();
-  b.$('disable-alerts').emit('click');
+  b.$('alerts-toggle').emit('click');
   await b.respond('/api/v1/push/config', {...b.config, subscriptions: []});
   await b.respond('/api/v1/csrf', token);
   await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
   assert.equal(b.removals(), 1);
   assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled; server removal unverified');
-  assert.equal(b.$('disable-alerts').hidden, false);
+  assert.equal(b.$('alerts-cleanup').hidden, false);
   // The original blocking create completes only after that delete/config sample.
   await b.respond('/api/v1/push/subscriptions', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: true});
   await b.refresh([item]);
   assert.equal(b.posts().length, 2); // No automatic creation or cleanup retries.
   assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled; server removal unverified');
-  b.$('disable-alerts').emit('click'); await b.respond('/api/v1/push/config', b.config);
+  b.$('alerts-cleanup').emit('click'); await b.respond('/api/v1/push/config', b.config);
   await b.respond('/api/v1/csrf', token);
   await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
   assert.equal(b.posts().length, 3);
-  assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled; server removal unverified');
+  assert.equal(b.$('alerts-status').textContent, 'Server removal unverified. Check the gateway or retry cleanup.');
   assert.doesNotMatch(b.$('alerts-status').textContent, /mozilla|browser-key|browser-auth/);
 });
 
 test('a local unsubscribe timeout retains its hashed ID before the wait, including after late success and getSubscription null', async () => {
-  const b = await alertsFixture({stall: 'unsubscribe'}); b.$('disable-alerts').emit('click');
+  const b = await alertsFixture({stall: 'unsubscribe'}); b.$('alerts-toggle').emit('click');
   await waitFor(() => b.removals() === 1 && b.hashes() === 1);
   await flush(); // Store the completed SHA256 while unsubscribe stays pending.
   await b.deadline();
   assert.match(b.$('alerts-status').textContent, /Browser removal unverified/);
   b.completeRemoval(); await flush();
-  b.$('disable-alerts').emit('click'); await b.respond('/api/v1/push/config', b.config);
+  b.$('alerts-toggle').emit('click'); await b.respond('/api/v1/push/config', b.config);
   await b.respond('/api/v1/csrf', token);
   const post = b.pending('/api/v1/push/unsubscribe'); assert.ok(post);
   assert.equal(JSON.parse(post.options.body).subscription_id, b.id);
   await b.respond('/api/v1/push/unsubscribe', {}, 503);
   assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled; server removal unverified');
-  assert.equal(b.$('disable-alerts').hidden, false);
+  assert.equal(b.$('alerts-cleanup').hidden, false);
   assert.equal(b.removals(), 1, 'later cleanup must use saved ID without another browser subscription');
 });
 
@@ -483,27 +516,27 @@ test('passive inspection started before Disable cannot restore old subscription 
     const b = await alertsFixture({passive: true});
     for (let n = 0; n < 100 && !b.pending('/api/v1/push/config'); n++) await flush();
     const inspection = b.pending('/api/v1/push/config'); assert.ok(inspection); inspection.done = true;
-    b.$('disable-alerts').emit('click'); await b.respond('/api/v1/push/config', b.config);
+    b.$('alerts-toggle').emit('click'); await b.respond('/api/v1/push/config', b.config);
     await b.respond('/api/v1/csrf', token);
     await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
     const before = b.$('alerts-status').textContent;
-    assert.equal(before, 'Browser alerts disabled');
+    assert.equal(before, '');
     inspection.resolve({ok: status === 200, status, json: async () => b.config});
     for (let n = 0; n < 10; n++) await flush();
     assert.equal(b.$('alerts-status').textContent, before);
-    assert.equal(b.$('enable-alerts').hidden, false); assert.equal(b.$('disable-alerts').hidden, true);
+    assert.equal(b.$('alerts-toggle').textContent, 'Alerts off'); assert.equal(b.$('alerts-cleanup').hidden, true);
     assert.equal(b.posts().length, 1);
   }
 });
 
 test('CSRF failure before any subscription POST does not invent an unresolved creation', async () => {
-  const b = await alertsFixture(); b.$('enable-alerts').emit('click'); await flush();
+  const b = await alertsFixture({off: true}); b.$('alerts-toggle').emit('click'); await flush();
   await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', {}, 503);
   assert.equal(b.posts().length, 0);
-  b.$('disable-alerts').emit('click'); await b.respond('/api/v1/push/config', b.config);
+  b.$('alerts-toggle').emit('click'); await b.respond('/api/v1/push/config', b.config);
   await b.respond('/api/v1/csrf', token);
   await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
-  assert.equal(b.$('alerts-status').textContent, 'Browser alerts disabled');
+  assert.equal(b.$('alerts-status').textContent, '');
 });
 
 test('browser endpoint identity hashing refuses oversized or nonstandard URLs before invoking crypto', async () => {
@@ -517,4 +550,106 @@ test('browser endpoint identity hashing refuses oversized or nonstandard URLs be
   assert.equal(hashes, 0);
   assert.match(await context.subscriptionID('https://push.services.mozilla.com/bounded'), /^[a-f0-9]{64}$/);
   assert.equal(hashes, 1);
+});
+
+const readPath = `/api/v1/agents/${item.fleet_agent_id}/conversations/${item.conversation_id}/bindings/${item.binding_id}/messages`;
+const history = () => ({contract: 'coven.conversations.v1', id: item.conversation_id, team: item.team,
+  source: 'djinn.conversation-read.v1', messages: [{role: 'assistant', text: 'Newest text', truncated: false}],
+  has_older: false, truncated: false, omitted_parts: false, projection_sha256: hex('b')});
+
+test('healthy cards and chat stay quiet; one header toggle exposes actual local state and exceptions only', async () => {
+  const b = await browser({rows: []});
+  assert.equal(b.$('conversation-list-status').textContent, '');
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts off');
+  assert.equal(b.$('alerts-toggle').getAttribute('aria-pressed'), 'false');
+  assert.equal(b.$('alerts-error').hidden, true);
+  assert.match(b.$('agent-grid').textContent, /Chat available/);
+  assert.doesNotMatch(b.$('agent-grid').textContent, /Verified terminal link/);
+  b.open(); await b.respond(readPath, history()); b.layout();
+  assert.equal(b.$('conversation-status').textContent, '');
+  assert.equal(b.$('decision-status').textContent, '');
+  assert.equal(b.posts().length, 0);
+});
+
+test('layout intents prioritize exact requests in either response order; interaction fences late layout', async () => {
+  for (const first of ['history', 'decision']) {
+    const b = await browser(); b.open();
+    b.heading.bottom = 172;
+    const release = kind => kind === 'history' ? b.respond(readPath, history()) : b.respond(`/api/v1/decisions/${item.id}`, detail());
+    await release(first); b.layout();
+    assert.equal(b.$('conversation-dialog').scrollTop, 1620, 'request meaning clears the rendered header, not a fixed offset');
+    await release(first === 'history' ? 'decision' : 'history'); b.layout();
+    assert.equal(b.$('conversation-dialog').scrollTop, 1620);
+    assert.equal(b.posts().length, 0);
+  }
+  for (const event of ['wheel', 'touchstart', 'keydown', 'pointerdown', 'scroll']) {
+    const b = await browser(); b.open();
+    await b.respond(`/api/v1/decisions/${item.id}`, detail()); b.layout();
+    b.$('conversation-dialog').scrollTop = 200;
+    b.$('conversation-dialog').emit(event);
+    await b.respond(readPath, history()); b.layout();
+    assert.equal(b.$('conversation-dialog').scrollTop, 200, `${event} stops late-history follow`);
+    assert.equal(b.posts().length, 0);
+  }
+});
+
+test('queued layout callbacks recheck read, decision, view, target, hide and access fences at execution', async () => {
+  for (const fence of ['close-reopen', 'read', 'decision', 'hide', 'auth', 'target']) {
+    const b = await browser(); b.open(); await b.respond(readPath, history());
+    assert.ok(b.frames.length);
+    const stale = b.frames.splice(0);
+    if (fence === 'close-reopen') { b.$('close-conversation').emit('click'); b.open(); }
+    if (fence === 'read') b.$('read-conversation').emit('click');
+    if (fence === 'decision') { await b.refresh([item]); b.$('decision-requests').children[0].emit('click'); }
+    if (fence === 'hide') { b.document.hidden = true; b.document.emit('visibilitychange'); }
+    if (fence === 'auth') { b.$('refresh').emit('click'); await b.respond('/api/v1/fleet', {}, 403); }
+    if (fence === 'target') { b.$('conversation-team').value = 'other'; b.$('conversation-team').emit('change'); }
+    b.$('conversation-dialog').scrollTop = 321;
+    stale.forEach(callback => callback());
+    assert.equal(b.$('conversation-dialog').scrollTop, 321, fence);
+    assert.equal(b.posts().length, 0);
+  }
+});
+
+test('explicit message refresh captures near-bottom or numeric history position before clearing private DOM', async () => {
+  for (const top of [200, 2250]) {
+    const b = await browser({rows: []}); b.open(); await b.respond(readPath, history()); b.layout();
+    const d = b.$('conversation-dialog'); d.scrollTop = top; d.emit('wheel');
+    b.$('read-conversation').emit('click');
+    assert.equal(b.$('conversation-messages').textContent, '');
+    d.scrollTop = 0; // Browser clamp while the old private nodes are absent.
+    await b.respond(readPath, history()); b.layout();
+    assert.equal(d.scrollTop, top === 200 ? 200 : d.scrollHeight - d.clientHeight);
+    assert.equal(b.requests.filter(r => r.path.endsWith('/messages')).length, 2);
+    assert.equal(b.posts().length, 0);
+  }
+});
+
+test('local off permits deliberate re-enable while unknown server creation still requires separate cleanup', async () => {
+  const b = await alertsFixture({off: true}); b.$('alerts-toggle').emit('click');
+  assert.equal(b.$('alerts-toggle').getAttribute('aria-busy'), 'true');
+  assert.equal(b.$('alerts-toggle').disabled, true);
+  await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token); await b.deadline();
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts unknown');
+  assert.equal(b.$('alerts-toggle').getAttribute('aria-pressed'), 'mixed');
+  b.$('alerts-toggle').emit('click');
+  await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
+  await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts off');
+  assert.equal(b.$('alerts-cleanup').hidden, false);
+  b.$('alerts-toggle').emit('click');
+  await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
+  // Complete the older lost create first. Its receipt cannot clear uncertainty.
+  await b.respond('/api/v1/push/subscriptions', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: true});
+  await b.respond('/api/v1/push/subscriptions', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: true});
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts on');
+  assert.equal(b.$('alerts-cleanup').hidden, false);
+  assert.match(b.$('alerts-status').textContent, /Earlier registration unverified/);
+  const removals = b.removals();
+  b.$('alerts-cleanup').emit('click');
+  await b.respond('/api/v1/push/config', b.config); await b.respond('/api/v1/csrf', token);
+  await b.respond('/api/v1/push/unsubscribe', {contract: 'coven.web-push.v1', subscription_id: b.id, subscribed: false});
+  assert.equal(b.removals(), removals, 'server-only cleanup must not unsubscribe a re-enabled browser');
+  assert.equal(b.$('alerts-toggle').textContent, 'Alerts on');
+  assert.match(b.$('alerts-status').textContent, /Server removal unverified/);
 });

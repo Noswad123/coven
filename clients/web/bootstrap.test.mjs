@@ -137,13 +137,34 @@ async function browser(rows = [linked()], fleetEndpoints = endpoints(), metadata
   };
 }
 
+test('legacy Djinn decoration is absent from card, chat and details headings while the exact route stays pinned', async () => {
+  const fleet = endpoints();
+  fleet[0].agents[0].title = 'OC | <script>Actual session</script>';
+  const b = await browser([linked()], fleet);
+  try {
+    const card = b.$('agent-grid').children[0];
+    assert.equal(card.querySelector('.card-title').textContent, '<script>Actual session</script>');
+    assert.equal(card.querySelector('.card-title').innerHTML, undefined);
+    b.open();
+    assert.equal(b.$('conversation-title').textContent, '<script>Actual session</script> / research');
+    assert.ok(b.pending(readPath));
+    await b.respond(readPath, messages());
+    b.$('close-conversation').emit('click'); await flush();
+    card.querySelector('.card-details').emit('click');
+    assert.equal(b.$('detail-title').textContent, '<script>Actual session</script>');
+    assert.equal(fleet[0].agents[0].title, 'OC | <script>Actual session</script>');
+    assert.equal(b.requests.filter(r => r.path.endsWith('/messages')).length, 1);
+    assert.equal(b.requests.filter(r => r.options.method === 'POST').length, 0);
+  } finally { b.restore(); }
+});
+
 test('one grid merges only verified exact endpoint identity and primary click uses the pinned bound route', async () => {
   const b = await browser([linked()], endpoints());
   const path = `/api/v1/agents/${agentID}/conversations/${target.id}/bindings/${bindingID}/messages`;
   try {
     const grid = b.$('agent-grid');
     assert.equal(grid.children.length, 2);
-    assert.match(grid.children[0].textContent, /Chat capable.*Verified terminal link/);
+    assert.match(grid.children[0].textContent, /Chat available/);
     assert.match(grid.children[1].textContent, /Chat unavailable/);
     assert.equal(b.requests.some(r => /messages|output|prompts/.test(r.path)), false);
     b.open(); assert.ok(b.pending(path));
@@ -253,7 +274,7 @@ test('global host and team filters use fleet endpoint identity and explicit chat
     assert.match(grid.textContent, /Chat unavailable/);
     assert.deepEqual(host.children.map(option => option.value), ['', 'desktop', 'other']);
     host.value = ''; host.emit('change'); team.value = target.team; team.emit('change');
-    assert.equal(grid.children.length, 1); assert.match(grid.textContent, /Verified terminal link/);
+    assert.equal(grid.children.length, 1); assert.match(grid.textContent, /Chat available/);
     assert.equal(b.requests.some(r => /messages|output|prompts/.test(r.path)), false);
     b.document.hidden = true; b.document.emit('visibilitychange');
     assert.equal(b.$('conversation-messages').textContent, '');
@@ -264,13 +285,13 @@ test('global host and team filters use fleet endpoint identity and explicit chat
 test('source health, list limits and fleet-empty recovery stay visible in the single sessions area', async () => {
   const b = await browser([], [], {sources: [{id: 'source-one', label: 'Native source', team: 'research', status: 'unavailable'}], omitted_conversations: 2});
   try {
-    assert.match(b.$('conversation-list-status').textContent, /Native source.*source-one.*unavailable.*2 authorized conversations omitted/);
+    assert.match(b.$('conversation-list-status').textContent, /Some chats unavailable.*Some sessions are not shown/);
     assert.equal(b.$('empty-state').hidden, false);
     assert.match(b.$('empty-description').textContent, /not an inventory/);
     await b.fleet(); await b.respond('/api/v1/conversations', list([target]));
     assert.equal(b.$('empty-state').hidden, false);
     assert.equal(b.$('agent-grid').children.length, 0);
-    assert.match(b.$('conversation-list-status').textContent, /1 shared session awaiting association/);
+    assert.equal(b.$('conversation-list-status').textContent, '');
     assert.equal(b.requests.some(r => /messages|output|prompts/.test(r.path)), false);
   } finally { b.restore(); }
 });
@@ -530,8 +551,46 @@ test('healthy fleet with an unmatched configured-host filter does not claim miss
     assert.equal(b.$('empty-title').textContent, 'No matching sessions');
     assert.match(b.$('empty-description').textContent, /Team filters exclude/);
     assert.doesNotMatch(b.$('empty-description').textContent, /No hosts are configured/);
-    assert.match(b.$('host-health').textContent, /Same host.*reachable/);
+    assert.equal(b.$('conversation-list-status').textContent, '');
   } finally { b.restore(); }
+});
+
+test('unhealthy empty hosts warn alongside healthy cards only in the selected host scope; recovery and retained cards stay quiet', async () => {
+  for (const connection of ['unavailable', 'unsupported']) {
+    const hosts = endpoints();
+    const retained = hosts[1].agents;
+    Object.assign(hosts[1], {label: 'Megatron', connection, agents: []});
+    const b = await browser([linked()], hosts);
+    try {
+      assert.equal(b.$('agent-grid').children.length, 1);
+      assert.equal(b.$('empty-state').hidden, true);
+      assert.equal(b.$('notice').hidden, false);
+      assert.equal(b.$('notice').textContent, `Megatron ${connection}.`);
+      b.$('host-filter').value = 'desktop'; b.$('host-filter').emit('change');
+      assert.equal(b.$('notice').hidden, true);
+      assert.equal(b.$('notice').textContent, '');
+      b.$('host-filter').value = 'other'; b.$('host-filter').emit('change');
+      assert.equal(b.$('notice').hidden, false);
+      b.$('host-filter').value = ''; b.$('host-filter').emit('change');
+      hosts[1].agents = retained;
+      await b.fleet(); await b.respond('/api/v1/conversations', list([linked()]));
+      assert.equal(b.$('agent-grid').children.length, 2);
+      assert.equal(b.$('notice').hidden, true, 'retained cards already carry their host state');
+      hosts[1].agents = []; hosts[1].connection = 'reachable'; hosts[0].agents[0].activity = 'blocked';
+      await b.fleet(); await b.respond('/api/v1/conversations', list([linked()]));
+      assert.equal(b.$('notice').hidden, true, 'recovery and heuristic blocking are not network errors');
+      assert.equal(b.$('notice').textContent, '');
+      hosts[1].connection = connection;
+      await b.fleet(503); await b.respond('/api/v1/conversations', list([linked()]));
+      assert.equal(b.$('notice').hidden, false);
+      assert.match(b.$('notice').textContent, /could not be reached/);
+      assert.doesNotMatch(b.$('notice').textContent, /Megatron/);
+      assert.match(b.$('connection-status').textContent, /stale/);
+      await b.fleet(403);
+      assert.match(b.$('notice').textContent, /Access denied/);
+      assert.doesNotMatch(b.$('notice').textContent, /Megatron/);
+    } finally { b.restore(); }
+  }
 });
 
 test('a team filter excludes healthy unassigned terminal observations without claiming no hosts', async () => {
@@ -543,7 +602,7 @@ test('a team filter excludes healthy unassigned terminal observations without cl
     assert.equal(b.$('empty-title').textContent, 'No matching sessions');
     assert.match(b.$('empty-description').textContent, /Team filters exclude unassigned terminal-only/);
     assert.doesNotMatch(b.$('empty-description').textContent, /No hosts are configured/);
-    assert.match(b.$('host-health').textContent, /reachable/);
+    assert.equal(b.$('conversation-list-status').textContent, '');
   } finally { b.restore(); }
 });
 
@@ -552,18 +611,18 @@ test('empty native metadata, metadata failure and actual zero fleet configuratio
   try {
     assert.equal(b.$('empty-state').hidden, false);
     assert.match(b.$('empty-description').textContent, /No hosts are configured.*No authorized native chat sessions/);
-    assert.match(b.$('conversation-list-status').textContent, /Native source.*unavailable/);
+    assert.match(b.$('conversation-list-status').textContent, /Some chats unavailable/);
     b.open();
     assert.equal(b.$('conversation-dialog').open, false);
     assert.match(b.$('empty-description').textContent, /No authorized native chat sessions/);
-    assert.match(b.$('conversation-list-status').textContent, /Native source.*unavailable/);
+    assert.match(b.$('conversation-list-status').textContent, /Some chats unavailable/);
     await b.fleet(); await b.respond('/api/v1/conversations', {}, 503);
     assert.match(b.$('empty-description').textContent, /Native chat metadata is unavailable or awaiting revalidation/);
     assert.match(b.$('conversation-list-status').textContent, /list unavailable/);
     await b.fleet(); await b.respond('/api/v1/conversations', list([target]));
     assert.equal(b.$('empty-state').hidden, false);
     assert.equal(b.$('agent-grid').children.length, 0);
-    assert.match(b.$('conversation-list-status').textContent, /1 shared session awaiting association/);
+    assert.equal(b.$('conversation-list-status').textContent, '');
     assert.equal(b.requests.some(r => /messages|output|prompts/.test(r.path)), false);
   } finally { b.restore(); }
 });
@@ -591,9 +650,7 @@ test('conversation rendering hides blank and non-displayable entries without alt
     assert.equal(rows[1].children[0].textContent, 'Assistant');
     assert.equal(rows[1].children[1].textContent, text);
     assert.equal(rows[1].children[1].innerHTML, undefined);
-    assert.match(b.$('conversation-status').textContent, /2 text messages shown/);
-    assert.match(b.$('conversation-status').textContent, /4 entries without displayable text hidden/);
-    assert.match(b.$('conversation-status').textContent, /partial.*truncated.*non-text or unsupported parts omitted/);
+    assert.equal(b.$('conversation-status').textContent, 'Some content omitted.');
     assert.equal(response.messages.length, 6); // Filtering must not mutate the native projection.
   } finally { b.restore(); }
 });
@@ -610,9 +667,8 @@ test('an all-blank sample explains missing displayable text rather than drawing 
     const rows = b.$('conversation-messages').children;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].children.length, 0); // Empty-state text, not an assistant heading/pre pair.
-    assert.match(rows[0].textContent, /No displayable text in this sample/);
-    assert.match(b.$('conversation-status').textContent, /0 text messages shown/);
-    assert.match(b.$('conversation-status').textContent, /2 entries without displayable text hidden/);
+    assert.equal(rows[0].textContent, 'No text messages to display.');
+    assert.equal(b.$('conversation-status').textContent, 'Some content omitted.');
   } finally { b.restore(); }
 });
 
@@ -621,7 +677,7 @@ test('an empty projection has a useful empty state and refresh retains real trun
   try {
     const empty = messages(); empty.messages = [];
     b.open(); await b.respond(readPath, empty);
-    assert.match(b.$('conversation-messages').textContent, /No displayable text/);
+    assert.match(b.$('conversation-messages').textContent, /No text messages to display/);
     assert.doesNotMatch(b.$('conversation-status').textContent, /entries without displayable text hidden/);
     b.$('read-conversation').emit('click');
     const response = messages(); response.messages[0].truncated = true;
@@ -651,7 +707,7 @@ test('multiple native history targets do not add cards or introduce a chooser fo
     other.emit('click');
     assert.equal(b.$('conversation-dialog').open, false);
     assert.equal(b.requests.filter(r => r.path.endsWith('/messages')).length, 1);
-    assert.match(grid.children[0].textContent, /Verified terminal link/);
+    assert.match(grid.children[0].textContent, /Chat available/);
     assert.match(grid.children[1].textContent, /Chat unavailable/);
     assert.equal(grid.children.length, 2);
   } finally { b.restore(); }
@@ -670,7 +726,7 @@ test('verified roots clear on expiry, hide, auth and reference removal, fencing 
       await b.respond(path, messages());
       assert.equal(b.$('conversation-dialog').open, false);
       assert.equal(b.$('conversation-messages').textContent, '');
-      assert.doesNotMatch(b.$('agent-grid').textContent, /Verified terminal link/);
+      assert.doesNotMatch(b.$('agent-grid').textContent, /Chat available/);
       assert.equal(b.requests.some(r => r.options.method === 'POST'), false);
     } finally { b.restore(); }
   }
@@ -715,7 +771,7 @@ test('zero fleet with a single shared session remains honest diagnostic metadata
     assert.equal(b.requests.some(r => r.path.endsWith('/messages')), false);
     b.tick(1000);
     assert.equal(b.$('conversation-dialog').open, false);
-    assert.match(b.$('conversation-list-status').textContent, /1 shared session awaiting association/);
+    assert.equal(b.$('conversation-list-status').textContent, '');
     assert.equal(b.requests.some(r => r.path.endsWith('/messages')), false);
     assert.equal(b.$('agent-grid').children.length, 0);
   } finally { b.restore(); }
@@ -735,7 +791,7 @@ test('a contradictory verified chat on the same root closes the old view and nev
     await b.respond(readPath, messages());
     assert.equal(b.$('conversation-messages').textContent, '');
     await flush(); assert.equal(b.document.activeElement, primary);
-    assert.match(b.$('agent-grid').children[0].textContent, /Verified terminal link/);
+    assert.match(b.$('agent-grid').children[0].textContent, /Chat available/);
     await b.fleet(); await b.respond('/api/v1/conversations', list([target]));
     assert.match(b.$('agent-grid').textContent, /Chat unavailable/);
     primary.emit('click'); assert.equal(b.$('conversation-dialog').open, false);

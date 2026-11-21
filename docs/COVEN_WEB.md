@@ -168,9 +168,9 @@ not through a selection action. Native ACL, grant, CSRF, permission and
 uncertain-delivery gates remain unchanged. There is no localStorage or persistence.
 
 One global Host/Team toolbar and Refresh action refresh fleet and authorized chat
-metadata independently, never transcripts or submissions. Shared source health and
-sanitized counts such as `1 shared session awaiting association` remain diagnostic
-metadata only, with no selection action. Zero fleet observations mean zero root
+metadata independently, never transcripts or submissions. Source health and
+association coverage remain diagnostic API metadata, not routine explanatory text
+in the normal view. Zero fleet observations mean zero root
 cards, even when native sharing metadata exists. Host options are configured fleet
 endpoint IDs only, with no Unlinked native bucket. Team filters include only verified
 chat team metadata and explain unassigned terminal observations. Empty native
@@ -181,11 +181,28 @@ original verified root through its focus reference and close/fence if that mappi
 changes; they never follow a replacement chat. Modal focus stays inside the dialog;
 closing returns to the original visible root primary (even after it becomes
 unavailable) or its Details action. Removed/filtered roots fall back
-to Host. Health, incomplete coverage and metadata errors stay separately visible.
+to Host. Actual API errors remain visible. An unavailable/unsupported host without
+any retained card has a concise unhealthy-only warning; healthy host chips and
+duplicate coverage notices are not displayed.
+
+The header's single alert toggle replaces the old Private badge and separate
+enable/disable toolbar. It reflects passive subscription inspection with on/off/
+unknown and busy accessibility state. Healthy states have no helper paragraph.
+Real permission, delivery or cleanup problems remain actionable; server-cleanup
+uncertainty has a separate exception-only action and is never represented as success.
+
+Chat opens at its latest content/reply area using one outer scroll container.
+An explicitly opened pending request takes priority at its heading, with clearance
+measured below the rendered sticky header rather than a fixed title height. User
+scrolling, touch, keyboard input and form interaction cancel pending follow intents;
+metadata refreshes never pull a history reader back down. Initial/explicit read
+positioning rechecks view/request/interaction generations and current authorization,
+so delayed data cannot move another or closed view. Refresh while reading history
+restores position rather than automatically choosing latest. No keyboard is opened
+programmatically, and no approval control is automatically focused.
 
 Older running endpoints without provenance correctly show **Chat unavailable**.
-The currently running old native `f92` lacks that provenance; fixture success does
-not establish live one-click chat readiness. A deliberate relaunch with the new
+Fixture success does not establish live one-click chat readiness. A deliberate relaunch with the new
 native UI may be needed before verified links become available. The browser does
 not restart anything. Deployment/build and relaunch remain separate operator steps.
 This frontend policy follows the current BASIC contract at the top of
@@ -315,8 +332,8 @@ are separate from availability. An empty authorized list explicitly requires
 operator native setup rather than showing fake availability.
 
 Entries containing only whitespace, control characters or default-ignorable Unicode
-characters are not rendered as empty message cards. The status reports how many
-entries have no displayable text; an all-empty sample has an explanatory empty
+characters are not rendered as empty message cards. Material omissions retain a
+compact notice; an all-empty sample has a truthful text-projection empty
 state. This filtering is presentation-only: displayed text is preserved exactly,
 the validated native projection/digest is unchanged, and no extra private content
 is fetched. Native history includes non-text/tool steps, and bounded reads can omit

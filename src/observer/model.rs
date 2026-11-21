@@ -30,6 +30,8 @@ pub(super) struct Agent {
     pub workspace_id: String,
     pub tab_id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane_name: Option<String>,
     pub provider: Option<String>,
     pub project: Option<String>,
     pub activity: String,
