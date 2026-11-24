@@ -371,7 +371,8 @@ test('Firefox real DOM: unavailable roots, one-click bound reads, exact routes a
       assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
       await call('browsingContext.setViewport', {context, viewport: {width: 390, height: 844}, devicePixelRatio: 1});
       await evaluate(`document.getElementById('close-conversation').click(); document.querySelectorAll('.agent-card')[1].click()`);
-      await wait(`document.getElementById('prompt-composer').hidden === false`);
+      // Composer visibility precedes the cross-process message request completing.
+      await wait(`document.getElementById('prompt-composer').hidden === false && document.querySelectorAll('.conversation-message').length === 1 && !document.getElementById('read-conversation').disabled`);
       assert.equal(reads().length, 3);
       assert.equal(reads()[2].path, `/api/v1/agents/${second.card.fleet_agent_id}/conversations/${second.id}/bindings/${second.card.binding_id}/messages`);
       await evaluate(`document.getElementById('close-conversation').click()`);

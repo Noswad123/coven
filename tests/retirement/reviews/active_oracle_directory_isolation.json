@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "record_path": "tests/retirement/reviews/active_oracle_directory_isolation.json",
+  "approval_status": "parent_approved",
+  "scope": "Parent accepted after independent source/history, frozen-inventory and fail-closed gate review. Acceptance is limited to current-oracle integrity and provenance, not behavioral equivalence, retirement completion, source deletion, merge or publication approval. Final targeted audit execution is recorded separately.",
+  "source": {
+    "path": "runner/coven.py",
+    "old_sha256": "20ee19beebac6592e1d89ee9410ae819e31f72bf30692b71f09aa8d89088426e",
+    "new_sha256": "b245ba00b0881b897266bfc4c9142c8086dda172c8ccef619b5d2958adfd4a87",
+    "historical_sha256": "f1303a96c043820913855a7f5b5361e0cbcb0d66ecd9e5b207d417f69c21fb36"
+  },
+  "historical_capture": {
+    "commit": "e389a08669204d4e51a49ffd13cbe01b90b5d8ba",
+    "blob": "eb9fbea6b583358e8d58f67e7470fc83fccf092f",
+    "sha256": "f1303a96c043820913855a7f5b5361e0cbcb0d66ecd9e5b207d417f69c21fb36"
+  },
+  "from": {
+    "commit": "649324cda16915a4a5cf8e9746f02c32f6b77f59",
+    "blob": "5b4a7bc665f78b6e4815aa23830fc2fe017250f4",
+    "sha256": "20ee19beebac6592e1d89ee9410ae819e31f72bf30692b71f09aa8d89088426e"
+  },
+  "prechange": {
+    "commit": "a3f9fc10600b198cf574ea5fd5c6a5138a768c33",
+    "blob": "5b4a7bc665f78b6e4815aa23830fc2fe017250f4",
+    "sha256": "20ee19beebac6592e1d89ee9410ae819e31f72bf30692b71f09aa8d89088426e"
+  },
+  "to": {
+    "commit": "c907fd5df98516291bbce9804ff1b52b5baa4654",
+    "blob": "1abdf3281be77046035160b840cc4f34fc83522c",
+    "sha256": "b245ba00b0881b897266bfc4c9142c8086dda172c8ccef619b5d2958adfd4a87"
+  },
+  "verified_head": "a6d33c34133af23927d18295896b73a003d1c7e9",
+  "delta": {
+    "insertions": 161,
+    "deletions": 32,
+    "added_functions": {
+      "runtime_configuration": "Validate the runtime table before consuming directory settings.",
+      "validate_agent_directories": "Validate absolute per-agent paths and exact roster membership.",
+      "resolve_agent_directories": "Git-backed repository/worktree preflight, control-directory exclusion and duplicate identity checks.",
+      "stage_agent_launches": "Stage launch command and execution cwd for each agent before transport effects.",
+      "validate_isolated_starters": "Require refreshed starters matching configured execution locations."
+    },
+    "changed_functions": {
+      "read_team_config": "Merge runtime directory mapping and validate it.",
+      "prompt_text": "Distinguish execution repositories from the coordination control directory.",
+      "starter_prompt_text": "Emit isolated location and coordination instructions when execution is specified.",
+      "tmux_manifest": "Use per-agent cwd and absolute starter paths.",
+      "agent_launch_command": "Support absolute prompt paths and shell-safe launch notices.",
+      "legacy_transport_effect": "Preflight/stage agent launches before transport contact.",
+      "runtime_launch_inputs": "Refuse agent directory configuration for runtime launch v1.",
+      "start_agent_window": "Consume staged commands and cwd for tmux and Herdr.",
+      "command_agent_start": "Stage before starting any selected agent.",
+      "command_agent_restart": "Stage before stopping/restarting any selected agent.",
+      "prepare_refresh": "Resolve directories and generate directory-aware manifests and starters.",
+      "command_bootstrap": "Validate isolated starters before bootstrap.",
+      "_command_bootstrap_legacy": "Validate isolated starters before legacy bootstrap.",
+      "create_coven_tmux_session": "Consume staged per-agent commands and cwd.",
+      "create_coven_herdr_workspace": "Consume staged per-agent commands and cwd.",
+      "run_coven_tmux": "Preflight up/restart and reload team inside the transport gate.",
+      "_run_coven_tmux_legacy": "Stage up/restart and pass staged launches to session creation.",
+      "run_coven_herdr": "Preflight up/restart and reload team inside the transport gate.",
+      "_run_coven_herdr_legacy": "Stage up/restart and pass staged launches to workspace creation.",
+      "command_tmux": "Preflight up/restart before recording the requested event."
+    },
+    "removed_functions": [],
+    "disposition": "Behavioral changes, not an invocation-only transition. Directory mapping, Git preflight, starter refresh/text, launch cwd and v1 refusal can affect original transitive callers."
+  },
+  "prior_active_pin_notes": "Main 649324cda16915a4a5cf8e9746f02c32f6b77f59 removes PROJECT_DIR and uses COVEN_DIR/bin/coven for the direct-runner flat-root callback fallback.",
+  "invariants": {
+    "original_method_count": 941,
+    "original_ids_sha256": "a48118da016436fea96b135e5e6a799eaab6d249f617a901da1a288b05f10b0a",
+    "original_file_entries": 44,
+    "reviews": 80,
+    "candidate_mappings": 15,
+    "categories": {"A": 53, "B": 15, "C": 0, "D": 873},
+    "statuses": {"mapped": 67, "unresolved": 874},
+    "preservation": "All 44 original file entries, source pins and accepted test-only transitions, reviews, mappings, category/status dispositions and accepted batch metadata remain unchanged from HEAD. All original fixture bytes and historical capture/source hashes remain unchanged; no recapture."
+  },
+  "capture_scope": "Captured function bodies are unchanged, including task graph capture entrypoints, but graph capture's conservative transitive source inventory includes the changed complete runner. This is a whole-module source pin, not a proven runtime call graph or evidence that graph functions use the changed functions. Old capture hashes describe old source and must remain pinned; unchanged bodies do not establish current transitive parity.",
+  "supplemental_scope": "21 DevInstallTests and 12 environment tests are supplemental IDs only, not new original mapping obligations or C categorization. Both load scripts/install_dev.py using spec_from_file_location outside the current static import closure; manual source review finds stdlib-only imports, with Unix/external-tool dependencies. No import-analyzer or no-I/O proof is claimed.",
+  "native_inventory_scope": "Retain the seven-target whitelist and native_interactive_session_workflow; admit only unsupported_adapters_never_contact_or_create_workspace, introduced by 8aa04e43203b5208d7c08e709f5c8abb9e2cb2bb. This is a static 55-ID inventory, not execution evidence or a new original mapping.",
+  "limitations": [
+    "This is an accepted integrity/provenance transition only, not behavioral equivalence or retirement acceptance.",
+    "No claim that all 941 original methods ran against the current runner, or that captured behavior remains identical.",
+    "No runtime, deploy, configuration, source-oracle, original test, native source or fixture changes are authorized by this record.",
+    "The read-only stdlib audit checks pinned bytes and linked record fields without Git or runner execution; humans must review recorded Git provenance and behavioral consequences.",
+    "All 874 unresolved obligations remain unresolved; no deletion, skipped gate, global approval or migration completion is authorized."
+  ]
+}

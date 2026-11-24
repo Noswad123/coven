@@ -1,6 +1,10 @@
 //! Same-origin loopback HTTP facade. Serve is trusted; local processes are trusted too.
 use super::push::PushService;
 use super::{Config, Observer};
+use super::{
+    events::{Events, StreamingBody},
+    metadata::MetadataService,
+};
 use crate::{Error, Result};
 use http_body_util::{BodyExt, Full};
 use hyper::{
@@ -35,6 +39,12 @@ const MAX_BODY: usize = 400 * 1024;
 const CSP: &str = "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'";
 
 trait Api: Send + Sync {
+    fn cached_metadata(&self) -> bool {
+        false
+    }
+    fn events(&self) -> Option<Arc<Events>> {
+        None
+    }
     fn attention(&self, _login: &str) -> Value {
         json!({"contract":"coven.attention.v1","state":"unavailable","items":[],"omitted_count":null,"unavailable_count":1,"unlinked_count":0})
     }
@@ -140,22 +150,34 @@ impl Api for Observer {
 struct WebApi {
     observer: Arc<Observer>,
     push: Option<Arc<PushService>>,
+    metadata: Arc<MetadataService>,
 }
 impl WebApi {
     fn start(config: &Config, observer: Arc<Observer>) -> Result<Self> {
-        let weak = Arc::downgrade(&observer);
+        let metadata = Arc::new(MetadataService::start(config, &observer)?);
+        let weak = Arc::downgrade(&metadata);
         let push = PushService::start(
             config,
             Arc::new(move |login| {
-                weak.upgrade().map(|o| o.attention(login)).unwrap_or_else(|| json!({"contract":"coven.attention.v1","state":"unavailable","items":[],"omitted_count":null,"unavailable_count":1,"unlinked_count":0}))
+                weak.upgrade().map(|m| m.read(login, true)).unwrap_or_else(|| json!({"contract":"coven.attention.v1","state":"unavailable","items":[],"streams":[],"omitted_count":null,"unavailable_count":1,"unlinked_count":0}))
             }),
         )?;
-        Ok(Self { observer, push })
+        Ok(Self {
+            observer,
+            push,
+            metadata,
+        })
     }
 }
 impl Api for WebApi {
+    fn cached_metadata(&self) -> bool {
+        true
+    }
+    fn events(&self) -> Option<Arc<Events>> {
+        Some(self.observer.events.clone())
+    }
     fn attention(&self, login: &str) -> Value {
-        self.observer.attention(login)
+        self.metadata.read(login, true)
     }
     fn decision_details(&self, login: &str, id: &str) -> Result<Value> {
         self.observer.decision_details(login, id)
@@ -196,7 +218,7 @@ impl Api for WebApi {
             .unsubscribe(login, id)
     }
     fn conversations(&self, login: &str) -> Value {
-        self.observer.conversation_list(login)
+        self.metadata.read(login, false)
     }
     fn conversation(&self, login: &str, id: &str) -> Result<Value> {
         self.observer.conversation(login, id)
@@ -407,7 +429,7 @@ impl Reply {
             body: body.to_vec(),
         }
     }
-    fn response(self) -> Result<Response<Full<Bytes>>> {
+    fn response(self) -> Result<Response<StreamingBody>> {
         let mut response = Response::builder().status(self.status);
         for (name, value) in [
             ("Content-Type", self.content_type),
@@ -422,7 +444,7 @@ impl Reply {
             response = response.header(name, value);
         }
         response
-            .body(Full::new(Bytes::from(self.body)))
+            .body(StreamingBody::Full(Full::new(Bytes::from(self.body))))
             .map_err(|_| Error("http_header_error"))
     }
 }
@@ -738,6 +760,7 @@ async fn connection(
         Ok(Some(value)) => value,
         _ => return,
     };
+    let (admitted, mut admission) = tokio::sync::watch::channel(false);
     let service = service_fn(move |request: Request<Incoming>| {
         let meta = Metadata::from_request(&request, loopback);
         let (api, policy, slots, outputs, mutations) = (
@@ -747,7 +770,27 @@ async fn connection(
             outputs.clone(),
             mutations.clone(),
         );
+        let admitted = admitted.clone();
         async move {
+            if !invalid_length && meta.url == "/api/v1/events" {
+                // Admission follows precisely the same trust and empty-GET framing checks.
+                // The request body is deliberately never polled.
+                drop(request);
+                let response = match event_stream(api.as_ref(), &policy, &meta) {
+                    Ok(body) => {
+                        let mut response = Reply::asset("text/event-stream", b"")
+                            .response()
+                            .map_err(|_| std::io::Error::other("http_header_error"))?;
+                        *response.body_mut() = body;
+                        let _ = admitted.send(true);
+                        response
+                    }
+                    Err(reply) => reply
+                        .response()
+                        .map_err(|_| std::io::Error::other("http_header_error"))?,
+                };
+                return Ok(response);
+            }
             let reply = if invalid_length {
                 drop(request);
                 Reply::error(400, "invalid_request")
@@ -771,11 +814,65 @@ async fn connection(
         .timer(TokioTimer::new())
         .header_read_timeout(Duration::from_secs(5));
     // Dropping the connection at the deadline closes its socket without draining.
-    let _ = timeout(
-        Duration::from_secs(20).saturating_sub(started.elapsed()),
-        builder.serve_connection(TokioIo::new(stream), service),
-    )
-    .await;
+    let mut connection = Box::pin(builder.serve_connection(TokioIo::new(stream), service));
+    let deadline =
+        tokio::time::Instant::now() + Duration::from_secs(20).saturating_sub(started.elapsed());
+    let mut ordinary_deadline = Box::pin(tokio::time::sleep_until(deadline));
+    let extended = {
+        use std::{future::Future, task::Poll};
+        let mut changed = Box::pin(admission.changed());
+        std::future::poll_fn(|cx| {
+            if connection.as_mut().poll(cx).is_ready() {
+                return Poll::Ready(false);
+            }
+            if changed.as_mut().poll(cx).is_ready() {
+                return Poll::Ready(true);
+            }
+            if ordinary_deadline.as_mut().poll(cx).is_ready() {
+                return Poll::Ready(false);
+            }
+            Poll::Pending
+        })
+        .await
+    };
+    if extended && *admission.borrow() {
+        // This independent socket deadline also terminates a blocked writer.
+        let _ = timeout(Duration::from_secs(65), &mut connection).await;
+    }
+}
+
+fn event_stream(
+    api: &dyn Api,
+    policy: &Policy,
+    meta: &Metadata,
+) -> std::result::Result<StreamingBody, Reply> {
+    policy
+        .authorize(meta)
+        .map_err(|status| Reply::error(status, "access_denied"))?;
+    if meta.header("transfer-encoding") != Ok(None)
+        || meta.header("content-encoding") != Ok(None)
+        || !matches!(meta.header("content-length"), Ok(None | Some("0")))
+    {
+        return Err(Reply::error(400, "invalid_request"));
+    }
+    if meta.method != "GET" {
+        return Err(Reply::error(405, "method_not_allowed"));
+    }
+    if meta.url != "/api/v1/events" {
+        return Err(Reply::error(404, "not_found"));
+    }
+    let login = meta
+        .header("tailscale-user-login")
+        .ok()
+        .flatten()
+        .unwrap_or("");
+    let events = api
+        .events()
+        .ok_or_else(|| Reply::error(503, "events_unavailable"))?;
+    events
+        .admit(login)
+        .map(StreamingBody::Sse)
+        .ok_or_else(|| Reply::error(429, "observer_busy"))
 }
 
 #[derive(Deserialize)]
@@ -1144,13 +1241,16 @@ async fn dispatch(
 ) -> Reply {
     let output = meta.method == "GET"
         && policy.authorize(&meta).is_ok()
-        && (matches!(
-            meta.url.as_str(),
-            "/api/v1/conversations" | "/api/v1/attention" | "/api/v1/push/config"
-        ) || meta
-            .url
-            .strip_prefix("/api/v1/decisions/")
-            .is_some_and(super::valid_id)
+        && (matches!(meta.url.as_str(), "/api/v1/push/config")
+            || (!api.cached_metadata()
+                && matches!(
+                    meta.url.as_str(),
+                    "/api/v1/conversations" | "/api/v1/attention"
+                ))
+            || meta
+                .url
+                .strip_prefix("/api/v1/decisions/")
+                .is_some_and(super::valid_id)
             || linked_route(&meta.url).is_some()
             || meta
                 .url
@@ -1189,6 +1289,10 @@ mod prompt_tests;
 #[cfg(test)]
 #[path = "http/attention_tests.rs"]
 mod attention_tests;
+
+#[cfg(test)]
+#[path = "http/events_tests.rs"]
+mod events_tests;
 
 #[cfg(test)]
 pub(super) mod tests {

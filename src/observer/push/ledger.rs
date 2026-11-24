@@ -39,6 +39,7 @@ pub(super) struct Notice {
 pub(super) struct Snapshot {
     pub alerts: BTreeSet<String>,
     streams: BTreeMap<String, (bool, BTreeSet<String>)>,
+    pub(super) expires: Option<Instant>,
 }
 impl Snapshot {
     pub fn read(doc: &Value) -> Option<Self> {
@@ -81,7 +82,11 @@ impl Snapshot {
             Some(streams)
         })()
         .unwrap_or_default();
-        Some(Self { alerts, streams })
+        Some(Self {
+            alerts,
+            streams,
+            expires: None,
+        })
     }
     fn stream(&self, alert: &str) -> Option<String> {
         self.streams
@@ -93,6 +98,9 @@ impl Snapshot {
 impl Inner {
     pub(super) fn reconcile(&self, owner: &str, sample: Option<&Snapshot>, now: u64) -> Result<()> {
         self.mutate(|state| {
+            // The write transaction can wait behind filesystem work. An expired
+            // complete stream is unknown, not evidence that a notice resolved.
+            let sample = sample.filter(|s| s.expires.is_none_or(|at| Instant::now() < at));
             // Retention bounds unknown/removed contexts without inventing resolution.
             for r in state.records.values_mut() {
                 r.seen.retain(|_, n| now.saturating_sub(n.at) < RETENTION);
@@ -125,20 +133,26 @@ impl Inner {
         if self.stopped() || self.degraded.load(Ordering::Acquire) {
             return;
         }
-        let document = (self.collect)(owner);
+        let sample = self.sample(owner);
         if self.stopped() {
             return;
         }
-        let sample = Snapshot::read(&document);
-        if self.reconcile(owner, sample.as_ref(), now()).is_err() {
+        if self
+            .reconcile(owner, sample.as_ref().map(|(s, _)| s), now())
+            .is_err()
+        {
             self.diagnostic("state_failed");
             return;
         }
-        let Some(sample) = sample else {
+        let Some((sample, expires)) = sample.filter(|(_, expires)| Instant::now() < *expires)
+        else {
             self.diagnostic("unavailable");
             return;
         };
         for alert in &sample.alerts {
+            if Instant::now() >= expires {
+                return;
+            }
             let records: Vec<_> = self
                 .state
                 .lock()

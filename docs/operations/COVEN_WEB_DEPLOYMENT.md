@@ -151,6 +151,22 @@ temporary parent short enough for the 100-byte Unix socket address bound.
 
 ### Rollout
 
+Foreground SSE uses the same private Serve origin and needs no new public route
+or push configuration. On the approved proxy path, verify incremental delivery of
+`/api/v1/events` (`text/event-stream`, no-store): initial `ready`, 10-second comment
+heartbeats and invalidations must not wait in a proxy buffer until stream close.
+If an additional proxy is present, disable response buffering for this route and
+allow the 60-second body lifetime/65-second admitted connection bound. Ordinary
+requests remain bounded to 20 seconds. Do not weaken identity/origin checks or
+enable caching to accommodate streaming.
+
+Check stream rotation/reconnect, hidden-tab and BFcache return, six-second fallback
+when SSE is blocked/unavailable, and absence of automatic message/output/detail
+GETs or POSTs. Two streams per login/16 global can cause intentional 429 fallback
+with many tabs. A buffered or connected stream is not proof of fresh metadata;
+see [event/cache semantics](../architecture/COVEN_WEB_EVENTS.md) and
+[opt-in acceptance scope](../../clients/web/README.md#offline-checks).
+
 Before live rollout: confirm allowed user and local-host trust, enable tailnet
 HTTPS/Serve with user approval, authorize only intended phone HTTPS access, verify
 header forwarding and no direct network listener, and decide whether the qualified
@@ -158,6 +174,33 @@ best-effort output is acceptable. No public Funnel, router forwarding or encrypt
 changes. Validate one existing endpoint at a time, then actual phone/cellular,
 offline/reconnect and foreground/background behavior. Fixture success is not live
 acceptance. Keep the previous deployment/configuration for rollback.
+
+### Local subscription canary
+
+For a separately approved candidate gateway, canary one already configured local
+protocol-18 endpoint without restarting Kitsune/native workers, changing their
+configuration or upgrading remote helpers. First confirm ordinary inventory works;
+only then may the gateway open the fixed read-only `events.subscribe` channel.
+Use existing bounded diagnostics or an isolated synthetic peer to inspect setup:
+the twelve fixed selectors, correlated `subscription_started` ACK, and ACK deadline
+bounded by five seconds and the next inventory due time. Do not add a browser RPC
+selector, log raw frames or treat ACK/connection health as metadata freshness.
+
+Observe naturally occurring supported topology/title changes, or use the synthetic
+fixture; do not create/close/move panes, send prompts, answer decisions or perform
+any native action as a canary test. Confirm only completed normal fenced inventory
+changes fleet data, and meaningful accepted local changes wake paired metadata.
+Check continued periodic reconciliation during silence, unchanged lease expiry,
+bounded reconnect, and no automatic transcript/output/detail reads or POSTs. Missing,
+replaced and unsafe sockets must invalidate evidence; exercise those cases in
+isolated fixtures, never by replacing a live socket. SSH endpoints must stay
+unsubscribed. Upstream silence has no heartbeat/finite-expiry requirement and is
+not a fault by itself; browser SSE heartbeats are a different channel.
+
+See [local hint semantics and fixture scope](../architecture/COVEN_WEB_LOCAL_EVENTS.md).
+The real-gateway/mock-Unix fixture is not actual Kitsune or phone acceptance. Record
+candidate tests, release gates and actual deployment evidence separately when
+available; this procedure does not assert a live rollout or authorize an action test.
 
 ### Private installation and operation
 

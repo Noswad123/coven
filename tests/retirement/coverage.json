@@ -7,12 +7,14 @@
     "source_state": "dirty migration worktree; HEAD alone does not identify the baseline",
     "baseline_identity": "Per-file SHA256 and frozen original class/method names below",
     "classification_source": "Reviewed retirement research, 2026-11-07; proposed categories, not completed assertion mappings",
-    "oracle": "Unchanged production runner, read as source only; audit never imports it",
+    "oracle": "Historical capture runner remains pinned; active source has a separate reviewed-transition link. Audit reads source only and never imports it.",
     "oracle_coven_sha256": "f1303a96c043820913855a7f5b5361e0cbcb0d66ecd9e5b207d417f69c21fb36",
     "active_oracle": {
       "path": "runner/coven.py",
-      "sha256": "20ee19beebac6592e1d89ee9410ae819e31f72bf30692b71f09aa8d89088426e",
-      "source_fix_provenance": "Main 649324cda16915a4a5cf8e9746f02c32f6b77f59 removes PROJECT_DIR and uses COVEN_DIR/bin/coven for the direct-runner flat-root callback fallback. Historical oracle_coven_sha256 and all capture provenance remain original; no fixtures were recaptured from this active source. Records, checkpoints and task graph capture source files are unchanged."
+      "sha256": "b245ba00b0881b897266bfc4c9142c8086dda172c8ccef619b5d2958adfd4a87",
+      "previous_sha256": "20ee19beebac6592e1d89ee9410ae819e31f72bf30692b71f09aa8d89088426e",
+      "historical_sha256": "f1303a96c043820913855a7f5b5361e0cbcb0d66ecd9e5b207d417f69c21fb36",
+      "review": {"path":"tests/retirement/reviews/active_oracle_directory_isolation.json","sha256":"5914a1335a56d0a19d2acc6edb5c0dca976e2a6e6b16974b48224a54fb87b132"}
     },
     "native_counts": "Not certified by this inventory; no suite totals inferred",
     "accepted_source_transitions": [{"path":"tests/retirement/reviews/legacy_entrypoint_transition.json","sha256":"517547843c6a7aeac06a6095c915d91c91e483df85d9eae609a93ca6dd664d7d"}],
@@ -31,6 +33,54 @@
       "test_stable_callbacks_and_direct_runner_flat_root_fallback"
     ]},
     "policy_transition_notes": "All five main IDs retained with adapted intent, not exact method AST equivalence: real prebuilt Rust fixtures replace the fake Python runner. COVEN_NATIVE_BIN selects the native binary; COVEN_HOME remains an asset-root override and no longer selects a Python binary tree. Native wrapper and direct native callbacks use nonempty COVEN_COMMAND, then ARCANA_PUBLIC_COVEN, then portable coven, preserving literal spelling and shell quoting; unrelated ARCANA variables do not select callbacks. Relative/absolute symlink discovery, bounded cycle/40-hop refusal, prebuilt-only execution and direct-runner flat-root fallback remain tested. No full macOS validation, original retirement mapping, merge authorization or retirement completion is claimed; parent independently reviews this supplemental cohort before commit."
+  }, {
+    "path": "tests/test_dev_install.py",
+    "sha256": "6083b8ddee0e279356edb19b1e14fafd2a41fffd8cec33d914cf541fc068f6c2",
+    "source_main_commit": "1a8d392b4c7fb3f944821cf49a1d01418a1979cf",
+    "original_main_sha256": "6083b8ddee0e279356edb19b1e14fafd2a41fffd8cec33d914cf541fc068f6c2",
+    "classes": {"DevInstallTests": [
+      "test_build_actual_checkout_locked_release_reported_path_and_diagnostics",
+      "test_relative_reported_artifact",
+      "test_default_prefix",
+      "test_repeat_keeps_canonical_binary_assets_and_unrelated_files",
+      "test_legacy_non_sibling_native_link",
+      "test_refuse_existing_real_directory",
+      "test_refuse_broken_unrelated_and_wrapper_links",
+      "test_invalid_prefixes_and_missing_home",
+      "test_reject_unsafe_parent_before_writes",
+      "test_build_failure_preserves_generation_and_exit_code",
+      "test_missing_artifact_never_uses_stale_binary",
+      "test_stage_and_publication_failures_preserve_old",
+      "test_no_artifact_or_partial_payload_on_non_native_build_output",
+      "test_concurrent_selection_change_refused",
+      "test_unmanaged_entry_after_revalidation_is_not_clobbered",
+      "test_cooperating_publishers_serialize_and_reject_stale_snapshot",
+      "test_unsafe_lock_entries_are_refused_without_adoption",
+      "test_signals_stop_and_reap_blocked_cargo",
+      "test_first_signal_during_normal_child_cleanup_kills_descendant_and_reaps_child",
+      "test_signal_during_copy_cleans_unpublished_payload",
+      "test_signal_after_atomic_replace_retains_published_payload"
+    ]},
+    "policy_transition_notes": "Exact initial source bytes and 21 IDs from the introduction commit, with no adaptation. Temporary filesystem payload/publication and locking tests use fake Cargo subprocesses, copied true executables and process signals, including a Linux-only prctl subreaper test for descendant cleanup. No real Cargo compilation or installed selection writes are intended, but these are not no-I/O tests. Dynamically loads scripts/install_dev.py with spec_from_file_location outside the audit's current import closure; manually reviewed imports are stdlib-only with Unix facilities and external executable dependencies. Supplemental inventory only, not C categorization, original mapping evidence or behavioral equivalence."
+  }, {
+    "path": "tests/test_install_dev_environment.py",
+    "sha256": "6d39332e9c41c378cfe2afc060e9dc3239a1953363a8b78e8fb8b5f26dbc894a",
+    "source_main_commit": "b5c9ece62af77f96568c3eb9e9542894154f2ecd",
+    "original_main_sha256": "6d39332e9c41c378cfe2afc060e9dc3239a1953363a8b78e8fb8b5f26dbc894a",
+    "classes": {"BuildEnvironmentTests": [
+      "test_native_default_copy_and_clean_bounded_system_probe",
+      "test_explicit_selection_and_cross_flags_are_unchanged_even_when_empty",
+      "test_non_linux_unchanged_without_probe",
+      "test_ambiguous_or_non_native_rust_host_unchanged",
+      "test_cargo_config_target_and_other_build_customizations_unchanged",
+      "test_missing_home_unchanged",
+      "test_probe_failures_at_every_stage_leave_original_selection",
+      "test_missing_headers_or_either_shared_library_unchanged",
+      "test_non_elf_library_unchanged",
+      "test_non_system_or_invalid_probe_paths_unchanged",
+      "test_build_uses_helper_child_environment_without_changing_process"
+    ], "SystemProbeTests": ["test_real_read_only_system_probe"]},
+    "policy_transition_notes": "Exact initial source bytes and 12 IDs from the introduction commit: 11 mock-environment characterizations use temporary files and mocked probes; one Linux/system-pkg-config-gated real read-only probe may invoke rustc -vV and pkg-config and read system OpenSSL files, or skip when unavailable/ambiguous. No Cargo build or installation. Dynamically loads scripts/install_dev.py with spec_from_file_location outside the audit's current import closure; manually reviewed imports are stdlib-only with Unix/external-tool dependencies. Supplemental inventory only, not C categorization or a no-I/O/behavioral-equivalence claim."
   }],
   "default_obligation": "Unresolved: preserve every original assertion, subtest, setup/no-effect guard, failure boundary and ordering requirement. Category is a proposed mechanism, not assertion equivalence review.",
   "reviews": {
@@ -245,7 +295,7 @@
       "typed_claims_do_not_become_verification",
       "utf8_byte_limits_not_character_counts"
     ]},
-    {"path":"tests/interactive_sessions_workflow.rs","tests":["native_interactive_session_workflow"]},
+    {"path":"tests/interactive_sessions_workflow.rs","tests":["native_interactive_session_workflow","unsupported_adapters_never_contact_or_create_workspace"]},
     {"path":"tests/session_prompts_workflow.rs","tests":[
       "all_original_malformed_ack_cases_are_uncertain_without_retry",
       "leaf_socket_replacement_after_capabilities_contacts_neither_submit_endpoint",

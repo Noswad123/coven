@@ -4,6 +4,7 @@ import ast
 import contextlib
 import copy
 import functools
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -16,11 +17,180 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import retirement_coverage as coverage
 
 
+class ActiveOracleTransitionTests(unittest.TestCase):
+    """Approved synthetic records exercise validation without approving the real draft."""
+
+    def setUp(self):
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        self.root = Path(directory)
+        (self.root / "runner").mkdir()
+        self.source = self.root / "runner/coven.py"
+        self.source.write_text("raise RuntimeError('audit must never execute this source')\n")
+        self.path = "tests/retirement/reviews/active_oracle_directory_isolation.json"
+        self.record_path = self.root / self.path
+        self.record_path.parent.mkdir(parents=True)
+        self.active = {"path": "runner/coven.py", "sha256": coverage.digest(self.source),
+                       "previous_sha256": "1" * 64, "historical_sha256": "2" * 64,
+                       "review": {"path": self.path, "sha256": "0" * 64}}
+        self.provenance = {"active_oracle": self.active, "oracle_coven_sha256": "2" * 64,
+                           "source_head": "3" * 40}
+        self.record = {
+            "schema_version": 1, "record_path": self.path, "approval_status": "parent_approved",
+            "source": {"path": "runner/coven.py", "old_sha256": "1" * 64,
+                       "new_sha256": self.active["sha256"], "historical_sha256": "2" * 64},
+            "from": {"commit": "4" * 40, "blob": "5" * 40, "sha256": "1" * 64},
+            "to": {"commit": "6" * 40, "blob": "7" * 40, "sha256": self.active["sha256"]},
+            "historical_capture": {"commit": "3" * 40, "blob": "8" * 40, "sha256": "2" * 64},
+        }
+        self.pin_record()
+
+    def pin_record(self):
+        self.record_path.write_text(json.dumps(self.record))
+        self.active["review"]["sha256"] = coverage.digest(self.record_path)
+
+    def test_approved_link_and_no_active_oracle_are_valid_without_execution(self):
+        coverage.validate_active_oracle(self.root, self.provenance)
+        coverage.validate_active_oracle(self.root, {})
+        manifest = {"schema_version": 1, "provenance": self.provenance, "files": [],
+                    "original_method_count": 0, "category_counts": dict.fromkeys(coverage.CATEGORIES, 0),
+                    "candidate_mappings": {}, "independent_python": [], "native_integration_inventory": []}
+        self.assertEqual(coverage.audit(self.root, manifest)["errors"], [])
+        self.record["approval_status"] = "pending_parent_review"
+        self.pin_record()
+        self.assertEqual(coverage.audit(self.root, manifest)["errors"],
+                         ["active oracle transition is not parent approved"])
+        manifest = copy.deepcopy(manifest)
+        manifest["provenance"].pop("active_oracle")
+        self.assertEqual(coverage.audit(self.root, manifest)["errors"],
+                         ["missing active oracle transition for historical oracle"])
+        manifest["provenance"] = {}
+        self.assertEqual(coverage.audit(self.root, manifest)["errors"], [])
+
+    def test_real_manifest_cannot_drop_active_oracle_even_with_changed_parseable_runner(self):
+        manifest = json.loads((coverage.ROOT / coverage.MANIFEST).read_text(),
+                              object_pairs_hook=coverage.unique_object)
+        manifest["provenance"].pop("active_oracle")
+        self.source.write_text("def changed_runner():\n    return 'not the reviewed source'\n")
+        ast.parse(self.source.read_text())
+        for root in (coverage.ROOT, self.root):
+            with self.subTest(root=root), self.assertRaisesRegex(ValueError, "missing active oracle transition"):
+                coverage.validate_active_oracle(root, manifest["provenance"])
+
+    def test_missing_pending_and_tampered_records_fail_closed(self):
+        original = copy.deepcopy(self.record)
+        for status in (None, "pending_parent_review", "pending_parent_diff_review"):
+            self.record = copy.deepcopy(original)
+            if status is None:
+                self.record.pop("approval_status")
+            else:
+                self.record["approval_status"] = status
+            self.pin_record()
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, "not parent approved"):
+                coverage.validate_active_oracle(self.root, self.provenance)
+        self.record_path.write_text(json.dumps(original))
+        with self.assertRaisesRegex(ValueError, "review digest mismatch"):
+            coverage.validate_active_oracle(self.root, self.provenance)
+        self.record_path.unlink()
+        with self.assertRaisesRegex(ValueError, "missing or escaping"):
+            coverage.validate_active_oracle(self.root, self.provenance)
+
+    def test_record_paths_and_all_hash_links_are_required_even_after_rehash(self):
+        original = copy.deepcopy(self.record)
+        changes = [("record_path", None), ("source", "path"), ("source", "old_sha256"),
+                   ("source", "new_sha256"), ("source", "historical_sha256"),
+                   ("from", "sha256"), ("to", "sha256"), ("historical_capture", "sha256"),
+                   ("historical_capture", "commit")]
+        for key, field in changes:
+            self.record = copy.deepcopy(original)
+            if field is None:
+                self.record[key] = "tests/retirement/reviews/wrong.json"
+            else:
+                self.record[key][field] = "9" * (40 if field == "commit" else 64)
+            self.pin_record()
+            with self.subTest(key=key, field=field), self.assertRaisesRegex(ValueError, "mismatch"):
+                coverage.validate_active_oracle(self.root, self.provenance)
+
+    def test_source_change_cannot_be_blessed_by_rewriting_only_manifest_pin(self):
+        self.source.write_text("raise RuntimeError('changed source, still never executed')\n")
+        with self.assertRaisesRegex(ValueError, "source drift"):
+            coverage.validate_active_oracle(self.root, self.provenance)
+        self.active["sha256"] = coverage.digest(self.source)
+        with self.assertRaisesRegex(ValueError, "transition linkage mismatch"):
+            coverage.validate_active_oracle(self.root, self.provenance)
+
+    def test_historical_manifest_pin_and_commit_cannot_be_relinked_alone(self):
+        for key, value in (("oracle_coven_sha256", "9" * 64), ("source_head", "9" * 40)):
+            provenance = copy.deepcopy(self.provenance)
+            provenance[key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "historical capture linkage mismatch"):
+                coverage.validate_active_oracle(self.root, provenance)
+
+    def test_active_oracle_format_and_review_reference_are_explicit(self):
+        for key in self.active:
+            provenance = copy.deepcopy(self.provenance)
+            provenance["active_oracle"].pop(key)
+            with self.subTest(missing=key), self.assertRaisesRegex(ValueError, "invalid active oracle format"):
+                coverage.validate_active_oracle(self.root, provenance)
+        for key in ("sha256", "previous_sha256", "historical_sha256"):
+            for value in (None, "", "Z" * 64):
+                provenance = copy.deepcopy(self.provenance)
+                provenance["active_oracle"][key] = value
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, "hash format"):
+                    coverage.validate_active_oracle(self.root, provenance)
+        for value in (None, {}, {"path": self.path, "sha256": ""},
+                      {"path": "../outside", "sha256": "0" * 64}):
+            provenance = copy.deepcopy(self.provenance)
+            provenance["active_oracle"]["review"] = value
+            with self.subTest(review=value), self.assertRaisesRegex(ValueError, "review reference"):
+                coverage.validate_active_oracle(self.root, provenance)
+        provenance = copy.deepcopy(self.provenance)
+        provenance["active_oracle"]["path"] = "runner/other.py"
+        with self.assertRaisesRegex(ValueError, "source path mismatch"):
+            coverage.validate_active_oracle(self.root, provenance)
+
+    def test_record_endpoint_and_schema_formats_are_explicit(self):
+        original = copy.deepcopy(self.record)
+        for key in ("from", "to", "historical_capture"):
+            for field in ("commit", "blob", "sha256"):
+                self.record = copy.deepcopy(original)
+                self.record[key][field] = "not-a-hash"
+                self.pin_record()
+                with self.subTest(key=key, field=field), self.assertRaisesRegex(ValueError, "provenance mismatch"):
+                    coverage.validate_active_oracle(self.root, self.provenance)
+        self.record = copy.deepcopy(original)
+        self.record["schema_version"] = 2
+        self.pin_record()
+        with self.assertRaisesRegex(ValueError, "transition linkage mismatch"):
+            coverage.validate_active_oracle(self.root, self.provenance)
+
+
 class RetirementCoverageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cached = mock.patch.object(coverage, "rust_tests", side_effect=functools.lru_cache()(coverage.rust_tests))
+        cached.start()
+        cls.addClassCleanup(cached.stop)
         cls.manifest = json.loads((coverage.ROOT / coverage.MANIFEST).read_text(), object_pairs_hook=coverage.unique_object)
         cls.report = coverage.audit(coverage.ROOT, cls.manifest)
+
+    def test_frozen_original_ledger_content_and_id_fingerprint(self):
+        ids = sorted(unit["id"] for unit in self.report["units"])
+        self.assertEqual(hashlib.sha256(("\n".join(ids) + "\n").encode()).hexdigest(),
+                         "a48118da016436fea96b135e5e6a799eaab6d249f617a901da1a288b05f10b0a")
+        expected = {
+            "files": "209e0e91963110eccc11cb4e04538617b2ad8683abbb59ad331cba3584434b65",
+            "reviews": "e184ec83f7454cf6f235a98ab214983c570449491a035f24378e538bfc34df8b",
+            "candidate_mappings": "0ebe8e27d5254b84c9bd2e0b2d33ac8191627d515b9fcebbd7b1d8d48c35603b",
+            "category_counts": "99cb27b97d73523ac4a779566cc20b0a5f39f2ad8b5bb85beac9cbbd1fb92a60",
+            "original_method_count": "dae40fcfed8e9ce405c3e0e207ba4781acb0a6a55a527f591b6b2b442f8cbbc5",
+            "accepted_batches": "5823b5379842eaea60a4f4dbcf952e2e2c7d4c04ad1cbda11d957fe00660c837",
+            "accepted_source_transitions": "d401a700b6785de521414458ccdee78a23d944fc0dce81423d2989bd69f61e96",
+        }
+        for key, sha256 in expected.items():
+            value = self.manifest.get(key, self.manifest["provenance"].get(key))
+            with self.subTest(key=key):
+                self.assertEqual(hashlib.sha256(json.dumps(value, sort_keys=True,
+                                                         separators=(",", ":")).encode()).hexdigest(), sha256)
 
     def test_original_ids_categories_and_unresolved_status_are_frozen(self):
         self.assertEqual(self.report["errors"], [])
@@ -119,7 +289,10 @@ class RetirementCoverageTests(unittest.TestCase):
     def test_native_inventory_is_explicit_and_has_no_static_findings(self):
         native = self.report["native_integration_inventory"]
         self.assertEqual(len(native), 7)
-        self.assertEqual(sum(len(item["tests"]) for item in native), 54)
+        self.assertEqual(sum(len(item["tests"]) for item in native), 55)
+        interactive = next(item for item in native if item["path"] == "tests/interactive_sessions_workflow.rs")
+        self.assertEqual(interactive["tests"], ["native_interactive_session_workflow",
+                                              "unsupported_adapters_never_contact_or_create_workspace"])
         prompts = next(item for item in native if item["path"] == "tests/session_prompts_workflow.rs")
         self.assertEqual(len(prompts["tests"]), 19)
         self.assertTrue({
@@ -140,8 +313,8 @@ class RetirementCoverageTests(unittest.TestCase):
         self.assertIn("A=53 B=15 C=0 D=873", out.getvalue())
         self.assertIn("mapped=67 unresolved=874", out.getvalue())
         self.assertIn("Original methods: 941", out.getvalue())
-        self.assertIn("Supplemental Python methods: 5 in 1 files", out.getvalue())
-        self.assertIn("Full Python suite methods: 946", out.getvalue())
+        self.assertIn("Supplemental Python methods: 38 in 3 files", out.getvalue())
+        self.assertIn("Full Python suite methods: 979", out.getvalue())
         self.assertIn("retirement incomplete", err.getvalue())
 
     def test_report_is_deterministic_and_never_imports_runner(self):
@@ -276,19 +449,40 @@ class RetirementCoverageTests(unittest.TestCase):
         manifest["files"][0]["sha256"] = "0" * 64
         self.assertTrue(any("assertion source drift" in error for error in coverage.audit(coverage.ROOT, manifest)["errors"]))
 
-    def test_supplemental_cohort_has_exact_five_actual_ids_without_original_mappings(self):
+    def test_supplemental_cohorts_have_exact_actual_ids_without_original_mappings(self):
         supplemental = self.report["supplemental_python"]
-        entry, = self.manifest["supplemental_python"]
-        actual = coverage.methods(coverage.ROOT / entry["path"])
-        self.assertEqual(supplemental["method_count"], 5)
-        self.assertEqual(supplemental["file_counts"], {"tests/test_wrapper.py": 5})
-        self.assertEqual(supplemental["ids"], sorted(
-            f"python::{entry['path']}::{key.replace('.', '::', 1)}" for key in actual))
-        self.assertEqual(self.report["full_python_method_count"], 946)
-        self.assertEqual(coverage.digest(coverage.ROOT / entry["path"]), entry["sha256"])
+        entries = {entry["path"]: entry for entry in self.manifest["supplemental_python"]}
+        self.assertEqual(supplemental["method_count"], 38)
+        self.assertEqual(supplemental["file_counts"], {"tests/test_wrapper.py": 5,
+                         "tests/test_dev_install.py": 21, "tests/test_install_dev_environment.py": 12})
+        actual_ids = []
+        for path, entry in entries.items():
+            actual = coverage.methods(coverage.ROOT / path)
+            self.assertEqual(set(actual), {f"{cls}.{method}" for cls, names in entry["classes"].items()
+                                           for method in names})
+            actual_ids.extend(f"python::{path}::{key.replace('.', '::', 1)}" for key in actual)
+            self.assertEqual(coverage.digest(coverage.ROOT / path), entry["sha256"])
+        self.assertEqual(supplemental["ids"], sorted(actual_ids))
+        self.assertEqual(self.report["full_python_method_count"], 979)
+        entry = entries["tests/test_wrapper.py"]
         self.assertEqual(entry["source_main_commit"], "649324cda16915a4a5cf8e9746f02c32f6b77f59")
         self.assertEqual(entry["original_main_sha256"],
                          "30c204782c1f87be53b35b9fe805f8935724bb6cdef9b5269e32d6fe26c712fc")
+        for path, commit, sha256, counts in [
+            ("tests/test_dev_install.py", "1a8d392b4c7fb3f944821cf49a1d01418a1979cf",
+             "6083b8ddee0e279356edb19b1e14fafd2a41fffd8cec33d914cf541fc068f6c2", {"DevInstallTests": 21}),
+            ("tests/test_install_dev_environment.py", "b5c9ece62af77f96568c3eb9e9542894154f2ecd",
+             "6d39332e9c41c378cfe2afc060e9dc3239a1953363a8b78e8fb8b5f26dbc894a",
+             {"BuildEnvironmentTests": 11, "SystemProbeTests": 1}),
+        ]:
+            entry = entries[path]
+            self.assertEqual(entry["source_main_commit"], commit)
+            self.assertEqual(entry["sha256"], sha256)
+            self.assertEqual(entry["original_main_sha256"], sha256)
+            self.assertEqual({cls: len(names) for cls, names in entry["classes"].items()}, counts)
+            self.assertNotIn(path, self.manifest["independent_python"])
+            self.assertIn("spec_from_file_location", entry["policy_transition_notes"])
+            self.assertIn("outside the audit's current import closure", entry["policy_transition_notes"])
         self.assertFalse(set(supplemental["ids"]) & {unit["id"] for unit in self.report["units"]})
         for name in ("reviews", "candidate_mappings"):
             manifest = copy.deepcopy(self.manifest)
@@ -296,42 +490,48 @@ class RetirementCoverageTests(unittest.TestCase):
             self.assertIn(f"unknown original IDs in {name}", coverage.audit(coverage.ROOT, manifest)["errors"])
 
     def test_unapproved_supplemental_file_is_not_silently_dropped(self):
-        manifest = copy.deepcopy(self.manifest)
-        manifest.pop("supplemental_python")
-        errors = coverage.audit(coverage.ROOT, manifest)["errors"]
-        self.assertTrue(any("inventory drift" in error and "tests/test_wrapper.py" in error for error in errors))
+        for entry in self.manifest["supplemental_python"]:
+            manifest = copy.deepcopy(self.manifest)
+            manifest["supplemental_python"] = [item for item in manifest["supplemental_python"]
+                                                if item["path"] != entry["path"]]
+            with self.subTest(path=entry["path"]):
+                errors = coverage.audit(coverage.ROOT, manifest)["errors"]
+                self.assertTrue(any("inventory drift" in error and entry["path"] in error for error in errors))
 
     def test_supplemental_new_and_renamed_methods_fail_even_with_same_count(self):
         original_methods = coverage.methods
-        for rename in (False, True):
-            def changed_methods(path):
-                actual = original_methods(path)
-                if path.name == "test_wrapper.py":
-                    if rename:
-                        actual.pop(next(iter(actual)))
-                    actual["WrapperTests.test_unapproved"] = None
-                return actual
+        for entry in self.manifest["supplemental_python"]:
+            for change in ("add", "rename", "remove"):
+                def changed_methods(path):
+                    actual = original_methods(path)
+                    if path.name == Path(entry["path"]).name:
+                        if change != "add":
+                            actual.pop(next(iter(actual)))
+                        if change != "remove":
+                            actual[f"{next(iter(entry['classes']))}.test_unapproved"] = None
+                    return actual
 
-            with self.subTest(rename=rename), mock.patch.object(coverage, "methods", side_effect=changed_methods):
-                errors = coverage.audit(coverage.ROOT, self.manifest)["errors"]
-            self.assertIn("tests/test_wrapper.py: supplemental method drift", errors)
-            self.assertTrue(any("inventory drift" in error for error in errors))
+                with self.subTest(path=entry["path"], change=change), mock.patch.object(
+                        coverage, "methods", side_effect=changed_methods):
+                    errors = coverage.audit(coverage.ROOT, self.manifest)["errors"]
+                self.assertIn(f"{entry['path']}: supplemental method drift", errors)
+                self.assertTrue(any("inventory drift" in error for error in errors))
 
     def test_supplemental_source_assertion_drift_fails_without_id_changes(self):
-        entry, = self.manifest["supplemental_python"]
         original_local_file = coverage.local_file
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "test_wrapper.py"
-            tree = ast.parse((coverage.ROOT / entry["path"]).read_text())
-            method = next(node for cls in tree.body if isinstance(cls, ast.ClassDef)
-                          for node in cls.body if isinstance(node, ast.FunctionDef)
-                          and node.name.startswith("test_"))
-            method.body.append(ast.Assert(test=ast.Constant(value=False)))
-            path.write_text(ast.unparse(ast.fix_missing_locations(tree)))
-            with mock.patch.object(coverage, "local_file", side_effect=lambda root, name:
-                                   path if name == entry["path"] else original_local_file(root, name)):
-                errors = coverage.audit(coverage.ROOT, self.manifest)["errors"]
-        self.assertEqual(errors, ["tests/test_wrapper.py: supplemental assertion source drift"])
+        for entry in self.manifest["supplemental_python"]:
+            with self.subTest(path=entry["path"]), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / Path(entry["path"]).name
+                tree = ast.parse((coverage.ROOT / entry["path"]).read_text())
+                method = next(node for cls in tree.body if isinstance(cls, ast.ClassDef)
+                              for node in cls.body if isinstance(node, ast.FunctionDef)
+                              and node.name.startswith("test_"))
+                method.body.append(ast.Assert(test=ast.Constant(value=False)))
+                path.write_text(ast.unparse(ast.fix_missing_locations(tree)))
+                with mock.patch.object(coverage, "local_file", side_effect=lambda root, name:
+                                       path if name == entry["path"] else original_local_file(root, name)):
+                    errors = coverage.audit(coverage.ROOT, self.manifest)["errors"]
+                self.assertEqual(errors, [f"{entry['path']}: supplemental assertion source drift"])
 
     def test_supplemental_duplicates_and_original_file_overlap_fail(self):
         for kind in ("file", "method", "original"):
@@ -360,7 +560,7 @@ class RetirementCoverageTests(unittest.TestCase):
         self.assertNotEqual(provenance["oracle_coven_sha256"], provenance["active_oracle"]["sha256"])
         manifest = copy.deepcopy(self.manifest)
         manifest["provenance"]["active_oracle"]["sha256"] = "0" * 64
-        self.assertIn("active oracle source drift", coverage.audit(coverage.ROOT, manifest)["errors"])
+        self.assertIn("active oracle transition linkage mismatch", coverage.audit(coverage.ROOT, manifest)["errors"])
 
     def test_eleven_approved_transitions_preserve_original_hashes_and_ids(self):
         self.enterContext(mock.patch.object(coverage, "rust_tests",

@@ -327,6 +327,38 @@ impl Socket {
         check(deadline, cancel)
     }
 
+    /// Persistent-stream read only. The existing one-reply EOF reader stays separate.
+    pub(crate) fn stream_read(
+        &self,
+        buffer: &mut [u8],
+        deadline: Instant,
+        cancel: &dyn Cancel,
+    ) -> WireResult<Option<usize>> {
+        loop {
+            check(deadline, cancel)?;
+            let count = unsafe {
+                libc::recv(
+                    self.0.as_raw_fd(),
+                    buffer.as_mut_ptr().cast(),
+                    buffer.len(),
+                    0,
+                )
+            };
+            if count >= 0 {
+                return Ok(Some(count as usize));
+            }
+            let error = io::Error::last_os_error();
+            match error.kind() {
+                io::ErrorKind::Interrupted => continue,
+                io::ErrorKind::WouldBlock => match self.wait(libc::POLLIN, deadline, cancel) {
+                    Err(error) if error.code == "timeout" => return Ok(None),
+                    result => result?,
+                },
+                _ => return Err(io_failure(error)),
+            }
+        }
+    }
+
     pub(crate) fn receive(
         &self,
         deadline: Instant,

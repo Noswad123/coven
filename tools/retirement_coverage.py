@@ -237,6 +237,57 @@ def native_inventory(root, entries):
     return result
 
 
+def validate_active_oracle(root, provenance):
+    """Check an explicit reviewed source link, not behavioral equivalence or Git history."""
+    if "active_oracle" not in provenance:
+        if "oracle_coven_sha256" in provenance:
+            raise ValueError("missing active oracle transition for historical oracle")
+        return
+    active = provenance["active_oracle"]
+    fields = {"path", "sha256", "previous_sha256", "historical_sha256", "review"}
+    if not isinstance(active, dict) or set(active) != fields:
+        raise ValueError("invalid active oracle format")
+    if active["path"] != "runner/coven.py":
+        raise ValueError("active oracle source path mismatch")
+    for key in ("sha256", "previous_sha256", "historical_sha256"):
+        if not isinstance(active[key], str) or not re.fullmatch(r"[0-9a-f]{64}", active[key]):
+            raise ValueError("invalid active oracle hash format")
+    reference = active["review"]
+    if (not isinstance(reference, dict) or set(reference) != {"path", "sha256"}
+            or not isinstance(reference["path"], str)
+            or not re.fullmatch(r"tests/retirement/reviews/[a-z_]+\.json", reference["path"])
+            or not isinstance(reference["sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", reference["sha256"])):
+        raise ValueError("invalid active oracle review reference")
+    path = local_file(root, reference["path"])
+    if digest(path) != reference["sha256"]:
+        raise ValueError("active oracle review digest mismatch")
+    record = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    if (not isinstance(record, dict) or record.get("schema_version") != 1
+            or record.get("record_path") != reference["path"]
+            or record.get("source") != {"path": active["path"],
+                                        "old_sha256": active["previous_sha256"],
+                                        "new_sha256": active["sha256"],
+                                        "historical_sha256": active["historical_sha256"]}
+            or active["previous_sha256"] == active["sha256"]):
+        raise ValueError("active oracle transition linkage mismatch")
+    for key, expected in (("from", active["previous_sha256"]), ("to", active["sha256"]),
+                          ("historical_capture", active["historical_sha256"])):
+        endpoint = record.get(key)
+        if (not isinstance(endpoint, dict) or set(endpoint) != {"commit", "blob", "sha256"}
+                or any(not isinstance(endpoint.get(field), str)
+                       or not re.fullmatch(r"[0-9a-f]{40}", endpoint[field]) for field in ("commit", "blob"))
+                or endpoint.get("sha256") != expected):
+            raise ValueError(f"active oracle {key} provenance mismatch")
+    if (active["historical_sha256"] != provenance.get("oracle_coven_sha256")
+            or record["historical_capture"]["commit"] != provenance.get("source_head")):
+        raise ValueError("active oracle historical capture linkage mismatch")
+    if digest(local_file(root, active["path"])) != active["sha256"]:
+        raise ValueError("active oracle source drift")
+    if record.get("approval_status") != "parent_approved":
+        raise ValueError("active oracle transition is not parent approved")
+
+
 def audit(root, manifest):
     if manifest["schema_version"] != 1:
         raise ValueError("unsupported ledger schema")
@@ -258,9 +309,10 @@ def audit(root, manifest):
                 raise ValueError(f"duplicate source transition: {source}")
             transitions[source] = (name, change)
     imports = python_inventory(root)
-    active_oracle = manifest["provenance"].get("active_oracle")
-    if active_oracle and digest(local_file(root, active_oracle["path"])) != active_oracle["sha256"]:
-        errors.append("active oracle source drift")
+    try:
+        validate_active_oracle(root, manifest["provenance"])
+    except ValueError as error:
+        errors.append(str(error))
     file_counts, categories = {}, Counter({key: 0 for key in CATEGORIES})
     for entry in manifest["files"]:
         name = entry["path"]

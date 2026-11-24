@@ -160,6 +160,153 @@ pub(crate) fn read(
     )
 }
 
+/// Private, fixed-purpose subscription transport, not a general RPC surface.
+pub(crate) struct EventSocket {
+    socket: crate::platform::observation_socket::Socket,
+    endpoint: Endpoint,
+    pending: Vec<u8>,
+    partial_since: Option<Instant>,
+    fenced: Instant,
+}
+
+impl EventSocket {
+    pub(crate) const MAX_FRAME_BYTES: usize = 256 * 1024;
+
+    pub(crate) fn subscribe(
+        path: &str,
+        deadline: Instant,
+        cancel: &dyn Cancel,
+    ) -> WireResult<(Self, String)> {
+        check(deadline, cancel)?;
+        let endpoint = select(path)?;
+        let id = crate::platform::random_uuid_hex().map_err(|_| Failure::new("io_error"))?;
+        let subscriptions: Vec<_> = [
+            "pane.created",
+            "pane.closed",
+            "pane.updated",
+            "pane.moved",
+            "pane.exited",
+            "tab.created",
+            "tab.closed",
+            "tab.moved",
+            "workspace.created",
+            "workspace.closed",
+            "workspace.moved",
+            "layout.updated",
+        ]
+        .into_iter()
+        .map(|name| json!({"type":name}))
+        .collect();
+        let request = frame(
+            &id,
+            "events.subscribe",
+            &json!({"subscriptions": subscriptions}),
+        )?;
+        let socket =
+            crate::platform::observation_socket::Socket::connect(&endpoint, deadline, cancel)?;
+        crate::platform::observation_socket::fence(&endpoint)?;
+        socket.send(&request, deadline, cancel)?;
+        crate::platform::observation_socket::fence(&endpoint)?;
+        Ok((
+            Self {
+                socket,
+                endpoint,
+                pending: Vec::new(),
+                partial_since: None,
+                fenced: Instant::now(),
+            },
+            id,
+        ))
+    }
+
+    pub(crate) fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
+    pub(crate) fn fence(&mut self) -> WireResult<()> {
+        crate::platform::observation_socket::fence(&self.endpoint)?;
+        self.fenced = Instant::now();
+        Ok(())
+    }
+
+    /// None is an idle deadline, never EOF. Partial assembly has its own clock.
+    pub(crate) fn next_frame(
+        &mut self,
+        until: Instant,
+        cancel: &dyn Cancel,
+    ) -> WireResult<Option<Vec<u8>>> {
+        use std::time::Duration;
+        loop {
+            if cancel.interrupted() {
+                return Err(Failure::new("interrupted"));
+            }
+            let now = Instant::now();
+            if now.duration_since(self.fenced) >= Duration::from_secs(1) {
+                self.fence()?;
+            }
+            if now >= until {
+                if !self.pending.contains(&b'\n')
+                    && self
+                        .partial_since
+                        .is_some_and(|start| now.duration_since(start) >= Duration::from_secs(5))
+                {
+                    return Err(Failure::new("partial_frame_timeout"));
+                }
+                return Ok(None);
+            }
+            if let Some(end) = self.pending.iter().position(|&b| b == b'\n') {
+                if end >= Self::MAX_FRAME_BYTES {
+                    return Err(Failure::new("response_limit"));
+                }
+                self.fence()?;
+                let rest = self.pending.split_off(end + 1);
+                let mut frame = std::mem::replace(&mut self.pending, rest);
+                frame.pop();
+                if self.pending.is_empty() {
+                    self.partial_since = None;
+                }
+                return Ok(Some(frame));
+            }
+            if self.pending.len() >= Self::MAX_FRAME_BYTES {
+                return Err(Failure::new("response_limit"));
+            }
+            if self
+                .partial_since
+                .is_some_and(|start| now.duration_since(start) >= Duration::from_secs(5))
+            {
+                return Err(Failure::new("partial_frame_timeout"));
+            }
+            let mut wake = until.min(self.fenced + Duration::from_secs(1));
+            if let Some(start) = self.partial_since {
+                wake = wake.min(start + Duration::from_secs(5));
+            }
+            let mut buffer = [0u8; 16384];
+            match self.socket.stream_read(&mut buffer, wake, cancel) {
+                Ok(Some(0)) => {
+                    self.fence()?;
+                    return Err(Failure::new(if self.pending.is_empty() {
+                        "stream_eof"
+                    } else {
+                        "incomplete_response"
+                    }));
+                }
+                Ok(Some(count)) => {
+                    // A newline ends the old assembly; any new tail begins in this read.
+                    if buffer[..count].contains(&b'\n') {
+                        self.partial_since = Some(Instant::now());
+                    } else {
+                        self.partial_since.get_or_insert_with(Instant::now);
+                    }
+                    self.pending.extend_from_slice(&buffer[..count]);
+                }
+                Ok(None) => {}
+                Err(error) if error.code == "timeout" => {}
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
 /// Scoped naming read, not an extension of the public observer method set.
 pub(crate) fn naming_inspect(
     endpoint: &Endpoint,

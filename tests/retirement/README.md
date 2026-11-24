@@ -1,11 +1,11 @@
 # Retirement Coverage Ledger
 
-Tracking plus the accepted Session views, records, checkpoints, task graphs and
-session prompts retirement batches. This does not
-change the production entrypoint, remove or move
-runner code, skip existing tests, introduce test features, or replace the full
-validation gate. Entire migration and release acceptance remain required before
-merge. No native-suite coverage totals are inferred from this ledger.
+Tracks the frozen original obligations and accepted Session views, records,
+checkpoints, task graphs and session prompts batches. It also inventories later
+supplemental tests and the reviewed active-oracle source. It does not change the
+production entrypoint, remove or move runner code, skip existing tests, introduce
+test features, or replace migration/release validation. No native-suite coverage
+totals or fresh Git-operation authorization are inferred from this ledger.
 
 ## Commands
 
@@ -24,8 +24,10 @@ method obligations, file counts, direct and transitive imports, and the static
 native integration inventory. All commands validate; `--check` is an explicit
 spelling for automation, not a weaker inspection mode. The audit is read-only,
 stdlib-only and AST-based for Python. It never imports or executes runner code.
-Audit unit tests live outside `tests/`. The full Python suite now has 946 methods:
-941 frozen originals plus five explicitly pinned supplemental wrapper methods.
+Audit unit tests live outside `tests/`. The current AST inventory has **979
+methods**: 941 frozen originals plus **38 supplemental methods in three files**
+(five wrapper, 21 development-installer and 12 build-environment tests). Inventory
+is not execution: the repair ran the 38 audit-tool tests, not all 979 methods.
 
 ## Frozen Baseline
 
@@ -86,16 +88,22 @@ reaches runner, third-party imports or unresolved dynamic import calls.
 
 ## Candidate Native Inventory
 
-Seven exact integration targets are whitelisted with **54 current test IDs**.
-Only the prompt workflow inventory changed in this integration, from 15 to 19:
+Seven exact integration targets are whitelisted with **55 current test IDs**.
+The previously accepted prompt workflow inventory contains 19, including these
+four additions from its earlier 15-ID cohort:
 
 - `all_original_malformed_ack_cases_are_uncertain_without_retry`
 - `leaf_socket_replacement_after_capabilities_contacts_neither_submit_endpoint`
 - `original_invalid_argument_cases_refuse_without_endpoint_contact`
 - `literal_receipt_contract_keeps_prompt_and_peer_extensions_private`
 
-The other six target inventories are unchanged (including the blank-asset-root
-regression). The candidate gate command remains:
+The interactive-session target now lists both `native_interactive_session_workflow`
+and `unsupported_adapters_never_contact_or_create_workspace`. The latter was added
+in `8aa04e43203b5208d7c08e709f5c8abb9e2cb2bb` and checks unsupported adapter/path
+requests without creating a workspace or contacting the fixture. Admitting its
+name is not a new original-obligation mapping or a claim that it ran in the audit
+repair. The other six inventories are unchanged by this repair, including the
+blank-asset-root regression. The candidate gate command remains:
 
 ```sh
 CARGO_BUILD_JOBS=2 cargo test --offline --locked \
@@ -292,7 +300,7 @@ and unexpected assertion AST modifications that must fail without rewriting file
 
 The transition's reported 941 Python passes and five `tests/native_entrypoint.rs`
 passes are separate gate evidence. Those five native tests remain outside the
-unchanged seven-target / 54-ID candidate inventory. The conservative lexical
+then-current seven-target / 54-ID candidate inventory. The conservative lexical
 scanner can flag Python-named trap strings even when they are not executed Python;
 this limitation is not suppressed or treated as independent scanner clearance.
 No Python fallback script or quoted-command workaround is added to the inventory.
@@ -307,7 +315,9 @@ current native-compatible source. Class/method IDs are frozen, not discovered
 and accepted automatically. The audit rejects unapproved files or methods,
 same-count renames, assertion/source hash drift, duplicates and original-cohort
 overlap. Supplemental IDs cannot be placed in original reviews or mappings.
-`--summary` and `--json` report the five separately and the full 946-method count.
+At that integration the supplemental cohort had five methods and the full count
+was 946. `--summary` and `--json` now report all three explicit supplemental cohorts
+separately from the unchanged 941 originals.
 
 The main Bash/Python fake-runner tests were adapted to real prebuilt Rust
 fixtures while retaining all five IDs and their compatibility intent. This is
@@ -319,17 +329,61 @@ exercise init/refresh callbacks; unrelated ARCANA variables do not select them.
 Relative/absolute symlinks, cycle/40-hop bounds and prebuilt-only operation remain
 explicit compatibility requirements. These tests do not certify full macOS support.
 
-`provenance.active_oracle` pins the current `runner/coven.py` and records main's
-flat-root callback fix: remove `PROJECT_DIR`, use `COVEN_DIR/bin/coven`. The
-historical `oracle_coven_sha256` remains unchanged. Session views and all other
-fixture captures still describe their original source, not this active oracle;
-no fixture golden or capture provenance was regenerated. Records, checkpoints
-and task graph capture source files were not changed by this fix.
+The original `provenance.active_oracle` admission pinned the flat-root callback
+fix: remove `PROJECT_DIR`, use `COVEN_DIR/bin/coven`. Its prior bytes and rationale
+remain in the separately reviewed transition below. Historical
+`oracle_coven_sha256` and all original captures remain unchanged; they describe
+their recorded source, not the active checkout. No fixture golden or capture
+provenance was regenerated.
 
 All 941 original IDs/source pins, 67 mapped / 874 unresolved statuses and
 53 A / 15 B / 0 C / 873 D categories remain unchanged by this integration. The
-seven-target / 54-ID candidate native inventory still excludes
-`tests/native_entrypoint.rs`; no new native tests are inferred into it.
+seven-target candidate native inventory still excludes `tests/native_entrypoint.rs`;
+only explicitly listed names are admitted, never inferred from test discovery.
 `--require-complete` still fails for the 874 unresolved obligations independently
 of native execution success. This metadata does not authorize a merge or commit;
-the parent independently reviews the supplemental cohort before committing.
+the parent independently reviews supplemental changes before committing.
+
+## Reviewed inventory and active-oracle repair — 2026-11-23
+
+The ordinary audit is restored without changing an original mapping:
+
+- `tests/test_dev_install.py`: 21 supplemental methods, exact source and IDs from
+  `1a8d392b4c7fb3f944821cf49a1d01418a1979cf`. These are temporary-filesystem,
+  fake-Cargo, publication-race and process/signal fixtures, not pure/no-I/O tests.
+- `tests/test_install_dev_environment.py`: 12 supplemental methods, exact source
+  and IDs from `b5c9ece62af77f96568c3eb9e9542894154f2ecd`. Eleven use mocked probes;
+  the separately gated system-probe method can invoke real rustc/pkg-config and
+  inspect system OpenSSL files. These supplemental tests were not executed here.
+- Both dynamically load `scripts/install_dev.py` outside the current import
+  closure. Its stdlib imports and Unix/external-tool dependencies were reviewed
+  manually; an empty static dependency report is not complete closure proof.
+- The seven-target native inventory adds exactly the reviewed interactive-session
+  test above, from 54 to 55 IDs, without adding any assertion substitution.
+
+The active runner changed substantively in
+`c907fd5df98516291bbce9804ff1b52b5baa4654`: directory mappings, Git preflight,
+starter text/refresh, launch working directories and reviewed-v1 refusal. This is
+**not invocation-only or behavioral equivalence**. Parent acceptance after
+independent source/history and gate review is recorded in
+[`reviews/active_oracle_directory_isolation.json`](reviews/active_oracle_directory_isolation.json).
+It links prior, current and historical SHA256 values and Git commit/blob evidence.
+
+`active_oracle.review` pins that record by hash. The audit rejects missing or
+pending approval, changed review bytes, wrong source/hash/historical links, and
+changed current source. Removing `active_oracle` cannot disable the gate when
+historical oracle provenance is present. The separate original-test transition
+registry is unchanged. Git history is manually verified; the read-only stdlib
+validator does not invoke Git or execute runner code.
+
+Historical graph capture used a conservative source inventory including the
+complete runner. Graph function bodies are unchanged, but that does not make its
+historical whole-source hash match the active checkout or establish transitive
+behavioral parity. All original fixture/capture bytes and hashes are retained.
+
+Final validation: **38 audit-tool tests passed**, ordinary audit passed, two JSON
+reports were byte-identical, and `--require-complete` still exited 1 solely for
+the **874 unresolved** obligations. All 44 original entries/source pins, 80 reviews,
+15 candidate mappings and original fixture/provenance files remain unchanged.
+No Python oracle deletion, fixture recapture, runtime deployment or new native
+mapping was performed. See the [dated repair record](../../docs/changelog/2026-11-23-retirement-audit-repair.md).

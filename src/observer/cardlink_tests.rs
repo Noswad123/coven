@@ -159,6 +159,7 @@ impl Kit {
             })
             .collect();
         Observer {
+            events: Arc::default(),
             attention: Mutex::new(super::super::super::attention::State::default()),
             conversations: Conversations::new(&config, "epoch").unwrap(),
             cardlinks: Mutex::new(cardlinks::State::default()),

@@ -94,7 +94,7 @@ fn real_djinn_producer_through_authenticated_http() {
 
     let gateway = Gateway::start_with(Some((&address, runtime, "ses_fixture")));
     let auth = "Tailscale-User-Login: fixture@example.invalid\r\nOrigin: https://coven-web.example.invalid\r\nSec-Fetch-Site: same-origin\r\n";
-    let listing = gateway.request("/api/v1/conversations", auth);
+    let listing = gateway.ready_conversations(auth);
     assert!(listing.starts_with("HTTP/1.1 200"));
     let listing: Value = serde_json::from_str(listing.split_once("\r\n\r\n").unwrap().1).unwrap();
     let id = listing["conversations"][0]["id"].as_str().unwrap();

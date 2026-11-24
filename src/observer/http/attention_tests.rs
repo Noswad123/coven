@@ -56,6 +56,7 @@ fn isolated_observer(config: &Config) -> Observer {
         }
     }
     Observer {
+        events: Arc::default(),
         attention: std::sync::Mutex::new(Default::default()),
         cardlinks: std::sync::Mutex::new(Default::default()),
         conversations: super::super::conversations::Conversations::new(config, "http-fixture")

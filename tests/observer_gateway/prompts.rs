@@ -149,7 +149,7 @@ fn real_http_csrf_prebody_refusals_strict_json_and_native_lost_receipts() {
     let csrf = gateway.request("/api/v1/csrf", AUTH);
     assert!(csrf.to_lowercase().contains("cache-control: no-store"));
     let token = body(&csrf)["token"].as_str().unwrap().to_owned();
-    let list = body(&gateway.request("/api/v1/conversations", AUTH));
+    let list = body(&gateway.ready_conversations(AUTH));
     let target = &list["conversations"][0];
     assert_eq!(target["can_submit"], true);
     let path = format!(
@@ -195,8 +195,9 @@ fn real_http_csrf_prebody_refusals_strict_json_and_native_lost_receipts() {
     assert_eq!(peer.count.load(Ordering::Acquire), 0);
     let slow = post(&gateway, &path, &good, None);
     assert!(slow.starts_with("HTTP/1.1 408"), "{slow}");
-    // Refresh the native lease after deliberately waiting on a slow body.
-    let _ = gateway.request("/api/v1/conversations", AUTH);
+    // Require usable cached metadata after deliberately waiting on a slow body.
+    // This GET does not renew the native lease.
+    let _ = gateway.ready_conversations(AUTH);
     let accepted = post(&gateway, &path, &good, Some(&bytes));
     assert!(accepted.starts_with("HTTP/1.1 200"), "{accepted}");
     assert_eq!(body(&accepted)["outcome"], "accepted");
@@ -230,7 +231,7 @@ fn real_http_csrf_prebody_refusals_strict_json_and_native_lost_receipts() {
 #[test]
 fn static_conversation_post_is_read_only_without_polling_body() {
     let gateway = Gateway::start();
-    let list = body(&gateway.request("/api/v1/conversations", AUTH));
+    let list = body(&gateway.ready_conversations(AUTH));
     let id = list["conversations"][0]["id"].as_str().unwrap();
     let response = post(
         &gateway,

@@ -48,7 +48,7 @@ pub(super) fn idle() -> Collect {
     Arc::new(|_| json!({"contract":"coven.attention.v1","state":"unavailable","items":[]}))
 }
 pub(super) fn doc(alert: &str) -> Value {
-    json!({"contract":"coven.attention.v1","state":"partial","items":[{"id":"unused","alert_id":alert,"kind":"question","can_respond":true,"details_available":true,"team":"SECRET","question":"SECRET"}]})
+    json!({"contract":"coven.attention.v1","state":"partial","freshness":{"generation":"epoch:1","remaining_ms":15000},"items":[{"id":"unused","alert_id":alert,"kind":"question","can_respond":true,"details_available":true,"team":"SECRET","question":"SECRET"}]})
 }
 pub(super) fn until(f: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(12);

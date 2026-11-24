@@ -175,6 +175,7 @@ export function displayProvider(agent) {
 }
 
 export function validateConversations(value) {
+  validateFreshness(value, 'invalid_conversations');
   if (!record(value) || value.contract !== 'coven.conversations.v1'
     || !Array.isArray(value.conversations) || value.conversations.length > 64) throw new Error('invalid_conversations');
   if (value.sources !== undefined && (!Array.isArray(value.sources) || value.sources.length > 8
@@ -240,6 +241,7 @@ export function validateConversation(value, target) {
 }
 
 export function validateAttention(value) {
+  validateFreshness(value, 'invalid_attention');
   if (!record(value) || value.contract !== 'coven.attention.v1'
     || !['observed', 'partial', 'unavailable'].includes(value.state)
     || !Array.isArray(value.items) || value.items.length > 256
@@ -256,6 +258,14 @@ export function validateAttention(value) {
     ids.add(item.id); alerts.add(item.alert_id);
   }
   return value;
+}
+
+function validateFreshness(value, error) {
+  if (!record(value) || !Object.hasOwn(value, 'freshness')) return;
+  const f = value.freshness;
+  if (!record(f) || Object.keys(f).length !== 2 || !string(f.generation)
+    || !/^[^\s:]+:[0-9]+$/.test(f.generation)
+    || !Number.isSafeInteger(f.remaining_ms) || f.remaining_ms < 0 || f.remaining_ms > 15000) throw new Error(error);
 }
 
 export function attentionLabel(value) {
@@ -328,19 +338,28 @@ function bootstrap() {
   let host = '';
   let pollTimer;
   let fleetRequest = null;
-  let failures = 0;
-  let refreshOnResume = false;
+  let transportRevision = 0, source = null, reconnectTimer, ready = false, live = false, destroyed = false, suspended = false;
+  let draining = null;
+  const dirty = {fleet: false, conversations: false, attention: false};
+  const clock = () => globalThis.performance?.now() ?? Date.now();
+  const leases = {conversations: {generation: null, deadline: 0, supported: false}, attention: {generation: null, deadline: 0, supported: false}};
+  function receipt(kind, value, started) {
+    const lease = leases[kind], now = value.freshness === undefined ? Date.now() : clock();
+    lease.supported = value.freshness !== undefined;
+    const deadline = now + (lease.supported ? Math.max(0, value.freshness.remaining_ms - Math.max(0, now - started)) : 15000);
+    if (lease.supported && lease.generation === value.freshness.generation) lease.deadline = Math.min(lease.deadline, deadline);
+    else { lease.generation = value.freshness?.generation ?? null; lease.deadline = deadline; }
+  }
   let selectedKey = null;
   let outputRequest = null;
   let renderedOutput = null;
   let authRevision = 0;
   let attention = null, attentionAt = null, attentionRequest = null;
-  let attentionTimer;
   let requestListKey = null;
   let decisionRevision = 0, decisionRequest = null, decisionItem = null, decisionDetail = null;
   let decisionBusy = false;
   const uncertainDecisions = new Map();
-  const attentionFresh = () => attentionAt !== null && Date.now() - attentionAt < 15000;
+  const attentionFresh = () => attentionAt !== null && (leases.attention.supported ? clock() : Date.now()) < leases.attention.deadline;
   const decisionNotice = 'Response uncertain. Inspect this exact request before a new deliberate choice. No automatic retry.';
   let alertNavigation = null;
   let alertUnverified = false;
@@ -431,9 +450,10 @@ function bootstrap() {
     }
   }
 
-  async function fetchJSON(path, signal) {
+  async function fetchJSON(path, signal, transport = null) {
     const revision = authRevision;
     const response = await fetch(path, { method: 'GET', cache: 'no-store', credentials: 'same-origin', mode: 'same-origin', redirect: 'error', headers: { Accept: 'application/json' }, signal });
+    if (transport !== null && transport !== transportRevision) throw new Error('superseded');
     if (!response.ok) {
       if (response.status === 401 || (response.status === 403 && !path.startsWith('/api/v1/agents/'))) {
         invalidateAuthentication();
@@ -460,13 +480,12 @@ function bootstrap() {
   let conversationListRevision = 0;
   let conversationListRequest = null;
   let conversationMetadataAt = null;
-  const conversationLease = 15000;
   const conversationKey = target => target ? JSON.stringify([target.id, target.team]) : null;
   const readKey = target => target ? JSON.stringify([target.id, target.team,
     target.binding?.fleet_agent_id ?? null, target.binding?.fleet_endpoint_id ?? null,
     target.binding?.binding_id ?? null]) : null;
   const conversationMetadataFresh = () => conversationMetadataAt !== null
-    && Date.now() - conversationMetadataAt < conversationLease;
+    && (leases.conversations.supported ? clock() : Date.now()) < leases.conversations.deadline;
   const currentConversation = () => sessions().some(card => readKey(card.target) === readKey(conversationTarget));
   let scrollRevision = 0;
   let interactionRevision = 0;
@@ -654,6 +673,7 @@ function bootstrap() {
   }
 
   function invalidateAuthentication() {
+    stopTransport();
     attentionRequest?.abort(); attentionRequest = null; attention = null; attentionAt = null;
     localAlerts = 'unknown';
     renderAlerts('Background state unverified after access loss.');
@@ -747,17 +767,19 @@ function bootstrap() {
   async function loadConversations() {
     if (document.hidden || conversationListRequest) return;
     const revision = ++conversationListRevision;
+    const transport = transportRevision, started = clock();
     const controller = new AbortController();
     conversationListRequest = controller;
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      const value = await fetchJSON('/api/v1/conversations', controller.signal);
-      if (revision !== conversationListRevision) return;
+      const value = await fetchJSON('/api/v1/conversations', controller.signal, transport);
+      if (revision !== conversationListRevision || transport !== transportRevision || controller.signal.aborted) return;
       if (!conversationMetadataFresh()) {
         closeConversation();
         conversationDialog.close();
       }
       conversationTargets = validateConversations(value);
+      receipt('conversations', value, started);
       conversationMetadataAt = Date.now();
       const updatedTarget = conversationTargets.find(t => conversationKey(t) === conversationKey(conversationTarget));
       if (conversationTarget && updatedTarget && updatedTarget.can_submit !== conversationTarget.can_submit) {
@@ -784,7 +806,7 @@ function bootstrap() {
         ? 'Some chats unavailable. Check the native source.' : '', value.omitted_conversations
         ? 'Some sessions are not shown. Narrow your selection at the source.' : ''].filter(Boolean).join(' '));
     } catch (error) {
-      if (revision !== conversationListRevision) return;
+      if (revision !== conversationListRevision || transport !== transportRevision) return;
       invalidateConversations(error.message === 'auth' ? errorMessage('auth')
         : 'Authorized conversation list unavailable. Check access and gateway setup.');
     } finally {
@@ -843,21 +865,21 @@ function bootstrap() {
   }
   async function loadAttention() {
     if (document.hidden || attentionRequest) return;
-    clearTimeout(attentionTimer);
+    const transport = transportRevision, started = clock();
     const controller = new AbortController(); attentionRequest = controller;
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const value = validateAttention(await fetchJSON('/api/v1/attention', controller.signal));
-      if (controller.signal.aborted || document.hidden || attentionRequest !== controller) return;
+      const value = validateAttention(await fetchJSON('/api/v1/attention', controller.signal, transport));
+      if (controller.signal.aborted || document.hidden || attentionRequest !== controller || transport !== transportRevision) return;
+      receipt('attention', value, started);
       attention = value; attentionAt = Date.now();
     } catch {
-      if (attentionRequest !== controller) return;
+      if (attentionRequest !== controller || transport !== transportRevision) return;
       attention = null; attentionAt = null; fenceDecision();
     } finally {
       clearTimeout(timer);
       if (attentionRequest === controller) {
         attentionRequest = null; render(); renderRequests();
-        if (!document.hidden) attentionTimer = setTimeout(loadAttention, 3000);
       }
     }
   }
@@ -1161,7 +1183,7 @@ function bootstrap() {
   }
   renderAlerts('');
   void inspectAlerts();
-  globalThis.addEventListener?.('hashchange', () => { alertNavigation = null; alertUnverified = false; attentionAt = null; fenceDecision(); void loadAttention(); });
+  globalThis.addEventListener?.('hashchange', () => { alertNavigation = null; alertUnverified = false; attentionAt = null; fenceDecision(); markDirty('attention'); });
 
   $('read-conversation').addEventListener('click', () => void readConversation(true));
   $('prompt-composer').addEventListener('submit', event => void sendPrompt(event));
@@ -1259,7 +1281,7 @@ function bootstrap() {
       : stale ? 'Last-known fleet / stale' : 'Connected to the observatory';
     setText($('connection-status'), document.hidden ? `${connectivity} / polling paused` : connectivity);
     $('connection-dot').dataset.state = snapshot && !stale ? 'fresh' : 'stale';
-    setText($('poll-status'), `${snapshot ? `Fleet ${ageLabel(snapshot.generated_at_ms, now).toLowerCase()}. ` : ''}${document.hidden ? 'Polling paused while hidden.' : `Polling every ${Math.max(1, Math.round(pollDelay() / 1000))}s${failures ? ' with failure backoff' : ''}.`}`);
+    setText($('poll-status'), `${snapshot ? `Fleet ${ageLabel(snapshot.generated_at_ms, now).toLowerCase()}. ` : ''}${document.hidden ? 'Polling paused while hidden.' : live ? 'Live metadata updates.' : 'Polling every 6s.'}`);
     const emptyHostErrors = view.endpoints.filter(endpoint => endpoint.connection !== 'reachable' && !endpoint.agents.length)
       .map(endpoint => `${endpoint.label || endpoint.id} ${endpoint.connection}.`).join(' ');
     const notice = state.failed ? errorMessage(state.error) : emptyHostErrors;
@@ -1339,48 +1361,99 @@ function bootstrap() {
     $('host-filter').value = host;
   }
 
-  function pollDelay() {
-    return Math.min(60000, Math.max(1000, state.snapshot?.refresh_interval_ms ?? 3000) * 2 ** Math.min(failures, 4));
-  }
-
-  function schedulePoll() {
-    clearTimeout(pollTimer);
-    if (!document.hidden) pollTimer = setTimeout(poll, pollDelay());
-  }
-
-  async function poll() {
-    clearTimeout(pollTimer);
-    if (fleetRequest || document.hidden) return;
+  async function loadFleet() {
+    const revision = transportRevision;
     const controller = new AbortController();
     fleetRequest = controller;
-    void loadConversations();
-    void loadAttention();
     const timeout = setTimeout(() => controller.abort(), 10000);
     render();
     try {
-      const value = await fetchJSON('/api/v1/fleet', controller.signal);
-      if (controller.signal.aborted) return;
+      const value = await fetchJSON('/api/v1/fleet', controller.signal, revision);
+      if (controller.signal.aborted || revision !== transportRevision) return;
       state = receiveFleet(state, value);
-      failures = state.failed ? failures + 1 : 0;
       syncHosts();
     } catch (error) {
-      if (!(controller.signal.aborted && document.hidden)) {
+      if (!controller.signal.aborted && revision === transportRevision) {
         state = failFleet(state, error.message === 'auth' ? 'auth' : 'network');
-        failures++;
       }
     } finally {
       clearTimeout(timeout);
-      fleetRequest = null;
-      render();
-      if (refreshOnResume && !document.hidden) {
-        refreshOnResume = false;
-        void poll();
-      } else schedulePoll();
+      if (fleetRequest === controller) { fleetRequest = null; render(); }
     }
   }
 
+  function stopTransport() {
+    transportRevision++;
+    source?.close(); source = null; ready = false; live = false;
+    clearTimeout(pollTimer); clearTimeout(reconnectTimer);
+    draining = null;
+    for (const kind of Object.keys(dirty)) dirty[kind] = false;
+    fleetRequest?.abort(); fleetRequest = null;
+    conversationListRequest?.abort(); conversationListRequest = null; conversationListRevision++;
+    attentionRequest?.abort(); attentionRequest = null;
+  }
+
+  function markDirty(...kinds) {
+    if (destroyed || suspended || document.hidden) return;
+    for (const kind of kinds.length ? kinds : Object.keys(dirty)) dirty[kind] = true;
+    clearTimeout(pollTimer);
+    if (!draining) void drain();
+  }
+
+  async function drain() {
+    const ticket = {}, revision = transportRevision;
+    draining = ticket;
+    const current = () => revision === transportRevision && !document.hidden && !destroyed && !suspended;
+    try {
+      while (current() && Object.values(dirty).some(Boolean)) {
+        for (const [kind, load] of [['fleet', loadFleet], ['conversations', loadConversations], ['attention', loadAttention]]) {
+          if (!current()) return;
+          if (!dirty[kind]) continue;
+          // Clear before awaiting: an event during this GET requests one follow-up.
+          dirty[kind] = false;
+          await load();
+        }
+      }
+      if (current()) live = ready && !state.failed && !!state.snapshot
+        && leases.conversations.supported && leases.attention.supported
+        && conversationMetadataFresh() && attentionFresh();
+    } finally {
+      if (draining === ticket) {
+        draining = null;
+        if (current()) { render(); pollTimer = setTimeout(() => markDirty(), live ? 30000 : 6000); }
+      }
+    }
+  }
+
+  function connect() {
+    if (destroyed || suspended || document.hidden || source || typeof globalThis.EventSource !== 'function') return;
+    const revision = transportRevision;
+    const current = () => revision === transportRevision && source === stream && !document.hidden && !destroyed && !suspended;
+    let stream;
+    const failed = () => {
+      if (stream && !current()) return;
+      stopTransport();
+      // Transport errors are not HTTP authentication evidence.
+      markDirty();
+      reconnectTimer = setTimeout(connect, 6000);
+    };
+    try { stream = new EventSource('/api/v1/events'); source = stream; }
+    catch { failed(); return; }
+    for (const kind of ['ready', 'fleet', 'metadata']) stream.addEventListener(kind, event => {
+      if (!current()) return;
+      let value;
+      try { value = JSON.parse(event.data); } catch { failed(); return; }
+      if (!record(value) || Object.keys(value).length !== 1 || value.contract !== 'coven.events.v1') { failed(); return; }
+      if (kind === 'ready') { ready = true; live = false; markDirty(); }
+      else if (!ready) failed();
+      else if (kind === 'fleet') markDirty('fleet');
+      else markDirty('conversations', 'attention');
+    });
+    stream.addEventListener('error', failed);
+  }
+
   $('host-filter').addEventListener('change', event => { host = event.target.value; closeConversation(); conversationDialog.close(); render(); });
-  $('refresh').addEventListener('click', () => void poll());
+  $('refresh').addEventListener('click', () => { connect(); markDirty(); });
   $('read-output').addEventListener('click', () => void readOutput());
   $('close-detail').addEventListener('click', () => { clearOutput(); selectedKey = null; dialog.close(); });
   // Escape fires cancel before close; invalidate immediately, not on a later task.
@@ -1401,31 +1474,48 @@ function bootstrap() {
     }
   });
   document.addEventListener('visibilitychange', () => {
-    clearTimeout(pollTimer);
     if (document.hidden) {
-      clearTimeout(attentionTimer);
+      stopTransport();
       attentionRequest?.abort(); attentionRequest = null; attention = null; attentionAt = null;
       invalidateConversations('Conversation metadata paused while hidden. Revalidated on return; reopen to read messages.');
-      refreshOnResume = false;
-      fleetRequest?.abort();
       if (outputRequest) { clearOutput(); setText($('output-status'), 'Read paused while hidden. Read again when ready.'); }
     } else {
-      void loadAttention();
-      void loadConversations();
-      if (fleetRequest) refreshOnResume = true;
-      else void poll();
+      connect(); markDirty();
     }
     render();
   });
-  setInterval(() => {
-    if (!document.hidden) {
-      if (conversationMetadataAt !== null && !conversationMetadataFresh()) {
-        invalidateConversations('Conversation metadata lease expired. Revalidating access; reopen to read messages.');
-        void loadConversations();
+  let expiryTimer = null;
+  function startExpiryMaintenance() {
+    if (expiryTimer !== null || destroyed || suspended) return;
+    expiryTimer = setInterval(() => {
+      if (!document.hidden && !destroyed && !suspended) {
+        if (live && (!conversationMetadataFresh() || !attentionFresh())) {
+          live = false;
+          clearTimeout(pollTimer);
+          if (!draining) pollTimer = setTimeout(() => markDirty(), 6000);
+        }
+        if (conversationMetadataAt !== null && !conversationMetadataFresh()) {
+          invalidateConversations('Conversation metadata lease expired. Revalidating access; reopen to read messages.');
+        }
+        if (attentionAt !== null && !attentionFresh()) { attention = null; attentionAt = null; fenceDecision(); }
+        render();
       }
-      if (attentionAt !== null && !attentionFresh()) { attention = null; attentionAt = null; fenceDecision(); }
-      render();
-    }
-  }, 1000);
-  void poll();
+    }, 1000);
+  }
+  globalThis.addEventListener?.('pagehide', event => {
+    suspended = true;
+    if (!event.persisted) destroyed = true;
+    stopTransport(); globalThis.clearInterval?.(expiryTimer); expiryTimer = null;
+    attention = null; attentionAt = null;
+    state = failFleet(state);
+    clearOutput(); selectedKey = null; dialog.close(); invalidateConversations('');
+  });
+  globalThis.addEventListener?.('pageshow', event => {
+    if (!event.persisted || !suspended || destroyed) return;
+    suspended = false;
+    startExpiryMaintenance();
+    connect(); markDirty();
+  });
+  startExpiryMaintenance();
+  connect(); markDirty();
 }

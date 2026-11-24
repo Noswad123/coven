@@ -9,6 +9,8 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub(super) struct State {
     principals: HashMap<String, Principal>,
+    #[cfg(test)]
+    pub(super) collected_list_pause: Option<Arc<(Mutex<(bool, bool)>, Condvar)>>,
 }
 #[derive(Default)]
 struct Principal {
@@ -29,24 +31,53 @@ struct Reference {
 
 impl Observer {
     pub fn attention(&self, login: &str) -> Value {
+        self.collect_metadata(login).1
+    }
+
+    pub(super) fn attention_revision(&self, login: &str) -> u64 {
+        self.attention
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .principals
+            .get(login)
+            .map_or(0, |p| p.revision)
+    }
+
+    pub(super) fn collect_metadata(&self, login: &str) -> (Value, Value, metadata::Fence) {
+        let missing = || json!({"contract":"coven.conversations.v1","conversations":[],"sources":[],"state":"unavailable"});
         let empty = || {
             json!({"contract":"coven.attention.v1","state":"unavailable","items":[],"streams":[],
             "omitted_count":null,"unavailable_count":1,"unlinked_count":0})
         };
         if !self.conversations.admitted(login) {
-            return empty();
+            return (missing(), empty(), metadata::Fence::read(self, login));
         }
         let revision = {
             let mut state = self.attention.lock().unwrap_or_else(|p| p.into_inner());
             if !state.principals.contains_key(login) && state.principals.len() >= 64 {
-                return empty();
+                // Do not reacquire the attention mutex while holding it.
+                drop(state);
+                return (missing(), empty(), metadata::Fence::read(self, login));
             }
             let p = state.principals.entry(login.into()).or_default();
             p.revision = p.revision.wrapping_add(1);
             p.revision
         };
         // Refresh leases from share_status only. Never share_begin/renew/bootstrap.
-        let list = self.conversation_list(login);
+        let (list, fence) = self.conversation_list_with_fence(login, revision);
+        #[cfg(test)]
+        {
+            let pause = self.attention.lock().unwrap().collected_list_pause.take();
+            if let Some(pause) = pause {
+                let mut flags = pause.0.lock().unwrap();
+                flags.0 = true;
+                pause.1.notify_all();
+                let _ = pause
+                    .1
+                    .wait_timeout_while(flags, Duration::from_secs(3), |f| !f.1)
+                    .unwrap();
+            }
+        }
         let mut unavailable = list["sources"].as_array().map_or(0, |a| {
             a.iter().filter(|s| s["status"] != "observed").count()
         }) + self.conversations.attention_unavailable(login);
@@ -195,11 +226,11 @@ impl Observer {
             .unzip();
         let mut state = self.attention.lock().unwrap_or_else(|p| p.into_inner());
         let Some(p) = state.principals.get_mut(login) else {
-            return empty();
+            return (missing(), empty(), fence);
         };
         // A losing refresh must not revive an occurrence or return uncommitted IDs.
         if p.revision != revision {
-            return empty();
+            return (missing(), empty(), fence);
         }
         p.refs = refs;
         let status = if unavailable > 0 && items.is_empty() && streams.is_empty() {
@@ -209,8 +240,12 @@ impl Observer {
         } else {
             "observed"
         };
-        json!({"contract":"coven.attention.v1","state":status,"items":items,"streams":streams,
-            "omitted_count":if unknown { Value::Null } else { json!(omitted) },"unavailable_count":unavailable,"unlinked_count":unlinked})
+        (
+            list,
+            json!({"contract":"coven.attention.v1","state":status,"items":items,"streams":streams,
+            "omitted_count":if unknown { Value::Null } else { json!(omitted) },"unavailable_count":unavailable,"unlinked_count":unlinked}),
+            fence,
+        )
     }
 
     fn same_target(&self, login: &str, conversation: &str, target: &DecisionTarget) -> bool {

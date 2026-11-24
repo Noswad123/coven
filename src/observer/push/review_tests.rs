@@ -6,6 +6,7 @@ fn scoped(stream: &str, alert: Option<&str>, complete: bool) -> Value {
         .map(doc)
         .unwrap_or_else(|| json!({"contract":"coven.attention.v1","state":"partial","items":[]}));
     value["streams"] = json!([{"id":stream,"complete":complete,"alert_ids":alert.into_iter().collect::<Vec<_>>()}]);
+    value["freshness"] = json!({"generation":"epoch:1","remaining_ms":15000});
     value
 }
 fn service(
@@ -480,6 +481,364 @@ fn next_job(service: &PushService) -> Job {
         .queue
         .pop_front()
         .unwrap()
+}
+
+#[test]
+fn final_cache_admission_refuses_expiry_or_revocation_across_blocking_work_and_retries() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    for stage in ["reconcile", "message", "eligibility_lock"] {
+        for revoked in [false, true] {
+            for retry in [false, true] {
+                let root = tempfile::tempdir().unwrap();
+                let alert = "a".repeat(64);
+                let stream = "b".repeat(64);
+                let cache = Arc::new(Mutex::new((
+                    scoped(&stream, Some(&alert), true),
+                    Instant::now() + Duration::from_secs(15),
+                )));
+                let c = cache.clone();
+                let signal_next = Arc::new(AtomicBool::new(false));
+                let signal = signal_next.clone();
+                let (entered, entry) = std::sync::mpsc::channel();
+                let collected = entered.clone();
+                let sender = Fake::new(if retry { &[Outcome::Retry] } else { &[] });
+                let service = manual(
+                    &root,
+                    Arc::new(move |_| {
+                        let (mut value, expires) = c.lock().unwrap().clone();
+                        let remaining = expires
+                            .saturating_duration_since(Instant::now())
+                            .as_millis() as u64;
+                        value["freshness"]["remaining_ms"] = json!(remaining);
+                        if remaining == 0 {
+                            value["state"] = json!("unavailable");
+                        }
+                        if signal.swap(false, Ordering::SeqCst) {
+                            collected.send(()).unwrap();
+                        }
+                        value
+                    }),
+                    sender.clone(),
+                );
+                let id = register(&service);
+                service.inner.poll("alice");
+                if retry {
+                    send_job(&service.inner, next_job(&service));
+                }
+                let job = next_job(&service);
+                let created = job.created;
+                let attempts = job.attempts;
+                let token = job.token.clone();
+                let sent_before = sender.messages.lock().unwrap().len();
+                assert_eq!(sent_before, usize::from(retry));
+                assert_eq!(attempts, u8::from(retry));
+                cache.lock().unwrap().1 =
+                    Instant::now() + Duration::from_millis(if revoked { 15000 } else { 500 });
+                let (release, receiver) = std::sync::mpsc::channel();
+                let receiver = Arc::new(Mutex::new(receiver));
+                if stage != "reconcile" {
+                    *service.inner.before_final_sample.lock().unwrap() =
+                        Some(Arc::new(move || {
+                            entered.send(()).unwrap();
+                            receiver
+                                .lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_secs(5))
+                                .unwrap();
+                        }));
+                }
+                let writes = (stage == "reconcile").then(|| service.inner.writes.lock().unwrap());
+                signal_next.store(stage == "reconcile", Ordering::SeqCst);
+                std::thread::scope(|scope| {
+                    let worker = scope.spawn(|| send_job(&service.inner, job));
+                    entry.recv_timeout(Duration::from_secs(3)).unwrap();
+                    let state =
+                        (stage == "eligibility_lock").then(|| service.inner.state.lock().unwrap());
+                    if stage == "eligibility_lock" {
+                        release.send(()).unwrap();
+                    }
+                    if revoked {
+                        cache.lock().unwrap().0["state"] = json!("unavailable");
+                    } else {
+                        let expires = cache.lock().unwrap().1;
+                        std::thread::sleep(
+                            expires.saturating_duration_since(Instant::now())
+                                + Duration::from_millis(5),
+                        );
+                    }
+                    drop(state);
+                    drop(writes);
+                    if stage == "message" {
+                        release.send(()).unwrap();
+                    }
+                    worker.join().unwrap();
+                });
+                assert_eq!(
+                    sender.messages.lock().unwrap().len(),
+                    sent_before,
+                    "{stage} revoked={revoked} retry={retry}"
+                );
+                let held = next_job(&service);
+                assert_eq!(held.created, created);
+                assert_eq!(held.attempts, attempts);
+                assert_eq!(held.token, token);
+                assert!(
+                    service.inner.state.lock().unwrap().records[&id].seen[&alert].phase
+                        == ledger::Phase::Pending
+                );
+                *cache.lock().unwrap() = (
+                    scoped(&stream, Some(&alert), true),
+                    Instant::now() + Duration::from_secs(15),
+                );
+                send_job(&service.inner, held);
+                assert_eq!(sender.messages.lock().unwrap().len(), sent_before + 1);
+                assert!(service.inner.work.lock().unwrap().queue.is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn final_copied_cache_lease_counts_time_inside_the_read_including_retries() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    for retry in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let alert = "a".repeat(64);
+        let cache = Arc::new(Mutex::new((
+            scoped(&"b".repeat(64), Some(&alert), true),
+            Instant::now() + Duration::from_secs(15),
+        )));
+        let final_read = Arc::new(AtomicBool::new(false));
+        let flag = final_read.clone();
+        let c = cache.clone();
+        let (entered, entry) = std::sync::mpsc::channel();
+        let (release, receiver) = std::sync::mpsc::channel();
+        let receiver = Mutex::new(receiver);
+        let sender = Fake::new(if retry { &[Outcome::Retry] } else { &[] });
+        let service = manual(
+            &root,
+            Arc::new(move |_| {
+                let (mut value, expires) = c.lock().unwrap().clone();
+                value["freshness"]["remaining_ms"] = json!(
+                    expires
+                        .saturating_duration_since(Instant::now())
+                        .as_millis() as u64
+                );
+                if flag.swap(false, Ordering::SeqCst) {
+                    entered.send(()).unwrap();
+                    receiver
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(5))
+                        .unwrap();
+                }
+                value
+            }),
+            sender.clone(),
+        );
+        register(&service);
+        service.inner.poll("alice");
+        if retry {
+            send_job(&service.inner, next_job(&service));
+        }
+        let job = next_job(&service);
+        let created = job.created;
+        let attempts = job.attempts;
+        let c = cache.clone();
+        *service.inner.before_final_sample.lock().unwrap() = Some(Arc::new(move || {
+            c.lock().unwrap().1 = Instant::now() + Duration::from_millis(30);
+            final_read.store(true, Ordering::SeqCst);
+        }));
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| send_job(&service.inner, job));
+            entry.recv_timeout(Duration::from_secs(3)).unwrap();
+            let expires = cache.lock().unwrap().1;
+            std::thread::sleep(
+                expires.saturating_duration_since(Instant::now()) + Duration::from_millis(5),
+            );
+            release.send(()).unwrap();
+            worker.join().unwrap();
+        });
+        assert_eq!(sender.messages.lock().unwrap().len(), usize::from(retry));
+        let held = next_job(&service);
+        assert_eq!(held.created, created);
+        assert_eq!(held.attempts, attempts);
+    }
+}
+
+#[test]
+fn cancellation_completed_inside_final_collect_prevents_admission_including_retries() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    for change in ["unsubscribe", "rotate", "retire", "stop"] {
+        for retry in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let alert = "a".repeat(64);
+            let stream = "b".repeat(64);
+            let positive = scoped(&stream, Some(&alert), true);
+            let final_read = Arc::new(AtomicBool::new(false));
+            let flag = final_read.clone();
+            let (entered, entry) = std::sync::mpsc::channel();
+            let (release, receiver) = std::sync::mpsc::channel();
+            let receiver = Mutex::new(receiver);
+            let sender = Fake::new(if retry { &[Outcome::Retry] } else { &[] });
+            let service = manual(
+                &root,
+                Arc::new(move |_| {
+                    // Native metadata stays positive throughout the cancellation.
+                    let value = positive.clone();
+                    if flag.swap(false, Ordering::SeqCst) {
+                        entered.send(()).unwrap();
+                        receiver
+                            .lock()
+                            .unwrap()
+                            .recv_timeout(Duration::from_secs(5))
+                            .unwrap();
+                    }
+                    value
+                }),
+                sender.clone(),
+            );
+            let id = register(&service);
+            service.inner.poll("alice");
+            if retry {
+                send_job(&service.inner, next_job(&service));
+            }
+            let job = next_job(&service);
+            let generation = job.generation.clone();
+            let token = job.token.clone();
+            assert_eq!(job.attempts, u8::from(retry));
+            *service.inner.before_final_sample.lock().unwrap() = Some(Arc::new(move || {
+                final_read.store(true, Ordering::SeqCst);
+            }));
+            std::thread::scope(|scope| {
+                let worker = scope.spawn(|| send_job(&service.inner, job));
+                entry.recv_timeout(Duration::from_secs(3)).unwrap();
+                match change {
+                    "unsubscribe" => {
+                        service.unsubscribe("alice", &id).unwrap();
+                    }
+                    "rotate" => {
+                        let (mut replacement, _, _) = fixture("unused-rotation-path");
+                        replacement.endpoint = service.inner.state.lock().unwrap().records[&id]
+                            .subscription
+                            .endpoint
+                            .clone();
+                        service
+                            .subscribe("alice", &serde_json::to_value(replacement).unwrap())
+                            .unwrap();
+                    }
+                    "retire" => {
+                        let complete =
+                            ledger::Snapshot::read(&scoped(&stream, None, true)).unwrap();
+                        service
+                            .inner
+                            .reconcile("alice", Some(&complete), ledger::now())
+                            .unwrap();
+                    }
+                    "stop" => {
+                        service.inner.work.lock().unwrap().stop = true;
+                    }
+                    _ => unreachable!(),
+                }
+                release.send(()).unwrap();
+                worker.join().unwrap();
+            });
+            assert_eq!(
+                sender.messages.lock().unwrap().len(),
+                usize::from(retry),
+                "{change} retry={retry}"
+            );
+            // Canceled work is not recreated with a new TTL or transport budget.
+            assert!(service.inner.work.lock().unwrap().queue.is_empty());
+            let state = service.inner.state.lock().unwrap();
+            match change {
+                "unsubscribe" => assert!(!state.records.contains_key(&id)),
+                "rotate" => {
+                    assert_ne!(state.records[&id].generation, generation);
+                    assert_eq!(state.records[&id].seen[&alert].token, token);
+                    assert!(state.records[&id].seen[&alert].phase == ledger::Phase::Ready);
+                }
+                "retire" => assert!(!state.records[&id].seen.contains_key(&alert)),
+                "stop" => {
+                    assert_eq!(state.records[&id].generation, generation);
+                    assert_eq!(state.records[&id].seen[&alert].token, token);
+                    assert!(state.records[&id].seen[&alert].phase == ledger::Phase::Pending);
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+#[test]
+fn final_admission_does_not_wait_for_work_or_subscription_locks() {
+    let root = tempfile::tempdir().unwrap();
+    let service = manual(&root, Arc::new(|_| doc(&"a".repeat(64))), Fake::new(&[]));
+    register(&service);
+    service.inner.poll("alice");
+    let job = next_job(&service);
+    assert_eq!(service.inner.try_admit(&job), Some(true));
+    let work = service.inner.work.lock().unwrap();
+    assert_eq!(service.inner.try_admit(&job), None);
+    drop(work);
+    let state = service.inner.state.lock().unwrap();
+    assert_eq!(service.inner.try_admit(&job), None);
+    drop(state);
+    let created = job.created;
+    let attempts = job.attempts;
+    service.inner.requeue(job, Duration::from_secs(3));
+    let deferred = next_job(&service);
+    assert_eq!(deferred.created, created);
+    assert_eq!(deferred.attempts, attempts);
+}
+
+#[test]
+fn complete_cache_sample_expiring_while_reconcile_waits_is_not_resolution() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let root = tempfile::tempdir().unwrap();
+    let alert = "a".repeat(64);
+    let stream = "b".repeat(64);
+    let cache = Arc::new(Mutex::new(scoped(&stream, Some(&alert), true)));
+    let c = cache.clone();
+    let signal_next = Arc::new(AtomicBool::new(false));
+    let signal = signal_next.clone();
+    let (entered, entry) = std::sync::mpsc::channel();
+    let sender = Fake::new(&[]);
+    let service = manual(
+        &root,
+        Arc::new(move |_| {
+            let value = c.lock().unwrap().clone();
+            if signal.swap(false, Ordering::SeqCst) {
+                entered.send(()).unwrap();
+            }
+            value
+        }),
+        sender.clone(),
+    );
+    let id = register(&service);
+    service.inner.poll("alice");
+    let job = next_job(&service);
+    let created = job.created;
+    let mut complete = scoped(&stream, None, true);
+    complete["freshness"]["remaining_ms"] = json!(30);
+    *cache.lock().unwrap() = complete;
+    let writes = service.inner.writes.lock().unwrap();
+    signal_next.store(true, Ordering::SeqCst);
+    std::thread::scope(|scope| {
+        let worker = scope.spawn(|| send_job(&service.inner, job));
+        entry.recv_timeout(Duration::from_secs(3)).unwrap();
+        std::thread::sleep(Duration::from_millis(40));
+        drop(writes);
+        worker.join().unwrap();
+    });
+    assert!(sender.messages.lock().unwrap().is_empty());
+    assert!(
+        service.inner.state.lock().unwrap().records[&id].seen[&alert].phase
+            == ledger::Phase::Pending
+    );
+    let held = next_job(&service);
+    assert_eq!(held.created, created);
+    assert_eq!(held.attempts, 0);
 }
 
 #[test]

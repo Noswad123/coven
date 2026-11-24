@@ -47,6 +47,7 @@ impl Transport for FixtureTransport {
 }
 fn observer(endpoints: Vec<Arc<Endpoint>>, reply: Result<Value>) -> Observer {
     Observer {
+        events: Arc::default(),
         attention: Mutex::new(attention::State::default()),
         cardlinks: Mutex::new(cardlinks::State::default()),
         conversations: conversations::Conversations::default(),
@@ -59,6 +60,45 @@ fn observer(endpoints: Vec<Arc<Endpoint>>, reply: Result<Value>) -> Observer {
         shutdown: Arc::new((Mutex::new(false), Condvar::new())),
         pollers: Vec::new(),
     }
+}
+
+#[test]
+fn accepted_inventory_inventory_failure_and_output_failure_immediately_signal_fleet() {
+    use events::{Events, StreamingBody};
+    use http_body_util::BodyExt;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let events = Arc::new(Events::default());
+        let e = endpoint("one");
+        e.cache.lock().unwrap().events = Some(events.clone());
+        let o = observer(vec![e.clone()], Err(Error("timeout")));
+        let mut body = StreamingBody::Sse(events.admit("owner").unwrap());
+        body.frame().await.unwrap().unwrap();
+        e.accept("epoch", inventory("terminal"));
+        assert!(e.cache.try_lock().is_ok());
+        let frame = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        assert!(
+            std::str::from_utf8(&frame)
+                .unwrap()
+                .starts_with("event: fleet\n")
+        );
+        let id = e.cache.lock().unwrap().ids[0].clone();
+        assert_eq!(o.output(&id).unwrap_err().code(), "timeout");
+        let frame = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        assert!(
+            std::str::from_utf8(&frame)
+                .unwrap()
+                .starts_with("event: fleet\n")
+        );
+        assert!(e.cache.try_lock().is_ok());
+        e.fail("private upstream text");
+        let frame = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        assert!(!std::str::from_utf8(&frame).unwrap().contains("private"));
+        assert_eq!(e.cache.lock().unwrap().error, Some("upstream_unavailable"));
+    });
 }
 
 #[test]

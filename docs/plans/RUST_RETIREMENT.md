@@ -190,9 +190,20 @@ is explicit, not invented runtime error parity. Mapping acceptance is assertion-
 no overall gate becomes green from fixture execution or mapping labels. This
 inventory now gates development-oracle removal, not product native-execution
 coverage or installation.
-Recorded `tools/retirement_coverage.py --check --summary` passes;
-`--require-complete` deliberately exits **1** while obligations remain unresolved.
+The [2026-11-23 audit repair](../changelog/2026-11-23-retirement-audit-repair.md)
+restored `tools/retirement_coverage.py --check --summary` after explicitly reviewing
+active-oracle source drift, 33 supplemental methods and one native inventory ID.
+The current inventory is 941 originals plus 38 supplemental methods (979 total),
+with seven candidate integration targets and 55 IDs. No original mapping changed.
+All 38 audit-tool tests passed; the full 979-method Python suite was not run.
+`--require-complete` deliberately exits **1** for the same 874 unresolved obligations.
 These tools are development-only; relocating/deleting the oracle is not coverage.
+
+The current active-oracle pin has a separate hash-linked, independently reviewed
+integrity transition. It preserves historical captures and explicitly acknowledges
+directory-isolation behavioral changes, rather than claiming invocation-only or
+whole-suite equivalence. The [ledger guide](../../tests/retirement/README.md)
+describes the source chain, supplemental cohorts and fail-closed approval checks.
 
 All 941 original Python tests remain active. Eleven legacy-wrapper methods now
 invoke `sys.executable` plus `runner/coven.py` explicitly, recreating the old

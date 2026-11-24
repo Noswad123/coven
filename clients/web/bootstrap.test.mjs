@@ -96,7 +96,9 @@ async function browser(rows = [linked()], fleetEndpoints = endpoints(), metadata
   let now = originalNow();
   const requests = []; const intervals = []; const timers = new Map(); let timerID = 0;
   Object.assign(globalThis, {document,
-    fetch: (path, options) => new Promise(resolve => requests.push({path, options, resolve, done: false})),
+    fetch: (path, options) => path === '/api/v1/attention'
+      ? Promise.resolve({ok: true, json: async () => ({contract: 'coven.attention.v1', state: 'observed', items: [], omitted_count: 0, unavailable_count: 0, unlinked_count: 0})})
+      : new Promise(resolve => requests.push({path, options, resolve, done: false})),
     setTimeout: handler => { timers.set(++timerID, handler); return timerID; },
     clearTimeout: id => timers.delete(id), setInterval: handler => { intervals.push(handler); return ++timerID; },
   });
@@ -405,7 +407,11 @@ test('bootstrap rejects deferred transcript and metadata callbacks after known a
     b.open();
     const read = b.pending(readPath);
     await b.fleet(); // Starts a metadata-only revalidation while the read is pending.
-    await b.fleet(403);
+    // Revoke independently while the ordered drain is waiting for metadata.
+    b.$('read-conversation').emit('click');
+    const revocation = b.requests.filter(r => r.path === readPath && !r.done).at(-1);
+    revocation.done = true;
+    revocation.resolve({ok: false, status: 403, json: async () => ({})}); await flush();
     assert.equal(read.options.signal.aborted, true);
     await b.respond(readPath, messages());
     await b.respond('/api/v1/conversations', list([target]));
@@ -470,10 +476,12 @@ test('bootstrap leases expire and visible lifecycle revalidates metadata only', 
     assert.equal(b.$('conversation-messages').textContent, '');
     assert.equal(b.$('conversation-list').children.length, 2);
     assert.match(b.$('agent-grid').textContent, /Chat unavailable/);
-    await b.respond('/api/v1/conversations', list([linked()]));
+    await b.fleet(); await b.respond('/api/v1/conversations', list([linked()]));
     b.document.hidden = true; b.document.emit('visibilitychange');
     assert.equal(b.$('conversation-list').children.length, 2);
     b.document.hidden = false; b.document.emit('visibilitychange');
+    await b.respond('/api/v1/fleet', {contract: 'coven.fleet-observer.v1', generated_at_ms: Date.now(),
+      refresh_interval_ms: 3000, stale_after_ms: 15000, endpoints: endpoints()});
     await b.respond('/api/v1/conversations', list([]));
     assert.equal(b.requests.filter(r => r.path.endsWith('/messages')).length, 1);
     assert.equal(b.$('conversation-list').children.length, 2);

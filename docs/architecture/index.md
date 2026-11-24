@@ -113,6 +113,10 @@ Current contracts take precedence over historical migration summaries.
 
 - [Coven Web contract](COVEN_WEB_CONTRACT.md): browser/API schemas, authentication,
   exact session binding and bounded resource/lifecycle rules.
+- [Foreground events and metadata](COVEN_WEB_EVENTS.md): content-free SSE,
+  shared paired cache, freshness leases and browser resynchronization/fallback.
+- [Local inventory event hints](COVEN_WEB_LOCAL_EVENTS.md): fixed local subscription,
+  bounded acquisition acceleration, metadata wakes and periodic coverage limits.
 - [Sharing implementation](WEB_SHARING_IMPLEMENTATION.md): opt-in normal-launch
   native discovery, selected-session grants and follow-up submission boundaries.
 - [Sharing core](WEB_SHARING_CORE.md): observer conversation integration,

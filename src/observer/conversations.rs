@@ -50,6 +50,13 @@ struct Coverage {
     revision: u64,
 }
 
+#[derive(Clone)]
+pub(super) struct MetadataProof {
+    pub identity: Option<String>,
+    pub card: Option<String>,
+    pub expires: Option<Instant>,
+}
+
 pub(super) struct Flight<'a> {
     state: &'a Mutex<State>,
     key: (String, String),
@@ -65,10 +72,37 @@ impl Drop for Flight<'_> {
 }
 
 impl Conversations {
+    pub(super) fn metadata_fence(&self, login: &str) -> MetadataProof {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        self.metadata_proof(&state, login)
+    }
+    fn metadata_proof(&self, state: &State, login: &str) -> MetadataProof {
+        let expires = state
+            .refs
+            .iter()
+            .filter(|r| {
+                self.sources[r.source]
+                    .config
+                    .allowed_logins
+                    .iter()
+                    .any(|l| l == login)
+            })
+            .map(|r| r.selected.expires)
+            .min();
+        MetadataProof {
+            identity: self.coverage_proof(state, login, false),
+            card: self.proof(state, login),
+            expires,
+        }
+    }
+
     pub(super) fn card_proof(&self, login: &str) -> Option<String> {
         self.proof(&self.state.lock().unwrap_or_else(|p| p.into_inner()), login)
     }
     fn proof(&self, state: &State, login: &str) -> Option<String> {
+        self.coverage_proof(state, login, true)
+    }
+    fn coverage_proof(&self, state: &State, login: &str, require_complete: bool) -> Option<String> {
         let mut parts = vec![self.epoch.clone(), login.to_owned()];
         for (index, source) in self
             .sources
@@ -78,16 +112,23 @@ impl Conversations {
         {
             let coverage = state.coverage.get(index)?;
             // Expiration invalidates the whole proof; it never elects a new winner.
-            if coverage.failed
-                || state
-                    .refs
-                    .iter()
-                    .any(|r| r.source == index && r.selected.expires <= Instant::now())
+            if require_complete
+                && (coverage.failed
+                    || state
+                        .refs
+                        .iter()
+                        .any(|r| r.source == index && r.selected.expires <= Instant::now()))
             {
                 return None;
             }
             parts.push(source.config.id.clone());
             parts.push(coverage.revision.to_string());
+            if !require_complete {
+                // Partial metadata has provenance too, but never proves that
+                // unavailable candidates cannot compete for a card binding.
+                parts.push(coverage.failed.to_string());
+                parts.push(coverage.unavailable.to_string());
+            }
             parts.extend(Self::candidate_ids(state, index));
         }
         Some(digest(
@@ -213,7 +254,7 @@ impl Conversations {
         self.list_with_proof(login).0
     }
 
-    pub(super) fn list_with_proof(&self, login: &str) -> (Value, Option<String>) {
+    pub(super) fn list_with_proof(&self, login: &str) -> (Value, MetadataProof) {
         let deadline = crate::shared_native::deadline();
         let mut statuses = Vec::new();
         for (index, source) in self.sources.iter().enumerate() {
@@ -327,7 +368,7 @@ impl Conversations {
         }
         (
             json!({"contract":"coven.conversations.v1","conversations":rows,"sources":statuses,"omitted_conversations":omitted}),
-            self.proof(&state, login),
+            self.metadata_proof(&state, login),
         )
     }
 

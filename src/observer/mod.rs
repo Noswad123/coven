@@ -5,7 +5,11 @@ mod cardlinks;
 pub mod config;
 mod conversations;
 mod discovery;
+mod events;
 pub mod http;
+mod local_event_scheduler;
+mod local_events;
+mod metadata;
 mod model;
 pub(super) mod push;
 mod source;
@@ -34,6 +38,7 @@ const BUSY_RETRY: Duration = Duration::from_millis(100);
 
 #[derive(Default)]
 struct Cache {
+    events: Option<Arc<events::Events>>,
     inventory: Option<Inventory>,
     ids: Vec<String>,
     generation: u64,
@@ -65,15 +70,34 @@ impl Endpoint {
     }
     fn fail(&self, code: &'static str) {
         let mut cache = self.cache.lock().unwrap_or_else(|p| p.into_inner());
+        let meaningful = cache.fresh.is_some() || cache.error != Some(source::safe_code(code));
         cache.fresh = None;
         cache.generation = cache.generation.wrapping_add(1);
         cache.error = Some(source::safe_code(code));
         cache.last_attempt = Some(now_ms());
+        let events = cache.events.clone();
+        drop(cache);
+        if let Some(events) = events {
+            events.notify(None);
+            if meaningful && self.config.ssh.is_none() {
+                events.wake_metadata();
+            }
+        }
     }
     fn refresh(&self, epoch: &str, transport: &dyn Transport) -> Result<()> {
+        self.refresh_with_priority(epoch, transport, RefreshPriority::Periodic)
+    }
+    fn refresh_with_priority(
+        &self,
+        epoch: &str,
+        transport: &dyn Transport,
+        priority: RefreshPriority,
+    ) -> Result<()> {
         // Keep priority across busy retries; an admitted output may finish, but
         // new output cannot continually steal the next inventory opportunity.
-        self.refresh_due.store(true, Ordering::Release);
+        if priority == RefreshPriority::Periodic {
+            self.refresh_due.store(true, Ordering::Release);
+        }
         let _busy = self.acquire()?;
         self.cache
             .lock()
@@ -103,6 +127,7 @@ impl Endpoint {
         self.refresh_due.store(false, Ordering::Release);
         result
     }
+    #[cfg(test)]
     fn poll_once(&self, epoch: &str, transport: &dyn Transport, failures: &mut u32) -> Duration {
         match self.refresh(epoch, transport) {
             Ok(()) => *failures = 0,
@@ -113,6 +138,15 @@ impl Endpoint {
     }
     fn accept(&self, epoch: &str, inventory: Inventory) {
         let mut cache = self.cache.lock().unwrap_or_else(|p| p.into_inner());
+        // Inventory is bounded by parse_inventory and contains no observation timestamps.
+        let meaningful = !cache.fresh.is_some_and(|at| at.elapsed() < STALE)
+            || cache.error.is_some()
+            || cache.inventory.as_ref().is_none_or(|old| {
+                old.generation != inventory.generation
+                    || old.agents != inventory.agents
+                    || old.discovery_status != inventory.discovery_status
+                    || old.unclassified_panes != inventory.unclassified_panes
+            });
         let continuous = cache.fresh.is_some_and(|at| at.elapsed() < STALE)
             && cache
                 .inventory
@@ -154,7 +188,21 @@ impl Endpoint {
         cache.last_attempt = Some(now);
         cache.observed = Some(now);
         cache.error = None;
+        let events = cache.events.clone();
+        drop(cache);
+        if let Some(events) = events {
+            events.notify(None);
+            if meaningful && self.config.ssh.is_none() {
+                events.wake_metadata();
+            }
+        }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RefreshPriority {
+    Periodic,
+    Event,
 }
 
 fn parse_inventory(value: Value) -> Result<Inventory> {
@@ -236,6 +284,7 @@ fn valid_id(id: &str) -> bool {
 }
 
 pub struct Observer {
+    events: Arc<events::Events>,
     attention: Mutex<attention::State>,
     cardlinks: Mutex<cardlinks::State>,
     conversations: conversations::Conversations,
@@ -251,7 +300,9 @@ impl Observer {
         config.validate()?;
         let epoch =
             crate::platform::random_uuid_hex().map_err(|_| Error("observer_start_failed"))?;
+        let events = Arc::new(events::Events::default());
         let mut observer = Self {
+            events: events.clone(),
             attention: Mutex::new(attention::State::default()),
             cardlinks: Mutex::new(cardlinks::State::default()),
             conversations: conversations::Conversations::new(config, &epoch)?,
@@ -261,7 +312,10 @@ impl Observer {
                 .map(|config| {
                     Arc::new(Endpoint {
                         config: config.clone(),
-                        cache: Mutex::new(Cache::default()),
+                        cache: Mutex::new(Cache {
+                            events: Some(events.clone()),
+                            ..Cache::default()
+                        }),
                         busy: AtomicBool::new(false),
                         refresh_due: AtomicBool::new(true),
                     })
@@ -282,15 +336,13 @@ impl Observer {
             let handle = std::thread::Builder::new()
                 .name("fleet-observer".into())
                 .spawn(move || {
-                    let mut failures = 0u32;
-                    loop {
-                        if *shutdown.0.lock().unwrap_or_else(|p| p.into_inner()) {
-                            break;
-                        }
-                        let delay = endpoint.poll_once(&epoch, transport.as_ref(), &mut failures);
-                        let guard = shutdown.0.lock().unwrap_or_else(|p| p.into_inner());
-                        let _ = shutdown.1.wait_timeout_while(guard, delay, |stop| !*stop);
-                    }
+                    local_event_scheduler::run_poller(
+                        &endpoint,
+                        &epoch,
+                        transport.as_ref(),
+                        &shutdown,
+                        Some(&local_events::NativeEvents),
+                    );
                 })
                 .map_err(|_| Error("observer_start_failed"))?;
             observer.pollers.push(handle);

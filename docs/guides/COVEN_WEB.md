@@ -40,6 +40,34 @@ not browser selectors.
 
 ## Data Flow
 
+### Current metadata updates
+
+Visible pages use content-free foreground SSE to invalidate fleet, conversation
+links and attention metadata. `ready` requires a full GET resynchronization;
+opening a connection alone does not prove authorization. Fleet acquisition still
+polls upstream three seconds after work with backoff. Qualified local endpoints can
+use [bounded event hints](../architecture/COVEN_WEB_LOCAL_EVENTS.md) to accelerate
+normal acquisition and subsequent metadata collection, not to supply display truth
+or extend freshness. Topology and supported stripped-title changes can hint;
+manual labels, raw-title-only and foreground-process changes may wait for periodic
+reconciliation. Remote SSH endpoints remain polling-only; fewer polls, instant
+updates and local native grant/decision event coverage are not promised. A shared
+server collector supplies list/attention cache snapshots without a per-tab native
+poller or a background-alert opt-in requirement.
+
+One dirty coordinator sequences fleet, conversation-list and attention GETs and
+coalesces notices arriving during a fetch. Healthy live metadata still gets a
+30-second full resync; unavailable/erroring SSE falls back to six-second refreshes
+and six-second reconnect attempts. Browsers without EventSource and older servers
+remain readable by polling, without a claimed live connection. Metadata leases
+and coverage, not transport health, determine available chat/attention actions.
+See [events and freshness](../architecture/COVEN_WEB_EVENTS.md) for wire limits.
+
+These updates never automatically read messages, terminal output or decision
+details, obtain mutation tokens or POST. Card/request opens and Read/Refresh
+gestures remain deliberate; the existing verified notification deep-link navigation
+exception is unchanged. No additional toolbar or routine explanatory UI is added.
+
 ### Native conversations (new builds only)
 
 The single **Sessions** grid contains only fleet observations. Authorized native
@@ -243,14 +271,21 @@ is fetched. Native history includes non-text/tool steps, and bounded reads can o
 unsupported or oversized content; a hidden entry is not proof that the assistant
 produced no content. Existing partial/truncation/omission warnings remain visible.
 
-The **metadata-only** authorized list is revalidated alongside visible
-fleet refreshes (normally every three seconds) and on visibility resume. Matching
+The **metadata-only** authorized list is revalidated through SSE invalidations,
+periodic/fallback resync and visibility resume. Matching
 references preserve the open view without fetching messages. Removed/changed
-references clear the view and invalidate pending reads. Metadata has a 15-second
-lease, checked on visible one-second UI ticks and before accepting reads; expiry
+references clear the view and invalidate pending reads. Metadata has at most a
+15-second server lease, shortened by native grant/card/coverage evidence. The
+browser subtracts request transit time and never extends the same generation's
+deadline on repeat receipt. It is checked on visible one-second UI ticks and
+before accepting reads; expiry
 or a failed metadata refresh clears authorized metadata and text. Hidden pages
-clear conversation state, and returning requires metadata revalidation and an
-explicit reopen before another transcript read. Suspended/throttled event loops
+close SSE and clear conversation/request state; returning requires metadata
+revalidation and an explicit reopen before another transcript read. Persisted
+`pagehide` also clears output and suspends timers. BFcache `pageshow` restarts the
+one-second expiry guard and fully resynchronizes metadata, never old content.
+Superseded stream callbacks and GET responses cannot restore a paused view.
+Suspended/throttled event loops
 can delay the next UI check; this is not a hard real-time revocation guarantee.
 
 A known authentication failure on any API route aborts reads, invalidates pending
@@ -274,9 +309,13 @@ HTTP fixtures for actual DOM, phone/desktop overflow, unavailable-state guards, 
 routes, blank filtering and modal focus. In a unique disk-backed `TMPDIR` with
 exact-directory cleanup, run
 `COVEN_WEB_FIREFOX=/usr/bin/firefox node --test clients/web/*.test.mjs`.
-Without that variable only the browser test is explicitly skipped; no dependency
-download is performed. The fixture reaps Firefox before deleting its owned profile
-and produces no screenshots, snapshots or live chat traffic.
+Without that variable the DOM browser test is explicitly skipped; the separate
+native EventSource acceptance test additionally requires `COVEN_WEB_BINARY`.
+See the [client test instructions](../../clients/web/README.md#offline-checks).
+No dependency download is performed. The fixture reaps Firefox before deleting its owned profile
+and produces no screenshots, snapshots or live chat traffic. Fake-EventSource
+lifecycle/BFcache tests are not real Firefox EventSource end-to-end acceptance;
+the separate opt-in test is not claimed as passed here.
 
 ## Related files
 

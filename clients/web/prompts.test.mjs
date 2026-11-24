@@ -64,7 +64,9 @@ async function browser(rows = [target], fleetEndpoints = [{id: 'desktop', label:
   };
   Object.defineProperty(globalThis, 'crypto', {configurable: true, value: {randomUUID() { uuidCount++; return `12345678-1234-4234-8234-${String(uuidCount).padStart(12, '0')}`; }}});
   Object.assign(globalThis, {document,
-    fetch: (path, options) => new Promise((resolve, reject) => requests.push({path, options, resolve, reject, done: false})),
+    fetch: (path, options) => path === '/api/v1/attention'
+      ? Promise.resolve({ok: true, json: async () => ({contract: 'coven.attention.v1', state: 'observed', items: [], omitted_count: 0, unavailable_count: 0, unlinked_count: 0})})
+      : new Promise((resolve, reject) => requests.push({path, options, resolve, reject, done: false})),
     setTimeout: handler => { timers.set(++timerID, handler); return timerID; },
     clearTimeout: id => timers.delete(id), setInterval: handler => { intervals.push(handler); return ++timerID; },
   });

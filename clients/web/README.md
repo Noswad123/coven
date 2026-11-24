@@ -32,6 +32,8 @@ API calls are same-origin with `cache: 'no-store'`, same-origin
 credentials and redirects refused:
 
 - `/api/v1/fleet`: exact `coven.fleet-observer.v1` DTO.
+- `/api/v1/events`: content-free named SSE invalidations; see
+  [events/cache contract](../../docs/architecture/COVEN_WEB_EVENTS.md).
 - `/api/v1/agents/<lowercase-64-hex-id>/output`: explicit card-open or Read again
   gesture only. No output prefetching or output polling.
 
@@ -70,13 +72,17 @@ specific output message; other codes use a safe generic failure message.
   also expires. A response cannot renew a lease merely by arriving; snapshots
   older than the accepted generation are rejected. Timestamps more than five
   seconds ahead are not trusted as fresh. Keep gateway and browser clocks aligned.
-- Poll after each completed fleet request at the server interval (default 3s),
-  with a 1s minimum and 60s ceiling. Failures exponentially back off within that
-  ceiling. A 10s request timeout bounds waiting. Requests never overlap.
+- One dirty coordinator sequences fleet/list/attention GETs. SSE notices coalesce
+  during requests; healthy live metadata resyncs every 30s, otherwise every 6s
+  after work. Reconnect waits 6s. Upstream fleet polling/backoff is server-owned.
+  A 10s timeout bounds each GET; old transport callbacks are fenced.
 - Hidden pages stop polling and abort in-flight reads. Resume refreshes inventory
   immediately, including when the prior abort is still settling. Visible ages
   update once a second even after request failures. Browsers may throttle timers;
-  every freshness decision uses wall time, not tick counts.
+  fleet freshness uses wall time, while lease-bearing list/attention metadata uses
+  monotonic remaining time minus transit, never tick counts. Same-generation
+  receipts cannot extend a lease. BFcache pagehide clears private views/closes SSE;
+  pageshow restarts the expiry guard and resynchronizes metadata only.
 - Closing, changing references, superseding a read or losing freshness clears
   output and invalidates its selection ticket, in addition to aborting its fetch.
   Reopening the same card cannot accept an earlier request's response.
@@ -99,8 +105,25 @@ node --check clients/web/app.js
 Alternatively, from this directory: `npm test` (no `npm install` required).
 Tests cover schema rejection, identity collisions, projection/sorting, stale
 retention versus successful empty, output limits/identity/age, literal hostile
-text at the shared text sink and selection-ticket races. These are not DOM,
-browser, deployment, authentication or upstream integration tests.
+text at the shared text sink and selection-ticket races. Bootstrap fixtures also
+exercise handlers; `events.test.mjs` uses fake EventSource for dirty coalescing,
+lease expiry, reconnect and lifecycle/BFcache behavior, not a real browser stream.
+
+Opt-in acceptance (record actual runs in the [changelog](../../docs/changelog/index.md),
+not as a standing claim that these recipes currently pass):
+
+- `browser.test.mjs`: set `COVEN_WEB_FIREFOX` to an installed Firefox for actual
+  DOM/overflow/focus and explicit-read forms over synthetic HTTP fixtures.
+- `live-events.test.mjs`: on Unix with Node 22+, set both `COVEN_WEB_BINARY` to an
+  absolute already-built candidate and `COVEN_WEB_FIREFOX` to an absolute installed
+  Firefox. Supply an absolute, verified disk-backed `TMPDIR` under
+  `${XDG_CACHE_HOME:-$HOME/.cache}/agent-test-runs`, with checked free space and
+  exact-directory cleanup after children stop. Run
+  `node --test clients/web/live-events.test.mjs` in that environment. The fixture
+  exercises native Firefox EventSource against a disposable actual gateway and
+  local proxy, not live services, native sessions, Serve authentication or phone
+  delivery. It builds/downloads nothing and skips unless both executable variables
+  are set. A skipped test is not end-to-end success.
 
 ## Browser Acceptance
 
@@ -113,7 +136,8 @@ the actual backend. They have not been replaced by fixture success:
 - Keyboard and screen reader: skip link, card buttons, native dialog title,
   initial Close focus, Tab trapping, Escape, focus return, output scrolling and
   live connection/error announcements. Check zoom and reduced-motion settings.
-- Observe normal interval, failed-refresh backoff, age progression, timeout,
+- Observe SSE ready/invalidation, 60s stream rotation, 6s fallback/reconnect,
+  30s healthy resync, lease expiry, age progression, timeout,
   offline/reconnect and background/foreground behavior in the network inspector.
    Verify same-origin calls, no overlapping fleet requests, no output prefetch,
    no-store fetches and no content storage/offline cache. Push registration and
@@ -135,7 +159,8 @@ the actual backend. They have not been replaced by fixture success:
 
 ## Requests And Alerts
 
-`GET /api/v1/attention` separately polls bounded request metadata while visible.
+`GET /api/v1/attention` reads cached bounded request metadata during visible
+SSE-triggered or fallback resynchronization.
 Needs-response badges never come from blocked/idle heuristics. Unknown/partial
 coverage is not confirmed zero. Original verified root cards still open once into
 the same conversation dialog; no chooser or extra cards. Explicit card/request

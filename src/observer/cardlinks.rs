@@ -33,11 +33,37 @@ struct Card {
 }
 
 impl Observer {
+    pub(super) fn metadata_card_fence(&self, login: &str) -> (u64, Option<Instant>) {
+        let state = self.cardlinks.lock().unwrap_or_else(|p| p.into_inner());
+        (
+            state.revisions.get(login).copied().unwrap_or_default(),
+            state
+                .links
+                .get(login)
+                .into_iter()
+                .flatten()
+                .map(|l| l.expires)
+                .min(),
+        )
+    }
+
     /// Refresh native grants normally, then acquire bounded, transcript-free metadata.
     pub fn conversation_list(&self, login: &str) -> Value {
+        self.conversation_list_with_fence(login, self.attention_revision(login))
+            .0
+    }
+
+    pub(super) fn conversation_list_with_fence(
+        &self,
+        login: &str,
+        revision: u64,
+    ) -> (Value, metadata::Fence) {
         let (mut value, proof) = self.conversations.list_with_proof(login);
-        self.enrich_cards(login, &mut value, proof);
-        value
+        // The list's grant proof is captured with its rows; fleet evidence precedes
+        // card acquisition, and the card revision comes from the actual commit.
+        let mut fence = metadata::Fence::for_list(self, proof.clone(), revision);
+        fence.cards = self.enrich_cards(login, &mut value, proof.card);
+        (value, fence)
     }
 
     fn cards(&self) -> Vec<Card> {
@@ -85,9 +111,14 @@ impl Observer {
             })
     }
 
-    fn enrich_cards(&self, login: &str, value: &mut Value, proof: Option<String>) {
+    fn enrich_cards(
+        &self,
+        login: &str,
+        value: &mut Value,
+        proof: Option<String>,
+    ) -> (u64, Option<Instant>) {
         if !self.conversations.admitted(login) {
-            return;
+            return (0, None);
         }
         let deadline = Instant::now() + Duration::from_secs(2);
         let revision = self
@@ -107,7 +138,7 @@ impl Observer {
                 .as_array()
                 .is_some_and(|sources| sources.iter().any(|s| s["status"] == "unavailable"));
         let Some(rows) = value["conversations"].as_array_mut() else {
-            return;
+            return (revision, None);
         };
         // Capture fleet mappings before any native or filesystem work. All native
         // candidates below must first pass the conversation source/row ACL.
@@ -313,6 +344,21 @@ impl Observer {
                 .revisions
                 .insert(login.into(), revision.wrapping_add(1));
         }
+        // A losing acquisition keeps its original revision, never a newer winner's.
+        (
+            if superseded {
+                revision
+            } else {
+                revision.wrapping_add(1)
+            },
+            state
+                .links
+                .get(login)
+                .into_iter()
+                .flatten()
+                .map(|l| l.expires)
+                .min(),
+        )
     }
 
     pub(super) fn bound(

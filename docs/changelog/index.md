@@ -8,11 +8,20 @@
   README's historical validation and migration claims are preserved; not a new
   test run or qualification report.
 
+## Maintenance and retirement
+
+- [2026-11-23 — Retirement audit repair](2026-11-23-retirement-audit-repair.md)
+  — reviewed source provenance and supplemental inventory, preserving all original obligations.
+
 ## Coven Web (newest first)
 
 Same-day order follows the original handoff's reverse chronology. Historical
 “current” statements describe their change-set only, not today's deployment.
 
+- [2026-11-23 — Local event-accelerated observation](2026-11-23-coven-web-local-events.md)
+  — generic Kit event hints, bounded refresh scheduling and retained reconciliation.
+- [2026-11-23 — Foreground metadata events](2026-11-23-coven-web-foreground-events.md)
+  — SSE updates, shared metadata collection, lease-safe caching and verified rollout.
 - [2026-11-21 — Complete supported titles](2026-11-21-coven-web-complete-titles.md)
   — full-title forwarding, wrapping and native formatter publication; transport limits remain.
 - [2026-11-20 — Pane name / provider / session-title hierarchy](2026-11-20-coven-web-pane-hierarchy.md)

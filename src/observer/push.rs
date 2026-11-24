@@ -145,6 +145,8 @@ struct Inner {
     sender: Arc<dyn Sender>,
     diagnostic: Mutex<&'static str>,
     degraded: AtomicBool,
+    #[cfg(test)]
+    before_final_sample: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 pub struct PushService {
     inner: Arc<Inner>,
@@ -152,8 +154,9 @@ pub struct PushService {
 }
 
 impl PushService {
-    /// `collect` must use bounded metadata-only I/O and a Weak<Observer>, never
-    /// renew native grants. Drop joins it as well as the bounded transport worker.
+    /// `collect` must read the shared metadata cache only, including current
+    /// freshness/fences. It is also called at final network admission. Drop joins
+    /// this service's collector and bounded transport worker.
     pub fn start(
         config: &Config,
         collect: Arc<dyn Fn(&str) -> Value + Send + Sync>,
@@ -281,6 +284,8 @@ impl PushService {
             sender,
             diagnostic: Mutex::new("idle"),
             degraded: AtomicBool::new(false),
+            #[cfg(test)]
+            before_final_sample: Mutex::new(None),
         });
         let mut service = Self {
             inner,
@@ -429,6 +434,28 @@ impl Drop for PushService {
     }
 }
 impl Inner {
+    fn sample(&self, owner: &str) -> Option<(ledger::Snapshot, Instant)> {
+        // Anchor before the cache read: cloning/validation and lock waits spend
+        // the lease too. A copied remaining_ms must never start a new lease.
+        let started = Instant::now();
+        let document = (self.collect)(owner);
+        let freshness = document["freshness"].as_object()?;
+        let generation = freshness.get("generation")?.as_str()?;
+        let remaining = freshness.get("remaining_ms")?.as_u64()?;
+        if freshness.len() != 2
+            || generation.is_empty()
+            || generation.len() > 128
+            || !generation.is_ascii()
+            || !generation.contains(':')
+            || !(1..=15000).contains(&remaining)
+        {
+            return None;
+        }
+        let expires = started + Duration::from_millis(remaining);
+        let mut snapshot = ledger::Snapshot::read(&document)?;
+        snapshot.expires = Some(expires);
+        (Instant::now() < expires).then_some((snapshot, expires))
+    }
     fn mutate(&self, change: impl FnOnce(&mut State) -> Result<()>) -> Result<()> {
         let _write = self.writes.lock().unwrap_or_else(|p| p.into_inner());
         if self.degraded.load(Ordering::Acquire) {
@@ -474,6 +501,19 @@ impl Inner {
                 .records
                 .get(&job.id)
                 .is_some_and(|r| r.pending_job(job))
+    }
+    fn try_admit(&self, job: &Job) -> Option<bool> {
+        let work = self.work.try_lock().ok()?;
+        let state = self.state.try_lock().ok()?;
+        Some(
+            !work.stop
+                && !self.degraded.load(Ordering::Acquire)
+                && self.allowed.contains(&job.owner)
+                && state
+                    .records
+                    .get(&job.id)
+                    .is_some_and(|r| r.pending_job(job)),
+        )
     }
 }
 fn collector(inner: Arc<Inner>) {
@@ -524,9 +564,9 @@ fn send_job(inner: &Inner, mut job: Job) {
     }
     // A queued locator is not authority. Every attempt, including retries,
     // needs a new positive metadata sample outside every state/work lock.
-    let document = (inner.collect)(&job.owner);
-    let sample = ledger::Snapshot::read(&document);
-    if let Err(error) = inner.reconcile(&job.owner, sample.as_ref(), ledger::now()) {
+    let sample = inner.sample(&job.owner);
+    if let Err(error) = inner.reconcile(&job.owner, sample.as_ref().map(|(s, _)| s), ledger::now())
+    {
         if error.code() == "push_state_unavailable" && !inner.degraded.load(Ordering::Acquire) {
             // No commit occurred. Preserve this job's TTL and transport budget;
             // nothing may reach the network until reconciliation succeeds.
@@ -542,7 +582,7 @@ fn send_job(inner: &Inner, mut job: Job) {
     }
     if !sample
         .as_ref()
-        .is_some_and(|s| s.alerts.contains(&job.alert))
+        .is_some_and(|(s, expires)| s.alerts.contains(&job.alert) && Instant::now() < *expires)
     {
         inner.diagnostic("eligibility_unknown");
         inner.requeue(job, Duration::from_secs(3));
@@ -553,7 +593,7 @@ fn send_job(inner: &Inner, mut job: Job) {
         return;
     }
     let ttl = 300u32.saturating_sub(job.created.elapsed().as_secs() as u32);
-    let message = match delivery::message(
+    let mut message = match delivery::message(
         &job.subscription,
         &inner.key,
         &inner.subject,
@@ -567,7 +607,40 @@ fn send_job(inner: &Inner, mut job: Job) {
             return;
         }
     };
+    #[cfg(test)]
+    {
+        let hook = inner.before_final_sample.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
     if inner.stopped() || !inner.eligible(&job) {
+        return;
+    }
+    // The cache read can block too. Recheck cancellation afterwards without
+    // waiting on admission locks, then spend only the remaining sample lease.
+    let current = inner.sample(&job.owner);
+    if job.created.elapsed() >= Duration::from_secs(300) {
+        inner.finish(&job, ledger::Phase::Failed);
+        return;
+    }
+    message.ttl = message
+        .ttl
+        .min(300u32.saturating_sub(job.created.elapsed().as_secs() as u32));
+    match inner.try_admit(&job) {
+        Some(true) => {}
+        Some(false) => return,
+        None => {
+            inner.requeue(job, Duration::from_secs(3));
+            return;
+        }
+    }
+    if !current
+        .as_ref()
+        .is_some_and(|(s, expires)| s.alerts.contains(&job.alert) && Instant::now() < *expires)
+    {
+        inner.diagnostic("eligibility_unknown");
+        inner.requeue(job, Duration::from_secs(3));
         return;
     }
     let outcome = inner.sender.send(message);

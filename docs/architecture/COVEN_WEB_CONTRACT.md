@@ -9,6 +9,23 @@ the [guide](../guides/COVEN_WEB.md); operator configuration is in the
 
 ## API / Interfaces
 
+### Foreground events and shared metadata
+
+`GET /api/v1/events` is an authenticated, bodyless, exact-route SSE invalidation
+stream, not a content feed. Named `ready`, `fleet` and `metadata` events contain
+only `{"contract":"coven.events.v1"}`; there are no IDs or replay. Heartbeats run
+every 10 seconds, body lifetime is 60 seconds, and admission is limited to 16
+global/two per login without blocking-read permits.
+
+Conversation-list and attention GETs read one principal-scoped paired cache also
+used by Web Push. One server-owned collector runs independently of tabs and push
+opt-in. Both responses add `freshness` with an opaque epoch/counter `generation`
+and integer `remaining_ms` in `0..15000`. GETs never refresh native evidence or
+extend a published lease; native grants, card/coverage leases and elapsed time can
+shorten it. Expired/missing data is unavailable/unknown, not confirmed empty.
+Exact provenance and unchanged-renewal semantics are in
+[foreground events and metadata](COVEN_WEB_EVENTS.md).
+
 ### Public JSON contract
 
 All routes are authenticated, same-origin and `Cache-Control: no-store`.
@@ -199,8 +216,8 @@ is nonblank, at most 65,536 UTF-8 bytes and permits no controls except tab/CR/LF
 Connections have five-second header and 20-second overall bounds. Two mutation
 jobs retain their permits until blocking work finishes, even if HTTP is canceled;
 native runtime/session single-flight and attempt suppression remain core-owned.
-Discovery/list reads share bounded blocking capacity with other native reads,
-without blocking cached fleet or asset responses.
+Native discovery work is owned by the shared metadata collector; cached list and
+attention GETs do not consume blocking-read slots or wait for native network work.
 
 Receipt shapes and uncertainty behavior are in the
 [guide](../guides/COVEN_WEB.md#shared-follow-ups). Accepted is not completed;
@@ -215,7 +232,7 @@ third card or transcript-derived approval system.
 
 - `GET /api/v1/attention` returns `coven.attention.v1` metadata with `state`, opaque
   exact-occurrence items, nullable omissions and unavailable/unlinked counts.
-  Only visible pages poll metadata; no background transcript/detail reads.
+  Visible pages resynchronize via SSE/fallback; no background transcript/detail reads.
 - `GET /api/v1/decisions/<64hex>` explicitly reads complete sanitized details
   inside the existing conversation dialog. Raw native IDs, paths and tool linkage
   never cross this boundary. Unsupported/oversized detail requires the source UI.
@@ -236,8 +253,9 @@ third card or transcript-derived approval system.
 
 ### Opt-In Background Alerts
 
-Optional gateway `push:{state_directory:"ABS"}` enables the separate server-owned
-collector; absence creates no push state, sender or collector. It never renews native
+Optional gateway `push:{state_directory:"ABS"}` enables the separate push collector
+and sender; absence creates no push state or push workers. The shared metadata
+collector still runs without push. Neither collector renews native
 sharing grants. Source reader eligibility permits generic alerts, not native action.
 No deployment/configuration or browser permission change is performed by the UI
 until the user's explicit gesture.
@@ -266,9 +284,13 @@ Inventory reuses Coven's acquisition/classifier with one absolute five-second
 deadline and shared 4 MiB budget across snapshot/process/snapshot reads. The
 observer's explicit scan cap is 1,024 panes; the standalone discovery CLI retains
 its existing 64-pane cap. Neither classifier rules nor live detection manifests
-are changed by this adapter. The method set remains `session.snapshot`,
+are changed by this adapter. The generic `ReadMethod` set remains `session.snapshot`,
 `pane.process_info` and, for eligible metadata-backed output only, `pane.read`.
 Process-only cards reject forced output with `output_unsupported` before transport.
+The separate private [local event subscription](COVEN_WEB_LOCAL_EVENTS.md) uses
+fixed `events.subscribe` selectors only after qualifying local inventory. It does
+not widen `ReadMethod`, expose generic RPC or upgrade the SSH helper protocol.
+Its hints schedule normal acquisition, never event-derived inventory or authority.
 
 The native sequence is `capabilities` then `conversation`, on the same fenced
 endpoint, sharing one five-second deadline and 65,536-byte total reply budget.
@@ -291,14 +313,16 @@ verification, so the browser does not recompute this native digest.
 The HTTP facade deliberately uses Hyper/Tokio rather than a handwritten parser.
 No TLS is handled in Coven: Serve owns it. Rejected bodies are never read or
 aggregated, keep-alive is disabled, header reads expire after five seconds, and
-connections expire after twenty seconds overall. At most 64 connections and two output jobs run
+ordinary connections expire after twenty seconds overall. Only admitted SSE gets
+a separate 65-second connection bound (60-second body lifetime); rejected event
+requests keep the ordinary deadline. At most 64 connections and two output jobs run
 concurrently. An abandoned HTTP response does not release its blocking output-job
 permit early. Cached fleet/static requests do not wait for upstream network reads.
 Inventory has priority over repeated output requests. Initial request limits are
 64 headers/8 KiB accepted header text, a 32 KiB parser buffer, 2 KiB URLs and
 2 MiB serialized JSON responses. The UI is dependency-free static ES modules;
 development tests use Node 20 or newer, not a Node production service.
-The connection deadline includes header admission and applies to reads and mutations
+The ordinary connection deadline includes header admission and applies to reads and mutations
 (`src/observer/http.rs`, `connection`). The original ten-second initial limit is
 preserved as historical evidence in the
 [prototype record](../changelog/coven-web-initial-prototype.md#initial-development-check-results).

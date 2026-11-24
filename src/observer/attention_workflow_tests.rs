@@ -3,6 +3,9 @@ use super::*;
 #[path = "attention_regression_tests.rs"]
 mod regressions;
 
+#[path = "metadata_regression_tests.rs"]
+mod metadata_regressions;
+
 fn pending() -> Value {
     let digest = format!(
         "{:x}",
@@ -48,6 +51,108 @@ fn item(observer: &Observer) -> Value {
 }
 fn id(row: &Value) -> &str {
     row["id"].as_str().unwrap()
+}
+
+#[test]
+fn shared_metadata_scheduler_pairs_documents_and_push_reads_without_native_recollection() {
+    use crate::observer::metadata::MetadataService;
+    let (peer, kit, observer) = setup();
+    let observer = Arc::new(observer);
+    let service = MetadataService::start(&peer.config(), &observer).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let attention = loop {
+        let attention = service.read("alice", true);
+        if attention["state"] == "observed" {
+            break attention;
+        }
+        assert!(Instant::now() < deadline, "{attention}");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let calls = peer.state.lock().unwrap().requests.len();
+    let kits = kit.requests.lock().unwrap().len();
+    let list = service.read("alice", false);
+    assert_eq!(
+        attention["items"][0]["conversation_id"],
+        list["conversations"][0]["id"]
+    );
+    assert_eq!(
+        attention["freshness"]["generation"],
+        list["freshness"]["generation"]
+    );
+    assert!(attention["freshness"]["remaining_ms"].as_u64().unwrap() <= 5000);
+    // This is also the exact cache-only callback used by PushService.
+    for _ in 0..50 {
+        assert_eq!(service.read("alice", true)["items"], attention["items"]);
+        assert_eq!(
+            service.read("alice", false)["conversations"],
+            list["conversations"]
+        );
+    }
+    assert_eq!(peer.state.lock().unwrap().requests.len(), calls);
+    assert_eq!(kit.requests.lock().unwrap().len(), kits);
+    // Unchanged fleet renewal neither discards this pair nor renews its deadline.
+    let endpoint = &observer.endpoints[0];
+    let inventory = endpoint.cache.lock().unwrap().inventory.clone().unwrap();
+    endpoint.accept("epoch", inventory);
+    let unchanged = service.read("alice", true);
+    assert_eq!(unchanged["state"], "observed");
+    assert_eq!(
+        unchanged["freshness"]["generation"],
+        attention["freshness"]["generation"]
+    );
+    assert!(
+        unchanged["freshness"]["remaining_ms"].as_u64().unwrap()
+            <= attention["freshness"]["remaining_ms"].as_u64().unwrap()
+    );
+    assert!(
+        peer.state
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .all(|r| !matches!(
+                r["method"].as_str(),
+                Some("shared_conversation" | "conversation" | "shared_submit" | "decision_details")
+            ))
+    );
+    // Lease renewal publishes a new generation even when displayed references agree.
+    let until = Instant::now() + Duration::from_secs(5);
+    let renewed = loop {
+        let next = service.read("alice", true);
+        if next["freshness"]["generation"] != attention["freshness"]["generation"] {
+            break next;
+        }
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(renewed["items"], attention["items"]);
+    assert!(renewed["freshness"]["remaining_ms"].as_u64().unwrap() > 0);
+    // An explicit synchronous refresh supersedes both documents together.
+    observer.attention("alice");
+    for attention in [true, false] {
+        let stale = service.read("alice", attention);
+        assert_eq!(stale["state"], "unavailable");
+        assert_eq!(stale["freshness"]["remaining_ms"], 0);
+    }
+    peer.state.lock().unwrap().wrong_runtime = true;
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        let failed = service.read("alice", true);
+        if failed["freshness"]["generation"] != renewed["freshness"]["generation"] {
+            assert_eq!(failed["state"], "unavailable");
+            assert_eq!(failed["freshness"]["remaining_ms"], 0);
+            assert_eq!(failed["streams"], json!([]));
+            let list = service.read("alice", false);
+            assert_eq!(list["conversations"], json!([]));
+            assert_eq!(list["freshness"]["remaining_ms"], 0);
+            break;
+        }
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let started = Instant::now();
+    drop(service);
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[test]

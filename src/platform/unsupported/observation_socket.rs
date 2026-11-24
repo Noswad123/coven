@@ -16,6 +16,14 @@ impl Socket {
     pub(crate) fn send(&self, _: &[u8], _: Instant, _: &dyn Cancel) -> WireResult<()> {
         Err(Failure::new("unsupported_platform"))
     }
+    pub(crate) fn stream_read(
+        &self,
+        _: &mut [u8],
+        _: Instant,
+        _: &dyn Cancel,
+    ) -> WireResult<Option<usize>> {
+        Err(Failure::new("unsupported_platform"))
+    }
     pub(crate) fn receive(
         &self,
         _: Instant,

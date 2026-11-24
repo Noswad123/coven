@@ -129,6 +129,30 @@ impl Gateway {
             .expect("bounded response");
         response
     }
+    fn ready_conversations(&self, headers: &str) -> String {
+        // TCP readiness does not imply that the metadata scheduler has published.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            assert!(Instant::now() < deadline, "conversation readiness deadline");
+            let response = self.request("/api/v1/conversations", headers);
+            assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+            let value: serde_json::Value =
+                serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap();
+            assert_eq!(value["contract"], "coven.conversations.v1");
+            let rows = value["conversations"]
+                .as_array()
+                .expect("conversation rows");
+            if value["state"] != "unavailable" && !rows.is_empty() {
+                return response;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(
+                !remaining.is_zero(),
+                "conversation readiness deadline: {response}"
+            );
+            std::thread::sleep(remaining.min(Duration::from_millis(20)));
+        }
+    }
 }
 
 #[test]
@@ -136,7 +160,7 @@ fn conversation_resource_acl_is_checked_on_list_and_read() {
     let gateway = Gateway::start();
     let auth = "Tailscale-User-Login: fixture@example.invalid\r\n";
     let other = "Tailscale-User-Login: other@example.invalid\r\n";
-    let list = gateway.request("/api/v1/conversations", auth);
+    let list = gateway.ready_conversations(auth);
     assert!(list.starts_with("HTTP/1.1 200"));
     let value: serde_json::Value =
         serde_json::from_str(list.split_once("\r\n\r\n").unwrap().1).unwrap();
@@ -163,6 +187,71 @@ fn conversation_resource_acl_is_checked_on_list_and_read() {
     );
 }
 
+#[test]
+fn foreground_events_are_authenticated_exact_bodyless_bounded_and_release_on_disconnect() {
+    let gateway = Gateway::start();
+    let auth = "Tailscale-User-Login: fixture@example.invalid\r\n";
+    for (path, headers, code) in [
+        ("/api/v1/events", "", 403),
+        ("/api/v1/events?x=1", auth, 404),
+        ("/api/v1/events/", auth, 404),
+    ] {
+        assert!(
+            gateway
+                .request(path, headers)
+                .starts_with(&format!("HTTP/1.1 {code}"))
+        );
+    }
+    for framing in [
+        "Content-Length: 1\r\n",
+        "Transfer-Encoding: chunked\r\n",
+        "Content-Length: 0\r\nContent-Length: 0\r\n",
+    ] {
+        let response = gateway.request("/api/v1/events", &format!("{auth}{framing}"));
+        assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+    }
+    let open = || {
+        let mut stream = TcpStream::connect(("127.0.0.1", gateway.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        write!(
+            stream,
+            "GET /api/v1/events HTTP/1.1\r\nHost: coven-web.example.invalid\r\n{auth}\r\n"
+        )
+        .unwrap();
+        let mut text = String::new();
+        let mut bytes = [0; 1024];
+        while !text.contains("event: ready\ndata: {\"contract\":\"coven.events.v1\"}\n\n") {
+            let n = stream.read(&mut bytes).unwrap();
+            assert!(n > 0);
+            text.push_str(std::str::from_utf8(&bytes[..n]).unwrap());
+        }
+        assert!(text.starts_with("HTTP/1.1 200"));
+        assert!(text.contains("content-type: text/event-stream"));
+        assert!(!text.contains("id:") && !text.contains("native.sock"));
+        stream
+    };
+    let first = open();
+    let second = open();
+    assert!(
+        gateway
+            .request("/api/v1/events", auth)
+            .starts_with("HTTP/1.1 429")
+    );
+    drop(first);
+    // Disconnect processing is asynchronous, but must promptly release admission.
+    std::thread::sleep(Duration::from_millis(50));
+    let replacement = open();
+    assert!(
+        gateway
+            .request("/api/v1/fleet", auth)
+            .starts_with("HTTP/1.1 200")
+    );
+    drop(second);
+    drop(replacement);
+}
+
 #[cfg(unix)]
 #[test]
 fn real_http_native_conversation_is_read_only_and_not_reused_across_principals() {
@@ -183,7 +272,7 @@ fn real_http_native_conversation_is_read_only_and_not_reused_across_principals()
     listener.set_nonblocking(true).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     let auth = "Tailscale-User-Login: fixture@example.invalid\r\n";
-    let list = gateway.request("/api/v1/conversations", auth);
+    let list = gateway.ready_conversations(auth);
     let list: Value = serde_json::from_str(list.split_once("\r\n\r\n").unwrap().1).unwrap();
     let route = format!(
         "/api/v1/conversations/{}/messages",
