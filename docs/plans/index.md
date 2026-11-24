@@ -20,6 +20,8 @@ Historical approvals are not standing instructions to execute work.
   module map, compatibility limits and historical acceptance evidence.
 - [Rust retirement](RUST_RETIREMENT.md): development-oracle cleanup, original
   obligations and separate compatibility, platform and distribution gates.
+- [Python implementation removal](PYTHON_REMOVAL.md): current dependency reduction,
+  accepted native coverage, next concrete cohorts and safe-deletion gates.
 - [Coven Web recovery obligations](COVEN_WEB_RECOVERY.md): exact-object source
   recovery checks, snapshot retention and ownership-gated artifact cleanup.
 

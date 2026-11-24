@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "review_state": "draft_proposed",
+  "scope": "Three SchemaTests methods only; parent review required before global integration or retirement. The other two SchemaTests and all 28 collection/process methods are excluded, not settled by Rust immutability.",
+  "reference_commit": "24d73fede7d8e305cc2572c623a0eb93b440e806",
+  "original_source": {
+    "path": "tests/test_handoffs.py",
+    "sha256": "204919e4d3cd05cb534f8aa4b0df95a24f9e6e6c3f3d99fcf2baf0d23f116ef5"
+  },
+  "reference_implementation": {
+    "path": "runner/handoffs.py",
+    "sha256": "071f43dada166b04cd7357c3b6b6721fe5125f2446430acef93f25dfb46bbbeb",
+    "execution": "Not executed. Direct native assertions, no Python comparison helper or implementation copy."
+  },
+  "method_hash_convention": "SHA-256 of original UTF-8 lines from AST FunctionDef.lineno through end_lineno inclusive, including indentation and final newline; no decorators on these methods.",
+  "proposed_batch_counts": {"A": 0, "B": 3, "C": 0, "D": 0, "mapped": 3},
+  "fixtures": [],
+  "validation": {
+    "commands": [
+      "cargo test --offline --locked --lib handoff::retirement:: -j 2",
+      "env PATH=/nonexistent <compiled-lib-test-binary> handoff::retirement::"
+    ],
+    "results": "3 passed under cargo; 3 passed directly with PATH=/nonexistent.",
+    "environment": "System PATH=/usr/bin:/bin and PKG_CONFIG=/usr/bin/pkg-config; installed absolute cargo/rustc; OPENSSL_DIR and LD_LIBRARY_PATH unset; two jobs, offline/locked. Unique TMPDIR and CARGO_TARGET_DIR on verified /home btrfs, 319 GiB free before successful run.",
+    "cleanup": "Successful owned run coven-native-assertions.AZUm8oBW cleaned by EXIT trap after test processes exited. Three earlier failed/interrupted owned attempts also cleaned.",
+    "independence_limit": "The new tests never invoke Python. PATH=/nonexistent excludes PATH-based Python lookup, not absolute paths or a seccomp-enforced no-exec proof."
+  },
+  "reviews": {
+    "python::tests/test_handoffs.py::SchemaTests::test_schema_rejects_grants_status_authority_and_unknown_fields": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "fd3b8f70122b6e934c6a23b018e08a9945319fabd17284ed3d2d4b5fd1826444",
+      "native_tests": ["rust::src/handoff/retirement.rs::schema_rejects_grants_status_authority_and_unknown_fields"],
+      "assertion_review": "Full original claim fixture is authored natively, including the lambda summary, finding, check, paths and inert artifact URI. Validate positive baseline through handoff::decode. Independently add each original forbidden field/value: authorization=merge, verified=true, status=done, attempt_id=prepared-attempt, native_accepted=true. Each of five full otherwise-valid claims must refuse through actual native decode/schema validation.",
+      "limits": "Bytes are supplied to Rust decode rather than Python validate(dict). No claims about collection, task mutation, authority grants, dynamic Python types or returned-object identity."
+    },
+    "python::tests/test_handoffs.py::SchemaTests::test_source_claim_honestly_supports_uncommitted_workers": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "a42533d3c739c3ddef22bdbec625fc4864b18288411a5cc257aba2606fdfbcac",
+      "native_tests": ["rust::src/handoff/retirement.rs::source_claim_honestly_supports_uncommitted_workers"],
+      "assertion_review": "Start with complete original claim and files_changed=[src/file]. Uncommitted source claim exactly {state:uncommitted,repository_id:null,base_sha:a*40,source_sha:null,tree_sha:null}; require complete serialized ValidatedHandoff equality with the entire input JSON object, not selected fields. Update state to committed, source_sha=b*40, tree_sha=c*40; require complete serialized equality again. Change tree_sha to d*64 and require mixed-format refusal.",
+      "limits": "Equality compares complete serialized JSON values, not raw textual key ordering. No Git or provider is invoked; claims are not independently verified."
+    },
+    "python::tests/test_handoffs.py::SchemaTests::test_strict_json_rejects_duplicate_keys_nonfinite_unicode_and_depth": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "f210d21716713218b32e3b5bb1d27371349274d493503df6a100ae145e2cf493",
+      "native_tests": ["rust::src/handoff/retirement.rs::strict_json_rejects_duplicate_keys_nonfinite_unicode_and_depth"],
+      "assertion_review": "All seven exact original byte payloads reach actual crate::strict_json::decode directly: duplicate x keys, NaN, 1e999, invalid UTF-8 FF byte, lone opening brace, 17 nested arrays around zero, escaped lone high surrogate. Every one refuses before domain schema validation. Positive controls accept ordinary x integer, finite fraction, paired-surrogate Unicode, null and 16 nested arrays. These intentionally non-handoff controls prevent missing-required-field errors from masquerading as JSON-parser evidence.",
+      "limits": "The lone-surrogate byte-level parser refusal maps only this _json requirement. It does not establish equivalence for a Python API receiving an already-constructed surrogate str. Native diagnostics need not match Python exception wording; original asserts HandoffError only."
+    }
+  },
+  "unresolved": {
+    "python::tests/test_handoffs.py::SchemaTests::test_valid_claim_is_independent_and_does_not_claim_verification": {
+      "category": "D",
+      "status": "unresolved",
+      "reason": "Original mutates a nested finding in the returned validated object and requires input inequality. Rust immutable/typed API alone does not settle this old mutable-return identity obligation. Not mapped by these tests."
+    },
+    "python::tests/test_handoffs.py::SchemaTests::test_invalid_types_limits_and_paths": {
+      "category": "D",
+      "status": "unresolved",
+      "reason": "Includes dynamic Python types and an API-level lone-surrogate str. This batch does not substitute byte-parser refusal for the entire original method; no mapping proposed."
+    }
+  },
+  "remaining_limitations": [
+    "All 28 CollectionTests/ProcessTests methods remain outside this fragment, unchanged and unresolved here.",
+    "No Python test methods were executed, disabled, changed or removed. Python 3.14.8 -I -B was used solely for AST method hashing, not expected-output generation or native test execution.",
+    "No global ledger, audit tool, tool tests, Cargo, docs, package fixture allowlist or runner changes. Parent must independently review and integrate draft mappings."
+  ]
+}

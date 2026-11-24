@@ -1,16 +1,12 @@
 use super::*;
 use crate::runtime_command::{Output, Request};
 use serde_json::{Value as Json, json};
-use std::{
-    cell::{Cell, RefCell},
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::cell::{Cell, RefCell};
 
-fn native(value: &Json) -> Value {
+pub(super) fn native(value: &Json) -> Value {
     values::parse(&serde_json::to_vec(value).unwrap(), Profile::Authority).unwrap()
 }
-fn json(value: &Value) -> Json {
+pub(super) fn json(value: &Value) -> Json {
     serde_json::from_slice(&value.canonical().unwrap()).unwrap()
 }
 fn inputs(backend: &str, count: usize) -> Json {
@@ -113,7 +109,7 @@ impl Runner for Fake<'_> {
 
 // Transcript parity isolates transport from discovery. Selector tests below use
 // real frozen paths through run_with and assert the exact absolute target.
-fn run_transcript(
+pub(super) fn run_transcript(
     plan: &Value,
     runner: &dyn Runner,
     sleeper: &mut dyn FnMut(Duration) -> TransportResult<()>,
@@ -123,7 +119,7 @@ fn run_transcript(
         Box::new(std::iter::once(Ok(format!("/injected/{name}"))))
     })
 }
-fn evaluate(case: &Json) -> Json {
+pub(super) fn evaluate(case: &Json) -> Json {
     let Ok(mut p) = try_plan(&case["inputs"]) else {
         return json!({"build_error":true});
     };
@@ -154,31 +150,15 @@ fn evaluate(case: &Json) -> Json {
     json!({"plan":json(&p), "report":json(&report), "calls":fake.calls.into_inner(), "delays":delays})
 }
 fn compare(cases: Vec<Json>, exact_diagnostics: bool) {
-    let root = env!("CARGO_MANIFEST_DIR");
-    let mut oracle = Command::new("python3")
-        .arg("-B")
-        .arg(format!("{root}/src/launch/oracle.py"))
-        .arg(root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stdin = oracle.stdin.take().unwrap();
-    let input = serde_json::to_vec(&cases).unwrap();
-    // Feed concurrently: oracle output can exceed the pipe capacity for 32-agent plans.
-    let writer = std::thread::spawn(move || {
-        stdin.write_all(&input).unwrap();
-    });
-    let output = oracle.wait_with_output().unwrap();
-    writer.join().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let expected: Vec<Json> = serde_json::from_slice(&output.stdout).unwrap();
-    for (index, (case, mut expected)) in cases.iter().zip(expected).enumerate() {
+    let frozen = super::retirement::corpus();
+    for (index, case) in cases.iter().enumerate() {
+        let record = frozen
+            .iter()
+            .find(|record| {
+                record["case"] == *case && record["exact_diagnostics"] == exact_diagnostics
+            })
+            .unwrap_or_else(|| panic!("missing frozen reference case {index}: {case}"));
+        let mut expected = record["expected"].clone();
         let mut actual = evaluate(case);
         if !exact_diagnostics {
             // Parser wording is implementation-specific; effects and error class remain parity obligations.

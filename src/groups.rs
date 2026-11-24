@@ -499,4 +499,6 @@ fn reserve_with(workspace: &Path, r: ReserveRequest<'_>, io: &impl store::Io) ->
 }
 
 #[cfg(test)]
+mod retirement;
+#[cfg(test)]
 mod tests;

@@ -10,6 +10,8 @@
 
 ## Maintenance and retirement
 
+- [2026-11-24 — First native-oracle removal batch](2026-11-24-python-retirement-first-batch.md)
+  — eight live Python call sites removed, one helper deleted and 23 new mappings accepted.
 - [2026-11-23 — Retirement audit repair](2026-11-23-retirement-audit-repair.md)
   — reviewed source provenance and supplemental inventory, preserving all original obligations.
 

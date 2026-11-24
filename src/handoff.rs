@@ -330,3 +330,6 @@ impl From<std::str::Utf8Error> for Error {
         Self("invalid_utf8")
     }
 }
+
+#[cfg(test)]
+mod retirement;

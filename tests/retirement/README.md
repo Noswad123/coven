@@ -1,7 +1,8 @@
 # Retirement Coverage Ledger
 
 Tracks the frozen original obligations and accepted Session views, records,
-checkpoints, task graphs and session prompts batches. It also inventories later
+checkpoints, task graphs, session prompts, launch, groups and handoff-schema batches.
+It also inventories later
 supplemental tests and the reviewed active-oracle source. It does not change the
 production entrypoint, remove or move runner code, skip existing tests, introduce
 test features, or replace migration/release validation. No native-suite coverage
@@ -27,7 +28,7 @@ stdlib-only and AST-based for Python. It never imports or executes runner code.
 Audit unit tests live outside `tests/`. The current AST inventory has **979
 methods**: 941 frozen originals plus **38 supplemental methods in three files**
 (five wrapper, 21 development-installer and 12 build-environment tests). Inventory
-is not execution: the repair ran the 38 audit-tool tests, not all 979 methods.
+is not execution: the latest batch ran the 40 audit-tool tests, not all 979 methods.
 
 ## Frozen Baseline
 
@@ -40,13 +41,14 @@ python::tests/test_session_prompts.py::SessionPromptTests::test_capabilities_que
 rust::tests/session_prompts_workflow.rs::capabilities_are_workspace_independent
 ```
 
-There are 941 original methods in 44 files: **53 A, 15 B, 0 C, 873 D**.
-**67 methods are mapped and 874 methods remain unresolved**. All 15 B prompt
+There are 941 original methods in 44 files: **62 A, 29 B, 0 C, 850 D**.
+**90 methods are mapped and 851 methods remain unresolved**. All 15 B prompt
 entries have explicit candidate mappings and accepted assertion reviews, including
 the original four B entries. Session views' final purity obligation remains D and
 unresolved. Mapped means an explicit assertion review with native-test evidence
-and, for A, frozen fixtures. Parent and independent review accepted the four new
-batch fragments; this is not global migration or release acceptance.
+and, for A, frozen fixtures. Parent and independent review accepted the recorded
+batch fragments; this is not global migration or release acceptance. The original
+IDs/source pins stay frozen; classifications change only through reviewed batches.
 D means no complete substitution has been established, not proof that native
 behavior is missing. All original Python tests remain active.
 
@@ -223,6 +225,10 @@ it is not a way to bless a changed native result or bypass original obligations.
 
 ## Accepted Fragment Integration
 
+This section records the earlier four-fragment integration (67 mapped / 874
+unresolved). The [latest batch](#native-oracle-removal-and-assertion-batch--2026-11-24)
+adds three fragments while preserving those original review objects and captures.
+
 The global ledger explicitly incorporates all **61 reviews** from
 `reviews/records.json`, `reviews/checkpoints.json`, `reviews/task_graphs.json` and
 `reviews/session_prompts.json`, including their unresolved notes. Together with
@@ -387,3 +393,44 @@ the **874 unresolved** obligations. All 44 original entries/source pins, 80 revi
 15 candidate mappings and original fixture/provenance files remain unchanged.
 No Python oracle deletion, fixture recapture, runtime deployment or new native
 mapping was performed. See the [dated repair record](../../docs/changelog/2026-11-23-retirement-audit-repair.md).
+
+## Native-oracle removal and assertion batch — 2026-11-24
+
+Accepted `reviews/launch.json`, `reviews/groups.json` and
+`reviews/handoff_schema.json` after independent assertion review. Their historical
+draft wording describes submission; `provenance.accepted_batches` records parent
+acceptance and pins the exact fragment hashes and non-review metadata.
+
+| File | New mapped | Current A / B / D | Current unresolved |
+| --- | ---: | --- | ---: |
+| `tests/test_launch.py` | 11 | 9 / 2 / 8 | 8 |
+| `tests/test_groups.py` | 9 | 0 / 9 / 26 | 26 |
+| `tests/test_handoffs.py` | 3 | 0 / 3 / 30 | 30 |
+
+All nine launch A reviews pin both the 298-case corpus and its provenance. Fourteen
+new B candidates refer to the reviewed native assertions, not Python-executing
+comparison helpers. Global totals are **90 mapped / 851 unresolved**, with
+**111 explicit reviews and 29 B candidate entries**. The original ID digest and
+all source pins remain unchanged. Audit tests project away only these reviewed
+additions to verify every earlier fixed fingerprint, then check the new fragments
+separately. They do not replace the old invariant hashes with a new baseline.
+
+Two selected launch methods remain D: Python kwargs/environment-identity semantics
+and invoking an actual stop-report validator are not established by transcript
+equality. Handoff's mutable-return and dynamically typed API requirements also
+remain D. No additional mapping is inferred from the stronger partial evidence.
+
+`reviews/presentation_oracles.json` records removal of seven live Python constructor
+sites from existing presentation/dashboard tests, with zero original mappings.
+Launch conversion removes one more site and retires `src/launch/oracle.py`.
+The new expectations come from explicitly pinned independent reference capture,
+not native-generated goldens. Optional regeneration uses a historical reference
+tree; it is not an automatic current-runner test dependency.
+
+Validation: 68 focused native tests, 61 interpreter-isolated tests, two package
+tests and 40 audit-tool tests passed; extracted-package library tests also compiled.
+Formatting and audit checks passed. These scopes overlap; no aggregate full-suite
+count is implied. Completion still fails for 851 unresolved obligations, and other
+inline/source-local and parent-harness dependencies remain. See the
+[batch record](../../docs/changelog/2026-11-24-python-retirement-first-batch.md) and
+[current removal plan](../../docs/plans/PYTHON_REMOVAL.md).

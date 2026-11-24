@@ -18,6 +18,10 @@ pub(crate) mod executable;
 #[path = "launch/tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "launch/retirement.rs"]
+mod retirement;
+
 pub(crate) fn build_plan(
     root: &str,
     namespace: &str,

@@ -28,6 +28,9 @@ fn native_source_package_boundary() {
     );
     let listing = String::from_utf8(output.stdout).unwrap();
     let files: BTreeSet<_> = listing.lines().collect();
+    // Retired live launch oracle: the frozen corpus replaces its only consumer.
+    assert!(!root.join("src/launch/oracle.py").exists());
+    assert!(!files.contains("src/launch/oracle.py"));
     for file in &files {
         assert!(
             !file.starts_with("tools/"),
@@ -98,6 +101,14 @@ fn native_source_package_boundary() {
         "tests/retirement/fixtures/records.json",
         "tests/retirement/fixtures/checkpoints.json",
         "tests/retirement/fixtures/task_graphs.json",
+        "tests/retirement/fixtures/launch.json",
+        "tests/retirement/fixtures/launch_provenance.json",
+        "tests/retirement/fixtures/presentation.json",
+        "tests/retirement/fixtures/presentation_provenance.json",
+        "src/presentation_test_fixture.rs",
+        "src/launch/retirement.rs",
+        "src/groups/retirement.rs",
+        "src/handoff/retirement.rs",
         "tests/retirement/reviews/task_graphs.json",
         "tests/support/interactive_session_server.rs",
         "tests/support/session_prompt_fixture.rs",

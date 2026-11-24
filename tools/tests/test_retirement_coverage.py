@@ -165,6 +165,12 @@ class ActiveOracleTransitionTests(unittest.TestCase):
 
 
 class RetirementCoverageTests(unittest.TestCase):
+    new_batches = {
+        "launch": "a48f6842247a0f40ed04fa791925e25097e3f6cc00483bb22f5983e2b32ca2be",
+        "groups": "f5792f0c3bc098078b5ba69e5d1e391e8aa10d52b72f5dba7fc86e3aae547dd2",
+        "handoff_schema": "2dbcfd4e1c7b0c1d278bca7f84f4d90b64a1dc963631b2a8c4cdb8c2cc720a0b",
+    }
+
     @classmethod
     def setUpClass(cls):
         cached = mock.patch.object(coverage, "rust_tests", side_effect=functools.lru_cache()(coverage.rust_tests))
@@ -172,6 +178,11 @@ class RetirementCoverageTests(unittest.TestCase):
         cls.addClassCleanup(cached.stop)
         cls.manifest = json.loads((coverage.ROOT / coverage.MANIFEST).read_text(), object_pairs_hook=coverage.unique_object)
         cls.report = coverage.audit(coverage.ROOT, cls.manifest)
+        cls.fragments = {
+            name: json.loads((coverage.ROOT / f"tests/retirement/reviews/{name}.json").read_text(),
+                             object_pairs_hook=coverage.unique_object)
+            for name in cls.new_batches
+        }
 
     def test_frozen_original_ledger_content_and_id_fingerprint(self):
         ids = sorted(unit["id"] for unit in self.report["units"])
@@ -186,8 +197,31 @@ class RetirementCoverageTests(unittest.TestCase):
             "accepted_batches": "5823b5379842eaea60a4f4dbcf952e2e2c7d4c04ad1cbda11d957fe00660c837",
             "accepted_source_transitions": "d401a700b6785de521414458ccdee78a23d944fc0dce81423d2989bd69f61e96",
         }
+        # Project only the three accepted additions away; retain the 24d73fe fingerprints.
+        prior = copy.deepcopy(self.manifest)
+        new_reviews = {identity: review for fragment in self.fragments.values()
+                       for identity, review in fragment["reviews"].items()}
+        self.assertEqual(len(new_reviews), 31)
+        new_b = {identity for identity, review in new_reviews.items()
+                 if review.get("category", review.get("category_suggestion")) == "B"}
+        self.assertEqual(len(new_b), 14)
+        for identity in new_reviews:
+            prior["reviews"].pop(identity)
+        for identity in new_b:
+            prior["candidate_mappings"].pop(identity)
+        originals = {"tests/test_launch.py": 19, "tests/test_groups.py": 35, "tests/test_handoffs.py": 33}
+        for entry in prior["files"]:
+            if entry["path"] in originals:
+                self.assertEqual(sum(len(names) for names in entry["classes"].values()), originals[entry["path"]])
+                entry.pop("overrides")
+                entry["counts"] = {"A": 0, "B": 0, "C": 0, "D": originals[entry["path"]]}
+        prior["category_counts"] = {"A": 53, "B": 15, "C": 0, "D": 873}
+        prior["provenance"]["accepted_batches"] = prior["provenance"]["accepted_batches"][:4]
+        self.assertEqual(len(prior["reviews"]), 80)
+        self.assertEqual(sum(review["status"] == "mapped" for review in prior["reviews"].values()), 67)
+        self.assertEqual(len(prior["candidate_mappings"]), 15)
         for key, sha256 in expected.items():
-            value = self.manifest.get(key, self.manifest["provenance"].get(key))
+            value = prior.get(key, prior["provenance"].get(key))
             with self.subTest(key=key):
                 self.assertEqual(hashlib.sha256(json.dumps(value, sort_keys=True,
                                                          separators=(",", ":")).encode()).hexdigest(), sha256)
@@ -197,8 +231,8 @@ class RetirementCoverageTests(unittest.TestCase):
         self.assertEqual(len(self.report["units"]), 941)
         self.assertEqual(len({unit["id"] for unit in self.report["units"]}), 941)
         self.assertEqual(len(self.report["file_counts"]), 44)
-        self.assertEqual(self.report["categories"], {"A": 53, "B": 15, "C": 0, "D": 873})
-        self.assertEqual(self.report["statuses"], {"mapped": 67, "unresolved": 874})
+        self.assertEqual(self.report["categories"], {"A": 62, "B": 29, "C": 0, "D": 850})
+        self.assertEqual(self.report["statuses"], {"mapped": 90, "unresolved": 851})
         self.assertEqual(len(self.report["independent_python"]), 5)
         views = [unit for unit in self.report["units"] if "::tests/test_session_views.py::" in unit["id"]]
         self.assertEqual(len(views), 19)
@@ -207,13 +241,16 @@ class RetirementCoverageTests(unittest.TestCase):
         batches = self.manifest["provenance"]["accepted_batches"]
         self.assertEqual([batch["path"] for batch in batches], [
             f"tests/retirement/reviews/{name}.json"
-            for name in ["records", "checkpoints", "task_graphs", "session_prompts"]
+            for name in ["records", "checkpoints", "task_graphs", "session_prompts", *self.new_batches]
         ])
         expected = {
             "tests/test_records.py": (4, 0, {"A": 4, "B": 0, "C": 0, "D": 0}),
             "tests/test_checkpoints.py": (16, 2, {"A": 16, "B": 0, "C": 0, "D": 2}),
             "tests/test_task_graphs.py": (14, 4, {"A": 15, "B": 0, "C": 0, "D": 3}),
             "tests/test_session_prompts.py": (15, 6, {"A": 0, "B": 15, "C": 0, "D": 6}),
+            "tests/test_launch.py": (11, 8, {"A": 9, "B": 2, "C": 0, "D": 8}),
+            "tests/test_groups.py": (9, 26, {"A": 0, "B": 9, "C": 0, "D": 26}),
+            "tests/test_handoffs.py": (3, 30, {"A": 0, "B": 3, "C": 0, "D": 30}),
         }
         for name, (mapped, unresolved, categories) in expected.items():
             units = [unit for unit in self.report["units"] if unit["id"].split("::")[1] == name]
@@ -222,10 +259,11 @@ class RetirementCoverageTests(unittest.TestCase):
             self.assertEqual(self.report["file_counts"][name], categories)
         reviewed_files = set(expected) | {"tests/test_session_views.py"}
         untouched = [unit for unit in self.report["units"] if unit["id"].split("::")[1] not in reviewed_files]
-        self.assertEqual(len(untouched), 861)
+        self.assertEqual(len(untouched), 941 - sum(sum(counts.values()) for _, _, counts in expected.values()) - len(views))
+        self.assertEqual(len(untouched), 774)
         self.assertTrue(all(unit["status"] == "unresolved" and not unit["review"]
                             and not unit["candidate_native_tests"] for unit in untouched))
-        self.assertEqual(len(self.manifest["reviews"]), 80)
+        self.assertEqual(len(self.manifest["reviews"]), 111)
         for batch in batches:
             path = coverage.ROOT / batch["path"]
             self.assertEqual(coverage.digest(path), batch["sha256"])
@@ -254,9 +292,114 @@ class RetirementCoverageTests(unittest.TestCase):
         self.assertEqual(set(cases), {case["id"] for case in corpus["cases"]})
         self.assertEqual(len(set(cases)), len(cases))
 
-    def test_fifteen_b_candidates_have_explicit_reviewed_native_test_ids(self):
+    def test_new_batches_are_exact_hash_pinned_fragments_with_scoped_categories(self):
+        batches = self.manifest["provenance"]["accepted_batches"][4:]
+        self.assertEqual(len(batches), 3)
+        units = {unit["id"]: unit for unit in self.report["units"]}
+        for batch, (name, sha256) in zip(batches, self.new_batches.items()):
+            with self.subTest(batch=name):
+                self.assertEqual(batch["path"], f"tests/retirement/reviews/{name}.json")
+                self.assertEqual(batch["sha256"], sha256)
+                self.assertEqual(coverage.digest(coverage.ROOT / batch["path"]), sha256)
+                self.assertEqual(batch["acceptance"],
+                                 "Main and independent review accepted; explicitly merged into global reviews. "
+                                 "This acceptance supersedes proposal/draft scope wording preserved in historical "
+                                 "fragment metadata; it does not authorize global retirement or source Python deletion.")
+                fragment = self.fragments[name]
+                self.assertEqual(batch["metadata"], {key: value for key, value in fragment.items() if key != "reviews"})
+                source = fragment["original_source"]
+                entry = next(entry for entry in self.manifest["files"] if entry["path"] == source["path"])
+                self.assertEqual(entry["sha256"], source["sha256"])
+                self.assertEqual(coverage.digest(coverage.ROOT / source["path"]), source["sha256"])
+                selected = {identity: review for identity, review in self.manifest["reviews"].items()
+                            if identity.split("::")[1] == source["path"]}
+                self.assertEqual(selected, fragment["reviews"])
+                source_text = (coverage.ROOT / source["path"]).read_text()
+                methods = coverage.methods(coverage.ROOT / source["path"])
+                for identity, review in selected.items():
+                    unit = units[identity]
+                    category = review.get("category", review.get("category_suggestion"))
+                    self.assertEqual((unit["category"], unit["status"]), (category, review["status"]))
+                    self.assertEqual(unit["review"], review)
+                    if category == "B":
+                        self.assertEqual(self.manifest["candidate_mappings"][identity], review["native_tests"])
+                    else:
+                        self.assertNotIn(identity, self.manifest["candidate_mappings"])
+                    for reference in review["native_tests"]:
+                        kind, path, function = reference.split("::")
+                        self.assertEqual(kind, "rust")
+                        self.assertEqual(coverage.rust_tests(coverage.ROOT, path).count(function), 1)
+                    if "method_sha256" in review:
+                        cls, method = identity.split("::")[2:]
+                        node = methods[f"{cls}.{method}"]
+                        segment = "".join(source_text.splitlines(keepends=True)[node.lineno - 1:node.end_lineno])
+                        self.assertEqual(hashlib.sha256(segment.encode()).hexdigest(), review["method_sha256"])
+                if "reference_implementation" in fragment:
+                    reference = fragment["reference_implementation"]
+                    self.assertEqual(coverage.digest(coverage.ROOT / reference["path"]), reference["sha256"])
+        handoffs = [unit for unit in units.values() if unit["id"].split("::")[1] == "tests/test_handoffs.py"]
+        schema = [unit for unit in handoffs if unit["id"].split("::")[2] == "SchemaTests"]
+        self.assertEqual(len(schema), 5)
+        self.assertEqual(sum(unit["category"] == "B" for unit in schema), 3)
+        self.assertTrue(all(unit["category"] == "D" and unit["status"] == "unresolved"
+                            for unit in handoffs if unit not in schema))
+        for identity in self.fragments["handoff_schema"]["unresolved"]:
+            self.assertEqual((units[identity]["category"], units[identity]["status"]), ("D", "unresolved"))
+            self.assertFalse(units[identity]["review"])
+
+    def test_launch_a_fixtures_and_historical_capture_remain_pinned(self):
+        fixtures = [
+            {"path": "tests/retirement/fixtures/launch.json",
+             "sha256": "a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},
+            {"path": "tests/retirement/fixtures/launch_provenance.json",
+             "sha256": "17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"},
+        ]
+        for fixture in fixtures:
+            self.assertEqual(coverage.digest(coverage.ROOT / fixture["path"]), fixture["sha256"])
+        reviews = self.fragments["launch"]["reviews"]
+        a_reviews = [review for review in reviews.values() if review["category_suggestion"] == "A"]
+        self.assertEqual(len(a_reviews), 9)
+        for review in a_reviews:
+            self.assertEqual(review["fixtures"], fixtures)
+        corpus_path = coverage.ROOT / fixtures[0]["path"]
+        corpus = json.loads(corpus_path.read_text())
+        provenance = json.loads((coverage.ROOT / fixtures[1]["path"]).read_text())
+        self.assertEqual(provenance["corpus_sha256"], fixtures[0]["sha256"])
+        self.assertEqual(provenance["corpus_bytes"], corpus_path.stat().st_size)
+        self.assertEqual(provenance["cases"], len(corpus))
+        self.assertEqual(len(corpus), 298)
+        case_ids = {case["id"] for case in corpus}
+        self.assertEqual(len(case_ids), 298)
+        self.assertEqual(sum(identity.startswith("original/") for identity in case_ids), 66)
+        self.assertEqual(provenance["oracle_commit"], "24d73fede7d8e305cc2572c623a0eb93b440e806")
+        self.assertEqual(provenance["unchanged_launch_since"], self.manifest["provenance"]["source_head"])
+        for name, sha256 in provenance["source_sha256"].items():
+            # These two source pins describe historical capture, not the new native test source.
+            if name not in {"src/launch/tests.rs", "src/launch/oracle.py"}:
+                self.assertEqual(coverage.digest(coverage.ROOT / name), sha256)
+        self.assertEqual(coverage.digest(coverage.ROOT / provenance["capture_tool"]), provenance["capture_tool_sha256"])
+        self.assertEqual(len(provenance["original_methods"]), 13)
+        source = (coverage.ROOT / "tests/test_launch.py").read_text()
+        methods = coverage.methods(coverage.ROOT / "tests/test_launch.py")
+        for method, evidence in provenance["original_methods"].items():
+            node = methods[f"LaunchTests.{method}"]
+            self.assertEqual([node.lineno, node.end_lineno], evidence["lines"])
+            self.assertEqual(hashlib.sha256(ast.get_source_segment(source, node).encode()).hexdigest(),
+                             evidence["sha256"])
+            review = reviews[f"python::tests/test_launch.py::LaunchTests::{method}"]
+            if method == "test_strict_recomputed_schema":
+                self.assertEqual(evidence["captured_cases"], 0)
+                self.assertEqual(review["category_suggestion"], "B")
+                self.assertEqual(len(review["cases"]), 9)
+                self.assertTrue(all(case.startswith("mutation/") for case in review["cases"]))
+                self.assertFalse(set(review["cases"]) & case_ids)
+            else:
+                self.assertEqual(len(review["cases"]), evidence["captured_cases"])
+                self.assertTrue(set(review["cases"]) <= case_ids)
+
+    def test_twenty_nine_b_candidates_have_explicit_reviewed_native_test_ids(self):
         units = [unit for unit in self.report["units"] if unit["category"] == "B"]
-        self.assertEqual(len(units), 15)
+        self.assertEqual(len(units), 29)
         self.assertEqual(set(self.manifest["candidate_mappings"]), {unit["id"] for unit in units})
         prior = {
             "test_capabilities_query_is_metadata_only": "capabilities_are_workspace_independent",
@@ -310,8 +453,8 @@ class RetirementCoverageTests(unittest.TestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             self.assertEqual(coverage.main(["--check", "--summary"]), 0)
             self.assertEqual(coverage.main(["--require-complete"]), 1)
-        self.assertIn("A=53 B=15 C=0 D=873", out.getvalue())
-        self.assertIn("mapped=67 unresolved=874", out.getvalue())
+        self.assertIn("A=62 B=29 C=0 D=850", out.getvalue())
+        self.assertIn("mapped=90 unresolved=851", out.getvalue())
         self.assertIn("Original methods: 941", out.getvalue())
         self.assertIn("Supplemental Python methods: 38 in 3 files", out.getvalue())
         self.assertIn("Full Python suite methods: 979", out.getvalue())

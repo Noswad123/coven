@@ -1,0 +1,82 @@
+{
+  "fragment_only": true,
+  "global_coverage_modified": false,
+  "original_python_methods_newly_mapped": 0,
+  "scope": "Remove live Python comparison/generator dependencies from seven existing Rust tests, not replace or delete the runner. Independent original-Python assertion review and global integration remain main-owned.",
+  "oracle_commit": "24d73fede7d8e305cc2572c623a0eb93b440e806",
+  "fixture": "tests/retirement/fixtures/presentation.json",
+  "provenance": "tests/retirement/fixtures/presentation_provenance.json",
+  "fixture_decoder": "src/presentation_test_fixture.rs",
+  "capture_tool": "tools/freeze_presentation.py",
+  "constructor_sites_before": {
+    "src/runtime/presentation/tests.rs": 5,
+    "src/task_delivery/tests.rs": 2
+  },
+  "constructor_sites_after": {
+    "src/runtime/presentation/tests.rs": 0,
+    "src/task_delivery/tests.rs": 0
+  },
+  "comparison_cases": 30,
+  "reference_prepared_checkpoint_inputs": 2,
+  "preservation": "All existing method names, native fixture inputs, native calls, loop bodies and non-oracle assertions retained. Only Python process success assertions disappear with the processes; SHA-256, strict fixture inventories and per-test complete single-use consumption replace those capture-integrity checks. No zip or missing-value defaults. The standup native prepare call is retained and additionally compared byte-for-byte against the independently captured reference input before its existing status mutations.",
+  "reviews": [
+    {
+      "native_test": "rust::src/runtime/presentation/tests.rs::standup_body_preserves_intrinsic_newline_and_writeln_matches_python_print",
+      "case_ids": ["standup.print"],
+      "assertion_review": "Exact existing literal body, intrinsic trailing newline, writeln versus print extra newline, double-newline suffix and full stdout byte equality retained. Frozen stdout is command_standup output, not render_standup alone."
+    },
+    {
+      "native_test": "rust::src/runtime/presentation/tests.rs::python_standup_all_buckets_persisted_rows_historical_lead_and_labels",
+      "case_ids": ["standup.buckets"],
+      "assertion_review": "All ten statuses including uppercase BLOCKED, empty/new; alternating outside/null owner; persisted outside/Beta rows and historical unlisted lead; escaped newline/punctuation/zero-width label; CRLF unbound plan. Exact backend observation sequence outside, Beta, historical and full rendered string equality retained. Reference backend stub records the same sequence."
+    },
+    {
+      "native_test": "rust::src/runtime/presentation/tests.rs::approved_observation_skips_backend_and_public_statuses_preserve_roster_defaults",
+      "case_ids": ["agent_status.approved"],
+      "assertion_review": "Real control location and shared transport gate retained; closure increments then panics if constructed, count zero and exact unverified tuple retained. Public all-roster status body plus print newline equals frozen command_agent_status output. Unknown-agent batch refusal and standup newline assertion retained."
+    },
+    {
+      "native_test": "rust::src/runtime/presentation/tests.rs::ledger_authority_ignores_corrupt_projection_and_matches_python",
+      "case_ids": ["standup.ledger"],
+      "assertion_review": "Native task import under actual WorkspaceGuard, corrupt projection replacement, control approval, title containment, whole standup bytes and unchanged corrupt projection bytes retained. Reference independently imports its equivalent snapshot via LedgerStore; no frozen ledger or Rust-rendered expected value."
+    },
+    {
+      "native_test": "rust::src/runtime/presentation/tests.rs::effective_checkpoint_statuses_suggestion_branches_and_empty_sections_match_python",
+      "case_prefix": "standup.checkpoint.",
+      "case_count": 8,
+      "assertion_review": "Existing native checkpoint prepare with ID 1*32/time test/source cli retained and checked against reference bytes. Exact original approved/title-edit/status-edit/pending inputs crossed with empty/done tasks retained, including native file writes/load/render, panic observer, expected effective-status substring and whole output equality. Per-test corpus consumption rejects skipped or repeated matrix cells."
+    },
+    {
+      "native_test": "rust::src/task_delivery/tests.rs::io_tests::dashboard_python_golden_bytes_snapshot_ledger_leads_labels_goal_checkpoints",
+      "case_prefix": "dashboard.lead",
+      "matrix_case_count": 12,
+      "additional_case_ids": ["dashboard.missing", "dashboard.ledger"],
+      "assertion_review": "All three leads and four goals with CR/CRLF/heading stripping retained. Unicode label (NBSP, joiner, private/unassigned/astral and fox), raw role/title/status/owner, TOML multiplexer override, unbound-plan and CR-review inputs unchanged. Each real refresh/publication and dashboard file-byte comparison retained. Missing goal/lead removals, native ledger import, corrupt projection, title substring and unchanged-projection assertion retained."
+    },
+    {
+      "native_test": "rust::src/task_delivery/tests.rs::io_tests::checkpoint_effective_stale_invalid_and_raw_newlines_match_python",
+      "case_prefix": "dashboard.checkpoint.",
+      "case_count": 4,
+      "assertion_review": "Python-generated approved INPUT replaced by captured exact bytes with same decision ID/time/source. Approved/title-edit/status-edit/raw CRLF-to-LF inputs unchanged. Each actual checkpoint write, native capture status assertion, guarded refresh, published file read and whole dashboard byte comparison retained, including both distinct approval_stale cases."
+    }
+  ],
+  "unchanged_native_tests": "All other tests in both caller files are unchanged; the baseline presentation filter also includes the existing standup row-budget test in standup.rs.",
+  "baseline_validation": {"presentation_passed": 9, "task_delivery_passed": 19, "python_available": true},
+  "native_validation": {
+    "presentation_passed": 9,
+    "task_delivery_passed": 19,
+    "failed": 0,
+    "ignored": 0,
+    "build_command": "cargo test -q --offline --locked -j 2 --lib --no-run",
+    "test_filters": ["runtime::presentation::", "task_delivery::"],
+    "test_threads": 2,
+    "python_unavailable": "Compiled lib test executable run directly in bwrap --unshare-all --die-with-parent --new-session; only /usr/lib, loader-cache, proc/dev, exact disposable run and read-only repository mounted. /usr/bin and /bin are empty; PATH=/python-unavailable. Absolute /usr/bin/python3 -V execution probe failed with ENOENT before running both filters. This is interpreter filesystem isolation, not a claim of seccomp denial of every possible subprocess.",
+    "storage": "Unique disposable runs under verified btrfs /home/jdawson/.cache/agent-test-runs; TMPDIR and CARGO_TARGET_DIR scoped per run; exact-run exit traps clean capture and build artifacts on success/failure. No downloads, retained artifacts or full-suite execution."
+  },
+  "limitations": [
+    "Frozen comparison cases preserve only the seven existing native-test obligations. They do not establish new coverage of any of the 941 original Python methods.",
+    "The reference capture uses Python-native ledger creation and real ephemeral control locations; UUID/root/device/inode values are not output and are not embedded in fixture data.",
+    "Historical fixtures and provenance are neither changed nor recaptured. This oracle explicitly selects the approved active 24d73fe source.",
+    "Production Python removal, global audit integration, Cargo package inputs and independent review remain main-owned."
+  ]
+}

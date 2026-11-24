@@ -42,8 +42,8 @@ not authorize a push, release publication or external Homebrew promotion.
   The local native-only formula is a candidate; the external tap is unchanged and
   unpromoted. Its remote `main` URL cannot be promoted until a reviewed release.
 - **Policy and cleanup:** non-UTF-8 paths and finite caps still need explicit
-  disposition. The 941-ID source audit remains 67 mapped / 874 unresolved; that
-  blocks development-oracle removal, not native execution of 874 alleged features.
+  disposition. The 941-ID source audit is now 90 mapped / 851 unresolved; that
+  blocks development-oracle removal, not native execution of 851 alleged features.
   The migration is being committed for the user-authorized local main merge.
   No push, source deletion or external promotion is authorized by that request.
 
@@ -179,8 +179,10 @@ require explicit native selection. Neither
 ### Original-obligation ledger (not a missing-behavior count)
 
 `tests/retirement/coverage.json` retains **941 original Python method IDs**:
-**67 mapped / 874 unresolved**. Mechanism categories are **A: 53, B: 15,
-C: 0, D: 873**, not 874 missing implementations or proof of equivalence. Preserve
+**90 mapped / 851 unresolved** after the
+[first native-oracle removal batch](../changelog/2026-11-24-python-retirement-first-batch.md).
+Mechanism categories are **A: 62, B: 29, C: 0, D: 850**, not 851 missing
+implementations or proof of equivalence. Preserve
 every original assertion, subtest, setup/no-effect guard, failure boundary and
 ordering requirement; exact reconciliation still needs review.
 
@@ -194,9 +196,12 @@ The [2026-11-23 audit repair](../changelog/2026-11-23-retirement-audit-repair.md
 restored `tools/retirement_coverage.py --check --summary` after explicitly reviewing
 active-oracle source drift, 33 supplemental methods and one native inventory ID.
 The current inventory is 941 originals plus 38 supplemental methods (979 total),
-with seven candidate integration targets and 55 IDs. No original mapping changed.
-All 38 audit-tool tests passed; the full 979-method Python suite was not run.
-`--require-complete` deliberately exits **1** for the same 874 unresolved obligations.
+with seven candidate integration targets and 55 IDs. That repair changed no original
+mapping. The later removal batch accepted 23 mappings and removed eight live
+source-call sites plus one oracle helper. Its 40 audit-tool tests passed; the full
+979-method Python suite was not run. `--require-complete` deliberately exits **1**
+for 851 unresolved obligations. The [removal plan](PYTHON_REMOVAL.md) tracks actual
+callers, inline/harness obligations and the remaining safe-deletion gates.
 These tools are development-only; relocating/deleting the oracle is not coverage.
 
 The current active-oracle pin has a separate hash-linked, independently reviewed

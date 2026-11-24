@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "review_state": "draft_proposed",
+  "scope": "Nine GroupTests methods only. Independent native assertion evidence, not global retirement acceptance. Parent review and integration are still required; no original method is deleted or disabled.",
+  "reference_commit": "24d73fede7d8e305cc2572c623a0eb93b440e806",
+  "original_source": {
+    "path": "tests/test_groups.py",
+    "sha256": "2c3198b1f8b6a4138d309c29ad4bc74a4affbb970a33cf1e97edec08878de03a"
+  },
+  "reference_implementation": {
+    "path": "runner/groups.py",
+    "sha256": "4fdc58e7f30a6632602b7318cc826fb33e48c01def3f414bfc7976612ad8be4c",
+    "execution": "Not executed. Category B direct native assertions reproduce the original assertions, not Python-generated expected output. No new implementation copy or comparison helper."
+  },
+  "method_hash_convention": "SHA-256 of original UTF-8 lines from AST FunctionDef.lineno through end_lineno inclusive, including indentation and final newline; no decorators on these methods.",
+  "proposed_batch_counts": {"A": 0, "B": 9, "C": 0, "D": 0, "mapped": 9},
+  "fixtures": [],
+  "validation": {
+    "commands": [
+      "cargo test --offline --locked --lib groups::retirement:: -j 2",
+      "env PATH=/nonexistent <compiled-lib-test-binary> groups::retirement::"
+    ],
+    "results": "9 passed under cargo; 9 passed directly with PATH=/nonexistent. No existing groups tests or Python oracle tests were run.",
+    "environment": "PATH=/usr/bin:/bin, RUSTC=/home/linuxbrew/.linuxbrew/bin/rustc, PKG_CONFIG=/usr/bin/pkg-config; absolute installed cargo; OPENSSL_DIR and LD_LIBRARY_PATH unset; CARGO_BUILD_JOBS=2. TMPDIR and CARGO_TARGET_DIR under a unique disk-backed ~/.cache/agent-test-runs run directory; /home btrfs verified and 319 GiB free before successful run.",
+    "cleanup": "All four owned run directories cleaned by EXIT traps, including timeout, wrong OpenSSL runtime and unavailable cargo PATH attempts. Successful run coven-native-assertions.AZUm8oBW removed after synchronous test processes exited.",
+    "independence_limit": "No Python calls in these tests or their helpers. PATH=/nonexistent demonstrates no PATH-based Python dependency; no seccomp or absolute executable-path denial was installed. No claim that the full library suite is Python-free."
+  },
+  "reviews": {
+    "python::tests/test_groups.py::GroupTests::test_create_retry_confirms_without_rewrite_and_name_conflicts": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "9d4fc02b3b3e1093b3312fc9282281ee3d67b922822a5ed2de833a3d92289e28",
+      "native_tests": ["rust::src/groups/retirement.rs::create_retry_confirms_without_rewrite_and_name_conflicts"],
+      "assertion_review": "Create review/Review through actual native store. Retry through the same private mutate entry used by create_group with a test-specific store::Io whose replace increments a count then panics. Require unchanged outcome, whole returned group equality, exact returned revision equality, unchanged on-disk bytes, unchanged modification timestamp and actual replacement call count zero. Conflicting Other name and stale UNINITIALIZED CAS both refuse; final bytes remain equal. Dynamic group/workspace UUIDs are compared to the first actual result, never invented as expected literals.",
+      "limits": "Injected boundary is native store::Io::replace, not Python atomic_replace_bytes. The public create wrapper is exercised initially; retry uses identical operation with fault injection. Timestamp equality uses SystemTime from actual filesystem metadata, not a frozen filesystem identity."
+    },
+    "python::tests/test_groups.py::GroupTests::test_binding_retry_move_role_and_explicit_rebind": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "04c38c463399510df38a1f03ff5a68c47c3f83318758eb0b496f734a316930be",
+      "native_tests": ["rust::src/groups/retirement.rs::binding_retry_move_role_and_explicit_rebind"],
+      "assertion_review": "Exact original sequence: create/add; move pane-1 to pane-2 and observation 12:00Z to 13:00+00:00; same-role retry unchanged with identical disk bytes; Coordinator role update changes revision and stores the complete fresh moved binding; resolved snapshot/djinn/id/session-1 reference refuses without rebind; explicit rebind preserves first participant UUID and returns observed_reference. Four separate changes from the resolved binding (terminal-2, endpoint inode+1, agent_kind_hint other, native reference session-2) each refuse without rebind and preserve bytes.",
+      "limits": "The original four changed bindings are refusal-only subcases, not a sequence of successful rebinds. No live pane, time service or native session is consulted."
+    },
+    "python::tests/test_groups.py::GroupTests::test_duplicate_terminal_rejected_native_duplicates_allowed_keys_scoped": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "4891abd6f1be38867fe96e3b12997f78c2447f70e001c33e3587db1f639df6d2",
+      "native_tests": ["rust::src/groups/retirement.rs::duplicate_terminal_rejected_native_duplicates_allowed_keys_scoped"],
+      "assertion_review": "Create review and other. Add reviewer at terminal-1 with snapshot/djinn/path /session. Refuse another member on terminal-1 in review and reviewer on terminal-1 in other. Accept reviewer in other on terminal-2 with the same native reference; require distinct participant UUIDs. Thus terminal uniqueness spans groups, keys are group-scoped and native references need not be unique.",
+      "limits": "No external native identity resolution is claimed."
+    },
+    "python::tests/test_groups.py::GroupTests::test_remove_is_idempotent_and_retains_counter_watermarks": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "94590824dce998be0120a8e1d160bf55029f0a6703fc9c4f71a7ea1a74198e63",
+      "native_tests": ["rust::src/groups/retirement.rs::remove_is_idempotent_and_retains_counter_watermarks"],
+      "assertion_review": "Create/add/reserve terminal-1; removal committed; second removal returns literal Value::Null member and unchanged outcome with exact bytes preserved; re-add then require exact reservations object {terminal-1:2}. Retained watermark is proved by the subsequent reservation, not just an in-memory counter inspection.",
+      "limits": "Participant UUID after removal/re-add is not asserted because the original method does not require identity reuse."
+    },
+    "python::tests/test_groups.py::GroupTests::test_counter_cycles_preserve_content_token_and_full_target_set": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "88f872274cf5e6b7f0a24b5d77e5a4d96fd03e55dffbd5a791595ad55c173259",
+      "native_tests": ["rust::src/groups/retirement.rs::counter_cycles_preserve_content_token_and_full_target_set"],
+      "assertion_review": "Two live members. Refuse all four original invalid sets: empty, terminal-1 alone, duplicate terminal-1 and terminal-1+other. Reverse-order valid request returns exact two-key map of 1; forward-order request exact map of 2. Both returned revisions and actual read revision equal pre-reservation token. Requesting endpoint inode 5 refuses. Explicitly rebind second member to inode 5 and require mixed-bound-endpoints request at original endpoint to refuse.",
+      "limits": "Set/map equality is semantic object equality via authority canonical bytes, not dependence on HashSet iteration order."
+    },
+    "python::tests/test_groups.py::GroupTests::test_epochs_explicit_reset_whole_map_and_no_entry_eviction": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "bd0afa979ca0599f44f66f394aba1d22399cdf217aadfc678f2ed13062087a17",
+      "native_tests": ["rust::src/groups/retirement.rs::epochs_explicit_reset_whole_map_and_no_entry_eviction"],
+      "assertion_review": "Reserve terminal-1, remove it, add terminal-2, reserve terminal-2 in old epoch. New epoch without permission refuses; explicit reset returns exact terminal-2:1 and whole stored watermarks equals only terminal-2:1 (old terminal removed). Add seven distinct source entries to reach eight; ninth source refuses with bytes unchanged; increment original retained entry at capacity returns terminal-2:2.",
+      "limits": "Entry-capacity behavior is exercised with the actual store; no limits are patched."
+    },
+    "python::tests/test_groups.py::GroupTests::test_watermark_cap_and_overflow_do_not_publish_partial_cycles": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "972c232bb4ee9e2b7c26c1b67a50f740474446ec88a846e76de8edfb34e95289",
+      "native_tests": ["rust::src/groups/retirement.rs::watermark_cap_and_overflow_do_not_publish_partial_cycles"],
+      "assertion_review": "Write actual state with exactly 63 old retained watermarks plus terminal-1:1. Existing live target increments at capacity to exact terminal-1:2. Add second member; full two-target reservation refuses with exact disk bytes unchanged. Explicit new epoch succeeds. Write terminal-2=U64_MAX alongside terminal-1:1 through authority Value, then reserve both in new epoch; refuse and preserve all bytes.",
+      "limits": "U64_MAX stays exact in values::Value; no serde_json narrowing or f64 conversion. Original has no additional assertion on the reset cycle result."
+    },
+    "python::tests/test_groups.py::GroupTests::test_multitarget_cycle_overflow_does_not_burn_any_target": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "e2ad9abf67774c310c20bd61d62d314b82148662e25f8c1e85dfccd9ab445e85",
+      "native_tests": ["rust::src/groups/retirement.rs::multitarget_cycle_overflow_does_not_burn_any_target"],
+      "assertion_review": "Exact two-target case, not a larger-target proxy: create/add terminal-1 and terminal-2; reserve both once; write terminal-1:1 and terminal-2:U64_MAX; request [terminal-1,terminal-2] so terminal-1 would increment before overflow. Refuse; compare entire reread state to old state and entire disk bytes to old bytes. No target or other state can be partially burned.",
+      "limits": "Whole-state comparison uses canonical encoding of exact authority values, independent of formatting; additionally exact original disk bytes must survive."
+    },
+    "python::tests/test_groups.py::GroupTests::test_canonical_hash_ignores_json_format_and_counters_only": {
+      "status": "mapped",
+      "category": "B",
+      "method_sha256": "efc9eb1ed9164646ce15239236f46eb1fda7bdfe81b13d595b7d978224c1bd0f",
+      "native_tests": ["rust::src/groups/retirement.rs::canonical_hash_ignores_json_format_and_counters_only"],
+      "assertion_review": "Direct native counterpart of all original assertions: create/add and capture actual read token; rewrite actual groups.json using differently spaced JSON with surrounding whitespace and assert bytes really changed; actual read token stays identical; reserve terminal-1 and actual read token stays identical; edit group name to Changed outside API, write state and require actual read token inequality. No test-generated expected revision or independent-oracle claim.",
+      "limits": "Deliberately category B, not A: no Python-captured state/revision corpus, no fixture SHA, no --oracle-root capture tool. Establishes original relational hash assertions, not exact cross-language digest-byte equivalence or a new canonical serialization corpus. Endpoint is inert authored data, not frozen filesystem identity."
+    }
+  },
+  "remaining_limitations": [
+    "Draft mappings only. Parent must review these assertion substitutions before global coverage/audit integration or Python retirement.",
+    "Native Result errors are asserted as refusals; original methods assert GroupError type, not exact diagnostic strings. No production error checks were weakened.",
+    "No full-lib run, packaging validation, real provider, real Kitsune, original Python execution, global acceptance or coverage totals claimed.",
+    "All other GroupTests methods are outside this fragment and remain unchanged/unresolved here."
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "scope": "Launch cohort review FRAGMENT ONLY. No parent acceptance, global ledger changes, or original Python test removals. The original 941-test suite is not modified or disabled by this cohort; only the 13 selected original launch methods were run here.",
+  "original_source": {"path":"tests/test_launch.py","sha256":"f314812e94084d60c4135d302134c8a25d3d0ae2932c8212afe051a21ec40450"},
+  "fixture": {"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6","cases":298,"bytes":2974344},
+  "provenance": "tests/retirement/fixtures/launch_provenance.json",
+  "original_method_hashes": "provenance.original_methods: SHA256 of AST source segment without decorators, exact lines and capture counts",
+  "capture": {"oracle_commit":"24d73fede7d8e305cc2572c623a0eb93b440e806","launch_and_original_tests_unchanged_since":"e389a08669204d4e51a49ffd13cbe01b90b5d8ba","python":"3.14.8 -I -B","tool":"tools/freeze_launch.py","original_methods_passed":13,"unit_cases":232,"original_transcripts":66,"strict_mutations_additional":9},
+  "policy": "All comparisons cover full plan, report, command argv/cwd/env/logical timeout and delay sequence. Only JSONDecodeError parser wording is exempt, preserving error class, diagnostic step, effects and partial handles. Existing tests retain their original exactness flags. Original capture cross-checks reports, full recorded calls and mock delays against the pinned oracle. Native Request assertions check absolute injected executable, bounded output and remaining deadline, not Python kwargs ABI. No native outputs generate expectations.",
+  "proposed_file_counts": {"A":9,"B":2,"C":0,"D":8},
+  "live_execution_closure": "src/launch/tests.rs no longer spawns Python. src/launch/oracle.py deleted after repository-wide consumer search found only that helper. Capture requires an explicit historical tree containing the pinned helper; implementation not copied. src/launch/executable/fallback.rs still uses native_oracle.py outside cohort ownership; runner/launch.py still has importers. Not total Python closure.",
+  "validation": {
+    "reference":"13 unchanged original methods passed during isolated pinned-reference capture, with nine strict mutations and 66 cross-checked transcripts.",
+    "native":"cargo test --offline --locked --lib launch:: -- --test-threads=2: 28 passed, including all executable tests.",
+    "python_unavailable":"Direct compiled test binary, PATH containing only rustc/cc/ld/as symlinks, launch:: filter excluding compiled_native_missing_interpreter_fallback_matches_python_but_exit_127_never_falls_back: 27 passed. All 21 owned tests included. No exec syscall guard was used; no Python executable is reachable via the test PATH. The excluded existing test still requires Python, so full-subtree Python-unavailable closure is not claimed.",
+    "resources":"Unique disk-backed btrfs cache run directories, TMPDIR and CARGO_TARGET_DIR redirected, two jobs, system OpenSSL 3, OPENSSL_DIR and LD_LIBRARY_PATH unset. Exact owned run directories cleaned by exit traps after synchronous children completed. No dependency installation or broad library test run."
+  },
+  "reviews": {
+    "python::tests/test_launch.py::LaunchTests::test_strict_recomputed_schema": {
+      "status":"mapped","category_suggestion":"B",
+      "cases":["mutation/0/version-bool","mutation/1/version-2","mutation/2/operation","mutation/3/cwd","mutation/4/extra-field","mutation/5/reversed-steps","mutation/6/extra-argv","mutation/7/float-seconds","mutation/8/outputs"],
+      "native_tests":["rust::src/launch/retirement.rs::strict_recomputed_schema"],
+      "assertion_review":"All nine original mutations on original one-agent Alice tmux plan. validate_plan must refuse each; execute must return failed status. Panic Runner and sleeper prove zero command and delay effects, not just failed validation. Integer/float distinction is retained through native Value parsing."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_happy_transport_literal_payload_and_exact_call_contract": {
+      "status":"unresolved","category_suggestion":"D",
+      "cases":["original/happy_transport_literal_payload_and_exact_call_contract/00","original/happy_transport_literal_payload_and_exact_call_contract/01"],
+      "native_tests":["rust::src/launch/retirement.rs::happy_transport_transcripts_without_python_kwargs_equivalence"],
+      "assertion_review":"Both original one-agent Alice backends: completed status/count, empty diagnostics, one five-second delay, literal starter and Enter, exact tmux query/new-session/literal flags/target, empty tmux handles, exact herdr handles/orchestrator run/workspace selection/command, no attach or focus argv. Full frozen call equality covers these. Native Fake additionally validates absolute executable, output cap and remaining deadline. GAP: no explicit NativeRunner/process analogue in this owned cohort proves capture_output/text/check=False/no-shell and nonaliased kwargs env as an entire contract. Do not map or count this method as A/B."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_collisions_and_query_errors_have_no_startup_effects": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/collisions_and_query_errors_have_no_startup_effects/00","original/collisions_and_query_errors_have_no_startup_effects/01","original/collisions_and_query_errors_have_no_startup_effects/02","original/collisions_and_query_errors_have_no_startup_effects/03"],
+      "native_tests":["rust::src/launch/retirement.rs::collisions_and_query_errors_have_no_startup_effects"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Exact original tmux present, tmux query code2, herdr same-label missing handle, herdr list code1. Each failed status, one query call, zero completed steps, no delay. Complete transcript ensures no startup or cleanup."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_every_required_command_failure_stops_without_cleanup": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/every_required_command_failure_stops_without_cleanup/00","original/every_required_command_failure_stops_without_cleanup/01","original/every_required_command_failure_stops_without_cleanup/02","original/every_required_command_failure_stops_without_cleanup/03","original/every_required_command_failure_stops_without_cleanup/04","original/every_required_command_failure_stops_without_cleanup/05","original/every_required_command_failure_stops_without_cleanup/06","original/every_required_command_failure_stops_without_cleanup/07","original/every_required_command_failure_stops_without_cleanup/08","original/every_required_command_failure_stops_without_cleanup/09"],
+      "native_tests":["rust::src/launch/retirement.rs::every_required_command_failure_stops_without_cleanup"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Original one-agent plan, tmux command indices1..4 and herdr1..6, code9 empty stderr. Failed status, call count index+1 and exact prefix, completed index+(index>=commands-2), nonempty diagnostics, exact delays and no extra cleanup. Independent original Python arithmetic assertions passed during capture; native compares every report counter and transcript entry. Existing two-agent failure/timeout/spawn matrix remains separately intact."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_untrusted_json_and_handles_fail_cleanly": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/untrusted_json_and_handles_fail_cleanly/00","original/untrusted_json_and_handles_fail_cleanly/01","original/untrusted_json_and_handles_fail_cleanly/02","original/untrusted_json_and_handles_fail_cleanly/03","original/untrusted_json_and_handles_fail_cleanly/04","original/untrusted_json_and_handles_fail_cleanly/05","original/untrusted_json_and_handles_fail_cleanly/06","original/untrusted_json_and_handles_fail_cleanly/07","original/untrusted_json_and_handles_fail_cleanly/08","original/untrusted_json_and_handles_fail_cleanly/09","original/untrusted_json_and_handles_fail_cleanly/10","original/untrusted_json_and_handles_fail_cleanly/11","original/untrusted_json_and_handles_fail_cleanly/12","original/untrusted_json_and_handles_fail_cleanly/13","original/untrusted_json_and_handles_fail_cleanly/14","original/untrusted_json_and_handles_fail_cleanly/15","original/untrusted_json_and_handles_fail_cleanly/16","original/untrusted_json_and_handles_fail_cleanly/17","original/untrusted_json_and_handles_fail_cleanly/18","original/untrusted_json_and_handles_fail_cleanly/19","original/untrusted_json_and_handles_fail_cleanly/20","original/untrusted_json_and_handles_fail_cleanly/21","original/untrusted_json_and_handles_fail_cleanly/22","original/untrusted_json_and_handles_fail_cleanly/23","original/untrusted_json_and_handles_fail_cleanly/24"],
+      "native_tests":["rust::src/launch/retirement.rs::untrusted_json_and_handles_fail_cleanly"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"00..06 seven exact raw list outputs, 07..13 seven unsafe workspace handles, 14..16 three exact partial outputs including ;evil tab handle, 17..24 four raw malformed/nonfinite/duplicate outputs at both positions1 and3. All failed status and exact call counts; observed workspace-only partial handle preserved at15, all other partial handle maps compared too. Raw duplicate JSON and nonfinite spellings retained, not parsed and normalized. JSONDecodeError wording alone exempt."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_sleep_failure_does_not_send_starter_or_clean_up": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/sleep_failure_does_not_send_starter_or_clean_up/00","original/sleep_failure_does_not_send_starter_or_clean_up/01"],
+      "native_tests":["rust::src/launch/retirement.rs::sleep_failure_does_not_send_starter_or_clean_up"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Both original single-agent backends, RuntimeError delay failed injected via native sleeper Result. Failed status, exact three tmux/five herdr calls, completed count equals calls, one attempted delay, no starter/Enter or cleanup. This is a sleeper failure analogue, not ordinary command-runner RuntimeError equivalence."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_ordered_roster_and_delay_for_each_agent": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/ordered_roster_and_delay_for_each_agent/00","original/ordered_roster_and_delay_for_each_agent/01"],
+      "native_tests":["rust::src/launch/retirement.rs::ordered_roster_and_delay_for_each_agent"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Original Alice then Bob, Bob starter exactly second, both backends, successful status, delays exactly[5,5], second-last call's last argument second. Full transcript additionally pins agent ordering. Not substituted with agent_0/agent_1 or 32-agent success."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_stop_exact_target_absence_and_no_legacy_adoption": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/stop_exact_target_absence_and_no_legacy_adoption/00","original/stop_exact_target_absence_and_no_legacy_adoption/01","original/stop_exact_target_absence_and_no_legacy_adoption/02","original/stop_exact_target_absence_and_no_legacy_adoption/03"],
+      "native_tests":["rust::src/launch/retirement.rs::stop_exact_target_absence_and_no_legacy_adoption"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Both backends absent and present. Legacy human-name never adopted. Absence success completed1, false attempted/succeeded and one call; presence success completed2 true flags and exact =coven-a1-b2 kill/scoped-id close argv."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_stop_ambiguity_untrusted_identity_and_failure_never_retry": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/stop_ambiguity_untrusted_identity_and_failure_never_retry/00","original/stop_ambiguity_untrusted_identity_and_failure_never_retry/01","original/stop_ambiguity_untrusted_identity_and_failure_never_retry/02","original/stop_ambiguity_untrusted_identity_and_failure_never_retry/03","original/stop_ambiguity_untrusted_identity_and_failure_never_retry/04"],
+      "native_tests":["rust::src/launch/retirement.rs::stop_ambiguity_untrusted_identity_and_failure_never_retry"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Exact three bad inventories: duplicate identical label+one ID, unsafe ID, missing ID. Failed status one query. Then both backend stop code7: failed, completed1, exactly2 calls, attempted true, succeeded false, unknown true, no retry or cleanup."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_tmux_query_failure_is_not_evidence_of_absence": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/tmux_query_failure_is_not_evidence_of_absence/00","original/tmux_query_failure_is_not_evidence_of_absence/01","original/tmux_query_failure_is_not_evidence_of_absence/02","original/tmux_query_failure_is_not_evidence_of_absence/03","original/tmux_query_failure_is_not_evidence_of_absence/04","original/tmux_query_failure_is_not_evidence_of_absence/05","original/tmux_query_failure_is_not_evidence_of_absence/06","original/tmux_query_failure_is_not_evidence_of_absence/07"],
+      "native_tests":["rust::src/launch/retirement.rs::tmux_query_failure_is_not_evidence_of_absence"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Original permission/empty/unexpected messages x start/stop: failed, one query and diagnostic contains presence query failed, also full exact diagnostic equality. Original no-server and missing-socket messages accepted for stop."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_timed_out_stop_records_attempt_but_not_success": {
+      "status":"mapped","category_suggestion":"A",
+      "cases":["original/timed_out_stop_records_attempt_but_not_success/00"],
+      "native_tests":["rust::src/launch/retirement.rs::timed_out_stop_records_attempt_but_not_success"],
+      "fixtures":[{"path":"tests/retirement/fixtures/launch.json","sha256":"a737221789c46c060f055b93e407e3313bb6b2ffd80573acda4714b0e6d9e8e6"},{"path":"tests/retirement/fixtures/launch_provenance.json","sha256":"17e1d7f5b69eab53c13d000b165750060fd74b2d447fa470dc1a41eff463a021"}],
+      "assertion_review":"Exact original present tmux then stop timeout: attempted true, succeeded false, unknown true, failed status. Full report/call count/prefix also compared."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_orchestrator_role_uses_a_distinct_agent_window": {
+      "status":"mapped","category_suggestion":"B",
+      "cases":["original/orchestrator_role_uses_a_distinct_agent_window/00"],
+      "native_tests":["rust::src/launch/retirement.rs::orchestrator_role_uses_a_distinct_agent_window"],
+      "assertion_review":"Original agent ID orchestrator executes successfully; actual captured native calls explicitly contain agent-orchestrator, distinct from role window orchestrator. Full independent transcript checked, not only plan builder output."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_invalid_plan_stop_still_has_complete_report_schema": {
+      "status":"unresolved","category_suggestion":"D",
+      "cases":["original/invalid_plan_stop_still_has_complete_report_schema/00","original/invalid_plan_stop_still_has_complete_report_schema/01"],
+      "native_tests":["rust::src/launch/retirement.rs::invalid_plan_stop_still_has_complete_report_schema"],
+      "assertion_review":"Both original valid tmux plans mutated to steps=[], including deepcopy repeat. Actual native stop fails before commands, zero calls, false attempted/succeeded; full exact report field set/types/values checked including diagnostics. GAP: original actions._report(report,runtime_stop) executed and passed during Python capture, but native actions authority report validator only accepts runtime_launch and is not exposed here. No actual native runtime_stop validator analogue proved; exact JSON shape is not passed off as that assertion."
+    },
+    "python::tests/test_launch.py::LaunchTests::test_deterministic_and_independent": {"status":"unresolved","category_suggestion":"D","native_tests":[],"assertion_review":"Python object-identity and independent snapshot contract not fully mapped in this cohort."},
+    "python::tests/test_launch.py::LaunchTests::test_invalid_inputs": {"status":"unresolved","category_suggestion":"D","native_tests":["rust::src/launch/tests.rs::oracle_builder_validation_and_literal_boundaries"],"assertion_review":"All prior boundary cases retained. Original surrogate inputs and oversized single-agent starter remain unmapped; no success-only replacement or full-method claim."},
+    "python::tests/test_launch.py::LaunchTests::test_no_files_or_ambient_environment_even_with_defaults": {"status":"unresolved","category_suggestion":"D","native_tests":[],"assertion_review":"No universal poisoned filesystem/ambient-environment proof; empty-env success fixtures alone are not equivalent."},
+    "python::tests/test_launch.py::LaunchTests::test_execution_uses_snapshot_even_if_caller_mutates_plan": {"status":"unresolved","category_suggestion":"D","native_tests":["rust::src/launch/tests.rs::caller_mutation_cannot_change_independent_validated_plan"],"assertion_review":"Existing pre-execution snapshot mutation proof retained; concurrent caller mutation and kwargs env clearing not fully covered."},
+    "python::tests/test_launch.py::LaunchTests::test_timeouts_oserrors_and_ordinary_exceptions_preserve_partial_progress": {"status":"unresolved","category_suggestion":"D","native_tests":["rust::src/launch/tests.rs::oracle_deterministic_inputs_roster_environment_and_required_failures"],"assertion_review":"Existing timeout/spawn failure families retained at every command index. Ordinary runner RuntimeError semantics remain unmapped, not conflated with sleeper failure or OSError."},
+    "python::tests/test_launch.py::LaunchTests::test_interrupts_propagate": {"status":"unresolved","category_suggestion":"D","native_tests":[],"assertion_review":"KeyboardInterrupt/SystemExit propagation not mapped to Rust panic or synthetic transport errors."}
+  }
+}

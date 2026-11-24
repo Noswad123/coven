@@ -1,5 +1,8 @@
 use super::*;
-use std::{cell::Cell, fs, process::Command};
+use std::{cell::Cell, fs};
+
+#[path = "../../presentation_test_fixture.rs"]
+mod frozen;
 
 fn fixture() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
@@ -32,14 +35,8 @@ fn standup_body_preserves_intrinsic_newline_and_writeln_matches_python_print() {
     writeln!(stdout, "{}", result.body).unwrap();
     assert_eq!(stdout, format!("{expected}\n").as_bytes());
     assert!(stdout.ends_with(b"\n\n"));
-    let oracle = Command::new("python3").args(["-B", "-c", "import argparse,sys;from runner import coven;coven.command_standup(argparse.Namespace(workspace=sys.argv[1]))"])
-        .arg(root.path()).env("COVEN_MULTIPLEXER", "").current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-    assert!(
-        oracle.status.success(),
-        "{}",
-        String::from_utf8_lossy(&oracle.stderr)
-    );
-    assert_eq!(stdout, oracle.stdout);
+    let mut oracle = frozen::Cases::new("standup.print", 1);
+    assert_eq!(stdout, oracle.expected("standup.print").as_bytes());
 }
 fn approve(root: &Path) {
     let location = crate::platform::workspace_location(root).unwrap();
@@ -89,14 +86,8 @@ fn python_standup_all_buckets_persisted_rows_historical_lead_and_labels() {
     })
     .unwrap();
     assert_eq!(seen, ["outside", "Beta", "historical"]);
-    let oracle = Command::new("python3").args(["-B", "-c", "import sys;from pathlib import Path;from runner import coven;coven.agent_runtime_status=lambda team,a:('running','pane-'+a);sys.stdout.write(coven.render_standup(Path(sys.argv[1])))"])
-        .arg(root.path()).env("COVEN_MULTIPLEXER", "").current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-    assert!(
-        oracle.status.success(),
-        "{}",
-        String::from_utf8_lossy(&oracle.stderr)
-    );
-    assert_eq!(rendered, String::from_utf8(oracle.stdout).unwrap());
+    let mut oracle = frozen::Cases::new("standup.buckets", 1);
+    assert_eq!(rendered, oracle.expected("standup.buckets"));
 }
 #[test]
 fn approved_observation_skips_backend_and_public_statuses_preserve_roster_defaults() {
@@ -122,14 +113,11 @@ fn approved_observation_skips_backend_and_public_statuses_preserve_roster_defaul
     );
     drop(gate);
     let actual = agent_status(root.path(), &[]).unwrap();
-    let oracle = Command::new("python3").args(["-B", "-c", "import argparse,sys;from runner import coven;coven.command_agent_status(argparse.Namespace(items=[sys.argv[1]]))"])
-        .arg(root.path()).env("COVEN_MULTIPLEXER", "").current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-    assert!(
-        oracle.status.success(),
-        "{}",
-        String::from_utf8_lossy(&oracle.stderr)
+    let mut oracle = frozen::Cases::new("agent_status.approved", 1);
+    assert_eq!(
+        format!("{}\n", actual.body).as_bytes(),
+        oracle.expected("agent_status.approved").as_bytes()
     );
-    assert_eq!(format!("{}\n", actual.body).as_bytes(), oracle.stdout);
     assert_eq!(
         agent_status(root.path(), &["Beta".into(), "Label".into()])
             .unwrap_err()
@@ -189,14 +177,11 @@ fn ledger_authority_ignores_corrupt_projection_and_matches_python() {
     approve(root.path());
     let actual = standup(root.path()).unwrap();
     assert!(actual.body.contains("Ledger authority wins"));
-    let oracle = Command::new("python3").args(["-B", "-c", "import sys;from pathlib import Path;from runner import coven;sys.stdout.write(coven.render_standup(Path(sys.argv[1])))"])
-        .arg(root.path()).env("COVEN_MULTIPLEXER", "").current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-    assert!(
-        oracle.status.success(),
-        "{}",
-        String::from_utf8_lossy(&oracle.stderr)
+    let mut oracle = frozen::Cases::new("standup.ledger", 1);
+    assert_eq!(
+        actual.body.as_bytes(),
+        oracle.expected("standup.ledger").as_bytes()
     );
-    assert_eq!(actual.body.as_bytes(), oracle.stdout);
     assert_eq!(
         fs::read(root.path().join("state/tasks.json")).unwrap(),
         b"corrupt projection"
@@ -218,7 +203,9 @@ fn effective_checkpoint_statuses_suggestion_branches_and_empty_sections_match_py
         None,
     )
     .unwrap();
+    assert_eq!(approved, frozen::input("review.approved").as_bytes());
     let approved = String::from_utf8(approved).unwrap();
+    let mut oracle = frozen::Cases::new("standup.checkpoint.", 8);
     for (content, expected) in [
         (approved.clone(), "approved"),
         (
@@ -236,24 +223,24 @@ fn effective_checkpoint_statuses_suggestion_branches_and_empty_sections_match_py
             content,
         )
         .unwrap();
-        for tasks in [
+        for (task_index, tasks) in [
             b"[]".as_slice(),
             br#"[{"id":"done","title":"Complete","status":"done"}]"#,
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             fs::write(root.path().join("state/tasks.json"), tasks).unwrap();
             let state = workspace::load(root.path()).unwrap();
             let actual =
                 standup::render(root.path(), &state, |_| panic!("no persisted rows or lead"))
                     .unwrap();
             assert!(actual.contains(&format!("`pre-delivery-review` \u{2014} {expected}")));
-            let oracle = Command::new("python3").args(["-B", "-c", "import sys;from pathlib import Path;from runner import coven;sys.stdout.write(coven.render_standup(Path(sys.argv[1])))"])
-                .arg(root.path()).env("COVEN_MULTIPLEXER", "").current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-            assert!(
-                oracle.status.success(),
-                "{}",
-                String::from_utf8_lossy(&oracle.stderr)
+            let task_case = ["empty", "done"][task_index];
+            assert_eq!(
+                actual,
+                oracle.expected(&format!("standup.checkpoint.{expected}.{task_case}"))
             );
-            assert_eq!(actual, String::from_utf8(oracle.stdout).unwrap());
         }
     }
 }

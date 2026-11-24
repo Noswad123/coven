@@ -1,4 +1,6 @@
 use super::*;
+#[path = "../presentation_test_fixture.rs"]
+mod frozen;
 use crate::{
     logs::{MAX_LINES, MAX_LOG, validate_log},
     values::{self, Profile},
@@ -162,7 +164,7 @@ fn output_is_incrementally_bounded_including_label_expansion() {
 mod io_tests {
     use super::*;
     use crate::platform;
-    use std::{cell::Cell, fs, process::Command, time::Duration};
+    use std::{cell::Cell, fs, time::Duration};
 
     fn fixture() -> (tempfile::TempDir, WorkspaceGuard) {
         let dir = tempfile::tempdir().unwrap();
@@ -467,17 +469,6 @@ mod io_tests {
         }
     }
 
-    fn oracle(root: &Path) -> Vec<u8> {
-        let output = Command::new("python3").args(["-B", "-c", "import sys; from pathlib import Path; from runner import coven; sys.stdout.buffer.write(coven.render_dashboard(Path(sys.argv[1])).encode('utf-8'))"])
-            .arg(root).current_dir(env!("CARGO_MANIFEST_DIR")).env("PYTHONDONTWRITEBYTECODE", "1").output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        output.stdout
-    }
-
     #[test]
     fn dashboard_python_golden_bytes_snapshot_ledger_leads_labels_goal_checkpoints() {
         let (dir, guard) = fixture();
@@ -515,27 +506,43 @@ mod io_tests {
             b"# Review\rStatus: pending\r",
         )
         .unwrap();
-        for lead in [
+        let mut oracle = frozen::Cases::new("dashboard.lead", 12);
+        for (lead_index, lead) in [
             b"null".as_slice(),
             br#"{"agent":"a"}"#,
             br#"{"agent":"b","set_at":"","until":"raw | until"}"#,
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             fs::write(root.join("state/lead.json"), lead).unwrap();
-            for goal in [
+            for (goal_index, goal) in [
                 b" \r\n# Goal\r\n\rMixed\r\nnewlines\r ".as_slice(),
                 b"# Goal \r\n ",
                 b"# Goalkeeper\rtext",
                 b"  no heading\r\n",
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
                 fs::write(root.join("goal.md"), goal).unwrap();
                 refresh_dashboard(root, &guard).unwrap();
-                assert_eq!(fs::read(root.join("dashboard.md")).unwrap(), oracle(root));
+                assert_eq!(
+                    fs::read(root.join("dashboard.md")).unwrap(),
+                    oracle
+                        .expected(&format!("dashboard.lead{lead_index}.goal{goal_index}"))
+                        .as_bytes()
+                );
             }
         }
         fs::remove_file(root.join("goal.md")).unwrap();
         fs::remove_file(root.join("state/lead.json")).unwrap();
         refresh_dashboard(root, &guard).unwrap();
-        assert_eq!(fs::read(root.join("dashboard.md")).unwrap(), oracle(root));
+        let mut missing = frozen::Cases::new("dashboard.missing", 1);
+        assert_eq!(
+            fs::read(root.join("dashboard.md")).unwrap(),
+            missing.expected("dashboard.missing").as_bytes()
+        );
         let token = crate::ledger::snapshot_revision(Some(
             &fs::read(root.join("state/tasks.json")).unwrap(),
         ));
@@ -545,7 +552,8 @@ mod io_tests {
         let before = fs::read(root.join("state/tasks.json")).unwrap();
         refresh_dashboard(root, &guard).unwrap();
         let rendered = fs::read(root.join("dashboard.md")).unwrap();
-        assert_eq!(rendered, oracle(root));
+        let mut ledger = frozen::Cases::new("dashboard.ledger", 1);
+        assert_eq!(rendered, ledger.expected("dashboard.ledger").as_bytes());
         assert!(
             String::from_utf8(rendered)
                 .unwrap()
@@ -559,20 +567,9 @@ mod io_tests {
         let (dir, guard) = fixture();
         let root = dir.path();
         fs::create_dir(root.join("checkpoints")).unwrap();
-        // Python is only an independent test oracle and fixture generator.
-        let approved = Command::new("python3").args(["-B", "-c", concat!(
-            "import sys; from runner import checkpoints\n",
-            "data=b'# Plan\\r\\nStatus: pending\\r\\n## User decision\\r\\n- [ ] Approved\\r\\n'\n",
-            "data,_=checkpoints.prepare('plan-approval',data,'approved','',decision_id='1'*32,decided_at='test',source='cli')\n",
-            "sys.stdout.buffer.write(data)"
-        )]).current_dir(env!("CARGO_MANIFEST_DIR")).env("PYTHONDONTWRITEBYTECODE", "1").output().unwrap();
-        assert!(
-            approved.status.success(),
-            "{}",
-            String::from_utf8_lossy(&approved.stderr)
-        );
-        let original = String::from_utf8(approved.stdout).unwrap();
-        for (content, status) in [
+        let original = frozen::input("plan.approved");
+        let mut oracle = frozen::Cases::new("dashboard.checkpoint.", 4);
+        for (case_index, (content, status)) in [
             (original.clone(), "approved"),
             (
                 original.replace("# Plan\r\n", "# Changed plan\r\n"),
@@ -583,7 +580,10 @@ mod io_tests {
                 "decision_invalid",
             ),
             (original.replace("\r\n", "\n"), "approval_stale"),
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             fs::write(
                 root.join("checkpoints/plan-approval.md"),
                 content.as_bytes(),
@@ -592,7 +592,12 @@ mod io_tests {
             let captured = capture(root).unwrap();
             assert_eq!(captured.statuses[0], status);
             refresh_dashboard(root, &guard).unwrap();
-            assert_eq!(fs::read(root.join("dashboard.md")).unwrap(), oracle(root));
+            assert_eq!(
+                fs::read(root.join("dashboard.md")).unwrap(),
+                oracle
+                    .expected(&format!("dashboard.checkpoint.{case_index}"))
+                    .as_bytes()
+            );
         }
     }
 
