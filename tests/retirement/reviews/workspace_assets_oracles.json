@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "fragment_only": true,
+  "global_coverage_modified": false,
+  "original_python_methods_newly_mapped": 0,
+  "original_941_method_mapping": "No new mappings claimed; original Python test files and global ledger unchanged. Main owns integration and independent acceptance.",
+  "scope": "Three live Python constructors in two existing Rust test files, plus the minimal production-connected ordered label-word list needed to replace the independent shlex site. Not production runner retirement or global Python closure.",
+  "oracle_commit": "8e41fe10ab041b4355205688e3458d5b8906c80c",
+  "source_selection": "Explicit selected PYTHON reference, verified full Git SHA. Historical tree exported from Git objects into an exact owned disk-backed run, never a new worktree. No native outputs supply expectations.",
+  "source_sha256_before_edit": {
+    "src/workspace_assets.rs": "0879424ff9cb2e9f402b19eb2e5736b54838adac6b01104261c09542c501ac22",
+    "src/workspace_assets/tests.rs": "3c4ef8fc757c20f5c03360ce21e047cd882ca83fc37273a7ae3dc998dc2aa9cd",
+    "src/workspace_assets/init_tests.rs": "7f1306bb3004a08bb3d3f56a0961cd731e813277daf3f317458c7ab8fbfc9798",
+    "src/workspace_assets/tests/bootstrap.rs": "52940eea9ba8e0edb3df753e1311b897c82b58207b1c65fe14e497334fff44bd",
+    "src/workspace_assets/tests/bootstrap_fixture.rs": "93327e815a1f3c3b6d3ae5e80ac1404055c221bb5fcb57e21ab794ac9b281eff"
+  },
+  "capture_tool": {
+    "path": "tools/freeze_workspace_assets.py",
+    "sha256": "355147889bcfbbf2112f7e41d834e80c2e856424a1e5783b38ca3e4147cb0286",
+    "command": "env -i PATH=/usr/bin:/bin LC_ALL=C.UTF-8 TMPDIR=<owned-run>/tmp /usr/bin/python3 -I -B tools/freeze_workspace_assets.py --historical-root <explicit-export> --repository <git-object-repository>",
+    "validation": "Python 3.14.8 -I -B; verifies both original helpers, all 25 runner source modules, seven demo assets and five pre-edit Rust files against the pinned Git objects before first import. Requires exact runner source inventory with no extra modules or bytecode. No automatic active-tree fallback, helper implementation copies, downloads or machine-specific expected paths. TMPDIR is storage only, not frozen data.",
+    "recapture": "Post-deletion historical recapture reproduced both fixture files byte-for-byte. Export runner/*.py, examples/interactive-demo, src/workspace_assets.rs and src/workspace_assets from the pin; exclude runner/__pycache__. Capture outputs apply_patch data only, never edits the checkout. All local sources and output hashes are recorded in provenance."
+  },
+  "fixtures": [
+    {"path": "tests/retirement/fixtures/workspace_assets.json", "bytes": 47221, "sha256": "4ebda15cbf614bbc262e08f775007830132850672397e83ee7da531eb5c201ea"},
+    {"path": "tests/retirement/fixtures/workspace_init.json", "bytes": 35570, "sha256": "155509b378117ab6425c28a8c4aa4e4f105d1b62eb53b9dd6e58e5677da9e910"},
+    {"path": "tests/retirement/fixtures/workspace_assets_provenance.json", "bytes": 5586, "sha256": "1d434b77e13bf773069e7f41950d875b345266102d769ebf2313af085a04ea2e"}
+  ],
+  "fixture_decoder": "src/workspace_assets/fixture.rs; pinned provenance authenticates source/tool/fixture hashes, exact byte lengths and inventories. Lossless line/text indices are concatenated without normalization; every line and text must be referenced. Exact field sets, row counts, row IDs, input order and matrix values are asserted natively before comparison. Both COVEN_EXAMPLES_DIR and COVEN_HOME must be absent, preventing host-selected demo data without mutating parallel-test environment.",
+  "inventory": {"refresh_cases": 22, "backend_launch_bytes": 44, "init_team_rows": 48, "agent_states": 13, "blank_defaults": 3, "checkpoints": 2, "example_source_assets": 7},
+  "count_correction": "The initial task specification incorrectly requested 96 init rows; the coordinating agent corrected that arithmetic error against the pinned source: 4 rosters * 3 names * 2 multiplexers * 2 display-name variants = 48. No expansion, reduction or deduplication. Six identical empty-roster pairs retain distinct index-qualified case IDs and separate comparisons.",
+  "constructors_before": {
+    "src/workspace_assets/tests.rs": [56, 160],
+    "src/workspace_assets/init_tests.rs": [6]
+  },
+  "constructors_after": {"src/workspace_assets/tests.rs": 0, "src/workspace_assets/init_tests.rs": 0},
+  "assertion_review": [
+    {
+      "native_test": "workspace_assets::tests::python_exact_asset_bytes_all_roles_examples_unicode_and_shell_commands",
+      "preserved": "All 22 original rows: 11 agents crossed only with false/true example, original index-cycled two roots, eight commands and two CLI strings. All whole role, prompt, starter, normalization, shell_quote and manifest byte equalities retained, including full Unicode/control data. All 22 manifest TOML parses retained. All 44 tmux/herdr whole launch equalities, exact zsh -ic wrap counts and /bin/sh -n checks retained. No matrix expansion or backend execution. Method name and entire comparison loop retained; only Python-derived expected constructor replaced by pinned fixture load."
+    },
+    {
+      "native_test": "workspace_assets::tests::unsafe_root_labels_are_literal_shell_data_with_native_command_goldens",
+      "preserved": "All four original quote, percent, backslash and combined newline/command-substitution roots and literal prefix goldens retained. All generated manifest parses, whole tmux command goldens, herdr prefix and delayed-sender tail checks, absence of admission and eight /bin/sh -n syntax checks retained. The Python stdlib shlex parse is replaced without copying a parser or executing the dangerous launch. Native assertions check the same four ordered words, then their shell_quote rendering against the existing literal prefix. label_words is used by the actual production safe-label branch, not a disconnected test array."
+    },
+    {
+      "native_test": "workspace_assets::init::tests::python_exact_init_bytes_all_roles_names_unicode_examples_and_blank_defaults",
+      "preserved": "All original 48 ordered team rows and full text equality plus TOML parsing retained, including empty roster duplicates, empty/display labels, Unicode/control/NUL names and command. All 13 exact agent-state texts, three blank defaults, exact two checkpoint paths/texts and count equality retained. Full original seven-asset bundle comparison retained: ID, seed, goal, spec, work, output, context and full parsed task JSON; native refresh context equals init context and raw Clippy owner retained. Method name and entire comparison body retained; only Python expected constructor replaced."
+    },
+    {
+      "native_tests": [
+        "workspace_assets::tests::profile_and_quote_boundaries",
+        "workspace_assets::tests::shared_launch_generator_rejects_identifiers_and_path_bounds_without_io",
+        "workspace_assets::tests::launch_generators_reject_original_command_nul_before_normalization_without_io",
+        "workspace_assets::tests::generated_launch_script_must_be_nul_free_without_io",
+        "workspace_assets::init::tests::example_selectors_are_slug_normalized_and_never_paths",
+        "workspace_assets::init::tests::toml_limit_counts_escaping_utf8_roster_and_exact_final_bytes"
+      ],
+      "preserved": "Unchanged native method bodies and assertions: profile refusals, Unicode quoting, empty shell word, invalid identifiers, path/filename bounds, NUL roots, original-command NUL before normalization including empty manifest roster, final-script NUL guard, selector normalization/refusals and exact 1 MiB TOML byte/escaping/UTF-8/roster limits. No shell_quote algorithm or raw-command guard changes."
+    },
+    {
+      "native_test": "workspace_assets::tests::bootstrap::literal_delayed_bootstrap_handles_legacy_and_isolated_cwds_and_outlives_admission",
+      "preserved": "Bootstrap and inert Rust fixture source hashes unchanged. Actual literal launch test still covers tmux/herdr crossed with legacy/isolated cwd, foreground overlap, five-second delay, exclusive admission held through delivery, exact argv/events/payload/stdout/stderr, shell epilogue wait/reaping and isolated process-group cleanup. No provider, backend server or live workspace is created; rustc compiles only the existing inert test fixture."
+    },
+    {
+      "native_tests": "All six workspace_assets::example_assets::tests:: methods",
+      "preserved": "Existing file untouched; explicit authoritative roots, defaults/newlines/coercion/raw tasks, manifest shapes/truthiness/empty files, canonical executable relocation, leaf symlink refusal and bounded safe leaves/directories all run in the focused filter."
+    }
+  ],
+  "production_diff": "Only safe-label formatting: private label_words returns [printf, %s\\n, Agent: <agent>, Prompt: <root>/prompts/<agent>.md]; actual generator shell-quotes each word and joins with spaces. Existing unsafe-root goldens are unchanged; ordinary root branch is untouched and all historical refresh output bytes still match. No public API/schema/quoting/NUL-policy change.",
+  "consumer_closure": "Repository-wide content search after conversion found no live consumer of either helper. Both helpers deleted. Remaining exact paths are historical provenance/freezer references and two old package-required entries in main-owned tests/native_package.rs. Those package entries need main integration; they do not execute/import either helper. Other modules' generic oracle.py includes resolve to their own helpers and remain outside scope. No implementation was copied under a different path.",
+  "intentional_subprocesses": "std::process::Command and run watchdog retained for /bin/sh -n and bootstrap rustc. Bootstrap alone executes generated shell against its controlled inert fixtures. Pure comparisons never execute launch scripts, runtimes, providers or backends.",
+  "validation": {
+    "build": "cargo test -q --offline --locked -j 2 --lib --no-run",
+    "normal_filter": "workspace_assets:: --test-threads=2",
+    "normal_passed": 16,
+    "normal_failed": 0,
+    "normal_ignored": 0,
+    "bootstrap_cases": 4,
+    "bootstrap_full_filter_seconds": 20.25,
+    "strong_isolation": "Compiled test executable run directly in bwrap --unshare-all --die-with-parent --new-session. Only /usr/lib and loader cache, proc/dev, exact owned run and read-only repository mounted; /usr/bin empty except host bash mounted as /usr/bin/sh, /bin symlinked to /usr/bin; no full /usr, home, rustc or provider binaries mounted. Clean environment PATH=/python-unavailable and scoped TMPDIR. Absolute execution probes for /usr/bin/python, /usr/bin/python3, /usr/bin/python3.14, /bin/python3, /usr/local/bin/python3 and /home/linuxbrew/.linuxbrew/bin/python3 each failed with ENOENT before tests ran.",
+    "isolated_filter": "workspace_assets:: --skip workspace_assets::tests::bootstrap:: --test-threads=2",
+    "isolated_passed": 15,
+    "isolated_failed": 0,
+    "isolation_limit": "The full 16-test filter ran normally; only the 15 non-bootstrap tests have strong interpreter-filesystem-absence evidence. No claim of strong isolation for bootstrap/external rustc compilation or of seccomp denial of every process.",
+    "storage": "Unique runs under verified btrfs /home/jdawson/.cache/agent-test-runs with 320 GiB initially available. TMPDIR/CARGO_TARGET_DIR/CARGO_INCREMENTAL scoped to children; offline locked two-job system OpenSSL build, OPENSSL_DIR and LD_LIBRARY_PATH unset. Exit/signal cleanup removes only exact owned runs after commands exit; test fixtures manage their temporary children. All owned artifacts cleaned, no downloads or retained build trees.",
+    "limits": "No full Rust library suite, original Python suite, Cargo package check or global audit run. Package integration, ledger changes and independent review remain main-owned. Initial compile found a test-helper visibility error, fixed before passing builds."
+  }
+}

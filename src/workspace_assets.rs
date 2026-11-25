@@ -247,11 +247,11 @@ fn normalized_agent_launch_command(
     // Preserve legacy bytes for ordinary paths, but never interpolate shell
     // quotes or printf format/escape sequences from workspace metadata.
     let label = if root.contains(['\'', '%', '\\']) {
-        format!(
-            "printf '%s\\n' {} {}",
-            shell_quote(&format!("Agent: {agent}")),
-            shell_quote(&format!("Prompt: {root}/prompts/{agent}.md"))
-        )
+        label_words(agent, root)
+            .iter()
+            .map(|word| shell_quote(word))
+            .collect::<Vec<_>>()
+            .join(" ")
     } else {
         format!("printf 'Agent: {agent}\\nPrompt: {root}/prompts/{agent}.md\\n'")
     };
@@ -277,6 +277,15 @@ fn normalized_agent_launch_command(
         "unsupported_refresh_template_profile",
     )?;
     Ok(launch)
+}
+
+fn label_words(agent: &str, root: &str) -> [String; 4] {
+    [
+        "printf".into(),
+        "%s\\n".into(),
+        format!("Agent: {agent}"),
+        format!("Prompt: {root}/prompts/{agent}.md"),
+    ]
 }
 
 pub(crate) fn tmux_manifest(

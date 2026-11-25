@@ -11,18 +11,19 @@ read-only audit, are a separate policy boundary. Removing the legacy implementat
 does not mean the repository must contain no Python files whatsoever. Do not move
 or copy the implementation into test support and call that removal.
 
-## Current snapshot — 2026-11-24
+## Current snapshot — 2026-11-25
 
-| Measure | Before this batch | After |
+| Measure | Before first removal batch | Current |
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **53** |
-| Rust source files containing those sites | 44 | **41** |
-| Runner-dependent or mixed source caller files | 40 | **37** |
-| Source-local Python files | 25 | **24** |
-| Runner-dependent source-local Python files | 21 | **20** |
-| Runner-backed integration targets | 27 | **27** |
+| Direct Python constructor sites in Rust source | 61 | **50** |
+| Rust source files containing those sites | 44 | **39** |
+| Runner-dependent or mixed source caller files | 40 | **35** |
+| Source-local Python files | 25 | **22** |
+| Runner-dependent source-local Python files | 21 | **18** |
+| Python-launching integration targets | 29 | **28** |
+| Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
 
 The original checklist remains **941 methods in 44 files**. Its source pins and
@@ -35,11 +36,13 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 53 total sites are **not** 53 exclusively runner-backed
+need manual follow-up. The 50 total sites are **not** 50 exclusively runner-backed
 sites; four caller files are independent-only and others can be mixed. New capture
 tools under `tools/` are outside this source/integration metric.
 
-## Completed batch
+## Completed batches
+
+### First batch — 2026-11-24
 
 - Standup, agent-status and dashboard comparisons now read **30 independently
   captured outputs and two checkpoint inputs**, rather than launching Python.
@@ -53,27 +56,36 @@ tools under `tools/` are outside this source/integration metric.
   [dated evidence](../changelog/2026-11-24-python-retirement-first-batch.md), not
   these counts alone, for exact scopes and limits.
 
-No whole `runner/` module is deletable from this batch. In particular, launch's
+### Asset/init and checkpoint batch — 2026-11-25
+
+- Asset/init comparisons now use all 22 refresh cases, 44 launch comparisons,
+  48 ordered init rows and complete defaults/example data without Python.
+- Production-connected label words replace the independent `shlex` call while
+  preserving all original unsafe-root literal goldens and syntax checks.
+- Checkpoint integration now uses all 2,761 frozen rows, including twelve exact
+  resource refusals and eleven historical duplicate-ID pairs, without live Python.
+- Four more constructor sites and three helpers were removed. The original-method
+  ledger is unchanged; **90 mapped / 851 unresolved** remains the honest status.
+- Focused tests, strong interpreter-isolated tests, package checks and extracted
+  source compilation passed. See the
+  [dated evidence](../changelog/2026-11-25-python-retirement-assets-checkpoints.md)
+  for exact capture and validation boundaries.
+
+No whole `runner/` module is deletable from these batches. In particular, launch's
 separate executable-fallback test still calls `native_oracle.py`, and other modules
 still import `runner.launch`.
 
 ## Next cohorts
 
-1. **Workspace asset/init byte oracles.** Replace the two runner-backed comparison
-   sites in `src/workspace_assets/tests.rs` and `init_tests.rs` with independently
-   captured exact-byte fixtures. Retain roles, Unicode, defaults, examples, TOML,
-   command quoting and refusal boundaries. Account separately for the independent
-   stdlib `shlex` test; it does not disappear with the runner-backed calls. Update
-   package requirements only after their helper consumers are closed.
-2. **Checkpoint integration corpus.** Replace the parent Python execution in
-   `tests/checkpoint_decisions.rs`, preserving its complete JSONL corpus, over
-   1,500 accepted and 100 rejected cases, corruption matrix and all twelve
-   resource-refusal cases. A few happy-path examples are not a replacement.
-3. **Launch executable fallback.** Replace the remaining live reference comparison
+1. **Launch executable fallback.** Replace the remaining live reference comparison
    while retaining real compiled-fixture checks for missing interpreters, missing
    files, exit 127, fallback selection, deadlines and exact attempts. Do not
    confuse this with the comparison helper already deleted.
-4. Continue through execution/ledger/storage/concurrency and group observation
+2. **Process identity.** Address both the runner-backed identity oracle and the
+   variable-executable stdlib `shutil.which` oracle in its mixed caller. Removing
+   only the literal `Command::new("python3")` site would leave Python required and
+   hide that remaining dependency from the simple constructor metric.
+3. Continue through execution/ledger/storage/concurrency and group observation
    dependencies. Each batch should remove actual callers or close specific
    original assertions; track those two kinds of progress separately.
 

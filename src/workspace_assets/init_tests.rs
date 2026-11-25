@@ -1,15 +1,8 @@
 use super::*;
-use std::process::Command;
 
 #[test]
 fn python_exact_init_bytes_all_roles_names_unicode_examples_and_blank_defaults() {
-    let expected: serde_json::Value = serde_json::from_slice(&super::super::tests::run(
-        Command::new("python3")
-            .args(["-B", "-c", include_str!("init_oracle.py")])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .env("PYTHONDONTWRITEBYTECODE", "1"),
-    ))
-    .unwrap();
+    let expected = super::super::tests::fixture::init();
     for case in expected["teams"].as_array().unwrap() {
         let agents: Vec<String> = case["agents"]
             .as_array()

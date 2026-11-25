@@ -1,0 +1,49 @@
+{
+  "assertion_review": [
+    "Every original fixture, ID and order preserved; historical duplicate IDs explicitly inventoried, with unique index-qualified case_id identities. Full accepted canonical view equality through values Authority, without serde_json numeric coercion.",
+    "Every rejection still requires invalid_checkpoint error family unless one of the 12 explicit resource refusals, which retain exact expectednative_error equality.",
+    "Original accepted >1500, rejected >100 and resource ==12 assertions retained; exact counts, corpus/JSONL/inventory and per-row/raw-input SHA-256 checks added.",
+    "Complete approve/reject semantic-span bit flips, Markdown lists/fences/headings/checkbox matrices, history ordering/modification, all record types/fields/encodings, duplicate/nonfinite JSON, Unicode/control/markers/notes/identifiers retained, including semantically duplicate cases with different IDs."
+  ],
+  "consumer_closure": "Global tracked/unignored content search before deletion found only tests/checkpoint_decisions.rs. Capture tool refers to historical source explicitly, not an active helper consumer.",
+  "corpus": {
+    "accepted": 2212,
+    "bytes": 10489333,
+    "jsonl_sha256": "f4a577e35f81ced65855de57734d740b032be975e0f5f536f801efd40f55b8e1",
+    "path": "tests/retirement/fixtures/checkpoint_inspection.json",
+    "rejected": 549,
+    "resource_refusals": 12,
+    "rows": 2761,
+    "sha256": "c5bc0aeb46042a6ac79728c8e5b0d6c29c74149fdab7509499b14ac37ea5f6ce"
+  },
+  "fixtures": [
+    {
+      "path": "tests/retirement/fixtures/checkpoint_inspection.json",
+      "sha256": "c5bc0aeb46042a6ac79728c8e5b0d6c29c74149fdab7509499b14ac37ea5f6ce"
+    },
+    {
+      "path": "tests/retirement/fixtures/checkpoint_inspection_provenance.json",
+      "sha256": "cbce355486ae666924e17970fe2e4573a4541245dcf882b9aceac716353a5b68"
+    }
+  ],
+  "historical_helper": {
+    "commit": "8e41fe10ab041b4355205688e3458d5b8906c80c",
+    "path": "tests/_checkpoint_parity.py",
+    "sha256": "c86dfd33e8f08ed24b82778471031d24e132e64ddbbe89fa073a3e9fff21419c"
+  },
+  "native_test": "rust::tests/checkpoint_decisions.rs::python_checkpoint_inspection_parity",
+  "original_parent_sha256": "5e53c80333f6a9f13eeeb7eff3c64d9bccf11e632636a09c44ad8d59c0378875",
+  "recapture": "Requires explicit historical export containing pinned helper and all 25 runner Python sources. Current checkout after deletion is intentionally unusable. No copied constructor in tools.",
+  "schema_version": 1,
+  "scope": "Checkpoint inspection integration oracle retirement only; original 941-method mapping remains 90/851, with zero new mapping claims.",
+  "validation": {
+    "focused_test": "cargo test --offline --locked --test checkpoint_decisions: 1 passed, no ignored/skipped tests; all 2761 rows checked.",
+    "historical_repeat_capture": "Two complete captures from verified exports produced identical corpus and original JSONL digests.",
+    "historical_id_correction": "Original helper emitted 2750 distinct IDs in 2761 rows (11 duplicate pairs). Original IDs and all rows retained unchanged; inventory case_id is index-qualified and unique. Native test checks exact duplicate indices against provenance.",
+    "strong_isolation": "Bubblewrap 0.13.1, --unshare-all --die-with-parent --new-session --clearenv; PATH=/nonexistent. Read-only mounts only /usr/lib, /usr/lib64, exact repository and owned run tree; /lib and /lib64 symlinks. No /usr/bin, /bin or host root mount. /usr/bin/python3 execution under identical mounts failed status 1 with ENOENT (No such file or directory). Compiled test binary --exact python_checkpoint_inspection_parity --nocapture passed all rows, 1 passed and none skipped.",
+    "isolation_limits": "Focused integration filter only, not a claim that all repository tests are Python-free. Distro libraries and the repository remain readable. No provider/workspace/permission/delivery calls or full 941-method/full Rust library run.",
+    "package_presence": "cargo package --offline --locked --allow-dirty --list includes checkpoint_inspection.json, checkpoint_inspection_provenance.json and this review; excludes checkout-only checkpoint_decisions.rs. Existing *.json allowlist sufficient; no Cargo edit needed.",
+    "resources_and_cleanup": "Disk-backed /home on /dev/sda2, 320 GiB available before work. Unique directories under /home/jdawson/.cache/agent-test-runs; TMPDIR and CARGO_TARGET_DIR scoped to owned test/package runs, two Cargo jobs, offline locked dependencies. OPENSSL_DIR and LD_LIBRARY_PATH unset, distro OpenSSL 3.6.5 pkg-config selected; ldd confirmed libssl.so.3/libcrypto.so.3. EXIT/INT/TERM cleanup registered before work, synchronous children exited before exact-owned-directory deletion. Capture exports and test/package trees removed; no retained build artifacts. No installs, commits or deployments.",
+    "diff_check": "git diff --check passed; unrelated parallel-owner changes left untouched."
+  }
+}

@@ -10,6 +10,8 @@
 
 ## Maintenance and retirement
 
+- [2026-11-25 — Asset/init and checkpoint oracle removal](2026-11-25-python-retirement-assets-checkpoints.md)
+  — four more Python call sites and three helpers retired, with complete frozen evidence.
 - [2026-11-24 — First native-oracle removal batch](2026-11-24-python-retirement-first-batch.md)
   — eight live Python call sites removed, one helper deleted and 23 new mappings accepted.
 - [2026-11-23 — Retirement audit repair](2026-11-23-retirement-audit-repair.md)

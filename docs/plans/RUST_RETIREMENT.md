@@ -202,6 +202,13 @@ source-call sites plus one oracle helper. Its 40 audit-tool tests passed; the fu
 979-method Python suite was not run. `--require-complete` deliberately exits **1**
 for 851 unresolved obligations. The [removal plan](PYTHON_REMOVAL.md) tracks actual
 callers, inline/harness obligations and the remaining safe-deletion gates.
+
+The [2026-11-25 asset/checkpoint batch](../changelog/2026-11-25-python-retirement-assets-checkpoints.md)
+then removed four more live invocation sites and three helpers, preserving the
+complete native comparison corpora. It adds no original mapping: status remains
+90 / 851. There are now 35 runner-dependent/mixed source caller files and
+26 runner-backed integration targets under the documented static inventory;
+these counts do not include every variable executable or generated-script path.
 These tools are development-only; relocating/deleting the oracle is not coverage.
 
 The current active-oracle pin has a separate hash-linked, independently reviewed

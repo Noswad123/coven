@@ -5,8 +5,11 @@ use std::process::Command;
 #[path = "tests/bootstrap.rs"]
 mod bootstrap;
 
-// The oracle is test-only, with a deadline and file-backed output so neither
-// full pipes nor a failing Python import can hang the test harness.
+#[path = "fixture.rs"]
+pub(super) mod fixture;
+
+// Syntax checks and the inert bootstrap compiler use a deadline and file-backed
+// output so full pipes or a failed subprocess cannot hang the test harness.
 pub(super) fn run(command: &mut Command) -> Vec<u8> {
     use std::{
         process::Stdio,
@@ -53,11 +56,7 @@ pub(super) fn run(command: &mut Command) -> Vec<u8> {
 
 #[test]
 fn python_exact_asset_bytes_all_roles_examples_unicode_and_shell_commands() {
-    let expected: serde_json::Value = serde_json::from_slice(&run(Command::new("python3")
-        .args(["-B", "-c", include_str!("oracle.py")])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("PYTHONDONTWRITEBYTECODE", "1")))
-    .unwrap();
+    let expected = fixture::assets();
     for case in expected.as_array().unwrap() {
         let root = case["root"].as_str().unwrap();
         let agent = case["agent"].as_str().unwrap();
@@ -157,23 +156,7 @@ fn unsafe_root_labels_are_literal_shell_data_with_native_command_goldens() {
         assert!(!native.contains("admission"));
         run(Command::new("/bin/sh").args(["-n", "-c", &native]));
         run(Command::new("/bin/sh").args(["-n", "-c", launch]));
-        let tokens: Vec<String> = serde_json::from_slice(&run(Command::new("python3").args([
-            "-B",
-            "-c",
-            r#"
-import json, shlex, sys
-lexer = shlex.shlex(sys.argv[1], posix=True, punctuation_chars=';')
-lexer.whitespace_split = True
-first = []
-for token in lexer:
-    if token == ';':
-        break
-    first.append(token)
-print(json.dumps(first))
-"#,
-            launch,
-        ])))
-        .unwrap();
+        let tokens = label_words("CUSTOM", root);
         assert_eq!(
             tokens,
             [
@@ -182,6 +165,14 @@ print(json.dumps(first))
                 "Agent: CUSTOM".to_owned(),
                 format!("Prompt: {root}/prompts/CUSTOM.md")
             ]
+        );
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|word| shell_quote(word))
+                .collect::<Vec<_>>()
+                .join(" "),
+            label
         );
     }
 }

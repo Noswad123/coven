@@ -1,0 +1,75 @@
+{
+  "oracle_commit": "8e41fe10ab041b4355205688e3458d5b8906c80c",
+  "python": "3.14.8",
+  "flags": [
+    "-I",
+    "-B"
+  ],
+  "python_executable_sha256": "44fdcdf23cd94aece60aec10b92b15a0e1cf4561e710985eaa53b362a03db48e",
+  "capture_tool": "tools/freeze_workspace_assets.py",
+  "capture_tool_sha256": "355147889bcfbbf2112f7e41d834e80c2e856424a1e5783b38ca3e4147cb0286",
+  "source_sha256": {
+    "examples/interactive-demo/example.json": "8a710e369ee15daa4b87d0702af998af363fb1c1ce4910b4219ecf4c71b25037",
+    "examples/interactive-demo/goal.md": "91becdb800effaf78ec4b71000c8dd7a59f228b326699ca3d5bea10d2c7666f3",
+    "examples/interactive-demo/output/README.md": "cce725b6464664d53752a569606b73530040fa98653ec8ff7d19eb4ebd4711e1",
+    "examples/interactive-demo/prompt-context.md": "d25c101d1c884dd5f8caffdc1328782b860ccf93c3d18237c52057d1c2e26b66",
+    "examples/interactive-demo/spec.md": "caea8ccd82b0726cc8e93d485ead1eaf64b34c091e978d592fe230d081a6bfa0",
+    "examples/interactive-demo/tasks.json": "69cd03d050e53bd77d08cb308d04fe782be898440cf4461bcff733c2aeae2139",
+    "examples/interactive-demo/work/README.md": "49d6aff4b7112b62b9e3932dbc38056cfe90f8289791f8cea104de0768032776",
+    "runner/actions.py": "0f44f26a9394644b8d54c09052ff71019dac4bf8d84a8cd5423e7f24b87562c4",
+    "runner/checkpoints.py": "6d9af7842ed2d82dc72219115ff750fa79596254c2d5ae871f59b8d83ef2a8dc",
+    "runner/coven.py": "b245ba00b0881b897266bfc4c9142c8086dda172c8ccef619b5d2958adfd4a87",
+    "runner/djinn_live_observation.py": "bf84c4e3d059a05024196bdd0e073926facbc3acce0994f84f8ec4219847fc26",
+    "runner/djinn_observation.py": "1d15eab602ca410e373ed469e0bc6096c5ae235144f846ad8eb17ea82620005e",
+    "runner/execution_v2.py": "54564669ce53b2c45abfe21b0d03f8b173c9b83f2d0c9914dd7ae395c1127c1f",
+    "runner/group_live.py": "9ed44ccac38f70b0c30a56226cb7966367f6027334a7e827f32c03c6516764a9",
+    "runner/group_publisher.py": "fa55c5eaac55e841e8bbde1ec31ac4ad60b905be41753982ce3d556c3bd3e9f8",
+    "runner/groups.py": "4fdc58e7f30a6632602b7318cc826fb33e48c01def3f414bfc7976612ad8be4c",
+    "runner/handoffs.py": "071f43dada166b04cd7357c3b6b6721fe5125f2446430acef93f25dfb46bbbeb",
+    "runner/interactive_sessions.py": "057f1d52f84b416f7cba6e755a917aa36b94a81e4073cde72d1addaea73b1bf6",
+    "runner/kitsune_observation.py": "6cac964ed97c024bcec591fb9ab4778a822f962dc3178a513fa416a6daa0d658",
+    "runner/kitsune_process_observation.py": "a4de0a77d2aa658bd91db16b5a63b23ff137cf271c20590d6d399db9203eb89d",
+    "runner/launch.py": "7a6fb3a162840f3b656e8af3f3d8d3316d9a0e1421f65f429051405b6bdc12c0",
+    "runner/records.py": "eb0b96a440cbc6b2acde77b488dacfb6358145f5ca75801b4d2ecc41c124e4ca",
+    "runner/repositories.py": "0ba80554f97e2bf2429677d575001df7f4adbf6309c6a2316153cd2854a61776",
+    "runner/session_inspection.py": "2216c4f707a01bda94ac113387817735c69a097c8679cbf465587838255329e2",
+    "runner/session_prompts.py": "9b54d016ea53860a2e5fedd66de86ea1ff10754b3be5606e9793b008d8f1f216",
+    "runner/session_views.py": "4d807c5fa70f4ab06cd379290f8ab2c313ff94f81b4b77f99e9b82fe91ad644a",
+    "runner/session_watch.py": "5d9f9fc48758d7e5e79f439b689a781503a8630aa5b4f64e9f44d3c520c89443",
+    "runner/storage.py": "36e4687d27b8dac03951fce5bbad51f69001f7b2d43046b9630c6405b42f02ad",
+    "runner/task_attempts.py": "ca8f5bee13f75d88ca6a8296ed4b8b221700b8d3c33366bff8d4bb26f609f358",
+    "runner/task_graphs.py": "2b501af9548d602a8a8075fe0d124612cc6c78e1d45a1e447aaf7210b51e9468",
+    "runner/task_ledger.py": "9b10149548c47ca120a8d2040b0784104c67d1101192d973fbc0fdecf61aaa02",
+    "runner/workers.py": "0a8d694fc7ceb19d69ae6803873e1aab51978e5d6d913b3241ea4602ceed7efb",
+    "src/workspace_assets.rs": "0879424ff9cb2e9f402b19eb2e5736b54838adac6b01104261c09542c501ac22",
+    "src/workspace_assets/init_oracle.py": "b5d3937b5b8bfe1dc1fef2ed159049a83eb01c2fdd61b6283954a52e8cc2a770",
+    "src/workspace_assets/init_tests.rs": "7f1306bb3004a08bb3d3f56a0961cd731e813277daf3f317458c7ab8fbfc9798",
+    "src/workspace_assets/oracle.py": "707117eadc21400e596781b7e5df5cf77fb4e16b2a6c0192f806cd0fadd6facd",
+    "src/workspace_assets/tests.rs": "3c4ef8fc757c20f5c03360ce21e047cd882ca83fc37273a7ae3dc998dc2aa9cd",
+    "src/workspace_assets/tests/bootstrap.rs": "52940eea9ba8e0edb3df753e1311b897c82b58207b1c65fe14e497334fff44bd",
+    "src/workspace_assets/tests/bootstrap_fixture.rs": "93327e815a1f3c3b6d3ae5e80ac1404055c221bb5fcb57e21ab794ac9b281eff"
+  },
+  "fixtures": {
+    "workspace_assets.json": {
+      "bytes": 47221,
+      "sha256": "4ebda15cbf614bbc262e08f775007830132850672397e83ee7da531eb5c201ea"
+    },
+    "workspace_init.json": {
+      "bytes": 35570,
+      "sha256": "155509b378117ab6425c28a8c4aa4e4f105d1b62eb53b9dd6e58e5677da9e910"
+    }
+  },
+  "inventory": {
+    "assets": 22,
+    "launches": 44,
+    "teams": 48,
+    "agents": 13,
+    "defaults": 3,
+    "checkpoints": 2,
+    "example_assets": 7
+  },
+  "count_correction": "Source-validated original init matrix is 4*3*2*2=48, not the originally requested 96. Both empty-roster display-name variants remain separate rows.",
+  "encoding": "Recursive $text indices into texts of line indices; concatenate without normalization; object keys unchanged.",
+  "expectations": "Only unchanged pinned Python helpers; no Rust outputs. Exact original input index cycling/order retained. No path/time/UUID normalization.",
+  "environment": "Clean PATH=/usr/bin:/bin LC_ALL=C.UTF-8 TMPDIR=<owned-run>; COVEN_EXAMPLES_DIR and COVEN_HOME absent. Historical cwd supplies all seven example assets; no host paths recorded. /tmp roots are literal input strings only."
+}

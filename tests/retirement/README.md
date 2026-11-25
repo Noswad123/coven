@@ -434,3 +434,28 @@ count is implied. Completion still fails for 851 unresolved obligations, and oth
 inline/source-local and parent-harness dependencies remain. See the
 [batch record](../../docs/changelog/2026-11-24-python-retirement-first-batch.md) and
 [current removal plan](../../docs/plans/PYTHON_REMOVAL.md).
+
+## Asset/init and checkpoint oracle removal — 2026-11-25
+
+`reviews/workspace_assets_oracles.json` and
+`reviews/checkpoint_inspection_oracle.json` record independently reviewed removal
+of three source-level and one integration Python constructor sites. They claim
+zero original-method mappings and are not inserted into `accepted_batches` as
+assertion-substitution fragments. The global ledger remains byte-identical to the
+batch baseline: **90 mapped / 851 unresolved**.
+
+The two asset helpers and checkpoint parent generator were deleted only after
+closing their live consumers. Complete frozen data preserves 22 refresh cases,
+48 init team rows and all 2,761 checkpoint rows, including historical duplicate
+IDs and twelve exact resource refusals. Existing guards, limits and effect
+assertions remain active. Source-package checks require replacements and reject
+restored retired helpers; optional regeneration selects verified historical source
+explicitly rather than an active-tree fallback or copied implementation.
+
+All 16 asset tests, the complete checkpoint integration, two package checks and
+40 tool tests passed. Strong interpreter-filesystem isolation covers 15 asset
+tests plus the checkpoint integration, not bootstrap's external compiler. All
+original source and previous fixture pins remain unchanged. See the
+[dated batch](../../docs/changelog/2026-11-25-python-retirement-assets-checkpoints.md)
+for exact evidence and limits; the [removal plan](../../docs/plans/PYTHON_REMOVAL.md)
+tracks remaining callers.
