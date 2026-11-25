@@ -1,0 +1,92 @@
+{
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Main accepted both helper retirements after independent assertion, source-provenance and consumer-closure review. Approval is limited to native identity/PATH evidence and the separate independent-helper registry transition; it grants no new original-method mapping or global Python-retirement approval.",
+  "historical_commit": "d6515b0ada93036b28869ed1b9ed60633a2c1bbf",
+  "limitations": [
+    "Unix scope; native lookup deliberately rejects executable special files accepted by shutil.which; no universal parity claim.",
+    "Mode-0600 regular file is nonexecutable even for root; no portable directory permission-denial claim. Capture UID recorded.",
+    "Unset PATH uses first eligible node in finite /bin:/usr/bin table, observed directly with stat and access, never a frozen host shell layout.",
+    "At submission the global audit failed until parent review and registration of which_oracle.py retirement. Registry integration and final combined validation are recorded separately."
+  ],
+  "mapping_delta": 0,
+  "retired_helpers": {
+    "src/process/identity/tests/oracle.py": {
+      "fixtures": [
+        {
+          "path": "tests/retirement/fixtures/process_identity.json",
+          "sha256": "ee3f56e401ae88caddd2ad9165537e4a244a32baa98dfb1fdd7156285951bf37"
+        },
+        {
+          "path": "tests/retirement/fixtures/process_identity_provenance.json",
+          "sha256": "6fb4e35e30b383305ae2b292a7f694253e7b0c14d424f3d4e09cef1f433cf1ff"
+        }
+      ],
+      "kind": "runner_oracle",
+      "replacement_tests": [
+        "rust::src/process/identity/tests.rs::legacy_python_oracle_matches_real_file_identity"
+      ],
+      "sha256": "787f9fcbd2eda2ac84c154a4b79eed3b3103a08db84e982605d428c50ec59ac5"
+    },
+    "src/process/identity/tests/which_oracle.py": {
+      "fixtures": [
+        {
+          "path": "tests/retirement/fixtures/process_identity.json",
+          "sha256": "ee3f56e401ae88caddd2ad9165537e4a244a32baa98dfb1fdd7156285951bf37"
+        },
+        {
+          "path": "tests/retirement/fixtures/process_identity_provenance.json",
+          "sha256": "6fb4e35e30b383305ae2b292a7f694253e7b0c14d424f3d4e09cef1f433cf1ff"
+        }
+      ],
+      "kind": "independent_stdlib_helper",
+      "replacement_tests": [
+        "rust::src/process/identity/tests.rs::relative_path_directories_and_unset_default"
+      ],
+      "sha256": "a3920a4df586b1ce97d938c4b48b96d02c0349b982f63008c10825302a5ab6e2"
+    }
+  },
+  "schema_version": 1,
+  "assertion_breakdown": {
+    "identity": "Whole five-field canonical native Value compared without normalization. Literal size=200000 and independently captured hashlib SHA-256=c7a7d73b68d21102bf7d6d9be27b4106497efc8119224bebfbd26b375541bde7. Only device/inode/mtime_ns bound from std::fs::symlink_metadata of the specified tool fixture; exact Value integers, mtime computed in i128. Neither production metadata nor fingerprint results feed expectations.",
+    "which": "All six original cases retained, plus 12 captured declarative cases. None versus Some and raw OsStr spelling compared, including dot and repeated separators. Expected paths use only declared $ROOT/$REL slots, never actual lookup results.",
+    "default_node_table": {
+      "identity-missing-tool": ["/bin/identity-missing-tool", "/usr/bin/identity-missing-tool"],
+      "sh": ["/bin/sh", "/usr/bin/sh"]
+    },
+    "default_node_eligibility": "First node with direct std::fs::metadata regular-file observation and libc::access(X_OK)==0. Python reference os.confstr(CS_PATH) and os.defpath both /bin:/usr/bin. No execution or frozen host alias layout.",
+    "retained_guards": "All original 14 names retained. Existing exact extreme integers, 1-GiB cap, growth/replacement/truncation mutations, non-UTF8 aliases, negative timestamp, environment allowlist and no-hash lookup assertions unchanged."
+  },
+  "consumer_closure": "Both include_str! Python subprocess consumers removed from src/process/identity/tests.rs. No live Python/Command consumer remains in the identity Rust subtree. Repository-wide search leaves only historical freezer/provenance/review references and the parent-owned coverage.json C entry for which_oracle.py. Both historical helper files deleted; no production implementation changes or copied Python backend.",
+  "validation": {
+    "build": "cargo test --offline --locked -j 2 --lib process::identity:: --no-run --message-format=json",
+    "build_environment": "Scoped disk-backed TMPDIR and CARGO_TARGET_DIR; OPENSSL_LIB_DIR=/usr/lib, OPENSSL_INCLUDE_DIR=/usr/include, PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig; OPENSSL_DIR and LD_LIBRARY_PATH unset.",
+    "native_run": "/identity-tests process::identity:: --nocapture: 14 passed, 0 failed, 0 ignored, 1610 filtered out",
+    "test_names": [
+      "process::identity::tests::real_bytes_metadata_header_and_equal_hash",
+      "process::identity::tests::flat_public_values_keep_exact_python_integers",
+      "process::identity::tests::limits_are_closed_and_finite",
+      "process::identity::tests::environment_is_only_inherited_allowlist_without_defaults",
+      "process::identity::tests::bounded_hash_and_growth_rejection",
+      "process::identity::tests::path_descriptor_replacement_and_truncation_are_rejected",
+      "process::identity::tests::same_metadata_rewrite_changes_identity_hash",
+      "process::identity::tests::path_lookup_does_not_hash_or_default_empty_path",
+      "process::identity::tests::relative_path_directories_and_unset_default",
+      "process::identity::tests::legacy_python_oracle_matches_real_file_identity",
+      "process::identity::tests::unix::aliases_retarget_and_non_unicode_paths_remain_lossless",
+      "process::identity::tests::unix::nonregular_and_nonexecutable_paths_are_rejected",
+      "process::identity::tests::unix::negative_timestamp_is_preserved",
+      "process::identity::tests::unix::alias_inserted_between_checks_is_rejected"
+    ],
+    "isolation": "bwrap --unshare-all --die-with-parent --new-session; only native binary, shared libraries/loader, individual /bin/sh and /usr/bin/sh nodes for observation, /dev, /proc, owned writable /work and disk-backed /scratch. No repository/root/full bin/Homebrew mount. Cleared environment, PATH=/no-programs, TMPDIR=/scratch. No compiler or helper execution inside sandbox.",
+    "python_ENOENT_probes": ["/usr/bin/python3", "/bin/python3", "/usr/bin/python3.14", "/usr/local/bin/python3", "/home/linuxbrew/.linuxbrew/bin/python3"],
+    "evidence_integrity": "55 historical source pins plus interpreter, shutil module and capture-tool SHA-256 verified. Both fixture hashes verified and in-memory altered bytes rejected. In-memory source-read corruption of runner/workers.py, identity/tests.rs and each historical helper rejected before runner imports. Independent hashlib recomputation of deterministic payload matched frozen literal.",
+    "fixture_bytes": {
+      "tests/retirement/fixtures/process_identity.json": 2301,
+      "tests/retirement/fixtures/process_identity_provenance.json": 11047
+    },
+    "platform": "Linux, UID 1000; no unprivileged permission-denial parity claim or non-Unix validation.",
+    "audit": "tools/retirement_coverage.py --check --summary exited 1: missing or escaping repository reference: src/process/identity/tests/which_oracle.py. Expected parent registry integration blocker; no global manifest/auditor workaround.",
+    "cleanup": "All exact owned capture/validation/evidence directories removed, including build target and relative test cwd. Initial capture failed on an absent archive path and a zsh reserved-variable cleanup error; its exact owned directory was subsequently removed. Final directory check contains only pre-existing pn.HC9lGV, left untouched.",
+    "review": "Authored execution evidence above predates acceptance. Main subsequently accepted the scoped removals after independent review; this record does not claim execution of the parent registry or final combined validation gates."
+  }
+}

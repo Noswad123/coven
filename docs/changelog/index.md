@@ -10,6 +10,10 @@
 
 ## Maintenance and retirement
 
+- [2026-11-25 — Process identity and PATH oracle removal](2026-11-25-python-retirement-process-identity.md)
+  — both interpreter paths closed; independent-helper retirement history remains audited.
+- [2026-11-25 — Launch executable-fallback oracle removal](2026-11-25-python-retirement-launch-fallback.md)
+  — all 28 launch unit tests pass without Python, retaining real execution and compilation.
 - [2026-11-25 — Asset/init and checkpoint oracle removal](2026-11-25-python-retirement-assets-checkpoints.md)
   — four more Python call sites and three helpers retired, with complete frozen evidence.
 - [2026-11-24 — First native-oracle removal batch](2026-11-24-python-retirement-first-batch.md)

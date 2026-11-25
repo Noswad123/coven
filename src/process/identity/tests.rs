@@ -229,6 +229,7 @@ fn path_lookup_does_not_hash_or_default_empty_path() {
     assert_eq!(find_executable(""), None);
 }
 
+#[cfg(unix)]
 #[test]
 fn relative_path_directories_and_unset_default() {
     let directory = tempfile::tempdir_in(".").unwrap();
@@ -250,66 +251,49 @@ fn relative_path_directories_and_unset_default() {
         find_in_path("identity-missing-tool", Some(OsStr::new("/bin:/usr/bin")))
     );
 
-    // Resolve Python before changing only the child's PATH, including to empty/unset.
-    let python = find_executable("python3").unwrap().canonicalize().unwrap();
     let search_path =
         std::env::join_paths([Path::new("missing-identity-bin"), relative_directory]).unwrap();
-    for (name, search) in [
-        ("identity-test-tool", Some(relative_directory.as_os_str())),
-        ("identity-test-tool", Some(search_path.as_os_str())),
-        ("identity-test-tool", Some(OsStr::new(""))),
-        (path.to_str().unwrap(), Some(OsStr::new(""))),
-        ("identity-missing-tool", None),
-        ("sh", None),
+    for (name, search, expected) in [
+        (
+            "identity-test-tool",
+            Some(relative_directory.as_os_str()),
+            Some(path.clone()),
+        ),
+        (
+            "identity-test-tool",
+            Some(search_path.as_os_str()),
+            Some(path.clone()),
+        ),
+        ("identity-test-tool", Some(OsStr::new("")), None),
+        (
+            path.to_str().unwrap(),
+            Some(OsStr::new("")),
+            Some(path.clone()),
+        ),
+        (
+            "identity-missing-tool",
+            None,
+            frozen::default_node("identity-missing-tool"),
+        ),
+        ("sh", None, frozen::default_node("sh")),
     ] {
-        let mut command = std::process::Command::new(&python);
-        command
-            .args(["-B", "-c", include_str!("tests/which_oracle.py")])
-            .arg(name)
-            .current_dir(&cwd)
-            .env("PYTHONDONTWRITEBYTECODE", "1");
-        match search {
-            Some(value) => {
-                command.env("PATH", value);
-            }
-            None => {
-                command.env_remove("PATH");
-            }
-        }
-        let output = command.output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let expected: Option<PathBuf> = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
-            find_in_path(name, search),
-            expected,
+            find_in_path(name, search).as_deref().map(Path::as_os_str),
+            expected.as_deref().map(Path::as_os_str),
             "name={name:?}, PATH={search:?}"
         );
     }
+    frozen::which_corpus();
 }
 
+#[cfg(unix)]
 #[test]
 fn legacy_python_oracle_matches_real_file_identity() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("tool");
     let bytes: Vec<u8> = (0..200_000).map(|index| (index % 256) as u8).collect();
     executable(&path, &bytes);
-    let output = std::process::Command::new("python3")
-        .args(["-B", "-c", include_str!("tests/oracle.py")])
-        .arg(&path)
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let oracle = crate::values::parse(&output.stdout, crate::values::Profile::Authority).unwrap();
+    let oracle = frozen::identity(&path);
     assert_eq!(
         fingerprint(&path)
             .unwrap()
@@ -323,3 +307,6 @@ fn legacy_python_oracle_matches_real_file_identity() {
 
 #[cfg(unix)]
 mod unix;
+
+#[cfg(unix)]
+mod frozen;

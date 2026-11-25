@@ -1,13 +1,8 @@
 use super::*;
 use crate::runtime_command::NativeRunner;
 use serde_json::{Value as Json, json};
-use std::{
-    collections::VecDeque,
-    io::Write,
-    process::{Command, Stdio},
-    sync::OnceLock,
-    time::Duration,
-};
+use sha2::{Digest, Sha256};
+use std::{collections::VecDeque, process::Command, sync::OnceLock, time::Duration};
 
 struct Injected {
     outputs: RefCell<VecDeque<Status>>,
@@ -180,7 +175,9 @@ impl Runner for Native {
                 .any(|p| p.as_os_str() == Path::new(&request.argv[0]).as_os_str())
         );
         assert_eq!(request.cwd, self.cwd);
+        assert_eq!(request.cwd.as_os_str(), self.cwd.as_os_str());
         assert_eq!(request.env, self.env);
+        assert_eq!(request.max_output_bytes, 1_048_576);
         assert!(!request.timeout.is_zero() && request.timeout <= Duration::from_secs(60));
         let output = NativeRunner.run(request);
         self.attempts.borrow_mut().push((
@@ -195,33 +192,84 @@ impl Runner for Native {
         output
     }
 }
-fn python(plan: &Value) -> Json {
-    let mut oracle = Command::new("python3")
-        .arg("-B")
-        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/launch/executable/native_oracle.py"))
-        .arg(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    oracle
-        .stdin
-        .take()
+fn reference(case: &Json, cwd: &Path) -> Json {
+    let mut expected = case["expected"].clone();
+    let mut slots = vec!["/plan/root".to_owned(), "/plan/cwd".to_owned()];
+    // Independently restrict every consumed slot by command and argument position.
+    let cwd_index = |argv: &[Json]| match (argv[0].as_str(), argv[1].as_str()) {
+        (Some("tmux"), Some("new-session" | "new-window")) => {
+            assert_eq!(argv[7], "-c");
+            Some(8)
+        }
+        (Some("herdr"), Some("workspace")) if argv[2] == "create" => {
+            assert_eq!(argv[3], "--cwd");
+            Some(4)
+        }
+        (Some("herdr"), Some("tab")) if argv[2] == "create" => {
+            assert_eq!(argv[5], "--cwd");
+            Some(6)
+        }
+        _ => None,
+    };
+    for (i, step) in expected["plan"]["steps"]
+        .as_array()
         .unwrap()
-        .write_all(&plan.canonical().unwrap())
-        .unwrap();
-    let output = oracle.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).unwrap()
+        .iter()
+        .enumerate()
+    {
+        if let Some(argv) = step["argv"].as_array()
+            && let Some(index) = cwd_index(argv)
+        {
+            slots.push(format!("/plan/steps/{i}/argv/{index}"));
+        }
+    }
+    for (i, call) in expected["calls"].as_array().unwrap().iter().enumerate() {
+        slots.push(format!("/calls/{i}/cwd"));
+        let mut argv = vec![case["backend"].clone()];
+        argv.extend(call["args"].as_array().unwrap().iter().cloned());
+        if let Some(index) = cwd_index(&argv) {
+            slots.push(format!("/calls/{i}/args/{}", index - 1));
+        }
+    }
+    assert_eq!(json!(slots), case["cwd_slots"]);
+    for pointer in slots {
+        let value = expected.pointer_mut(&pointer).unwrap();
+        assert_eq!(value, "__COVEN_FALLBACK_CWD__");
+        *value = json!(cwd);
+    }
+    expected
 }
 
 #[test]
 fn compiled_native_missing_interpreter_fallback_matches_python_but_exit_127_never_falls_back() {
+    let raw = include_bytes!("../../../tests/retirement/fixtures/launch_fallback.json");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(raw)),
+        "98dc9d835c9bb3abf1b2127245bd1ce95601ea0ae325a63cfcb27c77abc100c1"
+    );
+    let corpus: Json = serde_json::from_slice(raw).unwrap();
+    assert_eq!(corpus["schema"], 1);
+    assert_eq!(corpus["sentinel"], "__COVEN_FALLBACK_CWD__");
+    let cases = corpus["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 12);
+    let inventory: Vec<_> = ["tmux", "herdr"]
+        .into_iter()
+        .flat_map(|backend| {
+            ["launch", "stop"].into_iter().flat_map(move |operation| {
+                ["missing-interpreter", "missing-file", "exit127"]
+                    .into_iter()
+                    .map(move |first| json!(format!("{backend}-{operation}-{first}")))
+            })
+        })
+        .collect();
+    assert_eq!(
+        cases
+            .iter()
+            .map(|case| case["id"].clone())
+            .collect::<Vec<_>>(),
+        inventory
+    );
+    let mut case_index = 0;
     for backend in ["tmux", "herdr"] {
         for stopping in [false, true] {
             for first in ["missing-interpreter", "missing-file", "exit127"] {
@@ -248,13 +296,22 @@ fn compiled_native_missing_interpreter_fallback_matches_python_but_exit_127_neve
                     ("HOME".into(), "/frozen".into()),
                 ]);
                 let plan = plan(&cwd, backend, &env);
-                // Oracle selects stop via an explicit wrapper field, not plan mutation.
-                let oracle_input = Value::object(vec![
-                    ("plan".into(), plan.clone()),
-                    ("stopping".into(), Value::Bool(stopping)),
-                ])
-                .unwrap();
-                let expected = python(&oracle_input);
+                let case = &cases[case_index];
+                case_index += 1;
+                assert_eq!(case["backend"], backend);
+                assert_eq!(case["stopping"], stopping);
+                assert_eq!(case["first"], first);
+                assert_eq!(
+                    case["inputs"],
+                    json!({
+                        "namespace":"coven-a-b", "multiplexer":backend,
+                        "agents":[{"id":"x", "command":"exec worker 'literal'", "starter":"- $HOME ; literal"}],
+                        "environment":env
+                    })
+                );
+                let expected = reference(case, &cwd);
+                let native_plan: Json = serde_json::from_slice(&plan.canonical().unwrap()).unwrap();
+                assert_eq!(native_plan, expected["plan"]);
                 let runner = Native {
                     cwd,
                     env,
@@ -272,10 +329,17 @@ fn compiled_native_missing_interpreter_fallback_matches_python_but_exit_127_neve
                 let attempts = runner.attempts.borrow();
                 if first == "missing-interpreter" {
                     assert_eq!(attempts.len(), runner.calls.borrow().len() * 2);
-                    for pair in attempts.chunks_exact(2) {
+                    for (pair, call) in attempts
+                        .chunks_exact(2)
+                        .zip(expected["calls"].as_array().unwrap())
+                    {
                         assert_eq!(pair[0].0, bad);
                         assert_eq!(pair[0].1, Status::ExecFailed);
                         assert_eq!(pair[1].0, good);
+                        assert_eq!(
+                            pair[1].1,
+                            Status::Exited(call["code"].as_i64().unwrap() as i32)
+                        );
                         assert!(pair[1].2 < pair[0].2);
                     }
                     assert_eq!(actual["status"], "transport_completed");
@@ -284,7 +348,16 @@ fn compiled_native_missing_interpreter_fallback_matches_python_but_exit_127_neve
                     assert_eq!(attempts[0].0, bad);
                     assert_eq!(attempts[0].1, Status::Exited(127));
                 } else {
-                    assert!(attempts.iter().all(|(p, _, _)| p == &good));
+                    assert_eq!(attempts.len(), runner.calls.borrow().len());
+                    for (attempt, call) in
+                        attempts.iter().zip(expected["calls"].as_array().unwrap())
+                    {
+                        assert_eq!(attempt.0, good);
+                        assert_eq!(
+                            attempt.1,
+                            Status::Exited(call["code"].as_i64().unwrap() as i32)
+                        );
+                    }
                     assert_eq!(actual["status"], "transport_completed");
                 }
             }

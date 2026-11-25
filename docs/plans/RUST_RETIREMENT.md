@@ -206,9 +206,18 @@ callers, inline/harness obligations and the remaining safe-deletion gates.
 The [2026-11-25 asset/checkpoint batch](../changelog/2026-11-25-python-retirement-assets-checkpoints.md)
 then removed four more live invocation sites and three helpers, preserving the
 complete native comparison corpora. It adds no original mapping: status remains
-90 / 851. There are now 35 runner-dependent/mixed source caller files and
-26 runner-backed integration targets under the documented static inventory;
-these counts do not include every variable executable or generated-script path.
+90 / 851. The subsequent
+[launch fallback batch](../changelog/2026-11-25-python-retirement-launch-fallback.md)
+removed one more caller/helper and verified all 28 launch unit tests without
+Python in checkout and extracted package. The
+[identity/PATH batch](../changelog/2026-11-25-python-retirement-process-identity.md)
+then closed both literal and variable interpreter calls and verified all fourteen
+identity tests without Python. Its independent-helper history stays explicit:
+four active plus one retired across the same five baseline names. There are now
+33 runner-dependent/mixed source caller files and 26 runner-backed integration
+targets under the documented static inventory; these counts do not include every
+variable executable or generated-script path. No additional original-method mapping
+was claimed.
 These tools are development-only; relocating/deleting the oracle is not coverage.
 
 The current active-oracle pin has a separate hash-linked, independently reviewed

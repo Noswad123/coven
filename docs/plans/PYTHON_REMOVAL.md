@@ -17,14 +17,15 @@ or copy the implementation into test support and call that removal.
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **50** |
-| Rust source files containing those sites | 44 | **39** |
-| Runner-dependent or mixed source caller files | 40 | **35** |
-| Source-local Python files | 25 | **22** |
-| Runner-dependent source-local Python files | 21 | **18** |
+| Direct Python constructor sites in Rust source | 61 | **48** |
+| Rust source files containing those sites | 44 | **37** |
+| Runner-dependent or mixed source caller files | 40 | **33** |
+| Source-local Python files | 25 | **19** |
+| Runner-dependent source-local Python files | 21 | **16** |
 | Python-launching integration targets | 29 | **28** |
 | Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
+| Independent helper registry: active / retired / historical | 5 / 0 / 5 | **4 / 1 / 5** |
 
 The original checklist remains **941 methods in 44 files**. Its source pins and
 IDs are unchanged. Supplemental tests remain separate: 38 methods, for a total
@@ -36,7 +37,7 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 50 total sites are **not** 50 exclusively runner-backed
+need manual follow-up. The 48 total sites are **not** 48 exclusively runner-backed
 sites; four caller files are independent-only and others can be mixed. New capture
 tools under `tools/` are outside this source/integration metric.
 
@@ -71,21 +72,47 @@ tools under `tools/` are outside this source/integration metric.
   [dated evidence](../changelog/2026-11-25-python-retirement-assets-checkpoints.md)
   for exact capture and validation boundaries.
 
-No whole `runner/` module is deletable from these batches. In particular, launch's
-separate executable-fallback test still calls `native_oracle.py`, and other modules
-still import `runner.launch`.
+### Launch executable fallback — 2026-11-25
+
+- Replaced the remaining live launch oracle with twelve complete, independently
+  captured cases, using only explicit expected CWD slots. Real missing-interpreter
+  fallback, missing-file selection and no-fallback exit 127 remain exercised.
+- Deleted `src/launch/executable/native_oracle.py`, reducing another source call
+  site and caller file. No new original-method mapping was claimed.
+- All 28 launch tests pass without Python in both checkout and extracted source
+  package, including actual default fixture compilation. See the
+  [dated evidence](../changelog/2026-11-25-python-retirement-launch-fallback.md)
+  for mount policy, limits and package/audit results.
+
+### Process identity and PATH — 2026-11-25
+
+- Removed both the literal and variable-executable Python consumers, plus their
+  runner-backed identity and independent `shutil.which` helpers.
+- Full five-field identity and all six original PATH cases remain; twelve captured
+  cases strengthen lexical/path behavior. Runtime metadata binds only to declared
+  direct OS observations, never to actual production results.
+- All fourteen identity tests pass without Python in checkout and extracted
+  package. A reviewed registry transition preserves the independent helper's
+  history: four active plus one retired equals the same five baseline names.
+- No new original-method mappings are claimed. See the
+  [dated evidence](../changelog/2026-11-25-python-retirement-process-identity.md)
+  for exact source, fixture, registry and validation limits.
+
+Cumulatively, fourteen counted source/integration invocation sites and one known
+variable-executable site have been removed, with seven helpers deleted. The
+variable call is deliberately reported separately from the literal regex metric.
+No whole `runner/` module is yet deletable: other modules and
+Python-backed integration parents still import `runner.launch`, among others.
 
 ## Next cohorts
 
-1. **Launch executable fallback.** Replace the remaining live reference comparison
-   while retaining real compiled-fixture checks for missing interpreters, missing
-   files, exit 127, fallback selection, deadlines and exact attempts. Do not
-   confuse this with the comparison helper already deleted.
-2. **Process identity.** Address both the runner-backed identity oracle and the
-   variable-executable stdlib `shutil.which` oracle in its mixed caller. Removing
-   only the literal `Command::new("python3")` site would leave Python required and
-   hide that remaining dependency from the simple constructor metric.
-3. Continue through execution/ledger/storage/concurrency and group observation
+1. **Worker help parsing and readiness-report unit oracles.** Replace both live
+   comparisons in `src/workers/tests.rs` and retire their shared runner-backed
+   `src/workers/oracle.py` only after consumer closure. Preserve malformed/Unicode
+   help, ordering, hashes, complete reports, exact human output, exit codes and
+   redaction. The separate independent Python worker producer is not the same
+   dependency; do not claim whole-worker-subtree closure from only these sites.
+2. Continue through execution/ledger/storage/concurrency and group observation
    dependencies. Each batch should remove actual callers or close specific
    original assertions; track those two kinds of progress separately.
 

@@ -1,0 +1,86 @@
+{
+  "identity": {
+    "sha256": "c7a7d73b68d21102bf7d6d9be27b4106497efc8119224bebfbd26b375541bde7",
+    "size": 200000
+  },
+  "leaf_bindings": {
+    "/device": "fixture tool: symlink_metadata.dev() -> exact u64 integer",
+    "/inode": "fixture tool: symlink_metadata.ino() -> exact u64 integer",
+    "/mtime_ns": "fixture tool: i128(mtime()) * 1000000000 + i128(mtime_nsec())"
+  },
+  "schema_version": 1,
+  "which_cases": [
+    {
+      "expected": "$REL/first/identity-corpus-tool",
+      "id": "first-entry",
+      "name": "identity-corpus-tool",
+      "path": "$REL/first:$REL/second"
+    },
+    {
+      "expected": "$REL/second/identity-corpus-tool",
+      "id": "reversed-order",
+      "name": "identity-corpus-tool",
+      "path": "$REL/second:$REL/first"
+    },
+    {
+      "expected": "$REL/first/identity-corpus-tool",
+      "id": "empty-leading",
+      "name": "identity-corpus-tool",
+      "path": ":$REL/first"
+    },
+    {
+      "expected": "$REL/first/identity-corpus-tool",
+      "id": "empty-trailing",
+      "name": "identity-corpus-tool",
+      "path": "$REL/first:"
+    },
+    {
+      "expected": null,
+      "id": "empty-only-segments",
+      "name": "identity-corpus-tool",
+      "path": ":"
+    },
+    {
+      "expected": "$ROOT/first/identity-corpus-tool",
+      "id": "absolute-direct",
+      "name": "$ROOT/first/identity-corpus-tool",
+      "path": ""
+    },
+    {
+      "expected": "./$REL/first/identity-corpus-tool",
+      "id": "dot-direct",
+      "name": "./$REL/first/identity-corpus-tool",
+      "path": ""
+    },
+    {
+      "expected": "$REL//first/identity-corpus-tool",
+      "id": "repeated-separators",
+      "name": "identity-corpus-tool",
+      "path": "$REL//first"
+    },
+    {
+      "expected": "$REL/first/identity-corpus-tool",
+      "id": "nonexec-before-hit",
+      "name": "identity-corpus-tool",
+      "path": "$REL/nonexec:$REL/first"
+    },
+    {
+      "expected": "$REL/first/identity-corpus-tool",
+      "id": "directory-before-hit",
+      "name": "identity-corpus-tool",
+      "path": "$REL/directory:$REL/first"
+    },
+    {
+      "expected": "$REL/alias",
+      "id": "symlink",
+      "name": "$REL/alias",
+      "path": ""
+    },
+    {
+      "expected": null,
+      "id": "dangling",
+      "name": "$REL/dangling",
+      "path": ""
+    }
+  ]
+}

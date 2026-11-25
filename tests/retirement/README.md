@@ -56,8 +56,10 @@ behavior is missing. All original Python tests remain active.
   tests must retain mutation independence and every original limit/subcase too.
 - B proposes an existing native assertion substitute. Review every original
   assertion and setup/no-effect guard before marking it mapped.
-- C contains five independent stdlib Python helper files, separately listed.
-  They are development tools, excluded from the candidate native product gate.
+- Independent stdlib helpers (the separate C file registry) retain five historical
+  names: four active and one retired with reviewed evidence. They are development
+  tools, excluded from the candidate native product gate. The original-method
+  category-C count remains zero; helper retirement is not a new method mapping.
 - D needs native assertions or a reviewed equivalence mapping. Fault ordering,
   concurrency, purity, package isolation and Python-specific API tests remain
   explicit obligations; they are not silently discarded.
@@ -87,6 +89,14 @@ cycles. Nonliteral dynamic imports are reported. It is not a general Python
 execution analyzer; generated import names, runtime path manipulation and
 unparseable code fragments need manual review. C files fail if their closure
 reaches runner, third-party imports or unresolved dynamic import calls.
+
+`independent_python_baseline` pins the original helper names. The active
+`independent_python` list and `retired_independent_python` entries must be unique,
+disjoint and together equal that baseline. Each retired entry requires an absent,
+non-aliased source path, a source-hash-linked approved review, existing native
+replacement tests and intact fixture hashes. Missing/pending/tampered evidence,
+helper resurrection or removing history fails the audit. The helper's historical
+source hash is reviewed against Git; the auditor does not execute Git or old code.
 
 ## Candidate Native Inventory
 
@@ -459,3 +469,47 @@ original source and previous fixture pins remain unchanged. See the
 [dated batch](../../docs/changelog/2026-11-25-python-retirement-assets-checkpoints.md)
 for exact evidence and limits; the [removal plan](../../docs/plans/PYTHON_REMOVAL.md)
 tracks remaining callers.
+
+## Launch executable-fallback oracle removal — 2026-11-25
+
+`reviews/launch_fallback_oracle.json` records zero new original mappings while
+closing the last live Python consumer in the launch unit-test subtree. The
+retired `src/launch/executable/native_oracle.py` has no active consumer; manual
+capture selects verified historical source, not the current runner.
+
+Twelve full reference cases preserve real compiled-fixture execution for both
+backends, launch/stop, and missing-interpreter/missing-file/exit-127 scenarios.
+Only enumerated expected CWD leaves vary; the actual plan, report and calls remain
+unchanged for comparison. Native slot restrictions and the corpus digest guard
+against broad normalization or unreviewed fixture changes.
+
+All 28 launch tests passed normally and with Python unavailable in checkout and
+extracted source package, with default fixture compilation and no skips. Package
+and forty audit-tool tests also passed. The ledger remains **90 mapped / 851
+unresolved**, not ninety removed original tests. Other subtrees and integration
+parents still require the runner. See the
+[dated batch](../../docs/changelog/2026-11-25-python-retirement-launch-fallback.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
+
+## Process identity and independent-helper retirement — 2026-11-25
+
+`reviews/process_identity_oracles.json` records parent acceptance after independent
+review of both deleted helper consumers. No original mapping changes: **90 mapped /
+851 unresolved** remains. The registry explicitly retires `which_oracle.py` from
+the active independent-helper list, retaining its historical classification,
+source digest and reviewed native/fixture evidence instead of erasing its entry.
+
+The complete fourteen-test identity group passes without Python in checkout and
+source package, including exact five-field results, PATH spelling, metadata/file
+mutation, aliases, non-UTF8 names, timestamps and existing limits. The original six
+PATH comparisons remain alongside twelve captured declarative cases; expected
+metadata comes only from direct OS leaves and independently captured literal data.
+Production identity/platform code and the Unix test module are unchanged.
+
+Combined validation passed fourteen identity and twenty-eight launch tests normally
+and in checkout/package isolation, two package tests, and **53 audit-tool tests**.
+The helper registry reports **4 active / 1 retired / 5 historical**. All original
+IDs/source pins/review dispositions remain unchanged; helper counts are separate
+from original-method categories and execution totals. See the
+[dated record](../../docs/changelog/2026-11-25-python-retirement-process-identity.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.

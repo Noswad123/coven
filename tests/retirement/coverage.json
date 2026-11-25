@@ -328,10 +328,24 @@
   "independent_python": [
     "tests/_compat_values.py",
     "src/checkpoint_guidance/timestamp/oracle.py",
+    "src/workers/fixture.py",
+    "src/workspace_commands/python/oracle.py"
+  ],
+  "independent_python_baseline": [
+    "tests/_compat_values.py",
+    "src/checkpoint_guidance/timestamp/oracle.py",
     "src/process/identity/tests/which_oracle.py",
     "src/workers/fixture.py",
     "src/workspace_commands/python/oracle.py"
   ],
+  "retired_independent_python": [{
+    "path": "src/process/identity/tests/which_oracle.py",
+    "sha256": "a3920a4df586b1ce97d938c4b48b96d02c0349b982f63008c10825302a5ab6e2",
+    "review": {
+      "path": "tests/retirement/reviews/process_identity_oracles.json",
+      "sha256": "32dd1216b41d67b69502a2e19e60c99abaa480cd3a7b703a82d53c4bcf18bc1f"
+    }
+  }],
   "native_integration_inventory": [
     {"path":"tests/handoff_native.rs","tests":[
       "existing_workspace_with_no_archive_is_not_modified",

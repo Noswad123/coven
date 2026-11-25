@@ -17,6 +17,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import retirement_coverage as coverage
 
 
+INDEPENDENT_PYTHON_BASELINE = [
+    "tests/_compat_values.py",
+    "src/checkpoint_guidance/timestamp/oracle.py",
+    "src/process/identity/tests/which_oracle.py",
+    "src/workers/fixture.py",
+    "src/workspace_commands/python/oracle.py",
+]
+
+
 class ActiveOracleTransitionTests(unittest.TestCase):
     """Approved synthetic records exercise validation without approving the real draft."""
 
@@ -53,7 +62,8 @@ class ActiveOracleTransitionTests(unittest.TestCase):
         coverage.validate_active_oracle(self.root, {})
         manifest = {"schema_version": 1, "provenance": self.provenance, "files": [],
                     "original_method_count": 0, "category_counts": dict.fromkeys(coverage.CATEGORIES, 0),
-                    "candidate_mappings": {}, "independent_python": [], "native_integration_inventory": []}
+                    "candidate_mappings": {}, "independent_python": [], "independent_python_baseline": [],
+                    "native_integration_inventory": []}
         self.assertEqual(coverage.audit(self.root, manifest)["errors"], [])
         self.record["approval_status"] = "pending_parent_review"
         self.pin_record()
@@ -233,7 +243,7 @@ class RetirementCoverageTests(unittest.TestCase):
         self.assertEqual(len(self.report["file_counts"]), 44)
         self.assertEqual(self.report["categories"], {"A": 62, "B": 29, "C": 0, "D": 850})
         self.assertEqual(self.report["statuses"], {"mapped": 90, "unresolved": 851})
-        self.assertEqual(len(self.report["independent_python"]), 5)
+        self.assertEqual(len(self.report["independent_python"]), 4)
         views = [unit for unit in self.report["units"] if "::tests/test_session_views.py::" in unit["id"]]
         self.assertEqual(len(views), 19)
         self.assertEqual(sum(unit["status"] == "mapped" for unit in views), 18)
@@ -291,6 +301,39 @@ class RetirementCoverageTests(unittest.TestCase):
         self.assertEqual(len(cases), 127)
         self.assertEqual(set(cases), {case["id"] for case in corpus["cases"]})
         self.assertEqual(len(set(cases)), len(cases))
+
+    def test_independent_helper_history_is_separate_from_original_mapping_units(self):
+        self.assertEqual(self.manifest["independent_python_baseline"], INDEPENDENT_PYTHON_BASELINE)
+        self.assertEqual(self.report["independent_python_baseline"], INDEPENDENT_PYTHON_BASELINE)
+        retired_path = "src/process/identity/tests/which_oracle.py"
+        self.assertEqual(self.manifest["independent_python"],
+                         [path for path in INDEPENDENT_PYTHON_BASELINE if path != retired_path])
+        entry = {"path": retired_path,
+                 "sha256": "a3920a4df586b1ce97d938c4b48b96d02c0349b982f63008c10825302a5ab6e2",
+                 "review": {"path": "tests/retirement/reviews/process_identity_oracles.json",
+                            "sha256": "32dd1216b41d67b69502a2e19e60c99abaa480cd3a7b703a82d53c4bcf18bc1f"}}
+        self.assertEqual(self.manifest["retired_independent_python"], [entry])
+        record = json.loads((coverage.ROOT / entry["review"]["path"]).read_text())
+        helper = record["retired_helpers"][retired_path]
+        self.assertEqual(self.report["retired_independent_python"], [{
+            **entry, "historical_commit": "d6515b0ada93036b28869ed1b9ed60633a2c1bbf",
+            "mapping_delta": 0, "kind": "independent_stdlib_helper",
+            "replacement_tests": helper["replacement_tests"], "fixtures": helper["fixtures"],
+        }])
+        self.assertEqual(helper["replacement_tests"], [
+            "rust::src/process/identity/tests.rs::relative_path_directories_and_unset_default",
+        ])
+        self.assertEqual(helper["fixtures"], [
+            {"path": "tests/retirement/fixtures/process_identity.json",
+             "sha256": "ee3f56e401ae88caddd2ad9165537e4a244a32baa98dfb1fdd7156285951bf37"},
+            {"path": "tests/retirement/fixtures/process_identity_provenance.json",
+             "sha256": "6fb4e35e30b383305ae2b292a7f694253e7b0c14d424f3d4e09cef1f433cf1ff"},
+        ])
+        self.assertFalse(any(retired_path in unit["id"] for unit in self.report["units"]))
+        for key in ("reviews", "candidate_mappings"):
+            self.assertFalse(any(retired_path in identity for identity in self.manifest[key]))
+        self.assertNotIn(entry["review"]["path"],
+                         [batch["path"] for batch in self.manifest["provenance"]["accepted_batches"]])
 
     def test_new_batches_are_exact_hash_pinned_fragments_with_scoped_categories(self):
         batches = self.manifest["provenance"]["accepted_batches"][4:]
@@ -458,6 +501,7 @@ class RetirementCoverageTests(unittest.TestCase):
         self.assertIn("Original methods: 941", out.getvalue())
         self.assertIn("Supplemental Python methods: 38 in 3 files", out.getvalue())
         self.assertIn("Full Python suite methods: 979", out.getvalue())
+        self.assertIn("Independent stdlib Python files (C): 4 active, 1 retired, 5 historical", out.getvalue())
         self.assertIn("retirement incomplete", err.getvalue())
 
     def test_report_is_deterministic_and_never_imports_runner(self):

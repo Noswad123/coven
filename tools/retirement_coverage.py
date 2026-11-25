@@ -288,6 +288,90 @@ def validate_active_oracle(root, provenance):
         raise ValueError("active oracle transition is not parent approved")
 
 
+def independent_python_history(root, manifest):
+    """Verify helper retirement evidence separately from original-method mappings."""
+    active = manifest["independent_python"]
+    baseline = manifest.get("independent_python_baseline")
+    retired = manifest.get("retired_independent_python", [])
+    if baseline is None and ("independent_python_baseline" in manifest
+                             or "retired_independent_python" in manifest
+                             or "oracle_coven_sha256" in manifest["provenance"]):
+        raise ValueError("missing independent Python baseline registry")
+    if not isinstance(retired, list) or any(not isinstance(entry, dict)
+                                           or set(entry) != {"path", "sha256", "review"} for entry in retired):
+        raise ValueError("invalid retired independent Python registry")
+    retired_names = [entry["path"] for entry in retired]
+    for names in (active, baseline if baseline is not None else active, retired_names):
+        if (not isinstance(names, list)
+                or any(not isinstance(name, str)
+                       or not re.fullmatch(r"(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.py", name) for name in names)
+                or len(set(names)) != len(names)):
+            raise ValueError("duplicate or unsafe independent Python registry path")
+    if set(active) & set(retired_names):
+        raise ValueError("active and retired independent Python registries overlap")
+    if baseline is not None and set(active) | set(retired_names) != set(baseline):
+        raise ValueError("independent Python baseline registry drift")
+    verified = []
+    for entry in retired:
+        name = entry["path"]
+        # Inspect ancestors before the leaf, without following aliases outside the root.
+        path = root
+        for part in Path(name).parts:
+            path = path / part
+            if path.is_symlink() or (path == root / name and path.exists()):
+                raise ValueError(f"retired independent Python path exists or is aliased: {name}")
+            if path.exists() and not path.is_dir():
+                raise ValueError(f"unsafe retired independent Python ancestor: {name}")
+        if not isinstance(entry["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]):
+            raise ValueError(f"invalid retired independent Python source hash: {name}")
+        reference = entry["review"]
+        if (not isinstance(reference, dict) or set(reference) != {"path", "sha256"}
+                or not isinstance(reference["path"], str)
+                or not re.fullmatch(r"tests/retirement/reviews/[a-z_]+\.json", reference["path"])
+                or not isinstance(reference["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", reference["sha256"])):
+            raise ValueError(f"invalid independent Python retirement review reference: {name}")
+        record_path = local_file(root, reference["path"])
+        if digest(record_path) != reference["sha256"]:
+            raise ValueError(f"independent Python retirement review digest mismatch: {name}")
+        record = json.loads(record_path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        if (not isinstance(record, dict) or type(record.get("schema_version")) is not int
+                or record["schema_version"] != 1 or type(record.get("mapping_delta")) is not int
+                or record["mapping_delta"] != 0
+                or not isinstance(record.get("historical_commit"), str)
+                or not re.fullmatch(r"[0-9a-f]{40}", record["historical_commit"])):
+            raise ValueError(f"invalid independent Python retirement provenance: {name}")
+        if record.get("approval_status") != "parent_approved":
+            raise ValueError(f"independent Python retirement is not parent approved: {name}")
+        helpers = record.get("retired_helpers")
+        helper = helpers.get(name) if isinstance(helpers, dict) else None
+        if (not isinstance(helper, dict) or helper.get("sha256") != entry["sha256"]
+                or helper.get("kind") != "independent_stdlib_helper"):
+            raise ValueError(f"independent Python retirement helper linkage mismatch: {name}")
+        tests = helper.get("replacement_tests")
+        if (not isinstance(tests, list) or not tests or any(not isinstance(test, str) for test in tests)
+                or len(set(tests)) != len(tests)):
+            raise ValueError(f"invalid independent Python replacement tests: {name}")
+        for test in tests:
+            parts = test.split("::")
+            if len(parts) != 3 or parts[0] != "rust" or rust_tests(root, parts[1]).count(parts[2]) != 1:
+                raise ValueError(f"absent independent Python replacement native test: {test}")
+        fixtures = helper.get("fixtures")
+        if not isinstance(fixtures, list) or not fixtures:
+            raise ValueError(f"missing independent Python retirement fixtures: {name}")
+        for fixture in fixtures:
+            if (not isinstance(fixture, dict) or set(fixture) != {"path", "sha256"}
+                    or not isinstance(fixture["path"], str) or not isinstance(fixture["sha256"], str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", fixture["sha256"])):
+                raise ValueError(f"invalid independent Python retirement fixture: {name}")
+            if digest(local_file(root, fixture["path"])) != fixture["sha256"]:
+                raise ValueError(f"independent Python retirement fixture digest mismatch: {fixture['path']}")
+        verified.append({**entry, "historical_commit": record["historical_commit"],
+                         "mapping_delta": record["mapping_delta"], "kind": helper["kind"],
+                         "replacement_tests": tests, "fixtures": fixtures})
+    return verified
+
+
 def audit(root, manifest):
     if manifest["schema_version"] != 1:
         raise ValueError("unsupported ledger schema")
@@ -429,8 +513,16 @@ def audit(root, manifest):
     b_ids = {unit["id"] for unit in units if unit["category"] == "B"}
     if set(manifest["candidate_mappings"]) != b_ids:
         errors.append("every B unit must have exactly its explicit candidate mapping entry")
+    retired_python = []
+    try:
+        retired_python = independent_python_history(root, manifest)
+    except ValueError as error:
+        errors.append(str(error))
     for name in manifest["independent_python"]:
         local_file(root, name)
+        if name not in imports:
+            errors.append(f"independent Python file is outside the AST inventory: {name}")
+            continue
         item = imports[name]
         if item["runner_dependencies"] or item["external_imports"] or item["dynamic_import_files"]:
             errors.append(f"C file is not independently stdlib-only: {name}")
@@ -439,6 +531,8 @@ def audit(root, manifest):
     return {"schema_version": 1, "provenance": manifest["provenance"], "categories": dict(categories),
             "statuses": dict(sorted(Counter(unit["status"] for unit in units).items())),
             "file_counts": file_counts, "units": units, "independent_python": manifest["independent_python"],
+            "independent_python_baseline": manifest.get("independent_python_baseline", manifest["independent_python"]),
+            "retired_independent_python": retired_python,
             "supplemental_python": {"ids": sorted(supplemental_ids), "file_counts": supplemental_files,
                                     "method_count": len(supplemental_ids)},
             "full_python_method_count": len(discovered),
@@ -470,7 +564,9 @@ def main(argv=None):
         print(f"Full Python suite methods: {report['full_python_method_count']}")
         print("Categories: " + " ".join(f"{key}={report['categories'][key]}" for key in CATEGORIES))
         print("Statuses: " + " ".join(f"{key}={value}" for key, value in report["statuses"].items()))
-        print(f"Independent stdlib Python files (C): {len(report['independent_python'])}")
+        print(f"Independent stdlib Python files (C): {len(report['independent_python'])} active, "
+              f"{len(report['retired_independent_python'])} retired, "
+              f"{len(report['independent_python_baseline'])} historical (not original-method category C counts)")
         native = report["native_integration_inventory"]
         print(f"Candidate native integration inventory: {len(native)} targets, {sum(len(item['tests']) for item in native)} test IDs")
         print(report["native_inventory_scope"])
