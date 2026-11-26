@@ -3,7 +3,9 @@ use crate::{
     canonical,
     values::{self, Profile},
 };
-use std::{fs, process::Command, time::Duration};
+use std::{fs, time::Duration};
+
+mod frozen;
 
 fn fixture() -> (tempfile::TempDir, WorkspaceGuard) {
     let dir = tempfile::tempdir().unwrap();
@@ -30,32 +32,16 @@ fn write(root: &Path, relative: &str, bytes: impl AsRef<[u8]>) {
     fs::write(root.join(relative), bytes).unwrap();
 }
 
-fn oracle(root: &Path) -> Vec<u8> {
-    let output = Command::new("python3")
-        .args([
-            "-B",
-            "-c",
-            include_str!("oracle.py"),
-            root.to_str().unwrap(),
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output.stdout
-}
-
 #[test]
 fn exact_source_canonical_extensions_signed_zero_bigints_and_unknown_fields() {
     let (dir, guard) = fixture();
     let raw = br#" [ {"id":"task","title":"Title","status":"custom","owner":"outside","extra":{"z":-0.0,"big":123456789012345678901234567890,"unicode":"\u03bb\ud83e\udd8a","float":1e-7,"nested":[null,true]}} ] "#;
     write(dir.path(), "state/tasks.json", raw);
     let value = captured(dir.path(), &guard).unwrap();
-    assert_eq!(value.canonical().unwrap(), oracle(dir.path()));
+    assert_eq!(
+        value.canonical().unwrap(),
+        frozen::expected("extensions", raw, None)
+    );
     assert_eq!(
         get(&value, "roster").unwrap().compact().unwrap(),
         br#"["b","a"]"#
@@ -75,14 +61,14 @@ fn raw_revision_distinguishes_missing_whitespace_empty_array_and_blank_file() {
         get(&missing, "revision").unwrap().as_str(),
         Some("tasks-missing:v1")
     );
-    for raw in [b"[]".as_slice(), b" \n[]\t"] {
+    for (id, raw) in [("empty", b"[]".as_slice()), ("whitespace", b" \n[]\t")] {
         write(dir.path(), "state/tasks.json", raw);
         let value = captured(dir.path(), &guard).unwrap();
         assert_eq!(
             get(&value, "revision").unwrap().as_str(),
             Some(format!("tasks-sha256:{}", canonical::digest(raw)).as_str())
         );
-        assert_eq!(value.canonical().unwrap(), oracle(dir.path()));
+        assert_eq!(value.canonical().unwrap(), frozen::expected(id, raw, None));
     }
     for raw in [b"".as_slice(), b" \n\t"] {
         write(dir.path(), "state/tasks.json", raw);
@@ -104,7 +90,10 @@ fn independent_snapshot_observation_pairs_fresh_tasks_and_revision() {
         },
     )
     .unwrap();
-    assert_eq!(value.canonical().unwrap(), oracle(dir.path()));
+    assert_eq!(
+        value.canonical().unwrap(),
+        frozen::expected("fresh", raw, None)
+    );
     assert_eq!(
         get(&value, "tasks").unwrap().canonical().unwrap(),
         values::parse(raw, Profile::LegacySnapshot)
@@ -118,6 +107,7 @@ fn independent_snapshot_observation_pairs_fresh_tasks_and_revision() {
 #[test]
 fn independent_ledger_selection_does_not_reuse_workspace_tasks() {
     let (dir, guard) = fixture();
+    let mut imported_ids = None;
     let value = capture_inner(
         dir.path(),
         &string("a".repeat(32)),
@@ -134,6 +124,10 @@ fn independent_ledger_selection_does_not_reuse_workspace_tasks() {
                 .revision()
                 .to_owned();
             let report = ledger::import_tasks(dir.path(), &revision, &guard).unwrap();
+            imported_ids = Some((
+                report.view().workspace_id().to_owned(),
+                report.view().epoch_id().to_owned(),
+            ));
             assert_eq!(report.durability(), ledger::ActivationDurability::Confirmed);
             assert_eq!(
                 report.view().tasks().canonical().unwrap(),
@@ -148,7 +142,15 @@ fn independent_ledger_selection_does_not_reuse_workspace_tasks() {
             .as_str(),
         Some("task-ledger-v1")
     );
-    assert_eq!(value.canonical().unwrap(), oracle(dir.path()));
+    let (workspace_id, epoch_id) = imported_ids.unwrap();
+    assert_eq!(
+        value.canonical().unwrap(),
+        frozen::expected(
+            "ledger",
+            br#"[{"id":"new","title":"New","status":"pending"}]"#,
+            Some((&workspace_id, &epoch_id))
+        )
+    );
 }
 
 #[test]

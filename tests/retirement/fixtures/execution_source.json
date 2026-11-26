@@ -1,0 +1,98 @@
+{
+  "case_ids": [
+    "extensions",
+    "empty",
+    "whitespace",
+    "fresh",
+    "ledger"
+  ],
+  "cases": [
+    {
+      "exit_status": 0,
+      "id": "extensions",
+      "slots": [],
+      "stderr": "",
+      "stdout": "{\"identity\":{\"kind\":\"snapshot-v1\",\"path\":\"state/tasks.json\",\"source_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"revision\":\"tasks-sha256:3869c9aef47b59822116c544775c137fdbb004ce132f826bb23b194266097cdf\",\"roster\":[\"b\",\"a\"],\"tasks\":[{\"extra\":{\"big\":123456789012345678901234567890,\"float\":1e-07,\"nested\":[null,true],\"unicode\":\"λ🦊\",\"z\":-0.0},\"id\":\"task\",\"owner\":\"outside\",\"status\":\"custom\",\"title\":\"Title\"}]}",
+      "stdout_bytes": 404,
+      "stdout_sha256": "d99f0b5aff22e7406845b90cdf33888d4624be8924c3a4e7213e84f8e149aea5",
+      "tasks_raw": " [ {\"id\":\"task\",\"title\":\"Title\",\"status\":\"custom\",\"owner\":\"outside\",\"extra\":{\"z\":-0.0,\"big\":123456789012345678901234567890,\"unicode\":\"\\u03bb\\ud83e\\udd8a\",\"float\":1e-7,\"nested\":[null,true]}} ] ",
+      "tasks_raw_sha256": "3869c9aef47b59822116c544775c137fdbb004ce132f826bb23b194266097cdf"
+    },
+    {
+      "exit_status": 0,
+      "id": "empty",
+      "slots": [],
+      "stderr": "",
+      "stdout": "{\"identity\":{\"kind\":\"snapshot-v1\",\"path\":\"state/tasks.json\",\"source_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"revision\":\"tasks-sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"roster\":[\"b\",\"a\"],\"tasks\":[]}",
+      "stdout_bytes": 229,
+      "stdout_sha256": "a6dd7be0023e64c1451f7cea9899a5bb295a6c77467c109b1278a73785161bd1",
+      "tasks_raw": "[]",
+      "tasks_raw_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "exit_status": 0,
+      "id": "whitespace",
+      "slots": [],
+      "stderr": "",
+      "stdout": "{\"identity\":{\"kind\":\"snapshot-v1\",\"path\":\"state/tasks.json\",\"source_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"revision\":\"tasks-sha256:b965bdf69cf39f50f9337e1992cd8bc95e95fd8a4b9bafd1aab56478dbb17471\",\"roster\":[\"b\",\"a\"],\"tasks\":[]}",
+      "stdout_bytes": 229,
+      "stdout_sha256": "5b6aa2acb72e2896ca2a08459808b58d8cecef9f5dbdec5fa7a7ad5a5e999332",
+      "tasks_raw": " \n[]\t",
+      "tasks_raw_sha256": "b965bdf69cf39f50f9337e1992cd8bc95e95fd8a4b9bafd1aab56478dbb17471"
+    },
+    {
+      "exit_status": 0,
+      "id": "fresh",
+      "slots": [],
+      "stderr": "",
+      "stdout": "{\"identity\":{\"kind\":\"snapshot-v1\",\"path\":\"state/tasks.json\",\"source_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"revision\":\"tasks-sha256:4a5bc55fd923ea7b27844e89a5cc835406359e6a0ea157f693f642bca446b280\",\"roster\":[\"b\",\"a\"],\"tasks\":[{\"id\":\"fresh\",\"status\":\"pending\",\"title\":\"Fresh\"}]}",
+      "stdout_bytes": 278,
+      "stdout_sha256": "678cee41867bc30dec6ec056e6e1731707e06b0f47a9718c5205df608baad3b1",
+      "tasks_raw": "[{\"id\":\"fresh\",\"title\":\"Fresh\",\"status\":\"pending\"}]",
+      "tasks_raw_sha256": "4a5bc55fd923ea7b27844e89a5cc835406359e6a0ea157f693f642bca446b280"
+    },
+    {
+      "captured_ids": {
+        "epoch_id": "e228ce0b11c94c80bed9f450a6fed410",
+        "workspace_id": "1aba61b5b8e54fbd8f34a675a5b9ac2b"
+      },
+      "exit_status": 0,
+      "id": "ledger",
+      "roundtrip_equal": true,
+      "slots": [
+        {
+          "after": "\"",
+          "before": "\"epoch_id\":\"",
+          "binding": "epoch_id",
+          "offset": 25
+        },
+        {
+          "after": "\"",
+          "before": "\"workspace_id\":\"",
+          "binding": "workspace_id",
+          "offset": 126
+        },
+        {
+          "after": ":",
+          "before": "\"revision\":\"tasks-ledger:v1:",
+          "binding": "workspace_id",
+          "offset": 189
+        },
+        {
+          "after": ":",
+          "before": ":",
+          "binding": "epoch_id",
+          "offset": 222
+        }
+      ],
+      "stderr": "",
+      "stdout": "{\"identity\":{\"epoch_id\":\"e228ce0b11c94c80bed9f450a6fed410\",\"kind\":\"task-ledger-v1\",\"path\":\"state/task-ledger\",\"workspace_id\":\"1aba61b5b8e54fbd8f34a675a5b9ac2b\"},\"revision\":\"tasks-ledger:v1:1aba61b5b8e54fbd8f34a675a5b9ac2b:e228ce0b11c94c80bed9f450a6fed410:0:8a466fcefa738d0a9236f48b20328e01fde532a2045bad3e0efe0d8e31f39d1c\",\"roster\":[\"b\",\"a\"],\"tasks\":[{\"id\":\"new\",\"status\":\"pending\",\"title\":\"New\"}]}",
+      "stdout_bytes": 398,
+      "stdout_sha256": "b6676564c11b3f2f76869905c239a97bbb0078a7b854147bb4b6b7d6dad0ff6e",
+      "tasks_raw": "[{\"id\":\"new\",\"title\":\"New\",\"status\":\"pending\"}]",
+      "tasks_raw_sha256": "f6322a9b5bb3b4c0eea1510cae8729f40f9ed3a2dee2f2ff71c6970cdf6f1f3d",
+      "template": "{\"identity\":{\"epoch_id\":\"00000000000000000000000000000000\",\"kind\":\"task-ledger-v1\",\"path\":\"state/task-ledger\",\"workspace_id\":\"00000000000000000000000000000000\"},\"revision\":\"tasks-ledger:v1:00000000000000000000000000000000:00000000000000000000000000000000:0:8a466fcefa738d0a9236f48b20328e01fde532a2045bad3e0efe0d8e31f39d1c\",\"roster\":[\"b\",\"a\"],\"tasks\":[{\"id\":\"new\",\"status\":\"pending\",\"title\":\"New\"}]}"
+    }
+  ],
+  "schema_version": 1
+}

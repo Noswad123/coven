@@ -1,0 +1,48 @@
+{
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Main accepted the helper removal after independent byte/assertion, ledger-binding, source-provenance and consumer-closure review. This grants no new original-method mapping, execution authority or global Python-retirement approval; parent package and combined validation results are recorded separately.",
+  "binding_slots": 4,
+  "caller_tests": 4,
+  "case_ids": [
+    "extensions",
+    "empty",
+    "whitespace",
+    "fresh",
+    "ledger"
+  ],
+  "executed_comparisons": 5,
+  "fixtures": [
+    {
+      "bytes": 5213,
+      "path": "tests/retirement/fixtures/execution_source.json",
+      "sha256": "e88cbccbfde9d7ed833fb18b74c3d48aa707185ff8f6e83a5eeb8e978a4cba43"
+    },
+    {
+      "bytes": 5308,
+      "path": "tests/retirement/fixtures/execution_source_provenance.json",
+      "sha256": "992b3f6dc52c0d20013de05e7a832ae5bc05fd12fb11f3b62ac635f5f18e0b11"
+    }
+  ],
+  "historical_commit": "ca3b19d87c955d6415231b1c4ebbbc591195a105",
+  "mapping_delta": 0,
+  "original_tests": 18,
+  "retired_helpers": {
+    "src/execution/source/oracle.py": {
+      "kind": "runner_oracle",
+      "sha256": "b3dc9be994f764ccd0373ab782127a22054493194d2f7695900efdc18ba78c01"
+    }
+  },
+  "schema_version": 1,
+  "scope": "Execution source unit only. Original 941 total / 90 mapped / 851 unresolved and registry 4 active + 1 retired = 5 unchanged. Zero new mapping claims; no global retirement approval.",
+  "consumer_closure": "The central oracle function, Command import, and sole include_str consumer are removed; helper deleted without relocation. Remaining helper references are inert provenance/review/pin metadata or the explicit historical-export-only freezer.",
+  "comparison": "Five full canonical byte comparisons across four original test IDs. Missing-file control is retained but is not a sixth oracle case. No full source serde_json decoding or native output normalization. Raw snapshot revision hashes, roster order, all four fields, task literals and ledger digest/sequence remain historical literals.",
+  "bindings": "Only import report view.workspace_id and view.epoch_id copied inside the existing after_workspace callback. Four fixed 32-byte expected-only slots at offsets 25, 126, 189, 222; lowercase hex validation, context guards, captured-ID roundtrip equals full historical stdout and hash. No report revision/tasks copied into expected.",
+  "validation": {
+    "normal": "cargo test --offline --locked -j 2 --lib execution::source::tests:: --no-run, then library binary execution::source::tests:: --test-threads=2: 18 passed, 0 failed, 0 ignored",
+    "python_filesystem_absent": "Same library binary/filter/2 threads: 18 passed, 0 failed, 0 ignored. bwrap --unshare-all --die-with-parent --new-session --clearenv; only executable, bash, exact ldd-selected shared libraries, proc/dev, owned writable /work and disk-backed TMPDIR mounted. No full root, bin directory, repository, compiler, Homebrew, or Python mounts. Explicit interpreter-path absence and failed command-v python/python3 checked before tests.",
+    "fork": "Original allocation-free fork refusal and waitpid assertions unchanged; executed successfully in both runs, no special skip.",
+    "limits": "Focused source unit suite only; not full repository/aggregate/package acceptance or global retirement approval.",
+    "cleanup": "Unique disk-backed btrfs cache directories, free space checked, traps registered before children, synchronous test exit including owned fork wait before exact-owned-directory cleanup. No retained run artifacts.",
+    "packaging": "No Cargo edits. Existing /src/**/*.rs, /tests/retirement/fixtures/*.json and /tests/retirement/reviews/*.json include globs cover new decoder/data/review. Parent owns aggregate/helper-absence/package gates."
+  }
+}

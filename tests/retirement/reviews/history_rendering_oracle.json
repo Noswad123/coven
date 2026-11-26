@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Main accepted helper removal after independent complete-corpus, exact-byte/assertion, source-provenance and consumer-closure review. This grants no new original-method mapping or global Python-retirement approval; parent package and combined validation results are recorded separately.",
+  "historical_commit": "ca3b19d87c955d6415231b1c4ebbbc591195a105",
+  "mapping_delta": 0,
+  "retired_helpers": {
+    "src/workspace_commands/history/oracle.py": {
+      "kind": "runner_oracle",
+      "sha256": "21b6def9f4457ecce36accfe45211568a40520fc997a7709857d1f6d6ff699fc",
+      "fixtures": [
+        {
+          "path": "tests/retirement/fixtures/history_rendering.json",
+          "bytes": 49326,
+          "sha256": "150ef31104ea3158a48c53aa2a804c54ef401ea3611cb630a4dee7099fae5e31"
+        },
+        {
+          "path": "tests/retirement/fixtures/history_rendering_provenance.json",
+          "bytes": 20993,
+          "sha256": "9aca74fc0b4a34b61282817ebe7f941bbff1e6fd74793fb1f2368f594c82f78a"
+        }
+      ],
+      "replacement_tests": [
+        "rust::src/workspace_commands/history/tests.rs::independent_python_field_defaults_truthiness_repr_and_raw_newlines"
+      ]
+    }
+  },
+  "scope": "One runner-dependent Python subprocess constructor replaced in one native test. Historical test ID retained, not evidence of independence. Global 941 original methods / 90 mapped / 851 unresolved and independent-helper registry 4 active / 1 retired / 5 total unchanged; zero new mappings or policy approval.",
+  "assertion_breakdown": {
+    "inventory": "232 zero-based case IDs in original order, including duplicate records. Initial empty object plus 14 values times 16 combinations = 225 record rows, each exercised through real log files in both Events and Messages (450 exact pretty outputs). Seven raw rows produce seven exact raw outputs.",
+    "values": "None, False, integer 0, float -0.0, empty string/list/object, True, integer 1, nested list with quotes/backslash/LF/NUL/fox, nested object with True/0/-0.0, literal CR/LF/ESC/U+2028/fox, 10**100 (101 digits), 1e-5. Eleven individual fields, one ten-field combined row, two message/request/body precedence rows, two task_id/task.id fallback rows for each value. No new inputs or expected-output producer.",
+    "raw": "Missing file (None), empty, CR, CRLF, mixed a CR b CRLF c LF, LF LF, and NUL ESC fox U+2028 U+0085. Whole stdout strings retained, including missing-file double LF and literal controls.",
+    "integrity": "Complete 42199-byte, 232-line historical stdout, final LF included, stored as JSONL line strings in an outer schema-1 JSON manifest. SHA-256 of corpus and provenance hardcoded in native decoder before decode; every line SHA-256, schema/key order, counts and reconstructed whole stdout checked before any comparison. Each row uses values::parse LegacySnapshot separately, preserving arbitrary integer precision, float sign, bool distinction, member order and profile budgets exactly as the old test. No record decoded/reserialized through serde_json::Value.",
+    "dynamic_guards": "All other nine native history tests unchanged byte-for-byte. Real history_arguments/log writes and deletion remain; selected/unselected log validation, read-only behavior, held locks, canonical and non-UTF8 paths, UTF8 rejection, malformed/nonfinite/extended-exponent refusal, raw arbitrary UTF8, complete-tail/no-partial-output, line/depth/resource and output bounds remain native filesystem tests. No fixture-only mock, skips, native output normalization or expected bindings."
+  },
+  "provenance": "Python 3.14.8 -I -B in a clean environment. Explicit historical Git archive export, no worktree; helper and two Rust parents plus all 25 runner Python modules checked against full pinned commit before execution. No bytecode in export. Helper owns TemporaryDirectory under owned disk-backed TMPDIR. Two independent helper invocations have identical stdout bytes; no Rust outputs consumed. Interpreter, tool, source, corpus, whole stdout and per-row SHA-256 recorded. Freezer emits only capture artifacts outside checkout and requires explicit verified historical root; deleted helper cannot be recreated or silently replaced by current checkout.",
+  "consumer_closure": "Single constructor removed; source search of history test subtree contains no Command/python3/helper-path consumer before deletion. Helper deleted only after closure. Remaining helper-path references are historical freezer/provenance/review data, not executable fallback.",
+  "parent_package_integration": {
+    "required_inputs": [
+      "src/workspace_commands/history/tests/frozen.rs",
+      "tests/retirement/fixtures/history_rendering.json",
+      "tests/retirement/fixtures/history_rendering_provenance.json",
+      "tests/retirement/reviews/history_rendering_oracle.json"
+    ],
+    "required_absence_guard": "src/workspace_commands/history/oracle.py",
+    "note": "Existing Cargo Rust/fixture/review globs already cover these inputs. Parent must add explicit native-package required-input and helper-absence assertions later; no Cargo/native_package edits in this slice."
+  },
+  "validation": {
+    "build": "cargo test --offline --locked -j 2 --lib workspace_commands::history:: --no-run --message-format=json; final clean owned build completed in 1m 54s. Directly executed the resulting library test binary with the full workspace_commands::history:: filter, not just the replaced comparison.",
+    "normal": "10 passed, 0 failed, 0 ignored, 0 measured, 1614 filtered out; final run 1.94s.",
+    "strong_isolation": "10 passed, 0 failed, 0 ignored, 0 measured, 1614 filtered out; final run 1.90s. bwrap --unshare-all --die-with-parent --new-session --clearenv. Only native test binary, exact individual ldd shared libraries and explicit /lib64/ld-linux-x86-64.so.2 loader, exact repository read-only, owned writable /work and disk-backed /scratch, /dev and /proc. PATH=/no-programs, TMPDIR=/scratch. No shell, Python, compiler, full root, /bin, home, Homebrew or library-tree mount. Final native decoder requests COVEN_HISTORY_ASSERT_PYTHON_ABSENT=1 and directly verifies symlink_metadata returns NotFound plus Linux raw ENOENT for every listed interpreter/runtime path before fixture comparisons. This adds assertions, never skips tests. Initial run also passed with a mounted shell absence guard; final run removes that guard and checks actual native syscall errors instead.",
+    "python_absence_checks": [
+      "/usr/bin/python3",
+      "/bin/python3",
+      "/usr/bin/python3.14",
+      "/usr/local/bin/python3",
+      "/home/linuxbrew/.linuxbrew/bin/python3",
+      "/usr/lib/python3.14",
+      "/usr/lib/libpython3.14.so"
+    ],
+    "source_pin_tamper_checks": "All 28 pinned source paths individually subjected to in-memory read corruption, including helper, both Rust parents and all 25 runner Python modules. Each failed its path-specific assertion before any non-Git subprocess/oracle execution. No source files rewritten. Explicit current-checkout historical-root argument refused after deletion; no helper recreation or fallback.",
+    "baseline_checks": "Verified all other nine tests byte-identical to pinned Git source, all 10 original test declarations retained, and no Command/python3/helper-path consumer left in history tests. Compared production history.rs, runner tree, tests/test_*.py original sources, Cargo.toml/Cargo.lock, tests/native_package.rs and coverage.json to pinned commit: unchanged. Corpus and provenance byte-for-byte equal capture artifacts; capture-tool hash matches provenance. git diff --check and focused rustfmt --check passed. Other worker execution-source changes left untouched.",
+    "environment": "Verified /home btrfs cache root with approximately 319 GiB available before builds. Unique owned run directories with TMPDIR and CARGO_TARGET_DIR. OPENSSL_LIB_DIR=/usr/lib, OPENSSL_INCLUDE_DIR=/usr/include, PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig; OPENSSL_DIR and LD_LIBRARY_PATH unset. Existing dependency/toolchain caches reused, offline/locked and two build jobs, no installs/downloads/deploy/provider/native user actions.",
+    "cleanup": "Both exact owned build/test directories removed by EXIT traps after synchronous children finished; owned historical capture/export/check scripts removed separately after final evidence checks. No retained agent artifacts. Pre-existing cache directory pn.HC9lGV untouched.",
+    "limits": "Linux history-filter proof only. No macOS, full native suite, extracted package or global audit execution/approval claimed. No Python expected bindings or actual-output normalization. Original-method coverage and independent-helper registry unchanged; pending_parent_review, mapping_delta 0. Parent package required-input and helper-absence integration remains outstanding."
+  }
+}

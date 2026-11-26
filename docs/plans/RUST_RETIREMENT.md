@@ -217,8 +217,11 @@ four active plus one retired across the same five baseline names.
 The [worker-unit batch](../changelog/2026-11-25-python-retirement-worker-units.md)
 also closed two live comparisons and their shared oracle, validating all eleven
 worker unit tests without Python while retaining the separate integration producer.
-The current inventory has 32 runner-dependent/mixed source caller files and
-26 runner-backed integration targets under the documented static inventory;
+The [source/history batch](../changelog/2026-11-26-python-retirement-source-history.md)
+then removed two more comparisons/helpers and verified all eighteen source and
+ten history tests without Python, preserving exact numeric/canonical bytes and
+dynamic source-selection checks. The current inventory has 30 runner-dependent/
+mixed source caller files and 26 runner-backed integration targets;
 these counts do not include every
 variable executable or generated-script path. No additional original-method mapping
 was claimed.

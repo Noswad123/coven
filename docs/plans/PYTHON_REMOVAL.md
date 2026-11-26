@@ -11,17 +11,17 @@ read-only audit, are a separate policy boundary. Removing the legacy implementat
 does not mean the repository must contain no Python files whatsoever. Do not move
 or copy the implementation into test support and call that removal.
 
-## Current snapshot — 2026-11-25
+## Current snapshot — 2026-11-26
 
 | Measure | Before first removal batch | Current |
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **46** |
-| Rust source files containing those sites | 44 | **36** |
-| Runner-dependent or mixed source caller files | 40 | **32** |
-| Source-local Python files | 25 | **18** |
-| Runner-dependent source-local Python files | 21 | **15** |
+| Direct Python constructor sites in Rust source | 61 | **44** |
+| Rust source files containing those sites | 44 | **34** |
+| Runner-dependent or mixed source caller files | 40 | **30** |
+| Source-local Python files | 25 | **16** |
+| Runner-dependent source-local Python files | 21 | **13** |
 | Python-launching integration targets | 29 | **28** |
 | Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
@@ -37,7 +37,7 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 46 total sites are **not** 46 exclusively runner-backed
+need manual follow-up. The 44 total sites are **not** 44 exclusively runner-backed
 sites; four caller files are independent-only and others can be mixed. New capture
 tools under `tools/` are outside this source/integration metric.
 
@@ -110,24 +110,36 @@ tools under `tools/` are outside this source/integration metric.
   original-method mapping. See the
   [dated evidence](../changelog/2026-11-25-python-retirement-worker-units.md).
 
-Cumulatively, sixteen counted source/integration invocation sites and one known
-variable-executable site have been removed, with eight helpers deleted. The
+### Execution-source observation and history — 2026-11-26
+
+- Replaced five full source-byte comparisons across four callers. Snapshot raw
+  revisions, signed zero, big integers, Unicode, post-preflight writes and actual
+  guarded ledger activation remain. Only two import IDs bind four expected slots.
+- Replaced the complete 232-row history comparison, retaining 450 exact pretty
+  outputs, seven raw outputs and every native refusal/read-only/resource test.
+- Deleted both source-local helpers after consumer closure. All eighteen source
+  tests and ten history tests pass without Python in checkout and extracted
+  package. Other execution test oracles remain; no new mapping is claimed. See
+  [dated evidence](../changelog/2026-11-26-python-retirement-source-history.md).
+
+Cumulatively, eighteen counted source/integration invocation sites and one known
+variable-executable site have been removed, with ten helpers deleted. The
 variable call is deliberately reported separately from the literal regex metric.
 No whole `runner/` module is yet deletable: other modules and
 Python-backed integration parents still import `runner.launch`, among others.
 
 ## Next cohorts
 
-1. **Execution-source observation.** Replace the centralized oracle in
-   `src/execution/source/tests.rs`, preserving all four tests/five comparisons,
-   independent post-preflight observation, raw snapshot revisions and ledger
-   identity. Keep exact canonical bytes, signed zero, large integers, extensions
-   and Unicode; default serde JSON numeric conversion is not sufficient.
-2. **History rendering.** Replace the 232-row runner-backed comparison in
-   `src/workspace_commands/history/tests.rs`, retaining truthiness/default/fallback
-   behavior, repr, controls and exact output, plus the other native refusal and
-   resource tests. Its "independent Python" test name does not imply independence
-   from the legacy runner.
+1. **Repository record admission.** Replace the comparison in
+   `src/repositories/oracle_tests.rs`, retaining all 1,979 authored inputs,
+   including the full timestamp matrix, raw duplicate/nonfinite JSON and integer
+   distinctions. Preserve inspection/retry and large-integer assertions, and
+   guard exact input/result cardinality instead of a truncating zip.
+2. **Persisted Djinn decoder comparison.** Inspect the complete raw-payload matrix
+   in `src/djinn_observation/tests.rs`, preserving capability/schema, timestamp,
+   nesting, extension/size limits and 4,300-digit unknown integers without serde
+   narrowing. Retire only the decoder oracle, not actual producer qualification;
+   retain redaction/refusal/profile tests and do not invoke installed providers.
 3. Continue through execution/ledger/storage/concurrency and group observation
    dependencies. Each batch should remove actual callers or close specific
    original assertions; track those two kinds of progress separately.

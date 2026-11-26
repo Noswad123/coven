@@ -491,6 +491,29 @@ parents still require the runner. See the
 [dated batch](../../docs/changelog/2026-11-25-python-retirement-launch-fallback.md)
 and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
 
+## Execution-source and history oracle removal — 2026-11-26
+
+`reviews/execution_source_oracle.json` and `reviews/history_rendering_oracle.json`
+record independent review and narrow acceptance of two more live-helper removals.
+They add zero original-method mappings and do not enter `accepted_batches` as
+assertion substitutions. Original status and the independent-helper registry stay
+**90 mapped / 851 unresolved** and **4 active / 1 retired / 5 historical**.
+
+Execution source preserves all eighteen native tests and five whole canonical-byte
+comparisons. Expected stdout is opaque, retaining signed zero, large integers,
+Python exponent spelling and UTF-8. Only generated import IDs bind four guarded
+32-byte expected slots; revision digest, sequence, tasks and roster remain literal.
+History preserves all 232 rows and 457 exact pretty/raw outputs using per-row
+`LegacySnapshot` values, without numeric narrowing, normalization or deduplication.
+All dynamic filesystem/refusal/guard tests remain.
+
+Both complete groups pass without Python in checkout and extracted package. Package
+checks and 53 audit-tool tests passed; original IDs, source pins and prior captures
+remain unchanged. Neither the full execution subtree nor global retirement is
+declared complete. See the
+[dated batch](../../docs/changelog/2026-11-26-python-retirement-source-history.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
+
 ## Worker parser/report unit-oracle removal — 2026-11-25
 
 `reviews/worker_readiness_oracles.json` records independent review and narrow parent

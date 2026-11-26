@@ -1,6 +1,9 @@
 use super::*;
 use std::fs;
 
+#[path = "tests/frozen.rs"]
+mod frozen;
+
 fn fixture() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     fs::write(
@@ -21,27 +24,12 @@ fn capture(root: &Path, kind: HistoryKind, raw: bool) -> String {
 
 #[test]
 fn independent_python_field_defaults_truthiness_repr_and_raw_newlines() {
-    let oracle = std::process::Command::new("python3")
-        .arg("-B")
-        .arg(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/workspace_commands/history/oracle.py"
-        ))
-        .output()
-        .unwrap();
-    assert!(
-        oracle.status.success(),
-        "{}",
-        String::from_utf8_lossy(&oracle.stderr)
-    );
+    // Retain the historical test ID; the old helper actually imported runner/coven.py.
+    let rows = frozen::rows();
     let root = fixture();
     let mut count = 0;
-    for line in oracle
-        .stdout
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-    {
-        let row = values::parse(line, values::Profile::LegacySnapshot).unwrap();
+    let mut outputs = [0, 0];
+    for row in rows {
         let row = row.as_object().unwrap();
         if let Some(record) = row.get("record") {
             for (kind, key) in [
@@ -56,6 +44,7 @@ fn independent_python_field_defaults_truthiness_repr_and_raw_newlines() {
                     row.get(key).unwrap().as_str().unwrap(),
                     "case {count}, {kind:?}"
                 );
+                outputs[0] += 1;
             }
         } else {
             let path = root.path().join("logs/events.jsonl");
@@ -72,10 +61,12 @@ fn independent_python_field_defaults_truthiness_repr_and_raw_newlines() {
                 capture(root.path(), HistoryKind::Events, true),
                 row.get("text").unwrap().as_str().unwrap()
             );
+            outputs[1] += 1;
         }
         count += 1;
     }
     assert_eq!(count, 232);
+    assert_eq!(outputs, [450, 7]);
 }
 
 #[test]
