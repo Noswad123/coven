@@ -1,0 +1,63 @@
+{
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Main accepted removal of the two unit-oracle consumers after independent assertion/provenance review and correction of selected-versus-resolved path binding. This adds no original-method mapping and does not retire the independent worker integration producer or grant readiness/execution authority. Parent package integration and combined validation are recorded separately.",
+  "bindings": "Exact pointer ledger checked before binding. Workspace uses independent fs::canonicalize(root). The declared root/fixture-é plus newline operand is constructed before canonicalization, with std Path components removing redundant dots but retaining symlink spelling. Exactly one executable-role pointer, /report/executable/selected_path, binds that lexical operand. Only /report/executable/resolved_path and the explicitly inventoried probe argv[0] slots bind independent fs::canonicalize(declared operand). Human uses the resolved canonical parent plus the unchanged literal escaped filename. Both identity objects use direct symlink_metadata of that resolved fixture, never native report/identity helpers. Literal size/hash remain frozen. Human root restricted to the existing printable ASCII precondition, Unicode/newline suffix unchanged.",
+  "comparison": "Whole actual JSON unchanged except the explicit legacy probes[i].observed_at removal; actual timestamps separately validated. Exact human and exit code.",
+  "consumer_closure": "Both Python subprocess constructors removed from src/workers/tests.rs; Command, Stdio and io::Write imports removed with them. No live consumer remains for src/workers/oracle.py and it is deleted. Repository search leaves only historical freezer/provenance/review references, the pinned-source inventory in the private decoder, and parent-owned planning documentation. Historical regeneration requires an explicit pinned Git export, never an active checkout fallback. Independent src/workers/fixture.py and tests/workers_readiness_native.rs remain unchanged.",
+  "historical_commit": "6e92c180ca19fed05950bdb08ea8a3e7b10f5526",
+  "mapping_delta": 0,
+  "retired_helpers": {
+    "src/workers/oracle.py": {
+      "fixtures": [
+        {
+          "bytes": 134315,
+          "path": "tests/retirement/fixtures/worker_readiness.json",
+          "sha256": "d22a5b3f2ec8b056e60a65dcdc97754e3e4d4fbd5ee11ec33f33d74772b29f71"
+        },
+        {
+          "bytes": 131644,
+          "path": "tests/retirement/fixtures/worker_readiness_provenance.json",
+          "sha256": "65ad6c1c11e40dd10e71efdf217ac556e7dede56cfbf479c902982ec502a3d3d"
+        }
+      ],
+      "kind": "runner_oracle",
+      "replacement_tests": [
+        "rust::src/workers/tests.rs::help_parser_matches_legacy_oracle_vectors",
+        "rust::src/workers/tests.rs::python_oracle_matches_complete_reports_and_exact_human_renderer"
+      ],
+      "sha256": "a0874b63812e9304f1dc05d2b845ac48cb589a931cf5aa48203157b6d6c51295"
+    }
+  },
+  "schema_version": 1,
+  "scope": "Only two unit-test constructors. Independent src/workers/fixture.py and tests/workers_readiness_native.rs remain active; independent registry unchanged (4+1=5).",
+  "assertion_breakdown": {
+    "parser": "Exactly 31 vectors in unchanged source construction order: three routes times four variants, 18 explicit texts and raw 0xff. Historical observation accepted 16 and rejected 15. Input bytes/routes and all case cardinalities checked before indexed comparisons; commands/flags whole sorted-deduplicated arrays and original raw help SHA-256 compared; rejected expectations remain null. No zip truncation.",
+    "reports": "Exactly complete/version/missing/missing-failure/missing-parse. Entire JSON reports compared after only the legacy observed_at exception; exact human strings, JSON and human exit codes, no trailing newline, Unicode retention and no raw filename newline leak asserted. Full capabilities, surfaces, blockers, probes, hashes, sizes, statuses, return codes, durations, evidence, authorization, context and redaction retained.",
+    "roundtrip": "Raw parser stdout and each raw report-helper stdout retained with SHA-256. Decoded raw report records retained. All five template records rehydrate exactly to raw records in both freezer and Rust decoder. Pointer binding counts [16,17,11,11,11], total 66, plus five independently declared human segments: 71 binding proof slots. The only timestamp comparison exception covers 21 observed_at leaves; their presence and valid calendar/UTC syntax are checked before removal.",
+    "fixture": "Observed, never executed: bytes b'#!/bin/sh\\nexit 99\\n', size 18, literal Python hashlib SHA-256 0a5fb2d3a9e42d8cd0cd06a68ffdbc8cdd3e26ad2ec801c47867e457e7433e1a. Both identity size/digest fields remain frozen literals. Runtime device/inode/mtime_ns use only direct std symlink_metadata of the independently resolved declared fixture; mtime uses i128 arithmetic and exact JSON integer roundtrip.",
+    "guards": "Original 12 malformed-help vectors, version acceptance/rejection/overlong vectors, visible Unicode/control escaping, 65536 unique-item boundary and duplicate loops, FakeRunner, provenance/environment/request-limit tests, filesystem/alias/race tests and private-output/workspace-untouched tests retained unchanged. Actual reports are not path/identity/hash/output normalized. Printable ASCII canonical temporary root is an explicit human-binding precondition; literal fixture-é plus actual newline suffix is not relaxed."
+  },
+  "validation": {
+    "build": "cargo test --offline --locked -j 2 --lib workers::tests:: --no-run --message-format=json",
+    "environment": "Verified disk-backed btrfs cache root with over 300 GiB available. Unique owned run directories, TMPDIR and CARGO_TARGET_DIR; OPENSSL_LIB_DIR=/usr/lib, OPENSSL_INCLUDE_DIR=/usr/include, PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig; OPENSSL_DIR and LD_LIBRARY_PATH unset. No downloads/install/deploy/provider calls.",
+    "normal": "After selected/resolved binding correction: 11 passed, 0 failed, 0 ignored, 1613 filtered out; final run 1.47 seconds.",
+    "strong_isolation": "After selected/resolved binding correction: 11 passed, 0 failed, 0 ignored, 1613 filtered out; final run 1.47 seconds. bwrap --unshare-all --die-with-parent --new-session --clearenv. Only native test binary, individual /usr/bin/bash mounted as /guard for absence checks, exact ldd shared-library files and explicit ELF loader, exact repository read-only, owned writable /work and disk-backed /scratch, /dev and /proc. No full root/home/Homebrew/bin/library tree or compiler mounts. PATH=/no-programs, TMPDIR=/scratch. Guard executes only the native test binary after absence checks; fixture source executable not invoked.",
+    "selected_resolved_regression": "The existing focused report test retains its original tempfile-root fixture case and adds a deterministic report-root-link -> report-root-real input inside that owned temporary directory, asserting alias and canonical root differ. All five cases compare full actual JSON and exact human text for both operands. The focused test was additionally run with TMPDIR=<owned run>/tmp-link -> <owned run>/tmp, then inside the strong sandbox with TMPDIR=/scratch-link -> /scratch. Both focused runs passed (1 passed, 0 failed, 0 ignored, 1623 filtered out; 0.16 seconds each). selected_path retains the link spelling, workspace/resolved_path/probe argv[0]/human use canonical targets. No actual report normalization, native selector use, fixture-input pre-canonicalization, or broader TMPDIR restriction. Corpus/provenance bytes and all 71 reference roundtrip proof slots unchanged.",
+    "python_absence_checks": [
+      "/usr/bin/python3",
+      "/bin/python3",
+      "/usr/bin/python3.14",
+      "/usr/local/bin/python3",
+      "/home/linuxbrew/.linuxbrew/bin/python3",
+      "/usr/lib/python3.14",
+      "/usr/lib/libpython3.14.so"
+    ],
+    "source_pins": "41 exact historical Git-object SHA-256 pins verified before oracle execution, including all 25 runner Python modules, tracked runner bytecode, Rust worker source/help/tests/fixture producer, process/identity source and example assets. Python 3.14.8 -I -B interpreter and capture-tool SHA-256 recorded. No expected output taken from Rust.",
+    "source_pin_tamper_checks": "In-memory historical read corruption independently tested for runner/workers.py, runner/coven.py, src/workers/tests.rs, src/workers/oracle.py and src/workers/help.rs. Each raises the path-specific assertion before any non-Git subprocess/oracle execution. Export obtained from Git objects, not a worktree or active files.",
+    "fixture_integrity": "Rust asserts explicit corpus and provenance SHA-256 before either JSON decode. It checks every parser input byte/route, result cardinality, report ID, full binding pointer/type inventory, raw stdout hash and whole-record reconstruction. Both focused runs exercise these guards.",
+    "isolation_retry": "Initial broad distro-library mount run passed all 11. The first exact-library attempt could not exec /guard because ldd printed the loader's resolved /usr/lib64 path but ELF requested /lib64. Added an explicit individual loader bind; final exact-library run and all seven absence checks passed. Failed-attempt artifacts cleaned.",
+    "cleanup": "All exact owned capture, build, tamper-check and validation directories removed by exit traps after synchronous children exited, on success and failure. Final cache directory listing contains only pre-existing pn.HC9lGV, left untouched. No owned build or temporary artifacts retained.",
+    "limits": "Authored runs above are Linux-only and predate parent acceptance and combined validation. They claim no whole worker integration Python-free result, extracted-package validation, global audit run, independent-helper retirement, original-method mapping or execution/policy approval.",
+    "diff_check": "git diff --check passed. Only requested worker test/helper/fixture/freezer/review paths changed; no commits."
+  }
+}

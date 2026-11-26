@@ -213,9 +213,13 @@ Python in checkout and extracted package. The
 [identity/PATH batch](../changelog/2026-11-25-python-retirement-process-identity.md)
 then closed both literal and variable interpreter calls and verified all fourteen
 identity tests without Python. Its independent-helper history stays explicit:
-four active plus one retired across the same five baseline names. There are now
-33 runner-dependent/mixed source caller files and 26 runner-backed integration
-targets under the documented static inventory; these counts do not include every
+four active plus one retired across the same five baseline names.
+The [worker-unit batch](../changelog/2026-11-25-python-retirement-worker-units.md)
+also closed two live comparisons and their shared oracle, validating all eleven
+worker unit tests without Python while retaining the separate integration producer.
+The current inventory has 32 runner-dependent/mixed source caller files and
+26 runner-backed integration targets under the documented static inventory;
+these counts do not include every
 variable executable or generated-script path. No additional original-method mapping
 was claimed.
 These tools are development-only; relocating/deleting the oracle is not coverage.

@@ -17,11 +17,11 @@ or copy the implementation into test support and call that removal.
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **48** |
-| Rust source files containing those sites | 44 | **37** |
-| Runner-dependent or mixed source caller files | 40 | **33** |
-| Source-local Python files | 25 | **19** |
-| Runner-dependent source-local Python files | 21 | **16** |
+| Direct Python constructor sites in Rust source | 61 | **46** |
+| Rust source files containing those sites | 44 | **36** |
+| Runner-dependent or mixed source caller files | 40 | **32** |
+| Source-local Python files | 25 | **18** |
+| Runner-dependent source-local Python files | 21 | **15** |
 | Python-launching integration targets | 29 | **28** |
 | Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
@@ -37,7 +37,7 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 48 total sites are **not** 48 exclusively runner-backed
+need manual follow-up. The 46 total sites are **not** 46 exclusively runner-backed
 sites; four caller files are independent-only and others can be mixed. New capture
 tools under `tools/` are outside this source/integration metric.
 
@@ -98,21 +98,37 @@ tools under `tools/` are outside this source/integration metric.
   [dated evidence](../changelog/2026-11-25-python-retirement-process-identity.md)
   for exact source, fixture, registry and validation limits.
 
-Cumulatively, fourteen counted source/integration invocation sites and one known
-variable-executable site have been removed, with seven helpers deleted. The
+### Worker parser and report units — 2026-11-25
+
+- Replaced the two live unit comparisons with all 31 parser vectors and five
+  complete report templates. Exact human output, redaction and exit codes remain.
+- Deleted the shared runner-backed `src/workers/oracle.py`; all eleven worker
+  unit tests pass without Python in checkout and extracted package. Selected and
+  resolved spelling is separately preserved, including directory-alias regression.
+- The independent Python producer and separate worker integration target remain
+  active. This is unit-oracle closure, not whole-worker testing closure or a new
+  original-method mapping. See the
+  [dated evidence](../changelog/2026-11-25-python-retirement-worker-units.md).
+
+Cumulatively, sixteen counted source/integration invocation sites and one known
+variable-executable site have been removed, with eight helpers deleted. The
 variable call is deliberately reported separately from the literal regex metric.
 No whole `runner/` module is yet deletable: other modules and
 Python-backed integration parents still import `runner.launch`, among others.
 
 ## Next cohorts
 
-1. **Worker help parsing and readiness-report unit oracles.** Replace both live
-   comparisons in `src/workers/tests.rs` and retire their shared runner-backed
-   `src/workers/oracle.py` only after consumer closure. Preserve malformed/Unicode
-   help, ordering, hashes, complete reports, exact human output, exit codes and
-   redaction. The separate independent Python worker producer is not the same
-   dependency; do not claim whole-worker-subtree closure from only these sites.
-2. Continue through execution/ledger/storage/concurrency and group observation
+1. **Execution-source observation.** Replace the centralized oracle in
+   `src/execution/source/tests.rs`, preserving all four tests/five comparisons,
+   independent post-preflight observation, raw snapshot revisions and ledger
+   identity. Keep exact canonical bytes, signed zero, large integers, extensions
+   and Unicode; default serde JSON numeric conversion is not sufficient.
+2. **History rendering.** Replace the 232-row runner-backed comparison in
+   `src/workspace_commands/history/tests.rs`, retaining truthiness/default/fallback
+   behavior, repr, controls and exact output, plus the other native refusal and
+   resource tests. Its "independent Python" test name does not imply independence
+   from the legacy runner.
+3. Continue through execution/ledger/storage/concurrency and group observation
    dependencies. Each batch should remove actual callers or close specific
    original assertions; track those two kinds of progress separately.
 

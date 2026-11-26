@@ -10,6 +10,8 @@
 
 ## Maintenance and retirement
 
+- [2026-11-25 — Worker parser and report unit-oracle removal](2026-11-25-python-retirement-worker-units.md)
+  — two live comparisons retired; all eleven worker unit tests run without Python.
 - [2026-11-25 — Process identity and PATH oracle removal](2026-11-25-python-retirement-process-identity.md)
   — both interpreter paths closed; independent-helper retirement history remains audited.
 - [2026-11-25 — Launch executable-fallback oracle removal](2026-11-25-python-retirement-launch-fallback.md)

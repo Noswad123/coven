@@ -491,6 +491,31 @@ parents still require the runner. See the
 [dated batch](../../docs/changelog/2026-11-25-python-retirement-launch-fallback.md)
 and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
 
+## Worker parser/report unit-oracle removal — 2026-11-25
+
+`reviews/worker_readiness_oracles.json` records independent review and narrow parent
+acceptance of two live unit-comparison removals and deletion of their shared
+`src/workers/oracle.py`. It claims no original-method mapping and is not an
+assertion-substitution batch. Original requirements stay **90 mapped / 851
+unresolved**, and the independent-helper registry remains **4 active / 1 retired /
+5 historical**.
+
+The replacements preserve exactly 31 parser vectors and five complete reports,
+with raw help hashes, ordered fields, exact human output, exit codes and redaction.
+Only enumerated expected path/OS-metadata slots vary; the legacy observed-at
+exception is shallow and now independently shape/calendar checked. Ordinary and
+directory-alias input cases retain selected spelling separately from resolution.
+The human-binding fixture root must be printable ASCII; the Unicode/newline
+filename remains part of the exact evidence.
+
+All eleven worker unit tests passed without Python in checkout and extracted
+package. The normal four-test worker integration target still uses its independent
+Python producer, which remains packaged and registered. Fifty-three audit-tool
+tests and package checks passed. This is not whole-worker or repository-wide
+interpreter closure. See the
+[dated record](../../docs/changelog/2026-11-25-python-retirement-worker-units.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
+
 ## Process identity and independent-helper retirement — 2026-11-25
 
 `reviews/process_identity_oracles.json` records parent acceptance after independent

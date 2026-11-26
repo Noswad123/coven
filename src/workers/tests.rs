@@ -2,6 +2,9 @@ use super::*;
 use crate::process::ProbeResult;
 use std::{cell::RefCell, collections::BTreeMap, fs};
 
+#[path = "tests/frozen.rs"]
+mod frozen;
+
 fn help_text(route: &[&str], commands: &[&str], flags: &[&str]) -> Vec<u8> {
     let mut lines = vec![format!(
         "Usage: djinn {}",
@@ -174,10 +177,6 @@ fn version_is_bounded_and_not_capability_attestation() {
 
 #[test]
 fn help_parser_matches_legacy_oracle_vectors() {
-    use std::{
-        io::Write,
-        process::{Command, Stdio},
-    };
     let mut vectors: Vec<(Vec<u8>, Vec<&str>)> = Vec::new();
     for route in [vec![], vec!["session"], vec!["session", "run"]] {
         let good = help_text(
@@ -225,36 +224,11 @@ fn help_parser_matches_legacy_oracle_vectors() {
         vectors.push((text.as_bytes().to_vec(), vec![]));
     }
     vectors.push((vec![255], vec![]));
-    let input: Vec<_> = vectors
-        .iter()
-        .map(|(data, route)| serde_json::json!({"data":data,"route":route}))
-        .collect();
-    let mut child = Command::new("python3")
-        .args([
-            "-B",
-            concat!(env!("CARGO_MANIFEST_DIR"), "/src/workers/oracle.py"),
-            "--parse",
-        ])
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&input).unwrap())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let expected: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
-    for ((data, route), expected) in vectors.iter().zip(expected) {
+    let expected = frozen::parser(&vectors);
+    assert_eq!(vectors.len(), expected.len());
+    for index in 0..vectors.len() {
+        let (data, route) = &vectors[index];
+        let expected = &expected[index];
         let actual = help::parse(data, route);
         match actual {
             Ok(help) => {
@@ -283,54 +257,43 @@ fn executable(root: &Path) -> PathBuf {
 #[cfg(unix)]
 #[test]
 fn python_oracle_matches_complete_reports_and_exact_human_renderer() {
-    use std::process::Command;
     let temp = tempfile::tempdir().unwrap();
-    let path = executable(temp.path());
-    for case in [
-        "complete",
-        "version",
-        "missing",
-        "missing-failure",
-        "missing-parse",
-    ] {
-        let runner = fake(case);
-        let output = readiness_with_runner(temp.path(), options(&path, true), &runner).unwrap();
-        let human = readiness_with_runner(temp.path(), options(&path, false), &fake(case)).unwrap();
-        let oracle = Command::new("python3")
-            .args([
-                "-B",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/src/workers/oracle.py"),
-            ])
-            .arg(temp.path())
-            .arg(&path)
-            .arg(case)
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .env_remove("COVEN_HOME")
-            .env_remove("COVEN_COMMAND")
-            .output()
-            .unwrap();
-        assert!(
-            oracle.status.success(),
-            "{}",
-            String::from_utf8_lossy(&oracle.stderr)
-        );
-        let mut expected: serde_json::Value = serde_json::from_slice(&oracle.stdout).unwrap();
-        let mut actual = json(&output);
-        for report in [&mut actual, &mut expected["report"]] {
-            for probe in report["probes"].as_array_mut().unwrap() {
-                probe.as_object_mut().unwrap().remove("observed_at");
+    let check = |root: &Path| {
+        let path = executable(root);
+        for case in [
+            "complete",
+            "version",
+            "missing",
+            "missing-failure",
+            "missing-parse",
+        ] {
+            let mut expected = frozen::report(case, root);
+            let runner = fake(case);
+            let output = readiness_with_runner(root, options(&path, true), &runner).unwrap();
+            let human = readiness_with_runner(root, options(&path, false), &fake(case)).unwrap();
+            let mut actual = json(&output);
+            for report in [&mut actual, &mut expected["report"]] {
+                frozen::remove_observed_at(report);
             }
+            assert_eq!(actual, expected["report"], "{case}");
+            assert_eq!(human.stdout, expected["human"].as_str().unwrap(), "{case}");
+            assert_eq!(
+                output.exit_code,
+                expected["exit_code"].as_u64().unwrap() as u8
+            );
+            assert_eq!(human.exit_code, output.exit_code, "{case}");
+            assert!(!output.stdout.ends_with('\n') && !human.stdout.ends_with('\n'));
+            assert!(output.stdout.contains('é'));
+            assert!(!human.stdout.contains("fixture-é\n"));
         }
-        assert_eq!(actual, expected["report"], "{case}");
-        assert_eq!(human.stdout, expected["human"].as_str().unwrap(), "{case}");
-        assert_eq!(
-            output.exit_code,
-            expected["exit_code"].as_u64().unwrap() as u8
-        );
-        assert!(!output.stdout.ends_with('\n') && !human.stdout.ends_with('\n'));
-        assert!(output.stdout.contains('é'));
-        assert!(!human.stdout.contains("fixture-é\n"));
-    }
+    };
+    check(temp.path());
+    let physical = temp.path().join("report-root-real");
+    let alias = temp.path().join("report-root-link");
+    fs::create_dir(&physical).unwrap();
+    std::os::unix::fs::symlink(&physical, &alias).unwrap();
+    assert_ne!(alias, fs::canonicalize(&alias).unwrap());
+    check(&alias);
 }
 
 #[cfg(unix)]
