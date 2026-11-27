@@ -17,11 +17,11 @@ or copy the implementation into test support and call that removal.
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **44** |
-| Rust source files containing those sites | 44 | **34** |
-| Runner-dependent or mixed source caller files | 40 | **30** |
-| Source-local Python files | 25 | **16** |
-| Runner-dependent source-local Python files | 21 | **13** |
+| Direct Python constructor sites in Rust source | 61 | **43** |
+| Rust source files containing those sites | 44 | **33** |
+| Runner-dependent or mixed source caller files | 40 | **29** |
+| Source-local Python files | 25 | **15** |
+| Runner-dependent source-local Python files | 21 | **12** |
 | Python-launching integration targets | 29 | **28** |
 | Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
@@ -37,7 +37,7 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 44 total sites are **not** 44 exclusively runner-backed
+need manual follow-up. The 43 total sites are **not** 43 exclusively runner-backed
 sites; four caller files are independent-only and others can be mixed. New capture
 tools under `tools/` are outside this source/integration metric.
 
@@ -122,24 +122,37 @@ tools under `tools/` are outside this source/integration metric.
   package. Other execution test oracles remain; no new mapping is claimed. See
   [dated evidence](../changelog/2026-11-26-python-retirement-source-history.md).
 
-Cumulatively, eighteen counted source/integration invocation sites and one known
-variable-executable site have been removed, with ten helpers deleted. The
+### Repository-record admission — 2026-11-26
+
+- Replaced the single comparison with all 1,979 authored raw inputs and independent
+  booleans, retaining the 1,944 timestamp matrix and huge-integer inspect/replay.
+  The original corpus has no NaN/Infinity cases; no such coverage is claimed.
+- Deleted `src/repositories/oracle.py`. All twenty-four repository tests pass
+  without Python in checkout and extracted package, including real Git and copied
+  Git/test-binary reexecution in owned fixtures, not just the pure admission test.
+- No production code or original mapping changed. See the
+  [dated evidence](../changelog/2026-11-26-python-retirement-repository-records.md).
+
+Cumulatively, nineteen counted source/integration invocation sites and one known
+variable-executable site have been removed, with eleven helpers deleted. The
 variable call is deliberately reported separately from the literal regex metric.
 No whole `runner/` module is yet deletable: other modules and
 Python-backed integration parents still import `runner.launch`, among others.
 
 ## Next cohorts
 
-1. **Repository record admission.** Replace the comparison in
-   `src/repositories/oracle_tests.rs`, retaining all 1,979 authored inputs,
-   including the full timestamp matrix, raw duplicate/nonfinite JSON and integer
-   distinctions. Preserve inspection/retry and large-integer assertions, and
-   guard exact input/result cardinality instead of a truncating zip.
-2. **Persisted Djinn decoder comparison.** Inspect the complete raw-payload matrix
-   in `src/djinn_observation/tests.rs`, preserving capability/schema, timestamp,
-   nesting, extension/size limits and 4,300-digit unknown integers without serde
-   narrowing. Retire only the decoder oracle, not actual producer qualification;
-   retain redaction/refusal/profile tests and do not invoke installed providers.
+1. **Persisted Djinn decoder comparison.** Preserve the complete 161-payload
+   matrix in `src/djinn_observation/tests.rs`: capability/schema, timestamp,
+   nesting, extension/size limits and a 4,300-digit unknown integer without serde
+   narrowing. The helper is decoder-only. Qualify the separate controlled-producer
+   test with a built native supervisor; do not infer full-module acceptance from
+   the decoder or hide independent producer/timing failures. No installed Djinn
+   or provider probe is needed for reference capture.
+2. **Group publication counter bytes.** Inspect all sixteen primitive/publisher,
+   order, filesystem-stat and prior-stream variants. Preserve whole authority
+   bytes, real mutation/ordering and signal-owner isolation. Dynamic fields need
+   narrow independent bindings, and checkout discovery must stop requiring the
+   current `runner/groups.py` source. Other publisher oracles remain separate.
 3. Continue through execution/ledger/storage/concurrency and group observation
    dependencies. Each batch should remove actual callers or close specific
    original assertions; track those two kinds of progress separately.

@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Main accepted the single helper retirement after independent complete-input, assertion, codec-boundary, source-provenance and consumer-closure review. No original-method mapping, registration feature or global Python-retirement approval is granted. Authored validation below predates parent package integration; final combined results are recorded separately.",
+  "historical_commit": "b97823c7f4f30e53f768258347eaf66daec74053",
+  "mapping_delta": 0,
+  "scope": "Repository-record admission oracle retirement only, not a repository feature or global Python-retirement approval. Original-method inventory remains 941 total / 90 mapped / 851 unresolved; independent-helper registry remains 4 active / 1 retired / 5 total. No new mappings.",
+  "retired_helpers": {
+    "src/repositories/oracle.py": {
+      "kind": "runner_oracle",
+      "bytes": 561,
+      "sha256": "ee0ccd516fd254a383c21f48d0e963e99ca0febf61fccf5bae56e56806e94728",
+      "fixtures": [
+        {
+          "path": "tests/retirement/fixtures/repository_records.json",
+          "bytes": 1682624,
+          "sha256": "8ab1985b5879b918709b1a233d0505425b0b128289951a6f435eed6bbf14ccd9"
+        },
+        {
+          "path": "tests/retirement/fixtures/repository_records_provenance.json",
+          "bytes": 237037,
+          "sha256": "300a96a47169d355eb3b114906259261340efbc087e6453cf07df37be7caa9ef"
+        }
+      ],
+      "replacement_tests": [
+        "rust::src/repositories/oracle_tests.rs::legacy_record_oracle_closed_schema_and_integer_preservation"
+      ]
+    }
+  },
+  "source_counts": {
+    "historical_caller_lines": 141,
+    "historical_helper_lines": 19,
+    "historical_fixture_tests_lines": 265,
+    "pinned_sources": 31,
+    "runner_modules": 25,
+    "cases": 1979,
+    "admitted_true": 684,
+    "admitted_false": 1295,
+    "repository_tests": 24,
+    "direct_tests": 6,
+    "oracle_tests": 1,
+    "git_unit_tests": 5,
+    "real_git_tests": 12,
+    "other_native_tests_unchanged": 23
+  },
+  "case_fidelity": {
+    "ids": "All indexed entries 0..1978 retained in exact authored order, including duplicate raw inputs. IDs, not raw-string uniqueness, identify cases.",
+    "groups": [
+      {"ids": "0", "kind": "literal base", "cases": 1, "true": 1, "false": 0},
+      {"ids": "1..13", "kind": "top-field mutations", "cases": 13, "true": 4, "false": 9},
+      {"ids": "14..18", "kind": "inode true, 1.0, -1, 0, u64::MAX", "cases": 5, "true": 2, "false": 3},
+      {"ids": "19", "kind": "raw huge integer", "cases": 1, "true": 1, "false": 0},
+      {"ids": "20..31", "kind": "six paths times two field targets", "cases": 12, "true": 4, "false": 8},
+      {"ids": "32..1975", "kind": "9 dates times 4 separators times 9 clocks times 6 zones", "cases": 1944, "true": 672, "false": 1272},
+      {"ids": "1976..1978", "kind": "null, empty object, duplicate x members", "cases": 3, "true": 0, "false": 3}
+    ],
+    "matrix": "All 1944 original timestamp variants, including basic/extended calendar and ISO week dates, invalid dates/year zero, T/space/x/fox separators, hours/basic/extended times, excess fractional precision, invalid hours, zero/nonzero/missing offsets and fractional-second zero offsets. No sampling, filtering or deduplication.",
+    "parser_inputs": "Original top-field bool/float schema versions, extra field, invalid object format, invalid/offset/trailing-junk/NUL timestamps and noncanonical paths; inode bool/float/negative/zero/u64 maximum; all six original paths in both targets; literal null, {}, and duplicate-member object. The original 1979 inputs have NO NaN/Infinity constants; no such old coverage is claimed or added.",
+    "raw_integer": "18446744073709551616000000000000000000000000001 remains a raw token in an opaque record string. It is never decoded/reserialized by default serde_json::Value or Python json during input capture. Only the original small-case json! construction remains unchanged.",
+    "native_guards": "Hardcoded SHA-256 checks for both complete JSON files before either decode. Closed typed outer corpus manifest with String raw and bool admitted, fixed 1979 lengths, exact matrix dimensions, both boolean totals, per-index ID and raw SHA checks. Every frozen raw string is byte-equal to the unchanged authored Rust Vec before ANY admission comparison. Two separate indexed passes avoid zip truncation. Original raw bytes are sent directly to Authority::decode(...).is_ok().",
+    "preserved_after_comparisons": "Historical lines 117..140 remain byte-identical: owned workspace writes raw huge authority; inspect_with(&Never) succeeds and includes the full integer; big Authority decode; exact original_request registration replay with &Never and SystemIo succeeds and still includes full integer. Native fixture base bytes were verified by all-case equality. No production seam or replacement fixture decoder introduced."
+  },
+  "reference_proof": {
+    "source": "Explicit historical git archive export, no worktree. Historical helper, caller, fixture tests, production record.rs, timestamp.rs, repositories.rs and all 25 runner Python modules verified byte-for-byte against the full pinned Git commit before historical imports or execution. Extra Python runner modules and all pyc files refused. No live Git observations, registrations, user checkout operations or native outputs are capture inputs.",
+    "expected_producer": "Unchanged historical admit(raw), including duplicate-member rejection and datetime.fromisoformat validation through runner.repositories._validate_record. Raw request strings on stdin; actual literal bool list on stdout, type(value) is bool checked for every response. Two helper invocations produce identical stdout. Freezer contains only independent literal input construction, source verification and capture/provenance, not a copied validator.",
+    "independent_input_construction": "Literal fixture declaration transcribed independently of Authority::decode; Python json sort_keys=True, ensure_ascii=False and compact separators reproduce original serde JSON key order. Raw huge token uses string replacement. Native all-1979 byte checks verify this independent construction, not a native-generated expected-input source.",
+    "interpreter": "Python 3.14.8 -I -B, /usr/bin/python3; clean environment PATH=/usr/bin:/bin, LANG/LC_ALL=C.UTF-8, owned disk-backed TMPDIR. No inherited Python path, HOME/configuration, bytecode or cache-root discovery fallback.",
+    "interpreter_sha256": "44fdcdf23cd94aece60aec10b92b15a0e1cf4561e710985eaa53b362a03db48e",
+    "capture_tool_sha256": "861b7ce972b273ba22b8307a5abfcdf727b397162c39dc3d3bc14a13df5e061e",
+    "request_sha256": "16f1e4993162df63025b847bb389d3f1e9d0bfa36047bbea045e462c95b5fef2",
+    "stdout_sha256": "8e01b0b06e419d9a7129b4cbfd9a4684ce80af5660a7b8848647e1f97b814664",
+    "inventory": "Provenance records all 31 source SHA-256 pins, interpreter/tool/request/stdout/corpus hashes and 1979 indexed raw SHA-256 values. Native decoder hardcodes the provenance file hash as well as corpus hash, avoiding a self-certified fixture.",
+    "tamper_tests": "All 31 pinned paths individually corrupted in-memory at Path.read_bytes; each invocation failed its path-specific source assertion before any non-Git/oracle subprocess could execute. No source files rewritten. Explicit current-checkout historical-root recapture refused after deletion; no deleted helper recreation or cache/export-root fallback."
+  },
+  "consumer_closure": "Sole subprocess constructor removed from oracle_tests.rs before helper deletion. Global source search finds no remaining executable consumer of src/repositories/oracle.py: only the explicit historical freezer and historical provenance/review references. The full repository filter runs without Python, not merely the replacement admission test.",
+  "parent_package_integration": {
+    "required_inputs": [
+      "src/repositories/frozen_records.rs",
+      "tests/retirement/fixtures/repository_records.json",
+      "tests/retirement/fixtures/repository_records_provenance.json",
+      "tests/retirement/reviews/repository_record_oracle.json"
+    ],
+    "required_absence_guard": "src/repositories/oracle.py",
+    "note": "Existing Cargo Rust/JSON globs cover new inputs. Explicit native-package required-input/absence integration and aggregate package validation remain parent work; Cargo and native_package were not edited."
+  },
+  "validation": {
+    "build": "cargo test --offline --locked -j 2 --lib repositories:: --no-run --message-format=json; clean owned build completed in 113.62 seconds. Only the resulting library test binary's repositories:: filter was executed, not the whole Rust library.",
+    "normal": "24 passed, 0 failed, 0 ignored, 0 measured, 1600 filtered out; 3.53 seconds. PATH=/usr/bin:/bin, HOME=/dev/null, GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_GLOBAL=/dev/null. Existing fixture env_clear and owned Git init/add/commit/worktree/split-index operations unchanged. Native Git 2.56.0 supports real SHA-1 and SHA-256 fixtures.",
+    "strong": "All same 24 passed, 0 failed, 0 ignored, 0 measured, 1600 filtered out; 3.53 seconds. bwrap --unshare-all --die-with-parent --new-session --clearenv, no networking. Read-only /test binary, selected /usr/bin/git, /usr/bin/sh, /usr/bin/touch, exact individual ELF libraries and loaders, Git templates; empty /usr/lib/git-core (all exercised Git operations are actual builtins). /bin symlink only to isolated /usr/bin. Empty /work, owned writable disk-backed /scratch, /proc, /dev. No checkout, full /usr/bin, library tree, Homebrew tree, root or user home mounted; no Python executable/runtime, compiler, fake Git, prebuilt Git fixture or skip. Testbinary child reexec and copied real Git remain executable.",
+    "strong_libraries": [
+      "/lib64/ld-linux-x86-64.so.2",
+      "/usr/lib64/ld-linux-x86-64.so.2",
+      "/usr/lib/libbrotlicommon.so.1",
+      "/usr/lib/libbrotlidec.so.1",
+      "/usr/lib/libbrotlienc.so.1",
+      "/usr/lib/libc.so.6",
+      "/usr/lib/libcrypto.so.3",
+      "/usr/lib/libgcc_s.so.1",
+      "/usr/lib/libm.so.6",
+      "/usr/lib/libncursesw.so.6",
+      "/usr/lib/libpcre2-8.so.0",
+      "/usr/lib/libreadline.so.8",
+      "/usr/lib/libssl.so.3",
+      "/usr/lib/libz-ng.so.2",
+      "/usr/lib/libz.so.1",
+      "/usr/lib/libzstd.so.1"
+    ],
+    "python_absence": "COVEN_REPOSITORY_ASSERT_PYTHON_ABSENT=1 requires symlink_metadata NotFound and Linux raw ENOENT for /usr/bin/python3, /bin/python3, /usr/bin/python3.14, /usr/local/bin/python3, /home/linuxbrew/.linuxbrew/bin/python3, /usr/lib/python3.14, /usr/lib/libpython3.14.so before admission checks. Adds assertions, not skips.",
+    "canary_capability": "Inspected all repository Rust fixtures: configured forbidden filter command is touch /never; no additional authored hook/fsmonitor canary script tools are present in this filter. Real sh and touch and their individual dependencies were mounted, not omitted to make forbidden execution impossible. Additional same-minimal-sandbox sh -c 'touch /scratch/canary && test -f /scratch/canary && git --version' succeeded and actual canary existence was verified before fixture teardown.",
+    "real_git_guards": "All 12 real-Git tests unchanged: SHA-1/SHA-256, dirty byte/metadata snapshots, linked worktrees and alias retarget, exclusions, common/linked actual split indexes, immutable concurrent replay, publication faults, selector retarget, unavailable historical blob/unborn head, raw object integrity and unsupported shapes. Git-pin parent executes original testbinary child in all four replace/retarget/finalhash/verify modes and uses copied actual Git, not canned outputs. All 5 Git-unit and 6 direct tests unchanged.",
+    "baseline_checks": "Caller input-construction block and complete final huge-integer assertion block compared byte-for-byte to pinned source. Protected production repositories.rs/record/timestamp/registration/git, tests.rs/git_tests/real_tests, Cargo.toml/Cargo.lock, native_package and coverage.json byte-identical. Capture artifacts byte-identical to checked-in fixture data, tool hash matches provenance. git diff --check and focused rustfmt --check passed.",
+    "resources": "Verified /home cache root is disk-backed btrfs with about 320 GiB available. Unique owned agent-test-runs directory; scoped TMPDIR/CARGO_TARGET_DIR. System OpenSSL3 via OPENSSL_LIB_DIR=/usr/lib, OPENSSL_INCLUDE_DIR=/usr/include, PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig; OPENSSL_DIR, LD_LIBRARY_PATH and Rust wrappers unset. Offline, locked, two jobs; existing dependency/toolchain caches reused. Git writes are limited to owned disposable fixtures; no source/user repository or global configuration is mutated. No installs, downloads, deployment, provider calls or bulk /tmp artifacts.",
+    "cleanup": "Framework-managed unique validation/canary directories cleaned after synchronous children exited and process groups were stopped/reaped. Historical export/capture and temporary verification scripts removed after final checks; exact owned directory only, pre-existing pn.HC9lGV left untouched. No retained agent artifacts.",
+    "limitations": "Linux repository-filter validation only; non-Unix/macOS behavior unvalidated. No whole original-method suite, whole native library suite, package build, global coverage/audit-tool execution or global retirement approval claimed. Parent package required-input/absence assertions and parent review remain outstanding."
+  }
+}

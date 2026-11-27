@@ -10,6 +10,8 @@
 
 ## Maintenance and retirement
 
+- [2026-11-26 — Repository-record admission oracle removal](2026-11-26-python-retirement-repository-records.md)
+  — all 1,979 inputs retained; full repository group runs with real Git and no Python.
 - [2026-11-26 — Execution-source and history oracle removal](2026-11-26-python-retirement-source-history.md)
   — byte-exact source observation and complete history rendering now run without Python.
 - [2026-11-25 — Worker parser and report unit-oracle removal](2026-11-25-python-retirement-worker-units.md)

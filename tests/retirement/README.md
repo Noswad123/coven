@@ -491,6 +491,27 @@ parents still require the runner. See the
 [dated batch](../../docs/changelog/2026-11-25-python-retirement-launch-fallback.md)
 and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
 
+## Repository-record admission oracle removal — 2026-11-26
+
+`reviews/repository_record_oracle.json` records narrow independent and parent
+acceptance of the sole repository admission helper removal. It grants no new
+original-method mapping: **90 mapped / 851 unresolved** and the independent-helper
+registry remain unchanged.
+
+All 1,979 raw input strings and their 684 admitted / 1,295 refused reference
+booleans remain in authored order, including duplicates, the full timestamp matrix,
+bool/float distinctions and the raw huge-integer token. The original corpus has
+no NaN/Infinity cases. Native integrity checks reject shortened or reordered
+inputs/results before admission comparisons. Huge-integer inspect/replay checks
+with `Never` remain unchanged.
+
+The complete 24-test repository group passes without Python in checkout and
+extracted source package, retaining actual Git fixtures and child reexecution.
+Only disposable test repositories are written. Package checks and 53 audit-tool
+tests passed; no production repository behavior or original Python tests changed.
+See the [dated record](../../docs/changelog/2026-11-26-python-retirement-repository-records.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
+
 ## Execution-source and history oracle removal — 2026-11-26
 
 `reviews/execution_source_oracle.json` and `reviews/history_rendering_oracle.json`

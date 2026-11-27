@@ -1,8 +1,7 @@
 use super::*;
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
+
+#[path = "frozen_records.rs"]
+mod frozen;
 
 #[test]
 fn legacy_record_oracle_closed_schema_and_integer_preservation() {
@@ -95,25 +94,7 @@ fn legacy_record_oracle_closed_schema_and_integer_preservation() {
         "{}".to_owned(),
         "{\"x\":1,\"x\":2}".to_owned(),
     ]);
-    let mut child=Command::new("python3").args(["-B","-c","import sys; sys.path.insert(0,sys.argv[1]); exec(compile(open(sys.argv[2], 'rb').read(),sys.argv[2], 'exec'))",
-        env!("CARGO_MANIFEST_DIR"),concat!(env!("CARGO_MANIFEST_DIR"),"/src/repositories/oracle.py")])
-        .env("PYTHONDONTWRITEBYTECODE","1").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&corpus).unwrap())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success(), "{:?}", output.stderr);
-    let expected: Vec<bool> = serde_json::from_slice(&output.stdout).unwrap();
-    for (raw, expected) in corpus.into_iter().zip(expected) {
-        assert_eq!(
-            record::Authority::decode(raw.as_bytes().to_vec()).is_ok(),
-            expected,
-            "{raw}"
-        );
-    }
+    frozen::compare(&corpus);
     let root = workspace();
     fs::write(root.path().join(AUTHORITY), raw.as_bytes()).unwrap();
     let output = inspect_with(root.path(), false, true, &Never).unwrap();

@@ -220,8 +220,11 @@ worker unit tests without Python while retaining the separate integration produc
 The [source/history batch](../changelog/2026-11-26-python-retirement-source-history.md)
 then removed two more comparisons/helpers and verified all eighteen source and
 ten history tests without Python, preserving exact numeric/canonical bytes and
-dynamic source-selection checks. The current inventory has 30 runner-dependent/
-mixed source caller files and 26 runner-backed integration targets;
+dynamic source-selection checks. The
+[repository-admission batch](../changelog/2026-11-26-python-retirement-repository-records.md)
+then retained all 1,979 input cases and validated the complete twenty-four-test
+repository group with real Git and no Python. The current inventory has
+29 runner-dependent/mixed source caller files and 26 runner-backed integration targets;
 these counts do not include every
 variable executable or generated-script path. No additional original-method mapping
 was claimed.
