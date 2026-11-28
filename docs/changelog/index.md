@@ -10,6 +10,12 @@
 
 ## Maintenance and retirement
 
+- [2026-11-27 — Group publisher static/live engine oracle removal](2026-11-27-python-retirement-group-publisher-engine.md)
+  — sixteen complete report/write cases preserved; all 88 publisher tests run without Python.
+- [2026-11-27 — Group publication counter oracle removal](2026-11-27-python-retirement-group-counter.md)
+  — sixteen exact authority comparisons retained; full native publisher module runs without Python.
+- [2026-11-27 — Persisted Djinn decoder oracle removal](2026-11-27-python-retirement-djinn-decoder.md)
+  — complete 161-payload evidence and ten-test module pass without Python or live providers.
 - [2026-11-26 — Repository-record admission oracle removal](2026-11-26-python-retirement-repository-records.md)
   — all 1,979 inputs retained; full repository group runs with real Git and no Python.
 - [2026-11-26 — Execution-source and history oracle removal](2026-11-26-python-retirement-source-history.md)

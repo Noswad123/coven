@@ -696,9 +696,11 @@ mod group_publisher42 {
     }
 }
 
+#[path = "tests/engine_frozen.rs"]
+mod engine_frozen;
+
 pub(super) fn oracle(live: bool) {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
+    let frozen = engine_frozen::Cases::new();
     for mode in [
         "success",
         "reservation_error",
@@ -748,33 +750,21 @@ pub(super) fn oracle(live: bool) {
             }
             _ => {}
         }
+        let before =
+            json!({"mode":mode,"live":live,"group":f.group,"fresh":f.fresh,"status":f.report});
+        let expected = frozen.expected(live, mode, &serde_json::to_vec(&before).unwrap());
         let report = f.run(&request(live));
         let input =
             json!({"mode":mode,"live":live,"group":f.group,"fresh":f.fresh,"status":f.report});
-        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .map(|root| root.join("src/group_publisher/oracle.py"))
-            .find(|path| path.is_file())
-            .expect("checkout publisher oracle");
-        let mut child = Command::new("python3")
-            .arg("-B")
-            .arg(script)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(&serde_json::to_vec(&input).unwrap())
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success());
+        assert_eq!(
+            serde_json::to_vec(&input).unwrap(),
+            serde_json::to_vec(&before).unwrap(),
+            "original post-run oracle input unchanged, mode={mode} live={live}"
+        );
         let actual = json!({"report":report,"writes":*f.writes.borrow()});
         assert_eq!(
             serde_json::to_vec(&actual).unwrap(),
-            output.stdout,
+            expected,
             "mode={mode} live={live}"
         );
     }

@@ -49,6 +49,24 @@ native libraries. Runtime operations can independently require the chosen
 multiplexer, Git or a trusted provider executable. Tests using fakes do not prove
 installed-provider compatibility.
 
+### Unit supervisor prerequisites
+
+Some unit scopes exercise the actual same-binary private process supervisor.
+They are not CLI bootstraps: `cargo test --lib` alone does not supply that binary.
+For the full persisted Djinn observation scope, first build the CLI, then run the
+library tests in the **same scoped target directory and profile**:
+
+```sh
+cargo build --offline --locked -j 2 --bin coven
+cargo test --offline --locked -j 2 --lib djinn_observation::
+```
+
+Both commands must inherit the same `CARGO_TARGET_DIR` and resource/cleanup
+settings described below. The test selects `current_exe().parent().parent()/coven`;
+an unrelated installed executable or a test binary is not a substitute. Retain
+the inert shell producer and full ten-test gate; decoder-only success cannot
+qualify the supervisor boundary. This requires no installed Djinn or model call.
+
 For OpenSSL discovery and explicit overrides, see
 [Development OpenSSL Selection](WEB_PUSH_BUILD.md). The distro-OpenSSL preference
 belongs to `scripts/install_dev.py` / `just install`, **not** ordinary `cargo` or

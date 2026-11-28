@@ -28,7 +28,8 @@ stdlib-only and AST-based for Python. It never imports or executes runner code.
 Audit unit tests live outside `tests/`. The current AST inventory has **979
 methods**: 941 frozen originals plus **38 supplemental methods in three files**
 (five wrapper, 21 development-installer and 12 build-environment tests). Inventory
-is not execution: the latest batch ran the 40 audit-tool tests, not all 979 methods.
+is not execution: the recent removal batches ran 53 audit-tool tests, not all 979
+methods.
 
 ## Frozen Baseline
 
@@ -491,6 +492,24 @@ parents still require the runner. See the
 [dated batch](../../docs/changelog/2026-11-25-python-retirement-launch-fallback.md)
 and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
 
+## Persisted Djinn decoder oracle removal — 2026-11-27
+
+`reviews/djinn_decoder_oracle.json` records independent review and narrow parent
+acceptance of the single pure-decoder helper removal. All 161 authored raw
+payloads, exact projected results/errors and the 4,300-digit integer boundary
+remain. Inputs are not numerically narrowed or normalized; other redaction,
+encoding, finite-profile, transport and identity tests are unchanged.
+
+The full ten-test module passes without Python in checkout and extracted source
+package. Both builds first produced the actual CLI beside the library artifact
+to satisfy the existing supervisor locator; the controlled producer is an owned
+inert shell script, never installed Djinn/provider code. Package and 53 audit-tool
+tests passed. Original mappings stay **90 mapped / 851 unresolved**, with the
+independent registry unchanged. This is neither live producer qualification nor
+global retirement acceptance. See the
+[dated record](../../docs/changelog/2026-11-27-python-retirement-djinn-decoder.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
+
 ## Repository-record admission oracle removal — 2026-11-26
 
 `reviews/repository_record_oracle.json` records narrow independent and parent
@@ -534,6 +553,48 @@ remain unchanged. Neither the full execution subtree nor global retirement is
 declared complete. See the
 [dated batch](../../docs/changelog/2026-11-26-python-retirement-source-history.md)
 and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for exact evidence and limits.
+
+## Group publication counter oracle removal — 2026-11-27
+
+`reviews/group_counter_oracle.json` records independent review and parent acceptance
+of the single counter-helper retirement, not an original assertion-substitution
+batch. The original **90 mapped / 851 unresolved** and independent-helper registry
+**4 active / 1 retired / 5 historical** remain unchanged.
+
+All sixteen policy/order/stat/prior-stream cases retain complete authority-byte
+comparison. Native-generated input is checked before mutation against independently
+captured initial bytes; reviewed expected-side scalar spans bind only to that
+pre-state. Output is never normalized or reserialized. Three generated UUIDs must
+be canonical, distinct and unchanged; exact maximum integers, object order and
+newlines remain literal. The original self-exec signal boundary and other four
+native test bodies remain unchanged.
+
+All five native publisher tests pass without Python in checkout and extracted
+source package. Package tests and all 53 audit-tool tests passed. At counter-only
+acceptance the separate static/live engine oracle still ran Python; the subsequent
+engine batch below closes it. Counter-only evidence is not whole-publisher closure.
+See the [dated record](../../docs/changelog/2026-11-27-python-retirement-group-counter.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for capture, bindings and limits.
+
+## Group publisher static/live engine oracle removal — 2026-11-27
+
+`reviews/group_publisher_engine_oracle.json` records independent review and parent
+acceptance of both consumers of the shared publisher engine helper. All sixteen
+static/live × eight-mode cases remain, including the separately retained static
+unknown case. Whole inputs match independently authored capture inputs before
+execution and remain unchanged afterward; complete report/write UTF-8 bytes compare
+without bindings or normalization. Full framed stdin/stdout streams, ordered IDs,
+per-row hashes and both whole evidence-file hashes are checked.
+
+All 88 publisher tests pass without Python in checkout and extracted package:
+42 static, 41 live, five native, with zero skips. Existing Unix effects, timing,
+expiry, interrupt and owned self-exec/signal coverage remains. This closes the
+publisher-local test oracles, not other group-command/authority oracles or global
+retirement. Package tests and 53 audit-tool tests passed. Original requirements
+remain **90 mapped / 851 unresolved**, and independent helpers **4 active / 1
+retired / 5 historical**; no assertion-substitution batch or mapping is added.
+See the [dated record](../../docs/changelog/2026-11-27-python-retirement-group-publisher-engine.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for evidence and next scope.
 
 ## Worker parser/report unit-oracle removal — 2026-11-25
 

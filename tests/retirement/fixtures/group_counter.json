@@ -1,0 +1,2213 @@
+{
+  "cases": [
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 893,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 887
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "300a474c11136435f22bf5e9dfd3940b193e50ae78f56057263e43c17d543054",
+      "id": "primitive-r0-m0-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159,\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "primitive",
+        "prior_stream": false,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "cb8476d5c7726fcd7aa63cb6effd6c362b39d9d0d574ca80f5e42e84ffb07919",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159,\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159,\n        \"inode\": 271828\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 893,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 887
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        },
+        {
+          "end": 1442,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1411
+        },
+        {
+          "end": 1468,
+          "literal": "314159",
+          "path": "/publication_counters/1/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1462
+        },
+        {
+          "end": 1493,
+          "literal": "271828",
+          "path": "/publication_counters/1/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1487
+        }
+      ],
+      "stdout_sha256": "80901218186dc047695a59a3fff0d085a2513697e78ea2ab179105cc4667e9e9"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 893,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 887
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "d071e12f77243548b1913c5703edf936a665fee60b94c3a1add7cacf6db879ef",
+      "id": "primitive-r0-m0-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159,\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "primitive",
+        "prior_stream": true,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "fdb245aae84db51a4a497be4367f66519fe0e0d95a5e2cba8f01e53f5b49877f",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159,\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 893,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 887
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "stdout_sha256": "ba3e2bd2494e2a6a3d002aed5bcabc6fb6c04cc521a8b3603bf95d1a411a7120"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "162608a04f91f1aeb3029415224bc6c2cdb1264051c72236a6fea2c7314bf102",
+      "id": "primitive-r0-m1-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615,\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "primitive",
+        "prior_stream": false,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "dbe4d102ab2fb6d7b8993c429d58150645202137d059f00ba8705ccf2e2416b5",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615,\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615,\n        \"inode\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        },
+        {
+          "end": 1498,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1467
+        }
+      ],
+      "stdout_sha256": "10be30cf32dc074b3d6bb915b517fc32b4d95f07767ac858c2ede678af634a9d"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "20871a9149e80320dbd3bfcae36532e3869f57cb657f067114a141006d29d42e",
+      "id": "primitive-r0-m1-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615,\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "primitive",
+        "prior_stream": true,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "7da0cfdb81773599e7e6a92d1ee504aacce3bfe7a74d7962ca408943ea80f14b",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615,\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "stdout_sha256": "567699fb900d83082dca92cb15cfc7ee008c291b4f1aa9fe6e4775beeeb0c8f0"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 892,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 861
+        },
+        {
+          "end": 926,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 920
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "720a2aa3636bb3d7d060834527c4ec7ccda09f05fe16c35b136097e10fd27a7b",
+      "id": "primitive-r1-m0-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "primitive",
+        "prior_stream": false,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "aa5c303591c99d20d875ba8b7a42071bdd97204635012c26ae5daa2752292992",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159,\n        \"inode\": 271828\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 892,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 861
+        },
+        {
+          "end": 926,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 920
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        },
+        {
+          "end": 1442,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1411
+        },
+        {
+          "end": 1468,
+          "literal": "314159",
+          "path": "/publication_counters/1/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1462
+        },
+        {
+          "end": 1493,
+          "literal": "271828",
+          "path": "/publication_counters/1/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1487
+        }
+      ],
+      "stdout_sha256": "0c945d22acb79227ebaa85270205e7a0282fa58662ecc1f23793990295ceb518"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 892,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 861
+        },
+        {
+          "end": 926,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 920
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "3fcebd1e681dd9de42ba0fda8bde91b01f7f0c722b305de49057da8b5f1300f4",
+      "id": "primitive-r1-m0-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "primitive",
+        "prior_stream": true,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "9de9ddafcf32ffee18a7566f470bde5875288fdf91ac5610ab240a53bf60dfd4",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 892,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 861
+        },
+        {
+          "end": 926,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 920
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "stdout_sha256": "bb33c19216b36627f557903aeccdf5459e04fac243cc1a0d05672a6beb8f2432"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 906,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 875
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "4141df58c8466b40c3fcf894fe065c57978f55e3cf5140def75d016b316f219f",
+      "id": "primitive-r1-m1-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "primitive",
+        "prior_stream": false,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "6450201cd3e9485ea1bd29dc02d3f013b3fd1ccc96cda2eaafb12339c5241c37",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615,\n        \"inode\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 906,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 875
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        },
+        {
+          "end": 1498,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1467
+        }
+      ],
+      "stdout_sha256": "d8df5db8d57eca5b388ef954733d7c370fa88eee93b8c6bde1551109dabcdf2d"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 906,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 875
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "56090ffb534be9f39b4356d26b9e5bc783c628aa69013a0986dacefd6973677d",
+      "id": "primitive-r1-m1-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "primitive",
+        "prior_stream": true,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "3544001945a23b28f069e358dddc2edd239ff650a26d699e33dc72087a41c1d1",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 906,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 875
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "stdout_sha256": "c638105bd82c4ac050a9e53e208f6baaf14aa589e286f2c2371b74ed69b70e8c"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 893,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 887
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "300a474c11136435f22bf5e9dfd3940b193e50ae78f56057263e43c17d543054",
+      "id": "publisher-r0-m0-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159,\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "publisher",
+        "prior_stream": false,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "558399469952903c95cfbae78392f945fff185794c0d1252af3f578fa81e0b2b",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"device\": 314159,\n                \"path\": \"/group-counter-capture/socket\"\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159,\n        \"inode\": 271828\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 926,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 895
+        },
+        {
+          "end": 869,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 863
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        },
+        {
+          "end": 1442,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1411
+        },
+        {
+          "end": 1468,
+          "literal": "314159",
+          "path": "/publication_counters/1/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1462
+        },
+        {
+          "end": 1493,
+          "literal": "271828",
+          "path": "/publication_counters/1/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1487
+        }
+      ],
+      "stdout_sha256": "bd77840d7256e54575b03ead5c51cd29d6ce933f4253ab69ec62a2332024fe8d"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 893,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 887
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "d071e12f77243548b1913c5703edf936a665fee60b94c3a1add7cacf6db879ef",
+      "id": "publisher-r0-m0-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159,\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "publisher",
+        "prior_stream": true,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "2d019791a10b943100d099b34933651729072f6e7e549d3bdfe71b05ffd765e9",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"device\": 314159,\n                \"path\": \"/group-counter-capture/socket\"\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 926,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 895
+        },
+        {
+          "end": 869,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 863
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "stdout_sha256": "d5ad9db2aadb1a74966838e582930fdec5ea8c456fde2f6646c9b3c543bd9163"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "162608a04f91f1aeb3029415224bc6c2cdb1264051c72236a6fea2c7314bf102",
+      "id": "publisher-r0-m1-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615,\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "publisher",
+        "prior_stream": false,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "b37e7ff9fcb204cf7bb9cd867d4410bbb0f8bbca119da77318d75187f40f9486",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"device\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\"\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615,\n        \"inode\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 954,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 923
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        },
+        {
+          "end": 1498,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1467
+        }
+      ],
+      "stdout_sha256": "b7f5157e38e152e721db7a1cb56818af10b7d2a9a23da712b2472c310fcd1d74"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 859,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 828
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "20871a9149e80320dbd3bfcae36532e3869f57cb657f067114a141006d29d42e",
+      "id": "publisher-r0-m1-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615,\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "publisher",
+        "prior_stream": true,
+        "reordered_declaration": false,
+        "source": "coven"
+      },
+      "request_sha256": "2684beaff42dd39a0d71bd422c0854227e0514df49d46e4e4d95c20a643d5a3c",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"device\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\"\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 954,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 923
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "stdout_sha256": "cfda5b8cea6211866800b091a6d952d08caea291b1c89736e653a94b7f9e2fc3"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 892,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 861
+        },
+        {
+          "end": 926,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 920
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "720a2aa3636bb3d7d060834527c4ec7ccda09f05fe16c35b136097e10fd27a7b",
+      "id": "publisher-r1-m0-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "publisher",
+        "prior_stream": false,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "86ac25fad9e57fec12f96c5d31d23b88b2e0ba5bb031cfcfc052f073bb6408be",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"device\": 314159,\n                \"path\": \"/group-counter-capture/socket\",\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 893,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 862
+        },
+        {
+          "end": 836,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 830
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        },
+        {
+          "end": 1467,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1436
+        },
+        {
+          "end": 1493,
+          "literal": "314159",
+          "path": "/publication_counters/1/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1487
+        },
+        {
+          "end": 1418,
+          "literal": "271828",
+          "path": "/publication_counters/1/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1412
+        }
+      ],
+      "stdout_sha256": "5408d74b20959a626b93b06b279d3442b1a6983e509d382080d8ef378728fb7a"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 892,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 861
+        },
+        {
+          "end": 926,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 920
+        },
+        {
+          "end": 835,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 829
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "before_sha256": "3fcebd1e681dd9de42ba0fda8bde91b01f7f0c722b305de49057da8b5f1300f4",
+      "id": "publisher-r1-m0-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 271828,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 314159\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": false,
+        "policy": "publisher",
+        "prior_stream": true,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "87f7b442624c84369a23a36fe248bb764426a245979faa55c7a309c7aa6a867f",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"device\": 314159,\n                \"path\": \"/group-counter-capture/socket\",\n                \"inode\": 271828\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 271828,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 314159\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 893,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 862
+        },
+        {
+          "end": 836,
+          "literal": "314159",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 830
+        },
+        {
+          "end": 926,
+          "literal": "271828",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 920
+        },
+        {
+          "end": 1206,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1175
+        },
+        {
+          "end": 1232,
+          "literal": "314159",
+          "path": "/publication_counters/0/endpoint/device",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/device",
+          "start": 1226
+        },
+        {
+          "end": 1157,
+          "literal": "271828",
+          "path": "/publication_counters/0/endpoint/inode",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/inode",
+          "start": 1151
+        }
+      ],
+      "stdout_sha256": "6565356b13b8ca22b36a23e6e3925a6bca08df7825c93ff6777ef2c252313f71"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 906,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 875
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "4141df58c8466b40c3fcf894fe065c57978f55e3cf5140def75d016b316f219f",
+      "id": "publisher-r1-m1-p0",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "publisher",
+        "prior_stream": false,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "3819c2d1bd26abf911d2592f101aba32793244a1f3203d1e0de6ec3393275e77",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"device\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"other\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    },\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 1\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 907,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 876
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        },
+        {
+          "end": 1537,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/1/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1506
+        }
+      ],
+      "stdout_sha256": "dca5c2f920b2be9a8adcb557f7558f268a80e1c90577cdda56ce6e6a483f22f9"
+    },
+    {
+      "before_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 906,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 875
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "before_sha256": "56090ffb534be9f39b4356d26b9e5bc783c628aa69013a0986dacefd6973677d",
+      "id": "publisher-r1-m1-p1",
+      "request": {
+        "before": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"inode\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"device\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551614\n      }\n    }\n  ]\n}\n",
+        "maximum_stats": true,
+        "policy": "publisher",
+        "prior_stream": true,
+        "reordered_declaration": true,
+        "source": "coven"
+      },
+      "request_sha256": "638a3fa25dc22119bd61f74a8f824fe0ba58308c54d16ad2ae65a74a9019adf1",
+      "stdout": "{\n  \"schema_version\": 1,\n  \"workspace_id\": \"11111111-1111-4111-8111-111111111111\",\n  \"content_revision\": 2,\n  \"groups\": [\n    {\n      \"group_id\": \"22222222-2222-4222-8222-222222222222\",\n      \"key\": \"team\",\n      \"name\": \"Review Team\",\n      \"members\": [\n        {\n          \"participant_id\": \"33333333-3333-4333-8333-333333333333\",\n          \"key\": \"member\",\n          \"role\": \"Reviewer\",\n          \"binding\": {\n            \"evidence\": {\n              \"agent_kind_hint\": \"test-agent\",\n              \"native_binding\": \"unestablished\",\n              \"native_reference\": null,\n              \"observed_at\": \"2026-11-27T12:34:56.123456+00:00\",\n              \"provenance\": \"kitsune.session.snapshot\"\n            },\n            \"presentation\": {\n              \"adapter\": \"kitsune\",\n              \"endpoint\": {\n                \"device\": 18446744073709551615,\n                \"path\": \"/group-counter-capture/socket\",\n                \"inode\": 18446744073709551615\n              },\n              \"pane_id_at_binding\": \"p\",\n              \"terminal_id\": \"terminal\"\n            }\n          }\n        }\n      ]\n    }\n  ],\n  \"publication_counters\": [\n    {\n      \"endpoint\": {\n        \"inode\": 18446744073709551615,\n        \"path\": \"/group-counter-capture/socket\",\n        \"device\": 18446744073709551615\n      },\n      \"source\": \"coven\",\n      \"epoch\": \"epoch\",\n      \"watermarks\": {\n        \"terminal\": 18446744073709551615\n      }\n    }\n  ]\n}\n",
+      "stdout_bindings": [
+        {
+          "end": 81,
+          "literal": "\"11111111-1111-4111-8111-111111111111\"",
+          "path": "/workspace_id",
+          "source": "/workspace_id",
+          "start": 43
+        },
+        {
+          "end": 184,
+          "literal": "\"22222222-2222-4222-8222-222222222222\"",
+          "path": "/groups/0/group_id",
+          "source": "/groups/0/group_id",
+          "start": 146
+        },
+        {
+          "end": 331,
+          "literal": "\"33333333-3333-4333-8333-333333333333\"",
+          "path": "/groups/0/members/0/participant_id",
+          "source": "/groups/0/members/0/participant_id",
+          "start": 293
+        },
+        {
+          "end": 638,
+          "literal": "\"2026-11-27T12:34:56.123456+00:00\"",
+          "path": "/groups/0/members/0/binding/evidence/observed_at",
+          "source": "/groups/0/members/0/binding/evidence/observed_at",
+          "start": 604
+        },
+        {
+          "end": 907,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 876
+        },
+        {
+          "end": 1248,
+          "literal": "\"/group-counter-capture/socket\"",
+          "path": "/publication_counters/0/endpoint/path",
+          "source": "/groups/0/members/0/binding/presentation/endpoint/path",
+          "start": 1217
+        }
+      ],
+      "stdout_sha256": "f91d9295f94bccdb5155e26777a3288b5738d4b2f07b2e34cdbed4b7dff8e580"
+    }
+  ],
+  "schema_version": 1
+}

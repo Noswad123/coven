@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Parent accepted this single helper retirement after independent complete-input/output, binding-span, historical-source and consumer-closure review. All sixteen cases and the full five-test native module passed normally and with Python absent in checkout and extracted package. This is not original-method mapping, whole-publisher Python closure or global retirement approval.",
+  "historical_commit": "727edc7aad55ed76e98670e0cee6449d611b2285",
+  "mapping_delta": 0,
+  "scope": "Bounded retirement of one runner-backed group publication counter oracle. No production behavior, original-method mapping, assertion-credit/stub registry, independent-helper classification, package approval or global Python-retirement approval changes. Parent owns native_package, documentation and global audit integration.",
+  "retired_helpers": {
+    "src/group_publisher/counter_oracle.py": {
+      "kind": "runner_oracle",
+      "bytes": 1273,
+      "sha256": "c1971956ea8166d47548e5438a16da44e2d2a58e495e9fbe77a1617c2f251c36",
+      "replacement_tests": [
+        "rust::src/group_publisher/native_tests.rs::counter_authority_bytes_match_python_producer"
+      ],
+      "fixtures": [
+        {
+          "path": "tests/retirement/fixtures/group_counter.json",
+          "bytes": 128979,
+          "sha256": "05c08611c0ecd220ab4c5aad891253aaf6bed33a35adb9e7f41fc034d1b4d31a"
+        },
+        {
+          "path": "tests/retirement/fixtures/group_counter_provenance.json",
+          "bytes": 67849,
+          "sha256": "f779dba7327c8ea7fb9a60a464416e82527d1c7e76e32616d7a914650dbeb132"
+        }
+      ]
+    }
+  },
+  "assertion_breakdown": {
+    "inventory": "Exactly 16 explicit policy tuples: primitive/publisher x reordered_declaration false/true x maximum_stats false/true x prior_stream false/true. IDs encode every tuple and are independently enumerated in Rust. No deduplication, sampling, filtering or truncating comparison. The retained zip is solely a first-differing-offset diagnostic after complete byte-vector inequality, never the equality oracle.",
+    "native_input": "Original native create_group/add_member, binding_from_snapshot, actual UnixListener/select identity and chmod(0600), exact unordered endpoint construction and seeded u64 watermarks remain. Native generated authority is not replaced with a frozen input. Before Session::open and reserve, its complete original storage bytes equal independently captured initial authority after only reviewed expected-side token splices. Consequently schema/content_revision, all keys, member/group selectors, roles, binding fields, integer spellings, object/array ordering, whitespace and final LF remain exact.",
+    "native_execution": "Original isolated-process/self-reexec test name and environment flag retained. Both primitive reserve_cycle and real publisher Session::open/group/reserve paths remain. Publisher reverses the on-disk declaration after freezing the session, rereads it, and asserts unchanged canonical revision before reservation. Reservation value remains exactly u64::MAX for a prior stream or 1 for a new stream. Existing counter endpoint compact bytes remain identical to the original unordered object. Complete final authority bytes additionally compare to the historical writer, including the changed declaration order and independently retained/new counter endpoint order.",
+    "integrity": "Both complete fixture files SHA-256 checked before outer serde decoding. Exact row/request/slot shapes, counts, ordered IDs, every policy tuple and source string checked. Every request, original before byte stream and complete stdout has a per-row SHA-256. Recorded aggregate request and concatenated raw stdout streams have checked bytes, lengths and hashes. Every approved span has checked structural path, source path, fixed captured literal, start and end offsets; Rust independently discovers scalar token spans after Authority-profile validation. All 16 inventories and captured-literal splice roundtrips validate before native execution. Captured output is structurally parsed only to validate span boundaries; it is never reserialized. Actual output is neither parsed nor normalized for the full-byte comparison.",
+    "opaque_numbers": "Initial and final authority remain opaque UTF-8 strings inside the outer serde fixture. Structural scanning validates them with the unbounded native Authority profile and never serde-decodes authority numbers. Only object keys and the three bounded UUID strings use serde during token/source validation. u64::MAX decimal text, adjacent prior watermark u64::MAX-1, and the reservation's exact decimal output are preserved byte-for-byte; no float conversion, numeric narrowing or numeric reserialization of authority occurs.",
+    "unchanged_tests": "All five original declarations retained. All four other complete test bodies byte-for-byte identical to pinned Git, including historical adjacent 100-digit endpoint mismatches and public publisher real peer/live/signal cases. No production files edited. Separate src/group_publisher/tests.rs Python engine oracle remains active and is outside this five-test native-module retirement."
+  },
+  "binding_review": {
+    "status": "Parent accepted the complete 272-instance expected-side binding inventory after independent review. The three UUID source paths were explicitly authorized after checking their native generation sites. No other binding extension is approved.",
+    "source_rule": "Every replacement token comes solely from structural spans of the original native pre-mutation authority. Expected output is completely constructed before Session::open/group/reread/reserve. No source is obtained from the native post-result. Whole output equality requires IDs, timestamp, path and stats unchanged. Native UUID sources must be lowercase canonical UUIDv4/RFC4122 form and pairwise distinct; platform/unix.rs:57-62 sets version/variant bits, and task_time.rs:51-60 hyphenates them.",
+    "fixed_literals": {
+      "/workspace_id": "11111111-1111-4111-8111-111111111111",
+      "/groups/0/group_id": "22222222-2222-4222-8222-222222222222",
+      "/groups/0/members/0/participant_id": "33333333-3333-4333-8333-333333333333",
+      "/groups/0/members/0/binding/evidence/observed_at": "2026-11-27T12:34:56.123456+00:00",
+      "/groups/0/members/0/binding/presentation/endpoint/path": "/group-counter-capture/socket",
+      "/groups/0/members/0/binding/presentation/endpoint/device": "314159 (raw integer token; ordinary stats only)",
+      "/groups/0/members/0/binding/presentation/endpoint/inode": "271828 (raw integer token; ordinary stats only)"
+    },
+    "common_targets": [
+      "/workspace_id",
+      "/groups/0/group_id",
+      "/groups/0/members/0/participant_id",
+      "/groups/0/members/0/binding/evidence/observed_at"
+    ],
+    "endpoint_targets": [
+      "/groups/0/members/0/binding/presentation/endpoint/path",
+      "/publication_counters/0/endpoint/path",
+      "/publication_counters/1/endpoint/path (output only, prior_stream=false)",
+      "/groups/0/members/0/binding/presentation/endpoint/device (maximum_stats=false only)",
+      "/publication_counters/0/endpoint/device (maximum_stats=false only)",
+      "/publication_counters/1/endpoint/device (output only, prior_stream=false and maximum_stats=false)",
+      "/groups/0/members/0/binding/presentation/endpoint/inode (maximum_stats=false only)",
+      "/publication_counters/0/endpoint/inode (maximum_stats=false only)",
+      "/publication_counters/1/endpoint/inode (output only, prior_stream=false and maximum_stats=false)"
+    ],
+    "endpoint_sources": "Every target path/device/inode binds to the same-named leaf under /groups/0/members/0/binding/presentation/endpoint in the original native input. Initial full-byte comparison independently requires the original counter's repeated endpoint values agree. Device/inode are never bound for maximum_stats=true: all their literal 18446744073709551615 occurrences stay exact, including the new counter. Each target occurrence is a separate path-checked slot, never a global string replacement. Captured literals are independently hardcoded in Rust and pinned by whole-file hashes. No arbitrary identifiers, keys, revision fields, watermarks, epoch/source, other timestamps, integers or formatting are bindable.",
+    "per_case_instances": [
+      {"id":"primitive-r0-m0-p0","before":10,"stdout":13,"total":23},
+      {"id":"primitive-r0-m0-p1","before":10,"stdout":10,"total":20},
+      {"id":"primitive-r0-m1-p0","before":6,"stdout":7,"total":13},
+      {"id":"primitive-r0-m1-p1","before":6,"stdout":6,"total":12},
+      {"id":"primitive-r1-m0-p0","before":10,"stdout":13,"total":23},
+      {"id":"primitive-r1-m0-p1","before":10,"stdout":10,"total":20},
+      {"id":"primitive-r1-m1-p0","before":6,"stdout":7,"total":13},
+      {"id":"primitive-r1-m1-p1","before":6,"stdout":6,"total":12},
+      {"id":"publisher-r0-m0-p0","before":10,"stdout":13,"total":23},
+      {"id":"publisher-r0-m0-p1","before":10,"stdout":10,"total":20},
+      {"id":"publisher-r0-m1-p0","before":6,"stdout":7,"total":13},
+      {"id":"publisher-r0-m1-p1","before":6,"stdout":6,"total":12},
+      {"id":"publisher-r1-m0-p0","before":10,"stdout":13,"total":23},
+      {"id":"publisher-r1-m0-p1","before":10,"stdout":10,"total":20},
+      {"id":"publisher-r1-m1-p0","before":6,"stdout":7,"total":13},
+      {"id":"publisher-r1-m1-p1","before":6,"stdout":6,"total":12}
+    ],
+    "instance_totals": {"before":128,"stdout":144,"total":272},
+    "offset_ledger": "group_counter.json contains each occurrence's exact path, source, captured scalar literal (including quotes where applicable), start and exclusive end. Both inventories are strict in Rust; spans are rederived structurally rather than trusted or searched by repeated value."
+  },
+  "provenance": {
+    "export": "Full git archive of pinned 727edc7, extracted outside the active checkout with *.pyc excluded. No new worktree or Git-state changes. 53 source paths byte-verified against Git before any historical helper import: all 25 runner modules plus helper, original caller, group publisher, groups, Kitsune binding/schema, observation socket/time, task time and Authority value source inputs. Strict runner Python inventory and no .pyc verified. Neither active dirty source nor native actual output generates expectations.",
+    "capture": "Python 3.14.8 -I -B in clean PATH/LANG/LC_ALL/TMPDIR environment. Authored fixed whole-state literal template independent of native output; exact 16-case matrix. Unmodified historical helper invoked twice per restored authored initial input (32 total invocations), both capture policies unchanged, every pair's complete stdout identical and equal to that helper's complete written authority file. Helper only emits authority stdout; it receives workspace/source/policy argv, not a JSON stdin stream. Recorded request stream is the independently authored request inventory, not a claimed original helper stdin capture. No implementation copy or fallback.",
+    "interpreter_sha256": "44fdcdf23cd94aece60aec10b92b15a0e1cf4561e710985eaa53b362a03db48e",
+    "capture_tool_sha256": "855895870a0888b181cd436e94ef1a20d5455889799f595b2491eb4d9aebd196",
+    "request_bytes": 27611,
+    "request_sha256": "e7e67a7d2cc05295bd92d6cff24982ce5edf0eb65f86fc6dfa76844a543fb185",
+    "stdout_bytes": 24480,
+    "stdout_sha256": "768191b86dd8410af2901d421409896841d4885ce3345f9fcf61669842599db9",
+    "negative_controls": "All 53 source pins individually corrupted only in memory by patching Path.read_bytes for exactly that historical path. Every corruption rejected with the exact path-specific assertion in verify_sources before any helper execution. No source files rewritten or helper started during negative controls. Active checkout rejected separately. Optional freezer requires explicit historical/output roots outside project and refuses source mismatches or a .git-bearing root; no active-tree fallback."
+  },
+  "consumer_closure": "Removed the only live counter-helper Python constructor, runner/groups.py ancestor-root discovery and second oracle workspace from native_tests.rs. Only historical-source pin metadata refers to the old helper within native Rust tests. Deleted helper after source search confirmed closure. Parent integrated native_package required inputs and a retired-helper absence assertion. Other engine oracle remains active and unchanged.",
+  "parent_validation": {
+    "review": "Independent read-only review found no P0/P1/P2/P3 findings in the bounded counter slice. Independently verified all 53 source pins against historical Git, fixture and tool hashes, all sixteen cases, 272 structural binding instances, complete pre-state capture before native mutation, integer/order/newline preservation and unchanged other four test bodies.",
+    "build_and_checks": "cargo fmt --all -- --check; git diff --check; cargo check --all-targets --offline --locked -j2; python3 -B -m unittest discover -s tools/tests -q (53 passed); cargo test --offline --locked -j2 --test native_package -- --nocapture (2 passed). Fresh checkout CLI built before library artifact in the same target/profile for the Djinn regression.",
+    "normal_regressions": "120 distinct selected library tests passed, zero ignored: counter native 5, Djinn 10, repositories 24, launch 28, identity 14, workers 11, execution-source 18, history 10. Repeated counter/sandbox executions are not additional distinct tests. This is not a full-library green claim.",
+    "counter_checkout_and_package": "Full five-test group_publisher::native::tests:: module passed normally and in strong Python-absence bwrap for checkout and a separately built extracted Cargo source package. Actual working-tree package created outside Cargo test with cargo package --offline --locked --allow-dirty --no-verify; all required counter and preceding Djinn inputs byte-identical, retired helpers absent, no runner or .git. Separate fresh package target artifact, never a copied checkout binary.",
+    "package_snapshot": "Validation-time archive contained 477 files / 25,290,011 uncompressed bytes / 2,274,329 compressed bytes. All 474 non-generated payload files and Cargo.toml.orig matched working-tree inputs. Traversal, duplicate entries, links/special files and prohibited paths were rejected. Measured before evidence-only approval/documentation closeout, not a final published artifact identity.",
+    "isolation": "Only test ELF and individual ldd dependencies plus independently verified ELF-requested /lib64/ld-linux-x86-64.so.2 mounted with bwrap --unshare-all --clearenv; proc/dev and owned writable work/scratch. No checkout, shell, interpreter, broad executable/library trees, compiler, provider or home. Absolute interpreter/stdlib/libpython ENOENT assertions executed in isolated counter child. All original owned self-exec and signal paths retained, zero skips. Filesystem absence proof, not universal exec-trace or seccomp proof.",
+    "audit_and_integrity": "Ordinary audit passed: original 941 / mapped 90 / unresolved 851; independent helpers 4 active / 1 retired / 5 historical. Completion check exited 1 solely with expected incomplete-retirement diagnostic. 103 runner/original-Python/coverage/audit/Cargo paths matched pinned Git; 874 source paths, Git status, HEAD diff and index entries unchanged across validator runs. No production behavior edits.",
+    "harness_retries": "Two temporary parent-validator failures corrected without repository changes: Path.parent typo, then launch fixture compiler hidden by overly restricted PATH. Final full launch 28/28 and all other listed checks passed; no tests weakened or skipped. Component capture/build/isolation had no failures.",
+    "resources_and_cleanup": "Rust/Cargo 1.99.1, Python 3.14.8, verified btrfs disk-backed cache, unique owned runs and scoped TMPDIR/CARGO_TARGET_DIR, offline locked two-job builds and recorded system OpenSSL settings. All three parent run directories removed after owned process groups stopped/reaped, including failed runs. Pre-existing pn.HC9lGV untouched. No downloads, deployments, app restarts, live provider calls, staging or commits.",
+    "limits": "Linux selected-module and source-package proof only. Original Python suite, full Rust suite, remaining static/live publisher oracle, Djinn sandbox rerun, non-Linux platforms, installed/release acceptance and global retirement not claimed. Original-method mapping delta remains zero. Component validation section below records its earlier, separately scoped run."
+  },
+  "validation": {
+    "build": "Fresh unique disk-backed CARGO_TARGET_DIR. cargo test --offline --locked -j2 --lib group_publisher::native::tests:: --no-run --message-format=json; selected the single test executable from Cargo compiler-artifact JSON, no CLI or repository target artifact. Build completed in 1m44s.",
+    "test_artifact": {"bytes":256541944,"sha256":"35e68493e36260fa545ab66f8972c4e18069e5d31655da747fc9ac72a75d75ef"},
+    "normal": "Cargo-returned test executable group_publisher::native::tests:: --nocapture: 5 passed, 0 failed, 0 ignored, 0 measured, 1619 filtered out, 4.08s. Full five-test module, no individual exclusions.",
+    "strong_isolation": "Same artifact mounted at /native/deps/coven-tests; full module 5 passed, 0 failed, 0 ignored, 0 measured, 1619 filtered out, 4.07s. All original owned self-exec/signal paths work. bwrap --unshare-all --die-with-parent --new-session --clearenv, /proc and /dev, owned writable /work and /scratch, TMPDIR=/scratch, PATH=/no-programs, COVEN_GROUP_COUNTER_ASSERT_PYTHON_ABSENT=1. No host root, checkout, home, executable/library tree, compiler, Python or provider mounts. Only the artifact and exact individual ELF libraries exposed. No CLI or shell mount required.",
+    "exact_elf_mounts": [
+      "/lib64/ld-linux-x86-64.so.2",
+      "/usr/lib/libbrotlicommon.so.1",
+      "/usr/lib/libbrotlidec.so.1",
+      "/usr/lib/libbrotlienc.so.1",
+      "/usr/lib/libc.so.6",
+      "/usr/lib/libcrypto.so.3",
+      "/usr/lib/libgcc_s.so.1",
+      "/usr/lib/libm.so.6",
+      "/usr/lib/libssl.so.3",
+      "/usr/lib/libz.so.1",
+      "/usr/lib/libzstd.so.1"
+    ],
+    "loader": "readelf -l independently required /lib64/ld-linux-x86-64.so.2 and mounted that exact ELF-requested path, not merely ldd's resolved /usr/lib64 alias. No broad lib64 or bin-tree mounts.",
+    "absence": "Native symlink_metadata checks require NotFound with raw ENOENT for /usr/bin/python3, /bin/python3, /usr/bin/python3.14, /usr/local/bin/python3, /home/linuxbrew/.linuxbrew/bin/python3, /usr/lib/python3.14 and /usr/lib/libpython3.14.so. The check executes in the counter's isolated child, not merely its parent. PATH alone is not claimed to prove absence.",
+    "checks": "Focused rustfmt --edition 2024 --check and git diff --check passed. All five original declarations and other four complete test bodies compared with pinned Git; unchanged. No unrelated blockers, failed builds, failed captures, failed native tests or failed sandbox attempts.",
+    "resources": "Verified existing /home/jdawson/.cache/agent-test-runs is /dev/sda2 btrfs, about 321 GiB available. Unique TemporaryDirectory owners with finally/context cleanup before children; validation subprocesses in owned process groups, catchable interruption terminates and waits (kills/reaps if needed) before removing artifacts. TMPDIR and CARGO_TARGET_DIR assigned inside owned run. Offline locked two-job Cargo, existing caches, OPENSSL_LIB_DIR=/usr/lib, OPENSSL_INCLUDE_DIR=/usr/include, PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig; OPENSSL_DIR, LD_LIBRARY_PATH and compiler wrappers unset. No installs/downloads, live Djinn/provider calls or signals to unowned processes.",
+    "cleanup": "Exact owned capture/export/tmp directory and exact owned build/tmp/sandbox directory removed after synchronous children reaped. Cache-root inspection afterward showed only pre-existing pn.HC9lGV, untouched. No retained run artifacts, bulk /tmp artifacts or cleanup failures. No staging or commits.",
+    "limits": "Linux five-test native-module proof only. No original Python suite, full Rust suite, package extraction/SourceArchive checks, package approval, global coverage audit or non-Unix qualification run or claimed. Parent owns those integrations and final binding/evidence review."
+  },
+  "repeat_commands": {
+    "capture": "Use a unique owned disk-backed run with cleanup trap/finally and TMPDIR, git archive 727edc7aad55ed76e98670e0cee6449d611b2285 | tar -x --exclude=*.pyc -C <historical-root>; env -i PATH=/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 TMPDIR=<output-root>/tmp /usr/bin/python3 -I -B tools/freeze_group_counter.py --historical-root <historical-root> --output-root <output-root>. Both roots must exist outside project. Generated files are artifacts, not automatic checkout edits.",
+    "build": "With owned TMPDIR/CARGO_TARGET_DIR and system OpenSSL environment above: cargo test --offline --locked -j2 --lib group_publisher::native::tests:: --no-run --message-format=json. Extract executable from compiler-artifact with profile.test=true and executable non-null. Run <artifact> group_publisher::native::tests:: --nocapture.",
+    "sandbox": "bwrap --unshare-all --die-with-parent --new-session --clearenv --proc /proc --dev /dev --bind <owned-work> /work --bind <owned-scratch> /scratch --dir /native/deps --ro-bind <artifact> /native/deps/coven-tests [for every exact_elf_mounts path P: --ro-bind P P] --chdir /work --setenv TMPDIR /scratch --setenv PATH /no-programs --setenv COVEN_GROUP_COUNTER_ASSERT_PYTHON_ABSENT 1 /native/deps/coven-tests group_publisher::native::tests:: --nocapture. Recompute ldd dependencies and independently inspect readelf interpreter for the new artifact; expose individual files only, never broad roots/trees. Wait/reap children before deleting only that run."
+  }
+}

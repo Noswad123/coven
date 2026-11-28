@@ -1,7 +1,10 @@
 use super::*;
 use crate::process::{ProbeResult, ProbeStatus};
 use serde_json::{Value as Json, json};
-use std::{cell::Cell, fs, process::Command};
+use std::{cell::Cell, fs};
+
+#[path = "tests/frozen.rs"]
+mod frozen;
 
 fn fixture(folder: &str) -> Json {
     json!({
@@ -267,36 +270,12 @@ fn schema_differential_oracle_corpus() {
         "9".repeat(4300),
         &base.to_string()[1..]
     ));
-    let input: Vec<Json> = payloads
-        .iter()
-        .map(|p| json!({"payload":p,"folder":folder}))
-        .collect();
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("cases.json");
-    fs::write(&path, serde_json::to_vec(&input).unwrap()).unwrap();
-    let out = Command::new("python3")
-        .args([
-            "-B",
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/djinn_observation/oracle.py"
-            ),
-        ])
-        .arg(path)
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .env_remove("PYTHONPATH")
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let expected: Vec<Json> = serde_json::from_slice(&out.stdout).unwrap();
-    for (i, (p, e)) in payloads.iter().zip(expected).enumerate() {
+    let expected = frozen::expected(&payloads, folder);
+    for i in 0..161 {
+        let p = &payloads[i];
         assert_eq!(
             decode_json(p.as_bytes(), folder),
-            e,
+            expected[i],
             "oracle case {i}: {}",
             &p[..p.len().min(100)]
         );

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Main accepted the single pure-decoder helper retirement after independent complete-input, projected-result, wire-boundary, source-provenance and consumer-closure review. This adds no original-method mapping and does not qualify installed Djinn/provider behavior or global Python retirement. Parent package and aggregate ten-test supervisor checks are recorded separately.",
+  "historical_commit": "727edc7aad55ed76e98670e0cee6449d611b2285",
+  "mapping_delta": 0,
+  "scope": "One pure persisted-Djinn decoder oracle caller retired. Original 941 methods / 90 mapped / 851 unresolved and independent-helper registry 4 active / 1 retired / 5 total unchanged. No new mapping, independent-oracle classification, package approval or global Python-retirement approval.",
+  "retired_helpers": {
+    "src/djinn_observation/oracle.py": {
+      "kind": "runner_oracle",
+      "bytes": 797,
+      "sha256": "fea27e78ad637eb055c422895ce987fd73d0a9ff5a689a2213c8f775f7d1baf8",
+      "fixtures": [
+        {
+          "path": "tests/retirement/fixtures/djinn_decoder.json",
+          "bytes": 393207,
+          "sha256": "7d207f3e6bb75b9f7281ebaeb1dc4b6c4c56595ac0bab41f2b4908b53dfa3a0c"
+        },
+        {
+          "path": "tests/retirement/fixtures/djinn_decoder_provenance.json",
+          "bytes": 426880,
+          "sha256": "22e1615d729d1808b0d384a1f56fe33a59723ee98fb74acf6ceb4eba8109344d"
+        }
+      ],
+      "replacement_tests": [
+        "rust::src/djinn_observation/tests.rs::schema_differential_oracle_corpus"
+      ]
+    }
+  },
+  "assertion_breakdown": {
+    "inventory": "Exactly 161 zero-based index IDs 0..160, not unique raw values. Base 1, required-field removals 39, mutations 62, capability mutations 16, source mutations 22, missing/observed source variants 2, unavailable 1, raw malformed/duplicate/nonfinite literals 11, depth-33 array 1, extensions 5, raw 4300-digit unknown integer 1. All request folders are literal /selected. Original Rust authored construction is byte-identical to historical source; no deduplication, sampling, normalization or filtering.",
+    "expected": "Complete assessment/observation/producer objects or exact error-code-only objects. Historical helper calls runner.djinn_observation._decode, maps wire._Failure.code, and maps ValueError/UnicodeError to schema_error. No inspect, CLI or provider probes during capture. Actual captured outcomes, not acceptance booleans or forced static research results.",
+    "integrity": "Both complete fixture files SHA-256 checked before serde decoding. Strict 161 payload/row/request/result counts, exact ID and row-key shape, every raw payload byte and folder matched, per-payload SHA-256 checked, captured request and stdout streams hash/length checked, exact expected result shapes and full stdout projections checked. Entire input inventory validated before any native schema decode. Index loop replaces truncating zip; no dynamic bindings.",
+    "raw_input": "Outer serde JSON only unwraps payload strings and known bounded projected expectations. The 4300-digit unknown integer remains raw JSON text through native dispatch, survives unprojected validation, and is discarded in projection; no unknown-number serde narrowing, parsing or reserialization. Literal 1e999 remains a raw string. Boolean/float/integer distinctions and literal UTF-8 match original serde serialization.",
+    "native_guards": "Other nine test bodies byte-identical. Unknown extensions are validated before contract/projection; PRIVATE_PRODUCER_TRANSCRIPT redaction, separate invalid UTF-8 byte FF, depth 32 versus 33, 4096-character strings/keys and entries, 8192-character paths versus UTF-8 byte lengths, finite profile and 4301-digit integer refusal remain unchanged. Invalid UTF-8 is not claimed among the 161 captured UTF-8 strings.",
+    "outcome_counts": {
+      "observed": 23,
+      "unavailable": 1,
+      "schema_error": 127,
+      "unsupported_contract": 2,
+      "invalid_json": 2,
+      "duplicate_key": 2,
+      "nonfinite_json": 3,
+      "nesting_limit": 1
+    }
+  },
+  "provenance": {
+    "source": "Full historical Git archive export, no worktree; bytecode excluded. Helper, original caller/base fixture, native production, schema, wire and all 25 runner Python modules (30 source paths total) checked byte-for-byte against pinned Git before helper import. Namespace runner has no __init__.py; imported runner sources are included in pins. Optional freezer requires explicit historical root, refuses active tree and mismatching source; no implementation copy or fallback.",
+    "capture": "Python 3.14.8 -I -B, clean PATH/LANG/LC_ALL/TMPDIR environment. Independently constructed literal fixture/matrix requests, no Rust decoder/fact outputs. Two independent helper invocations have identical complete stdout bytes. Helper reads exact recorded request file, not stdin; metadata explicitly distinguishes this from a stdin payload capture. -B prevents bytecode writes, not a claim that Python has no transient caches. Export and owned request directory cleaned.",
+    "request_bytes": 328546,
+    "request_sha256": "cd235d065cdbe79a1be50a839948cfa336ef54e3c19b0b4692b50bfb746ffdff",
+    "stdout_bytes": 28819,
+    "stdout_sha256": "356d82368859eb14ef0371fb306bb6b4b4e1c345716e24a858161c4b938cc4cd",
+    "capture_tool_sha256": "75a1f2f5869a2b0ab38dbea621d95c7c3f8a2af177649d12ad1bf72be17a66ef",
+    "interpreter_sha256": "44fdcdf23cd94aece60aec10b92b15a0e1cf4561e710985eaa53b362a03db48e"
+  },
+  "consumer_closure": "Only Python constructor/caller was schema_differential_oracle_corpus. Removed subprocess invocation, request-file/tempdir construction and unused Command import; then deleted helper. Source search confirms no helper path or Python process constructor in native Djinn tests. Remaining python path strings in private frozen helper are ENOENT assertions; historical helper references in freezer/provenance/review are not live fallback consumers.",
+  "parent_package_integration": {
+    "required_inputs": [
+      "src/djinn_observation/tests/frozen.rs",
+      "tests/retirement/fixtures/djinn_decoder.json",
+      "tests/retirement/fixtures/djinn_decoder_provenance.json",
+      "tests/retirement/reviews/djinn_decoder_oracle.json"
+    ],
+    "required_absence_guard": "src/djinn_observation/oracle.py",
+    "note": "Existing Cargo globs suffice. Parent owns explicit native-package assertions, aggregate extracted-package validation and global audit integration; no Cargo/native_package/global coverage edits in this slice. tools/freeze_djinn_decoder.py is optional historical capture tooling, not runtime/package decoder logic."
+  },
+  "validation": {
+    "build": "Fresh unique CARGO_TARGET_DIR: first cargo build --offline --locked -j 2 --bin coven --message-format=json, then cargo test --offline --locked -j 2 --lib djinn_observation:: --no-run --message-format=json. Cargo-returned CLI artifact path asserted equal to test current_exe().parent().parent().join(coven). No stale repository target binary or COVEN override. Final build times 1m23s CLI / 50.16s library test.",
+    "cli_artifact": {
+      "bytes": 183491704,
+      "sha256": "3c50708f71d3970cfc91f6c2492ee4222daec966b301e80699dd2506b314e6b8"
+    },
+    "test_artifact": {
+      "bytes": 255041664,
+      "sha256": "d0a79868e8d672e4c0e89fd606e8dcddb2ca578d4ff81a321ff6b47ab4295d59"
+    },
+    "normal": "Full djinn_observation:: module: 10 passed, 0 failed, 0 ignored, 0 measured, 1614 filtered out; 0.16s. Controlled real producer included, not only decoder.",
+    "strong_isolation": "Full djinn_observation:: module: 10 passed, 0 failed, 0 ignored, 0 measured, 1614 filtered out; 0.15s. bwrap --unshare-all --die-with-parent --new-session --clearenv; test /native/deps/coven-tests and fresh CLI /native/coven preserve unchanged locator. Only /bin/sh and exact individual ldd dependencies plus explicit ELF-requested /lib64/ld-linux-x86-64.so.2 mounted. No host root, checkout, full bin, home, Homebrew, Python, compiler, provider or credentials mount. Owned writable /work and /scratch, TMPDIR=/scratch, PATH=/no-programs, /proc and /dev support owned supervisor IPC/fds/entropy. Native syscall ENOENT assertions requested by COVEN_DJINN_ASSERT_PYTHON_ABSENT=1; positive shell/CLI file prerequisites checked, and controlled test executes both successfully.",
+    "python_absence_checks": [
+      "/usr/bin/python3",
+      "/bin/python3",
+      "/usr/bin/python3.14",
+      "/usr/local/bin/python3",
+      "/home/linuxbrew/.linuxbrew/bin/python3",
+      "/usr/lib/python3.14",
+      "/usr/lib/libpython3.14.so"
+    ],
+    "controlled_producer": "Unchanged owned inert /bin/sh script verifies fixed arguments, cwd / and stdin EOF; emits fixture JSON and FF stderr. Only private native process supervisor invoked. No real Djinn, provider/model process or persisted source folder. Unchanged test asserts script bytes, mtime and directory entry count before/after. Other FakeRunner scripts are observed/fingerprinted but not executed. Native supervisor owns stop/reap handling; no user processes signalled.",
+    "source_pin_tamper_checks": "All 30 pinned paths individually subjected to in-memory Path.read_bytes corruption. Each rejected with exact path-specific assertion before helper/import execution; no source files rewritten. Active checkout rejected after deletion. Tool hash and captured request stream independently checked against freezer, and corpus/provenance bytes checked against retained capture before cleanup.",
+    "baseline": "Original authored Rust payload construction and suffix containing all other nine tests compared byte-for-byte to pinned Git; all ten declarations retained. Production/schema/wire, runner, original Python tests, Cargo/Cargo.lock, tests/native_package.rs and coverage unchanged. No production parser/validator fallback added. git diff --check and focused rustfmt --check passed.",
+    "resolved_harness_failures": "Initial lib no-run found Rust path-module lookup required explicit tests/frozen.rs path; fixed only test module declaration. First sandbox attempt failed before any test exec with ENOENT because ldd resolved loader to /usr/lib64 but ELF requests /lib64. Final fresh run explicitly verifies readelf loader prerequisites and mounts both aliases. No production error, test weakening, skip, timeout inflation or controlled-producer failure occurred; full failure output remains in session tool transcript.",
+    "resources": "Verified /home btrfs disk-backed cache, approximately 320 GiB available. Unique owned run directories with TMPDIR/CARGO_TARGET_DIR before children; offline, locked, two jobs, existing dependency/toolchain caches. OPENSSL_LIB_DIR=/usr/lib, OPENSSL_INCLUDE_DIR=/usr/include, PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig; OPENSSL_DIR, LD_LIBRARY_PATH and Rust compiler wrappers unset. No installs, downloads, deploys, app restarts, live probes or non-Unix SDK runs.",
+    "cleanup": "Owned capture/export/tmp, pincheck export and all three fresh build/test trees removed after synchronous children completed, including both failed attempts. Build/test teardown uses finally; final run also catches termination/interruption and stops/waits owned child groups. Native supervisor handles producer groups. No retained run artifacts or unbounded logs; pre-existing pn.HC9lGV untouched.",
+    "limits": "Linux module proof only. No full library/original-941 suite, global audit or extracted-package acceptance claimed. Parent integration/review remains pending. Mapping delta zero and independent-helper registry unchanged."
+  }
+}

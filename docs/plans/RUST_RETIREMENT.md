@@ -223,8 +223,20 @@ ten history tests without Python, preserving exact numeric/canonical bytes and
 dynamic source-selection checks. The
 [repository-admission batch](../changelog/2026-11-26-python-retirement-repository-records.md)
 then retained all 1,979 input cases and validated the complete twenty-four-test
-repository group with real Git and no Python. The current inventory has
-29 runner-dependent/mixed source caller files and 26 runner-backed integration targets;
+repository group with real Git and no Python. The
+[persisted-decoder batch](../changelog/2026-11-27-python-retirement-djinn-decoder.md)
+then retired its single oracle, keeping all 161 raw cases and validating the
+ten-test module with a fresh native supervisor and inert shell producer, not an
+installed provider. The subsequent
+[group-counter batch](../changelog/2026-11-27-python-retirement-group-counter.md)
+preserved all sixteen whole-authority comparisons and verified the complete
+five-test native publisher module without Python in checkout and extracted
+package. The [static/live engine batch](../changelog/2026-11-27-python-retirement-group-publisher-engine.md)
+then closed both remaining publisher oracle consumers, preserving all sixteen
+report/write comparisons and validating all 88 publisher tests without Python in
+checkout and extracted package. Other group-command/authority oracles remain.
+The current inventory has 26 runner-dependent/mixed source
+caller files and 26 runner-backed integration targets;
 these counts do not include every
 variable executable or generated-script path. No additional original-method mapping
 was claimed.

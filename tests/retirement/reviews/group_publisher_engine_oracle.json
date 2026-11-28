@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Parent accepted the shared helper retirement after independent complete-input/output, historical-source and two-consumer closure review. All sixteen engine cases and all 88 publisher tests passed normally and with Python absent in checkout and extracted package. This establishes scoped publisher-test oracle closure, not original-method mapping, global Python retirement or installed/release approval.",
+  "historical_commit": "727edc7aad55ed76e98670e0cee6449d611b2285",
+  "mapping_delta": 0,
+  "scope": "Bounded retirement of the shared group publisher engine Python oracle, closing both original static/live consumers. No production, original 941-method ledger/mappings, independent C helper registry (4 active + 1 retired), package integration, parent documentation, audit or global retirement approval changes. Existing dirty Djinn decoder and group counter changes preserved. Parent owns package and broader acceptance.",
+  "retired_helpers": {
+    "src/group_publisher/oracle.py": {
+      "kind": "runner_oracle",
+      "bytes": 2771,
+      "sha256": "c15c9ebe337fdebb01de57a124d7cd300e443894e86011121af3c0acc7f2bb97",
+      "replacement_tests": [
+        "rust::src/group_publisher/tests.rs::group_publisher42::python_byte_oracle_static",
+        "rust::src/group_publisher/live_tests.rs::live41::python_byte_oracle_live"
+      ],
+      "fixtures": [
+        {
+          "path": "tests/retirement/fixtures/group_publisher_engine.json",
+          "bytes": 93370,
+          "sha256": "8087e14b3e9c76660ec639260c74f5021d7f02ccfcaf950aeb0953c8b0759ec8"
+        },
+        {
+          "path": "tests/retirement/fixtures/group_publisher_engine_provenance.json",
+          "bytes": 163806,
+          "sha256": "ae7638134f1720a5e91bb1f4f10a4a17ec05ea612178e33e65ceb118c13c937b"
+        }
+      ]
+    }
+  },
+  "assertion_breakdown": {
+    "inventory": "Exactly 16 cases: live false then true, each with success, reservation_error, reservation_uncertain, invalid_reservation, reject, lost_ack, unsent, unknown in that exact order. Static unknown remains a separate case even though its output equals static success. No deduplication, sampling, zip comparison, case filter or truncation.",
+    "native_input": "Independent freezer literal/matrix transcription of original Fixture::new(2, live), group, attach, source and status, including absent member live_attachment versus null status live_attachment, both pane arrays, boolean capability, every member/participant/binding/source field and unknown activity mutation. Entire serialized {group,fresh,status,mode,live} UTF-8 input equals the frozen original helper stdin before f.run. Original after-run input construction is retained and its complete serialization must remain unchanged. No native-generated golden input or output.",
+    "native_execution": "Authored Fixture construction, original ordered mode list and fault/reservation match block unchanged. Fixture::run still calls engine::run and all original accounting inequalities/equalities. Fixed TestClock and Stop, two members, reservation first-call assertions, controlled boundary effects, prepare(params) twice, write capture timing, rejected versus uncertain delivery and pre-send failure distinctions all unchanged. Original static/live test names and all 83 static/live test bodies unchanged. Entire live_tests.rs byte-identical to pinned Git. All helpers before the shared launcher and all Unix effect/matrix code after it byte-identical to pinned Git. Existing five native publisher tests preserved.",
+    "output": "Every original complete {report,writes} serialization compares directly as a whole byte vector to opaque historical stdout UTF-8. Expected stdout is never parsed, reserialized, bound, normalized or derived from actual output. Literal middle-dot UTF-8 bytes, compact sorted object serialization, all report fields, ordered writes and no final newline remain exact.",
+    "integrity": "Whole corpus and provenance SHA-256 checked before any JSON decoding. Strict outer corpus/provenance/interpreter/row/input envelope shapes, 16 ordered IDs, 2x8 matrix, live/mode values, two-member/participant/pane/agent counts, every row input/stdout hash, source pin count and hash forms checked. All 53 source pins are frozen by the complete provenance hash, including 25 runner modules and helper/callers/live_tests/model/engine/native production inputs. Aggregate stdin/stdout streams reconstructed in original row order as 8-byte unsigned big-endian byte length followed by each complete raw stream, and checked against recorded full hex transport, byte lengths and SHA-256. Framing prevents concatenation ambiguity. No expected output interpretation.",
+    "bindings": "Zero dynamic bindings. Paths, device/inode, identities, timestamps, clock, roles, revision, source and all numeric spellings are deterministic in this Fixture. No expected-side replacement and no actual-side normalization. Counter authority's separately accepted dynamic binding inventory is unchanged."
+  },
+  "provenance": {
+    "export": "Explicit full git archive of pinned 727edc7 extracted outside checkout, excluding *.pyc and __pycache__ entries. No worktree or Git-state mutation. All 53 required source files byte-verified against pinned Git before any helper invocation, strict 25-module runner inventory and no bytecode verified. All 53 recorded hashes independently rechecked against Git after capture. No active source fallback or copied publisher implementation.",
+    "capture": "Python 3.14.8 -I -B; clean PATH=/usr/bin:/bin, LANG=C.UTF-8, LC_ALL=C.UTF-8 and owned TMPDIR. Unmodified historical helper receives each full independent compact sorted UTF-8 stdin literal, then emits complete stdout. All effects are the original historical mocks, no providers. Two invocations per row, 32 per freezer run, pairwise complete stdout equality. Entire freezer run repeated, with both generated files byte-identical, 64 total successful historical helper invocations. No Python bytecode generated.",
+    "interpreter_sha256": "44fdcdf23cd94aece60aec10b92b15a0e1cf4561e710985eaa53b362a03db48e",
+    "capture_tool_sha256": "8686386fd183742831d27758a3ea6b57857e728ff91b343c78d88856815440ff",
+    "stdin_stream_bytes": 63114,
+    "stdin_stream_sha256": "547d2908187fa2154130083590e12fb26d81d4c21aca7df18ea65b10c121df8c",
+    "stdout_stream_bytes": 15231,
+    "stdout_stream_sha256": "7b1cffb411bc418d7c2c4f2584dd8a9f0f4d80bf3680c295d942f8dd1c25dd08",
+    "framing": "Counts include sixteen 8-byte length prefixes each. Each stream hex field in provenance contains the complete framed raw bytes; row strings retain the actual unframed stdin/stdout bytes. No surrogate JSON output projection.",
+    "negative_controls": "Each of all 53 historical paths individually tampered only in memory with unittest.mock.patch.object(Path, read_bytes): return original bytes plus tamper only for that exact path. verify_sources rejected each with that exact path assertion. Patched subprocess.check_output additionally allowed git only, forbidding any helper execution. No historical files changed. Active checkout passed as historical root rejected separately at the initial root guard, before any helper or Git call. Whole second capture equality and capture-tool self hash also checked."
+  },
+  "consumer_closure": "Both unchanged test names call the shared oracle(live); shared implementation now uses engine_frozen::Cases. Removed Python Command/Stdio/stdin launch and CARGO_MANIFEST_DIR ancestor oracle discovery. Deleted helper only after both consumers were native and source search confirmed no active launch/discovery remained. Full group_publisher:: module has no runner/Python execution prerequisite; words in test names, public report text, absence probes and historical pins are intentionally retained. Parent integrated explicit package required inputs and retired-helper absence assertions.",
+  "parent_validation": {
+    "independent_review": "Read-only independent review found no P0/P1/P2/P3 findings. Reconstructed all sixteen complete authored inputs against pinned fixture definitions; checked all 53 Git source hashes, corpus/provenance/freezer/helper and per-row hashes, framed aggregate streams, both consumer closure and unchanged original test bodies/guards. No dynamic bindings or expected values from native output.",
+    "checks": "Fresh cargo fmt --all -- --check; git diff --check; cargo check --all-targets --offline --locked -j2; python3 -B -m unittest discover -s tools/tests -q (53 passed); cargo test --offline --locked -j2 --test native_package -- --nocapture (2 passed). No failures or source changes during validation.",
+    "normal_regressions": "203 distinct selected library tests passed: full publisher 88 (42 static + 41 live + 5 native), Djinn 10, repositories 24, launch 28, identity 14, workers 11, execution-source 18, history 10. Fresh matching CLI built before library test artifact in same target/profile for Djinn; normal PATH retained installed rustc for launch fixture. Repeated publisher/sandbox executions are not additional distinct tests. Full Rust suite not claimed.",
+    "publisher_checkout_and_package": "All 88 group_publisher:: tests passed with zero failures/ignored normally and in strong Python-absence bwrap in checkout and separately built extracted Cargo source package. Original Unix effects, expiry, timing, interrupt and owned self-exec/signal paths enabled without publisher exclusions. Both engine and counter absence flags set for sandboxes.",
+    "package_snapshot": "Actual dirty working-tree cargo package --offline --locked --allow-dirty --no-verify created outside Cargo tests: 480 files, 25,572,625 uncompressed bytes, 2,291,477 compressed bytes. All 477 non-generated payload files and Cargo.toml.orig matched source. All twelve engine/counter/Djinn helper/fixture/provenance/review inputs present, three retired Python helpers absent, no runner or .git. Traversal, duplicate entries, links/special files and prohibited payloads rejected. Separate fresh extraction target, not copied checkout ELF. This is the validation snapshot before evidence-only approval/documentation closeout, not a published artifact identity.",
+    "isolation": "bwrap --unshare-all --die-with-parent --new-session --clearenv; only test ELF, exact individual ldd dependencies, independently verified ELF-requested /lib64/ld-linux-x86-64.so.2 loader alias, proc/dev and owned writable work/scratch. No checkout, shell, compiler, CLI, provider, interpreter, home or broad executable/library directory. Absolute interpreter/stdlib/libpython ENOENT probes passed in both engine consumers and counter child. Filesystem absence proof, not universal exec/seccomp denial.",
+    "audit_integrity": "Ordinary audit passed before and after validation. Completion mode exited 1 solely for expected incomplete-retirement diagnostic: 941 original methods, 90 mapped, 851 unresolved, independent Python 4 active / 1 retired / 5 historical. Supplemental 38; full inventory 979; static candidate inventory 7 targets / 55 IDs. 103 runner/original-Python/coverage/audit/Cargo paths unchanged against pinned Git. All 880 source paths, Git status, HEAD diff and index snapshots unchanged during validation.",
+    "resources_cleanup_limits": "Linux, Rust/Cargo 1.99.1, Python 3.14.8. Verified disk-backed btrfs cache; fresh unique run, scoped TMPDIR/CARGO_TARGET_DIR, offline locked two-job Cargo with installed caches and system OpenSSL. Owned child groups stopped/waited and absent before exact run removal. Only pre-existing pn.HC9lGV remained untouched. No failures, retained artifacts, downloads, deployments, app restarts, live providers, staging or commits. No original Python/full Rust suite, renewed Djinn sandbox qualification, non-Linux or installed/release acceptance claimed. Component validation below records its earlier independent scoped run."
+  },
+  "validation": {
+    "build": "Fresh unique disk-backed target; cargo test --offline --locked -j2 --lib group_publisher:: --no-run --message-format=json. Single test executable selected from Cargo compiler-artifact JSON (profile.test true and executable non-null); no preexisting artifact or CLI needed. Rust 1.99.1; build 1m50s.",
+    "test_artifact": {
+      "bytes": 256842992,
+      "sha256": "deba153cc4100b749add8b155cc3d10db74c61bbf294dc729321c7657487deaa"
+    },
+    "normal": "Listed all 88 publisher tests (42 static + 41 live + 5 native), then same executable group_publisher:: --nocapture: 88 passed, 0 failed, 0 ignored, 0 measured, 1536 unrelated filtered out, 4.09s. Full module, no publisher exclusions. Original time, interrupt, real Unix socket, effect and owned self-exec/signal paths retained and reaped.",
+    "strong_isolation": "Same ELF at /native/deps/coven-tests; group_publisher:: --nocapture: 88 passed, 0 failed, 0 ignored, 0 measured, 1536 unrelated filtered out, 4.08s. bwrap --unshare-all --die-with-parent --new-session --clearenv, /proc and /dev, exact owned writable work/scratch, TMPDIR=/scratch, PATH=/no-programs, both COVEN_GROUP_COUNTER_ASSERT_PYTHON_ABSENT=1 and COVEN_GROUP_PUBLISHER_ENGINE_ASSERT_PYTHON_ABSENT=1. No host root, checkout, home, broad executable/library tree, Python, provider, shell, compiler or CLI mounts. Only exact individual ELF files below. No extra prerequisite was needed.",
+    "exact_elf_mounts": [
+      "/lib64/ld-linux-x86-64.so.2",
+      "/usr/lib/libbrotlicommon.so.1",
+      "/usr/lib/libbrotlidec.so.1",
+      "/usr/lib/libbrotlienc.so.1",
+      "/usr/lib/libc.so.6",
+      "/usr/lib/libcrypto.so.3",
+      "/usr/lib/libgcc_s.so.1",
+      "/usr/lib/libm.so.6",
+      "/usr/lib/libssl.so.3",
+      "/usr/lib/libz.so.1",
+      "/usr/lib/libzstd.so.1",
+      "/usr/lib64/ld-linux-x86-64.so.2"
+    ],
+    "loader": "Individual dependencies derived from ldd. readelf -l independently verified ELF-requested /lib64/ld-linux-x86-64.so.2, mounted explicitly in addition to ldd's /usr/lib64 alias. No library directory mounts.",
+    "absence": "Independent optional engine flag executes in both original oracle consumers and requires symlink_metadata NotFound with raw ENOENT for /usr/bin/python3, /bin/python3, /usr/bin/python3.14, /usr/local/bin/python3, /home/linuxbrew/.linuxbrew/bin/python3, /usr/lib/python3.14, /usr/lib/libpython3.14.so and /usr/lib/libpython3.14.so.1.0. Normal platforms do not require Python absent. Existing counter flag also executed in its original child. Filesystem absence proof, not universal exec trace or seccomp proof.",
+    "checks": "Focused rustfmt --edition 2024 --check and git diff --check passed. Original test/helper bodies and ordered mode/fault construction compared with pinned Git as described above. Source search found no Python constructor or root discovery in publisher Rust. All review/fixture JSON parse checks passed.",
+    "failures": "No capture, source-control, build, test or sandbox failures; no weakened tests, skips, exclusions or retries for failures.",
+    "resources": "Verified /home/jdawson/.cache/agent-test-runs on /dev/sda2 btrfs with 321 GiB free before work. Unique owned TemporaryDirectory per capture/validation run, finally and SIGINT/SIGTERM handlers registered before substantial operations; subprocesses in owned process groups, terminate/wait with kill/wait fallback before exact-directory cleanup. TMPDIR and CARGO_TARGET_DIR explicitly owned. Offline locked two-job Cargo with installed toolchain/caches; OPENSSL_DIR, LD_LIBRARY_PATH and compiler wrappers unset; OPENSSL_LIB_DIR=/usr/lib, OPENSSL_INCLUDE_DIR=/usr/include, PKG_CONFIG_LIBDIR=/usr/lib/pkgconfig:/usr/share/pkgconfig. No global subreaper or compiler RLIMIT_FSIZE. No installs, downloads or live provider calls.",
+    "cleanup": "Both exact owned capture/export/tmp and validation/target/tmp/work/scratch directories removed after child process groups stopped/reaped. Cache-root inspection afterward showed only preexisting pn.HC9lGV, untouched. No retained test/build artifacts, bulk /tmp artifacts or cleanup failures. No staging, commits or Git mutations.",
+    "limits": "Earlier component run established Linux full-publisher-module proof only, without full Rust/original Python suites, package extraction/build, parent audit or non-Linux qualification. Later parent review, package integration and aggregate validation are recorded separately above. Mapping delta zero."
+  },
+  "repeat_commands": {
+    "lifecycle": "First verify disk-backed ${XDG_CACHE_HOME:-$HOME/.cache}/agent-test-runs and free space; create a unique run there, establish finally/trap cleanup and owned-child-group termination/wait before capture/build. Do not touch pn.HC9lGV. Every placeholder below is within that run except the checkout and installed caches. Clean only that exact run after all children stop, preserving exit status.",
+    "capture": "Create separate existing <historical-root>, <output-root>, <output-root>/tmp outside checkout. git archive 727edc7aad55ed76e98670e0cee6449d611b2285 | tar -x --exclude=*.pyc --exclude=__pycache__ -C <historical-root>. env -i PATH=/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 TMPDIR=<output-root>/tmp /usr/bin/python3 -I -B tools/freeze_group_publisher.py --historical-root <historical-root> --output-root <output-root>. Compare generated files byte-for-byte with fixtures; run twice and compare all generated bytes. Freezer verifies all 53 pins before the historical helper runs. No generated output is automatically installed by the tool.",
+    "negative_controls": "Load freezer with runpy.run_path (not __main__), obtain inventory(project), verify_sources(project, historical_root). For each of all 53 inventory paths, patch Path.read_bytes only for historical_root/path to return original+b'tamper', and patch subprocess.check_output to assert argv[0]=='git' before forwarding. Require AssertionError text exactly equal that path; any helper call fails the guard. Separately require verify_sources(project, project) to fail before any call. Never mutate archived or active sources.",
+    "build": "With owned TMPDIR and CARGO_TARGET_DIR, unset OPENSSL_DIR LD_LIBRARY_PATH RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER CC CXX CC_WRAPPER CXX_WRAPPER; set system OpenSSL/PKG_CONFIG_LIBDIR as above. cargo test --offline --locked -j2 --lib group_publisher:: --no-run --message-format=json. Select the one compiler-artifact with profile.test=true and executable non-null; <artifact> group_publisher:: --list; <artifact> group_publisher:: --nocapture.",
+    "sandbox": "Recompute ldd <artifact> and readelf -l <artifact>; expose individual dependency files plus the exact ELF-requested interpreter alias only. bwrap --unshare-all --die-with-parent --new-session --clearenv --proc /proc --dev /dev --bind <owned-work> /work --bind <owned-scratch> /scratch --dir /native/deps --ro-bind <artifact> /native/deps/coven-tests [each exact dependency/loader P: --ro-bind P P] --chdir /work --setenv TMPDIR /scratch --setenv PATH /no-programs --setenv COVEN_GROUP_COUNTER_ASSERT_PYTHON_ABSENT 1 --setenv COVEN_GROUP_PUBLISHER_ENGINE_ASSERT_PYTHON_ABSENT 1 /native/deps/coven-tests group_publisher:: --nocapture. Require all 88 passed and zero ignored; no checkout/host-root/broad dirs/Python/shell/compiler/CLI/provider mounts.",
+    "package_handoff": "Parent-owned source package must include src/group_publisher/tests/engine_frozen.rs and both tests/retirement/fixtures/group_publisher_engine{,_provenance}.json, and exclude src/group_publisher/oracle.py. Rebuild from extracted package in a separate fresh owned target rather than copying this checkout ELF; repeat full group_publisher:: normal and sandbox validation. No package acceptance is claimed here."
+  }
+}

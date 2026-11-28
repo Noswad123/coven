@@ -11,17 +11,17 @@ read-only audit, are a separate policy boundary. Removing the legacy implementat
 does not mean the repository must contain no Python files whatsoever. Do not move
 or copy the implementation into test support and call that removal.
 
-## Current snapshot — 2026-11-26
+## Current snapshot — 2026-11-27
 
 | Measure | Before first removal batch | Current |
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **43** |
-| Rust source files containing those sites | 44 | **33** |
-| Runner-dependent or mixed source caller files | 40 | **29** |
-| Source-local Python files | 25 | **15** |
-| Runner-dependent source-local Python files | 21 | **12** |
+| Direct Python constructor sites in Rust source | 61 | **40** |
+| Rust source files containing those sites | 44 | **30** |
+| Runner-dependent or mixed source caller files | 40 | **26** |
+| Source-local Python files | 25 | **12** |
+| Runner-dependent source-local Python files | 21 | **9** |
 | Python-launching integration targets | 29 | **28** |
 | Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
@@ -37,7 +37,7 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 43 total sites are **not** 43 exclusively runner-backed
+need manual follow-up. The 40 total sites are **not** 40 exclusively runner-backed
 sites; four caller files are independent-only and others can be mixed. New capture
 tools under `tools/` are outside this source/integration metric.
 
@@ -133,27 +133,62 @@ tools under `tools/` are outside this source/integration metric.
 - No production code or original mapping changed. See the
   [dated evidence](../changelog/2026-11-26-python-retirement-repository-records.md).
 
-Cumulatively, nineteen counted source/integration invocation sites and one known
-variable-executable site have been removed, with eleven helpers deleted. The
+### Persisted Djinn decoder — 2026-11-27
+
+- Replaced the decoder comparison with all 161 raw payloads and complete projected
+  outcomes/errors, preserving duplicate/nonfinite/depth/extension boundaries and
+  the 4,300-digit unknown integer without input narrowing.
+- Deleted the helper after closing its sole live consumer. All ten module tests
+  pass without Python in checkout and extracted package, with a matching fresh
+  native supervisor and inert shell producer. No installed Djinn/provider was
+  probed or qualified.
+- Other transport/redaction/identity/profile assertions remain unchanged; no new
+  original-method mapping is claimed. See the
+  [dated evidence](../changelog/2026-11-27-python-retirement-djinn-decoder.md).
+
+### Group publication counter bytes — 2026-11-27
+
+- Replaced all sixteen primitive/publisher, declaration-order, filesystem-stat and
+  prior-stream comparisons with independently captured complete authority bytes.
+  Real native input construction, socket identity, mutation order and signal-owner
+  isolation remain. Only reviewed expected-side scalar spans bind to pre-state.
+- Deleted the single counter helper and the caller's `runner/groups.py` checkout
+  discovery. All five native publisher tests pass without Python in checkout and
+  extracted package; maximum integers, exact ordering and final newlines remain.
+- The separate static/live engine oracle remained active at this step and is closed
+  by the subsequent batch below. No original-method mapping is claimed. See the
+  [dated evidence](../changelog/2026-11-27-python-retirement-group-counter.md).
+
+### Group publisher static/live engine — 2026-11-27
+
+- Replaced both consumers of the shared engine oracle with all sixteen independently
+  captured complete report/write outputs. The original eight modes in each static
+  and live variant, two-member accounting and fault distinctions remain. Complete
+  inputs are checked before native execution and remain unchanged afterward.
+- Deleted the helper after closing both callers. No dynamic bindings, output
+  normalization or expectation generation from native results are used.
+- All **88 publisher tests** pass without Python in checkout and extracted package,
+  including existing native socket, timing, expiry, interrupt and signal paths.
+  This closes publisher-local test oracles, not global runner consumers or original
+  requirement mappings. See the
+  [dated evidence](../changelog/2026-11-27-python-retirement-group-publisher-engine.md).
+
+Cumulatively, twenty-two counted source/integration invocation sites and one known
+variable-executable site have been removed, with fourteen helpers deleted. The
 variable call is deliberately reported separately from the literal regex metric.
 No whole `runner/` module is yet deletable: other modules and
 Python-backed integration parents still import `runner.launch`, among others.
 
 ## Next cohorts
 
-1. **Persisted Djinn decoder comparison.** Preserve the complete 161-payload
-   matrix in `src/djinn_observation/tests.rs`: capability/schema, timestamp,
-   nesting, extension/size limits and a 4,300-digit unknown integer without serde
-   narrowing. The helper is decoder-only. Qualify the separate controlled-producer
-   test with a built native supervisor; do not infer full-module acceptance from
-   the decoder or hide independent producer/timing failures. No installed Djinn
-   or provider probe is needed for reference capture.
-2. **Group publication counter bytes.** Inspect all sixteen primitive/publisher,
-   order, filesystem-stat and prior-stream variants. Preserve whole authority
-   bytes, real mutation/ordering and signal-owner isolation. Dynamic fields need
-   narrow independent bindings, and checkout discovery must stop requiring the
-   current `runner/groups.py` source. Other publisher oracles remain separate.
-3. Continue through execution/ledger/storage/concurrency and group observation
+1. **Fresh group-command binding/storage.** Close the three calls to
+   `src/group_commands/oracle.py`: snapshot with null/full native reference and
+   process binding with null reference. Preserve exact raw storage bytes, byte
+   hash, authority revision and compact binding. Review generated identities and
+   independent hash/revision reconstruction; do not invent a fourth matrix cell.
+   Keep all six native tests, including unknown-field, large-integer and exit-code
+   guards. The broader group authority/concurrency oracle remains separate.
+2. Continue through execution/ledger/storage/concurrency and group observation
    dependencies. Each batch should remove actual callers or close specific
    original assertions; track those two kinds of progress separately.
 

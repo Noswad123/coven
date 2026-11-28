@@ -7,6 +7,9 @@ use std::{
     thread,
 };
 
+#[path = "tests/counter_frozen.rs"]
+mod counter_frozen;
+
 #[test]
 fn historical_endpoint_integers_are_exact_operational_mismatches() {
     // SIGINT ownership is process-wide; keep this public-API regression isolated
@@ -177,7 +180,7 @@ fn reservation_endpoint_producer_is_ordered_and_exact() {
 fn counter_authority_bytes_match_python_producer() {
     use crate::values::Value as Native;
     // Installing the publisher signal owner must not race other tests in this
-    // binary. The child uses the real adapter and mutation core, without sockets.
+    // binary. The child uses the real adapter, socket identity and mutation core.
     if std::env::var_os("COVEN_GROUP_PUBLISHER_COUNTER_CHILD").is_none() {
         let child = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -196,10 +199,7 @@ fn counter_authority_bytes_match_python_producer() {
         );
         return;
     }
-    let project = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .find(|path| path.join("runner/groups.py").is_file())
-        .unwrap();
+    let frozen = counter_frozen::Cases::new();
     let mut mismatches = Vec::new();
     let mut cases = 0;
     for policy in ["primitive", "publisher"] {
@@ -207,11 +207,8 @@ fn counter_authority_bytes_match_python_producer() {
             for maximum_stats in [false, true] {
                 for prior_stream in [false, true] {
                     let root = tempfile::tempdir().unwrap();
-                    let oracle = tempfile::tempdir().unwrap();
-                    for workspace in [root.path(), oracle.path()] {
-                        std::fs::create_dir(workspace.join("state")).unwrap();
-                        std::fs::write(workspace.join("coven.json"), b"{}").unwrap();
-                    }
+                    std::fs::create_dir(root.path().join("state")).unwrap();
+                    std::fs::write(root.path().join("coven.json"), b"{}").unwrap();
                     let path = root.path().join("s");
                     let _listener = UnixListener::bind(&path).unwrap();
                     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
@@ -303,7 +300,14 @@ fn counter_authority_bytes_match_python_producer() {
                         .unwrap();
                     let before = state.storage().unwrap();
                     std::fs::write(root.path().join("state/groups.json"), &before).unwrap();
-                    std::fs::write(oracle.path().join("state/groups.json"), &before).unwrap();
+                    let expected = frozen.expected(
+                        cases,
+                        policy,
+                        reordered_declaration,
+                        maximum_stats,
+                        prior_stream,
+                        &before,
+                    );
                     let request = Request {
                         workspace: root.path().into(),
                         group: "team".into(),
@@ -406,27 +410,13 @@ fn counter_authority_bytes_match_python_producer() {
                         reserved["reservations"]["terminal"].as_u64(),
                         Some(if prior_stream { u64::MAX } else { 1 })
                     );
-                    let expected = std::process::Command::new("python3")
-                        .arg("-B")
-                        .arg(project.join("src/group_publisher/counter_oracle.py"))
-                        .arg(oracle.path())
-                        .arg("coven")
-                        .arg(policy)
-                        .env("PYTHONDONTWRITEBYTECODE", "1")
-                        .output()
-                        .unwrap();
-                    assert!(
-                        expected.status.success(),
-                        "{}",
-                        String::from_utf8_lossy(&expected.stderr)
-                    );
                     let actual = std::fs::read(root.path().join("state/groups.json")).unwrap();
-                    if actual != expected.stdout {
+                    if actual != expected {
                         let at = actual
                             .iter()
-                            .zip(&expected.stdout)
+                            .zip(&expected)
                             .position(|(a, b)| a != b)
-                            .unwrap_or(actual.len().min(expected.stdout.len()));
+                            .unwrap_or(actual.len().min(expected.len()));
                         mismatches.push(format!("policy={policy} reordered_declaration={reordered_declaration} maximum_stats={maximum_stats} prior_stream={prior_stream}: authority bytes differ at offset {at}"));
                     }
                     cases += 1;
