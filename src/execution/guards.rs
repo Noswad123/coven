@@ -517,121 +517,44 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn v2_prepared_cancelled_stale_revoked_and_approved_without_attempts() {
-        use std::{io::Read, os::unix::process::CommandExt, time::Instant};
-
-        // Generate retained authority with Python's SDK only. Native guards never
-        // invoke Python, current loaders, a provider, or a runtime.
-        let stdout = tempfile::NamedTempFile::new().unwrap();
-        let stderr = tempfile::NamedTempFile::new().unwrap();
-        let deadline = Instant::now() + Duration::from_secs(30);
-        let mut child = std::process::Command::new("python3")
-            .args(["-B", "-c", r#"
-import json, sys, tempfile
-from pathlib import Path
-from runner import storage, task_attempts as v1, execution_v2 as v2
-with tempfile.TemporaryDirectory() as temporary:
-    root = Path(temporary)
-    tasks = [{"id":"task", "title":"retained", "status":"open", "owner":"worker"}]
-    def source(snapshot):
-        return {"identity":{"kind":"snapshot-v1", "source_id":snapshot, "path":"state/tasks.json"},
-                "revision":storage.snapshot_revision(v1.canonical(tasks)), "tasks":tasks, "roster":["worker"]}
-    snapshots = []
-    counter = 0
-    def capture(reserved):
-        snapshots.append([json.loads((root / v1.CONTROL).read_bytes()), reserved])
-    def call(op, params):
-        global counter
-        counter += 1
-        store = v1.Store(root)
-        view = store.read()
-        needs = op in ('enroll', 'prepare', 'prepare_graph', 'graph_propose') or (op == 'graph_decide' and params['decision'] == 'approve')
-        with storage.workspace_lock(root, root / 'state/.workspace.lock') as lock:
-            result = store.mutate(op, params, expected_execution_revision=view.revision if view else v1.DISABLED,
-                expected_tasks_revision=source(view.snapshot_source_id)['revision'] if needs else None,
-                request_id=f'request-{counter}', source_loader=source, lock=lock)
-        return result['result']
-    call('enable', {})
-    capture(False)
-    with storage.workspace_lock(root, root / 'state/.workspace.lock') as lock:
-        v2.upgrade(v1.Store(root), v1.Store(root).read().revision, 'upgrade', lock)
-    capture(False)
-    call('enroll', {'task_id':'task', 'rebind_source':False})
-    capture(False)
-    intent = {'schema_version':1, 'kind':'task-intent', 'task_id':'task', 'owner':'worker',
-              'acceptance_criteria':[{'id':'a', 'text':'retained criterion'}]}
-    attempt = call('prepare', {'task_id':'task', 'intent':intent})
-    capture(True)
-    call('cancel', {'attempt_id':attempt['attempt_id'], 'reason':'cancel before submission'})
-    capture(False)
-    document = {'schema_version':1, 'kind':'task-graph', 'nodes':[
-        {k:intent[k] for k in ('task_id','owner','acceptance_criteria')} | {'depends_on':[]}]}
-    call('graph_propose', {'document':document})
-    capture(False)
-    def decide(decision):
-        view = v1.Store(root).read()
-        return call('graph_decide', {'graph_revision':view.current_graph_revision,
-            'decision':decision, 'reason':'review',
-            'expected_graph_digest':view.graphs[view.current_graph_revision]['digest']})
-    decide('approve')
-    capture(False)
-    attempt = call('prepare_graph', {'task_id':'task', 'graph_revision':v1.Store(root).read().current_graph_revision})
-    capture(True)
-    tasks[0]['title'] = 'current source drift is not cancellation'
-    capture(True)
-    decide('changes-requested')
-    capture(True)
-    call('cancel', {'attempt_id':attempt['attempt_id'], 'reason':'cancel revoked preparation'})
-    capture(False)
-    root = root / 'approval-with-no-attempt-history'
-    root.mkdir()
-    call('enable', {})
-    with storage.workspace_lock(root, root / 'state/.workspace.lock') as lock:
-        v2.upgrade(v1.Store(root), v1.Store(root).read().revision, 'upgrade', lock)
-    call('enroll', {'task_id':'task', 'rebind_source':False})
-    call('graph_propose', {'document':document})
-    decide('approve')
-    capture(False)
-    print(json.dumps(snapshots))
-"#])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .stdin(std::process::Stdio::null())
-            .stdout(stdout.reopen().unwrap())
-            .stderr(stderr.reopen().unwrap())
-            .process_group(0)
-            .spawn().unwrap();
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break Ok(status),
-                Ok(None) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                result => {
-                    // process_group(0) isolates this fixture from the test runner.
-                    let killed = unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
-                    let fallback = if killed != 0 { child.kill() } else { Ok(()) };
-                    let reaped = child.wait();
-                    break Err(format!(
-                        "Python fixture deadline/poll failure: {result:?}; kill: {killed}, fallback: {fallback:?}, reap: {reaped:?}"
-                    ));
-                }
-            }
-        };
-        let mut diagnostics = Vec::new();
-        stderr
-            .reopen()
-            .unwrap()
-            .take(64 * 1024)
-            .read_to_end(&mut diagnostics)
-            .unwrap();
-        let status = status
-            .unwrap_or_else(|error| panic!("{error}\n{}", String::from_utf8_lossy(&diagnostics)));
-        assert!(
-            status.success(),
-            "{}",
-            String::from_utf8_lossy(&diagnostics)
+        // Complete historical controls, not current source/config or native-generated expectations.
+        let corpus_bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/retirement/fixtures/source_execution_support.json"
+        ));
+        let provenance_bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/retirement/fixtures/source_execution_support_provenance.json"
+        ));
+        assert_eq!(
+            canonical::digest(corpus_bytes),
+            "3a3d000c7e7e38496687511af093c8172d378eab70f05faa127caa2b3e926134"
         );
-        let bytes = read_fs::read_regular(stdout.path(), values::MAX_INPUT).unwrap();
-        let fixtures = values::parse(&bytes, Profile::Authority).unwrap();
+        assert_eq!(
+            canonical::digest(provenance_bytes),
+            "5631124181a36750c20aabe89f85fdc673c19d4f7c97fdd60e4fd865bc1fc742"
+        );
+        let corpus = values::parse(corpus_bytes, Profile::Authority).unwrap();
+        let row = &get(&corpus, "cases").unwrap().as_array().unwrap()[2];
+        assert_eq!(text(get(row, "id").unwrap()).unwrap(), "guards-12-states");
+        let stdout = text(get(row, "stdout").unwrap()).unwrap().as_bytes();
+        assert_eq!(
+            canonical::digest(stdout),
+            text(get(row, "stdout_sha256").unwrap()).unwrap()
+        );
+        let fixtures = values::parse(stdout, Profile::Authority).unwrap();
+        assert_eq!(fixtures.as_array().unwrap().len(), 12);
+        assert_eq!(
+            fixtures
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|fixture| { matches!(fixture.as_array().unwrap()[1], Value::Bool(true)) })
+                .collect::<Vec<_>>(),
+            [
+                false, false, false, true, false, false, false, true, true, true, false, false
+            ]
+        );
         for fixture in fixtures.as_array().unwrap() {
             let pair = fixture.as_array().unwrap();
             let control = &pair[0];

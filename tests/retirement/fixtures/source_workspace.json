@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "runtime-0",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nopencode_command=' oc '"
+      },
+      "input_sha256": "705f854444daf8f244c4ea2e677095c3f0f172c48a342a3b4d1e6c8a3c28a4ab",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "runtime-1",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nmultiplexer=' TMUX '"
+      },
+      "input_sha256": "f406425c3451e87e443a89a7193c0a11e9b34c6dea25eebf345c562dae07f8c9",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "runtime-2",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nopencode_command='\u00a0'"
+      },
+      "input_sha256": "8c1cc9845d0718bfef7cb95d359b1bb1a788853f9969064195848c4f429ceab1",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-3",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nopencode_command='  '"
+      },
+      "input_sha256": "a3d516e3581028564ed5b7a4a557676b99e6bef9ed03b42943455917dad8585c",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-4",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nmultiplexer='  '"
+      },
+      "input_sha256": "6be7252de7272689a1e2cec703f315c2fef262b33c6dd883c7d9a6c3b73c4865",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-5",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nopencode_command=12:34:56.123456789"
+      },
+      "input_sha256": "2792f917f3c0fbcfe2ba6e884525d2969bb33b1a57d1a1cd0691b8771339d12b",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-6",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nmultiplexer=nan"
+      },
+      "input_sha256": "225aee109b17a5b5d03331e37c34ff36fb5624afb6b99fcb680e6b96c6137338",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-7",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nopencode_command=inf"
+      },
+      "input_sha256": "fbbf7c70b9efa2dca9d80e04c32ebb6c9c3f66b62cef28ba914ca75f0c9326e5",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-8",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nopencode_command=9223372036854775808"
+      },
+      "input_sha256": "290efd085734774f597b96b4e86b23ada6c12e92edd98d9c6c6d74d53ef25c51",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-9",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nopencode_command=23:59:60"
+      },
+      "input_sha256": "4f2e5361d29f952ef2cfe356db872c195b985e00b5ca01d26aadcc53ff187cee",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-10",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "[runtime]\nmultiplexer='wrong'"
+      },
+      "input_sha256": "59395eaaefb6b76bb526e12832f8b810d3c65d3646e6989b0f163f08c196fe39",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-11",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "runtime=[]"
+      },
+      "input_sha256": "6c1d8fb69ca1941afcd080369df5faf7b26a5c5895611662986bd79df10e6a18",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-12",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "runtime={opencode_command=false}"
+      },
+      "input_sha256": "e4567c1e2017ee52b889a78c91a1ac36f24c3d57851d62f2cdcfa346f6cb88e3",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "runtime-13",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "coven.toml": "runtime={opencode_command='oc',ignored=[{date=0000-01-01}]}"
+      },
+      "input_sha256": "a4b61e5a11cdf3d3afe23c938620d6d67ebfe82ed20c5617f0827e9a8a651e5b",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 1
+    },
+    {
+      "id": "inventories",
+      "inputs": {},
+      "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "[[\"agents\", \"prompts\", \"state\", \"logs\", \"checkpoints\", \"work\", \"output\", \"tmux\", \"state/task-ledger\", \"state/task-recovery\", \"state/actions\"], [\"coven.json\", \"coven.toml\", \"goal.md\", \"spec.md\", \"dashboard.md\", \"state/agents.json\", \"state/tasks.json\", \"state/lead.json\", \"state/.workspace.lock\", \"state/task-authority.json\", \"logs/events.jsonl\", \"logs/messages.jsonl\", \"tmux/coven.toml\", \"work/README.md\", \"output/README.md\", \"state/runtime-launch-control.json\", \"state/.runtime-transport.lock\"]]\n",
+      "stdout_sha256": "31340c21954afecc64cd8cf5ca21187dcebc98eb4b2561f87e21afe25dfa4360",
+      "stdout_bytes": 496,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "ledger-empty",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/tasks.json": "[]\n"
+      },
+      "input_sha256": "93699ac5d90df8b9db2e46abed1486d919ce7b2038b01c3fe50f3f8ea4b2e513",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 0,
+      "artifacts": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"b2d8992f03fc8d9b30928a071f23cafe408b51f0a42abeb325088f1ad36e2af0\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"8ca6b003ba79f7b312e3ed62a91883f6239c4cb75e2d1ebb94a4cb6f718d8aa8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": "[]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":416,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"sequence\":0,\"source_revision\":\"tasks-sha256:37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570\",\"tasks\":[],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"da524edfc9fd9a93f486ac180a16c899fcb25b8654d908ca6d2ca03c2c27748a\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"b2d8992f03fc8d9b30928a071f23cafe408b51f0a42abeb325088f1ad36e2af0\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570\",\"source_length\":3,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": "[]\n"
+      },
+      "artifacts_sha256": "342b32d7528c4bcddda4d5dd92f6b946af437f7a801bea43ad5229e1aef0d39a"
+    },
+    {
+      "id": "ledger-seeded",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "e74ad01f05da9d35ebedec025c6fb6237b11d3cfaac5250b7343aaa9a71b145c",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 0,
+      "stderr": "",
+      "exit_status": 0,
+      "artifacts": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"adcf1a7f1a1d06decd721febeb7b68eb3a2034f80c6fc511d6f86ed3405f62c9\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":514,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"sequence\":0,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"extension\":[123456789012345678901234567890,-0.0,\"\u03bb\"],\"id\":\"t\",\"status\":\"custom\",\"title\":\"Task\"}],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"8822736d08dc001d479f0d3f6e1b5efe671219bc16ec682bcf6c61726a0886eb\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"source_length\":108,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "artifacts_sha256": "5f33c174995cd07bcac3a81b4fbc230b21629146046fa354d30f3271988c41d6"
+    },
+    {
+      "id": "report-inspect-compact",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "e74ad01f05da9d35ebedec025c6fb6237b11d3cfaac5250b7343aaa9a71b145c",
+      "stdout": "{\"authority\":\"snapshot-v1\",\"revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]}],\"import_pending\":false}\n",
+      "stdout_sha256": "aca790857176a3240f1bdd8a10142283cb03a4972da686ae81e98e18ec69a38f",
+      "stdout_bytes": 255,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "report-import-compact",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"adcf1a7f1a1d06decd721febeb7b68eb3a2034f80c6fc511d6f86ed3405f62c9\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":514,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"sequence\":0,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"extension\":[123456789012345678901234567890,-0.0,\"\u03bb\"],\"id\":\"t\",\"status\":\"custom\",\"title\":\"Task\"}],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"8822736d08dc001d479f0d3f6e1b5efe671219bc16ec682bcf6c61726a0886eb\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"source_length\":108,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "5f33c174995cd07bcac3a81b4fbc230b21629146046fa354d30f3271988c41d6",
+      "stdout": "{\"authority\":\"task-ledger-v1\",\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"tasks\":[{\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]}],\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sequence\":0,\"frame_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"projection\":{\"status\":\"current\",\"expected_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"observed_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\"},\"outcome\":\"committed\",\"warnings\":[]}\n",
+      "stdout_sha256": "6b000edbd26bfea1f6a481f1661e43beab53e073e55e87d40db7c8eae0aea028",
+      "stdout_bytes": 767,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "report-repair-compact",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"adcf1a7f1a1d06decd721febeb7b68eb3a2034f80c6fc511d6f86ed3405f62c9\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":514,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"sequence\":0,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"extension\":[123456789012345678901234567890,-0.0,\"\u03bb\"],\"id\":\"t\",\"status\":\"custom\",\"title\":\"Task\"}],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"8822736d08dc001d479f0d3f6e1b5efe671219bc16ec682bcf6c61726a0886eb\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"source_length\":108,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "5f33c174995cd07bcac3a81b4fbc230b21629146046fa354d30f3271988c41d6",
+      "stdout": "{\"authority\":\"task-ledger-v1\",\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"tasks\":[{\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]}],\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sequence\":0,\"frame_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"projection\":{\"status\":\"current\",\"expected_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"observed_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\"},\"outcome\":\"recovered\",\"recovery\":{\"status\":\"current\",\"backup_path\":null},\"warnings\":[]}\n",
+      "stdout_sha256": "5529f4551647f9aba7e7e2238c8ca1c32944586ba0b21adabc9cc0da4dbf6f9b",
+      "stdout_bytes": 818,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "report-resume-compact",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"adcf1a7f1a1d06decd721febeb7b68eb3a2034f80c6fc511d6f86ed3405f62c9\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":514,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"sequence\":0,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"extension\":[123456789012345678901234567890,-0.0,\"\u03bb\"],\"id\":\"t\",\"status\":\"custom\",\"title\":\"Task\"}],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"8822736d08dc001d479f0d3f6e1b5efe671219bc16ec682bcf6c61726a0886eb\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"source_length\":108,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "5f33c174995cd07bcac3a81b4fbc230b21629146046fa354d30f3271988c41d6",
+      "stdout": "{\"authority\":\"task-ledger-v1\",\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"tasks\":[{\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]}],\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sequence\":0,\"frame_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"projection\":{\"status\":\"current\",\"expected_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"observed_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\"},\"outcome\":\"recovered\",\"recovery\":{\"import_resumed\":true},\"warnings\":[]}\n",
+      "stdout_sha256": "9c2b82f490852dc1961e066bcec78bdafcaae6eb8900e00292c4f2e936db4a39",
+      "stdout_bytes": 802,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "report-inspect-pretty",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "e74ad01f05da9d35ebedec025c6fb6237b11d3cfaac5250b7343aaa9a71b145c",
+      "stdout": "{\n  \"authority\": \"snapshot-v1\",\n  \"revision\": \"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\n  \"tasks\": [\n    {\n      \"id\": \"t\",\n      \"title\": \"Task\",\n      \"status\": \"custom\",\n      \"extension\": [\n        123456789012345678901234567890,\n        -0.0,\n        \"\\u03bb\"\n      ]\n    }\n  ],\n  \"import_pending\": false\n}\n",
+      "stdout_sha256": "83e92679081710fdd35ea3e269e5d3e06c9ea248e14d6b1702041459ebb78464",
+      "stdout_bytes": 351,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "report-import-pretty",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"adcf1a7f1a1d06decd721febeb7b68eb3a2034f80c6fc511d6f86ed3405f62c9\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":514,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"sequence\":0,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"extension\":[123456789012345678901234567890,-0.0,\"\u03bb\"],\"id\":\"t\",\"status\":\"custom\",\"title\":\"Task\"}],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"8822736d08dc001d479f0d3f6e1b5efe671219bc16ec682bcf6c61726a0886eb\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"source_length\":108,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "5f33c174995cd07bcac3a81b4fbc230b21629146046fa354d30f3271988c41d6",
+      "stdout": "{\n  \"authority\": \"task-ledger-v1\",\n  \"revision\": \"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\n  \"tasks\": [\n    {\n      \"id\": \"t\",\n      \"title\": \"Task\",\n      \"status\": \"custom\",\n      \"extension\": [\n        123456789012345678901234567890,\n        -0.0,\n        \"\\u03bb\"\n      ]\n    }\n  ],\n  \"workspace_id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"epoch_id\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n  \"sequence\": 0,\n  \"frame_digest\": \"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\n  \"projection\": {\n    \"status\": \"current\",\n    \"expected_revision\": \"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\n    \"observed_revision\": \"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\"\n  },\n  \"outcome\": \"committed\",\n  \"warnings\": []\n}\n",
+      "stdout_sha256": "ec678443db55c739f90238c218fa76c101c4f58eb0a375b6c0c53337bef5b939",
+      "stdout_bytes": 908,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "report-repair-pretty",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"adcf1a7f1a1d06decd721febeb7b68eb3a2034f80c6fc511d6f86ed3405f62c9\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":514,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"sequence\":0,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"extension\":[123456789012345678901234567890,-0.0,\"\u03bb\"],\"id\":\"t\",\"status\":\"custom\",\"title\":\"Task\"}],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"8822736d08dc001d479f0d3f6e1b5efe671219bc16ec682bcf6c61726a0886eb\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"source_length\":108,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "5f33c174995cd07bcac3a81b4fbc230b21629146046fa354d30f3271988c41d6",
+      "stdout": "{\n  \"authority\": \"task-ledger-v1\",\n  \"revision\": \"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\n  \"tasks\": [\n    {\n      \"id\": \"t\",\n      \"title\": \"Task\",\n      \"status\": \"custom\",\n      \"extension\": [\n        123456789012345678901234567890,\n        -0.0,\n        \"\\u03bb\"\n      ]\n    }\n  ],\n  \"workspace_id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"epoch_id\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n  \"sequence\": 0,\n  \"frame_digest\": \"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\n  \"projection\": {\n    \"status\": \"current\",\n    \"expected_revision\": \"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\n    \"observed_revision\": \"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\"\n  },\n  \"outcome\": \"recovered\",\n  \"recovery\": {\n    \"status\": \"current\",\n    \"backup_path\": null\n  },\n  \"warnings\": []\n}\n",
+      "stdout_sha256": "b131b06b1efee43764964d7e8d974884b2cb78e4ad6e6ab10b378515c9894957",
+      "stdout_bytes": 978,
+      "stderr": "",
+      "exit_status": 0
+    },
+    {
+      "id": "report-resume-pretty",
+      "inputs": {
+        "coven.json": "{\"name\":\"test\",\"agents\":[\"operator\"]}",
+        "state/task-authority.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"manifest_digest\":\"adcf1a7f1a1d06decd721febeb7b68eb3a2034f80c6fc511d6f86ed3405f62c9\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/baseline.tasks.bytes": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/frames/00000000000000000000.frame": "{\"length\":514,\"payload\":{\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_digest\":null,\"revision\":\"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\"sequence\":0,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"tasks\":[{\"extension\":[123456789012345678901234567890,-0.0,\"\u03bb\"],\"id\":\"t\",\"status\":\"custom\",\"title\":\"Task\"}],\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"sha256\":\"8822736d08dc001d479f0d3f6e1b5efe671219bc16ec682bcf6c61726a0886eb\",\"version\":1}\n",
+        "state/task-ledger/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/manifest.json": "{\"baseline_digest\":\"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\"epoch_id\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_digest\":\"66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"source_length\":108,\"source_mode\":420,\"source_present\":true,\"source_revision\":\"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\"version\":1,\"workspace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "state/tasks.json": " [ {\"id\":\"t\",\"title\":\"Task\",\"status\":\"custom\",\"extension\":[123456789012345678901234567890,-0.0,\"\\u03bb\"]} ]\n"
+      },
+      "input_sha256": "5f33c174995cd07bcac3a81b4fbc230b21629146046fa354d30f3271988c41d6",
+      "stdout": "{\n  \"authority\": \"task-ledger-v1\",\n  \"revision\": \"tasks-ledger:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:0:e0c7ec1d315606a5232e3c96e7b07fdccafbaa2369d7a7bc8b8ec6ac8ea76da2\",\n  \"tasks\": [\n    {\n      \"id\": \"t\",\n      \"title\": \"Task\",\n      \"status\": \"custom\",\n      \"extension\": [\n        123456789012345678901234567890,\n        -0.0,\n        \"\\u03bb\"\n      ]\n    }\n  ],\n  \"workspace_id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"epoch_id\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n  \"sequence\": 0,\n  \"frame_digest\": \"25758b94c2bd31f0d40222f5fe443504ba91bbefebc524039ec55fa516922200\",\n  \"projection\": {\n    \"status\": \"current\",\n    \"expected_revision\": \"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\",\n    \"observed_revision\": \"tasks-sha256:66701e2bafbd6af5757fe10a0a7d1d4b32d779ffe81c640ab18da2f21bd873a8\"\n  },\n  \"outcome\": \"recovered\",\n  \"recovery\": {\n    \"import_resumed\": true\n  },\n  \"warnings\": []\n}\n",
+      "stdout_sha256": "1b1f7a4716cd4a17350baaa9dad12cec770fdfde06c4034083fb0ab1f6b2849e",
+      "stdout_bytes": 956,
+      "stderr": "",
+      "exit_status": 0
+    }
+  ]
+}

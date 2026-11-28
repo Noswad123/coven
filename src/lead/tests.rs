@@ -1,6 +1,8 @@
 use super::*;
 use std::{cell::RefCell, fs, process::Command};
 
+mod frozen;
+
 fn fixture() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     fs::write(
@@ -182,11 +184,15 @@ fn activation_between_commit_and_notice_warns_without_rollback_or_backend() {
 }
 #[test]
 fn python_set_and_clear_exact_output_storage_history_dashboard_and_prompt() {
-    for message in [None, Some(""), Some("custom message")] {
+    for (index, message) in [None, Some(""), Some("custom message")]
+        .into_iter()
+        .enumerate()
+    {
         let root = fixture();
         let initial =
             br#"{"agent":"historical","extension":{"x":null},"nullable":null,"until":"old"}"#;
         fs::write(root.path().join(LEAD), initial).unwrap();
+        let expected = frozen::expected(index, root.path(), message);
         let io = TestIo::default();
         let result = command_with(root.path(), Operation::Set("a".into()), message, &io).unwrap();
         assert!(result.warnings.is_empty());
@@ -200,40 +206,36 @@ fn python_set_and_clear_exact_output_storage_history_dashboard_and_prompt() {
             .iter()
             .map(|p| fs::read(root.path().join(p)).unwrap())
             .collect();
-        for p in paths {
-            fs::remove_file(root.path().join(p)).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(format!("{}\n", result.body), expected.0);
+        for (actual, expected) in actual.iter().zip(&expected.1) {
+            assert_eq!(actual, expected);
         }
-        fs::write(root.path().join(LEAD), initial).unwrap();
-        let oracle = Command::new("python3").args(["-B", "-c", concat!(
-            "import argparse,contextlib,io,json,sys,uuid;from pathlib import Path;from runner import coven\n",
-            "w=Path(sys.argv[1]);coven.now=lambda:'2026-11-05T12:00:00+00:00';coven.uuid.uuid4=lambda:uuid.UUID('11111111-1111-1111-1111-111111111111')\n",
-            "coven.notify_agents=lambda *a,**kw:(0,['a'])\n",
-            "out=io.StringIO()\nwith contextlib.redirect_stdout(out): coven.command_lead(argparse.Namespace(items=[str(w),'set','a'],message=json.loads(sys.argv[2]),clear=False))\n",
-            "print(json.dumps({'body':out.getvalue(),'files':[(w/p).read_text() for p in ['state/lead.json','logs/events.jsonl','logs/messages.jsonl','dashboard.md']]}))"
-        )]).arg(root.path()).arg(serde_json::to_string(&message).unwrap()).env("COVEN_MULTIPLEXER", "")
-            .current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-        assert!(
-            oracle.status.success(),
-            "{}",
-            String::from_utf8_lossy(&oracle.stderr)
-        );
-        let expected: serde_json::Value = serde_json::from_slice(&oracle.stdout).unwrap();
-        assert_eq!(
-            format!("{}\n", result.body),
-            expected["body"].as_str().unwrap()
-        );
-        for (actual, expected) in actual.iter().zip(expected["files"].as_array().unwrap()) {
-            assert_eq!(
-                std::str::from_utf8(actual).unwrap(),
-                expected.as_str().unwrap()
-            );
-        }
+        let previous = fs::read(root.path().join(LEAD)).unwrap();
+        let messages = fs::read(root.path().join("logs/messages.jsonl")).unwrap();
+        let history = fs::read(root.path().join("logs/events.jsonl")).unwrap();
         let cleared = command_with(root.path(), Operation::Clear, None, &io).unwrap();
         assert_eq!(cleared.body, "[INFO] Cleared coven lead");
+        assert_eq!(cleared.exit_code, 0);
+        assert!(cleared.warnings.is_empty());
         assert!(!root.path().join(LEAD).exists());
+        assert_eq!(
+            fs::read(root.path().join("logs/messages.jsonl")).unwrap(),
+            messages
+        );
+        let after = fs::read(root.path().join("logs/events.jsonl")).unwrap();
+        assert!(after.starts_with(&history));
         let events = logs::read(root.path(), LogKind::Events).unwrap();
-        let previous = runtime::presentation::field(events.last().unwrap(), "previous").unwrap();
-        assert!(runtime::presentation::field(previous, "extension").is_some());
+        assert_eq!(events.len(), 3);
+        let recorded = runtime::presentation::field(events.last().unwrap(), "previous").unwrap();
+        assert_eq!(
+            recorded.compact().unwrap(),
+            values::parse(&previous, values::Profile::LegacySnapshot)
+                .unwrap()
+                .compact()
+                .unwrap()
+        );
+        assert!(runtime::presentation::field(recorded, "extension").is_some());
     }
 }
 #[test]
@@ -389,38 +391,19 @@ fn python_clear_exact_unlink_output_previous_payload_and_dashboard() {
     let root = fixture();
     let initial = br#"{"agent":"historical","set_at":"","extension":[null,{"preserve":true}]}"#;
     fs::write(root.path().join(LEAD), initial).unwrap();
+    let expected = frozen::expected(3, root.path(), None);
     let result = command_with(root.path(), Operation::Clear, None, &TestIo::default()).unwrap();
     let paths = ["logs/events.jsonl", "dashboard.md"];
     let actual: Vec<_> = paths
         .iter()
         .map(|p| fs::read(root.path().join(p)).unwrap())
         .collect();
-    for p in paths {
-        fs::remove_file(root.path().join(p)).unwrap();
-    }
-    fs::write(root.path().join(LEAD), initial).unwrap();
-    let oracle = Command::new("python3").args(["-B", "-c", concat!(
-        "import argparse,contextlib,io,json,sys,uuid;from pathlib import Path;from runner import coven\n",
-        "w=Path(sys.argv[1]);coven.now=lambda:'2026-11-05T12:00:00+00:00';coven.uuid.uuid4=lambda:uuid.UUID('11111111-1111-1111-1111-111111111111')\n",
-        "out=io.StringIO()\nwith contextlib.redirect_stdout(out): coven.command_lead(argparse.Namespace(items=[str(w),'clear'],message=None,clear=False))\n",
-        "print(json.dumps({'body':out.getvalue(),'files':[(w/p).read_text() for p in ['logs/events.jsonl','dashboard.md']],'exists':(w/'state/lead.json').exists()}))"
-    )]).arg(root.path()).env("COVEN_MULTIPLEXER", "").current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-    assert!(
-        oracle.status.success(),
-        "{}",
-        String::from_utf8_lossy(&oracle.stderr)
-    );
-    let expected: serde_json::Value = serde_json::from_slice(&oracle.stdout).unwrap();
-    assert_eq!(
-        format!("{}\n", result.body),
-        expected["body"].as_str().unwrap()
-    );
-    assert_eq!(expected["exists"], false);
-    for (actual, expected) in actual.iter().zip(expected["files"].as_array().unwrap()) {
-        assert_eq!(
-            std::str::from_utf8(actual).unwrap(),
-            expected.as_str().unwrap()
-        );
+    assert_eq!(result.exit_code, 0);
+    assert!(result.warnings.is_empty());
+    assert_eq!(format!("{}\n", result.body), expected.0);
+    assert!(!root.path().join(LEAD).exists());
+    for (actual, expected) in actual.iter().zip(&expected.1) {
+        assert_eq!(actual, expected);
     }
 }
 

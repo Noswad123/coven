@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "approval_status": "parent_approved",
+  "acceptance_scope": "Reviewed closure of the remaining runner-backed Rust source-test dependency layer on Linux, including shared fixtures, inline comparisons, native contenders and historical-only regeneration. The affected closure passed normally and without Python in checkout and extracted package. Independent stdlib Python comparisons, integration harnesses, original-method obligations and platform/release gates remain outside this acceptance.",
+  "historical_commit": "a249a5dfe8d32fd75022f8ed2ad524264b7436a0",
+  "mapping_delta": 0,
+  "scope": "Single source-test dependency-layer batch: 34 runner-backed constructor sites in 25 Rust caller files; seven automatic source helpers and one regeneration-only helper. Five independent stdlib source comparisons and integration-layer consumers remain outside this closure. No production changes, original-method mapping or global deletion/release approval.",
+  "evidence_slices": [
+    "source_groups",
+    "source_mutation_effects",
+    "source_execution_support",
+    "source_ledger",
+    "source_contenders",
+    "source_actions",
+    "source_workspace",
+    "source_lead_init",
+    "source_live_observation"
+  ],
+  "fixtures": [
+    {"path":"tests/retirement/fixtures/source_groups.json","bytes":176822,"sha256":"c8a4d7958ee332c457727d7de742e1e3a69c4f2c4c7a579f50968d8ec2ea4098"},
+    {"path":"tests/retirement/fixtures/source_groups_provenance.json","bytes":7501,"sha256":"a87f9623e99c7e36f06e0249ca63460355be5947f80537b3c1576941ffe3e95e"},
+    {"path":"tests/retirement/fixtures/source_mutation_effects.json","bytes":4154126,"sha256":"7b574a0087903c171a8d18db5ff5e987d9c0b18066078bd8359ddfb0ae20025c"},
+    {"path":"tests/retirement/fixtures/source_mutation_effects_provenance.json","bytes":9911,"sha256":"1d6f5fc9392f489c74f7204f5de0c01a46331c9643aaf73d4ddd6b8b010528bf"},
+    {"path":"tests/retirement/fixtures/source_execution_support.json","bytes":254183,"sha256":"3a3d000c7e7e38496687511af093c8172d378eab70f05faa127caa2b3e926134"},
+    {"path":"tests/retirement/fixtures/source_execution_support_provenance.json","bytes":15637,"sha256":"5631124181a36750c20aabe89f85fdc673c19d4f7c97fdd60e4fd865bc1fc742"},
+    {"path":"tests/retirement/fixtures/source_ledger.json","bytes":272037,"sha256":"e9cf3db6bc90ea5cd89dd2ff794bab38261da9ebe08912e002c230f4adf1cf5b"},
+    {"path":"tests/retirement/fixtures/source_ledger_provenance.json","bytes":73769,"sha256":"fe0a7edcc6b755b772efe0abeb77b5aee23bd54afdbbd78daafd1b7714b38c98"},
+    {"path":"tests/retirement/fixtures/source_contenders.json","bytes":72137,"sha256":"9fcb81a95b6d80055b114d83bd3c7d7fc16d462ddd1969edac0db5aa6763eb39"},
+    {"path":"tests/retirement/fixtures/source_contenders_provenance.json","bytes":57643,"sha256":"1418b451d15ec84a7c22afc4f3a8255369b73413360a091cb6a0da2767f957bf"},
+    {"path":"tests/retirement/fixtures/source_actions.json","bytes":192290,"sha256":"def8a98f85c36dda24c82e2797ec5ccdcc006d440b94534b84cde7e69f5ff882"},
+    {"path":"tests/retirement/fixtures/source_actions_provenance.json","bytes":10855,"sha256":"fad747f54c59dc304d4c36766c6f495115e11d03f1a11d834e302aebf92e5dbc"},
+    {"path":"tests/retirement/fixtures/source_workspace.json","bytes":34823,"sha256":"994bcdae4ce998c4b8c4d3d70940fd393f3759ce0388f41613d5c218e2e411eb"},
+    {"path":"tests/retirement/fixtures/source_workspace_provenance.json","bytes":67765,"sha256":"5c30f68ed9f3b09b01fbb28e07686374ce04f23ead50356660c9ad59cafe3f70"},
+    {"path":"tests/retirement/fixtures/source_lead_init.json","bytes":26486,"sha256":"77deb8d7d7b6d40154d4618a45faad21defd621c06cf7400531d8cd30c9f3eab"},
+    {"path":"tests/retirement/fixtures/source_lead_init_provenance.json","bytes":44321,"sha256":"456db89e702df84b24f0ba98014fff88663b72e6b3acdfd088614be2d55a54d5"},
+    {"path":"tests/retirement/fixtures/source_live_observation.json","bytes":137046,"sha256":"110009c29e84822210b2e656e23b619078a4a02c882f40fc90b01fd2a8fd230f"},
+    {"path":"tests/retirement/fixtures/source_live_observation_provenance.json","bytes":11604,"sha256":"b24e5b8fefbc7ebcf766413611000fd4c9ddc9798b31572025e4d8fe29dfce9b"}
+  ],
+  "retired_helpers": [
+    {"path":"src/groups/oracle.py","bytes":2176,"sha256":"1fb0c6af1e9ba575bcaafe836def4cb1639709ceb58ac94193ebf1edd321be37"},
+    {"path":"src/execution/mutation/oracle.py","bytes":3009,"sha256":"db1edacb6561d3791ec2da3f1c508a4a2ce855cebcd6257cb2a5e4319a388bf7"},
+    {"path":"src/execution/mutation/graphs/oracle.py","bytes":8156,"sha256":"3e6eebc7760148050f97742769942b77f877d77c7d147526e86a2cb1ff0554d2"},
+    {"path":"src/execution/mutation/effects/oracle.py","bytes":5467,"sha256":"4666e1aa9abd074ca42edf03fc8f069df84d965bda995041e9c3145cdb27c195"},
+    {"path":"src/execution/mutation/capacity/oracle.py","bytes":4240,"sha256":"f050f857a07558d3d9ca31028256e3e5f08ec3f2a1230ca4eb949ef1da93afc0"},
+    {"path":"src/execution/mutation/upgrade/oracle.py","bytes":1363,"sha256":"bcc02ce84998d9f868ad8dc24e596cf9ed89d63a1b44241c0362ad3cf804101f"},
+    {"path":"src/execution/inspection/projection/oracle.py","bytes":8512,"sha256":"a0ca3b44df54ebba89e6c0e1fd5a5229a2a2d123d9c2416d2c7ab5f7cd6d9f64","kind":"regeneration_only"},
+    {"path":"src/init/mixed_overlap.py","bytes":1484,"sha256":"bd0efadb090a7c8587e64300653d8e085e2ccdd4613195118d86ec638c63d714"}
+  ],
+  "setup_change": "Only two group-comparison setups now use the existing Fixed Io UUID seam while retaining real filesystem publication. Other public/SystemIo, CAS, counter races and fault tests remain. Mutation requests validate fully before deferred native execution, with an explicit mismatch/no-effects demonstration.",
+  "historical_only_dispositions": [
+    "Former live legacy-Python/native lock interoperability is retained as historical qualification. Independent native libc contenders retain shared/exclusive compatibility, same-inode fencing, real process death/reap and reacquisition.",
+    "Queued legacy-Python preparation is replaced with an independent native contention barrier followed by the actual native preparation API on both backends, retaining stale CAS and no-attempt/no-receipt assertions. It does not claim current Python preparation qualification.",
+    "The legacy initializer bypassing native reservations is replaced with an independent real-process exclusive marker writer at the original barriers. Native refusal, exact marker preservation and no extra managed outputs remain; no current Python initializer qualification is claimed."
+  ],
+  "review": "Three independent scoped reviews accepted the layer after an upgrade integer argument type error and groups request-validation ordering gap were corrected. B2 corpus/provenance whole-file pins were added. A final independent review accepted these corrections and the package-boundary fix: actions/guidance/lead readers pin capture-tool hashes without embedding excluded optional tools; actions/guidance also pin both whole evidence files. No unresolved review blockers remain. Capture proofs are independently source-pinned; static review is not authentication of past execution.",
+  "validation": {
+    "status": "passed_selected_linux_layer_gate",
+    "build": "Fresh CLI built before library in same target/profile, offline locked two-job Cargo, all-target check, formatting and whitespace passed. A single owned checkout target and a separate package target were reused across the package-boundary correction, not rebuilt for each slice.",
+    "normal_checkout": "580 distinct native passed IDs: affected closure 371 plus 209 prior regressions. Four new ignored IPC child entries and existing crash/environment children are exercised by parents and not counted again. Complete library inventory is 1628 including 11 ignored, not a full-library pass claim.",
+    "affected_scopes": {"groups":25,"execution_mutation":64,"execution_guards":8,"execution_projection":4,"ledger":66,"task_mutation":30,"storage_maintenance":10,"transport_gate":3,"actions_mutation":29,"workspace":14,"collection":15,"state_commands":28,"checkpoint_guidance":20,"lead":13,"init_overlap":2,"group_live":12,"djinn_live_observation":7,"kitsune_observation":21},
+    "strong_checkout": "369 affected tests passed with Python absent. Only the independent checkpoint timestamp and workspace tomllib comparisons were excluded from this closure; both passed normally. No other affected exclusions. Native probe verifies eight absolute interpreter/runtime paths return NotFound plus ENOENT before exec of the test ELF.",
+    "strong_exclusions": ["checkpoint_guidance::timestamp::tests::independent_python_314_seeded_and_systematic_exact_keys","workspace::tests::toml_scalar_corpus_matches_independent_python_oracle_recursively"],
+    "package": "Refreshed dirty working-tree cargo package --offline --locked --allow-dirty --no-verify outside Cargo tests; separate extracted target passed all 371 affected normally and 369 strongly isolated. 505 files / 31,314,176 uncompressed bytes / 2,706,368 compressed bytes at validation time before evidence-only closeout. All 502 non-generated files and Cargo.toml.orig matched source. Traversal/duplicate/link/special/prohibited checks passed; all 18 evidence inputs and provisional review included, runner/.git/development tools/retired helpers absent.",
+    "isolation": "bwrap clear environment; only test ELF, fresh CLI, native absence probe, exact individual ELF dependencies and independently verified loader aliases, proc/dev and owned writable work/scratch. No checkout, home, Python, shell, compiler, provider or broad executable/library trees. Scoped filesystem absence proof, not universal exec denial.",
+    "shared_checks": "2 native package tests and 53 audit-tool tests passed once. Updated package lexical guard pins exactly five independent Python-constructor files with one site each and exactly three independent source Python helpers. Not a Rust AST or dynamic execution proof. Final ordinary audit passed; completion mode exited 1 solely for expected incomplete-retirement diagnostic.",
+    "correction_and_reruns": "First extracted library compile rejected three readers embedding optional tools excluded from the package. Corrected to literal source-pinned tool hashes rather than shipping tools. Incremental checkout reran 62 affected normal / 61 strong; package reran full 371 normal / 369 strong. Reruns are not additive coverage. Capture/static slice retries and corrected zsh cleanup traps are recorded in the capture handoffs; no unresolved cleanup failures.",
+    "integrity": "All 922 source paths, Git status/diff, HEAD and index were unchanged during each gate. Between gate passes only the three documented readers and package guard changed; fixtures/provenance unchanged. Original runner/Python-test/coverage/audit/Cargo sources unchanged against historical a249 base. Production prefixes reviewed unchanged.",
+    "original_accounting": "941 original methods / 90 mapped / 851 unresolved; independent helpers 4 active / 1 retired / 5 historical; supplemental 38 / full inventory 979; static candidate inventory 7 targets / 55 IDs, unchanged"
+  },
+  "resources_cleanup": "Linux Rust/Cargo 1.99.1 and Python 3.14.8, verified disk-backed btrfs cache, installed caches, scoped TMPDIR/CARGO_TARGET_DIR, offline locked two-job builds and system OpenSSL. Owned children stopped/waited before exact cleanup. The single 4.1 GiB gate run was temporarily retained only to repair the package failure and reuse build targets, then removed completely after success. All slice capture runs and corrected failed cleanup attempts were cleaned; pre-existing pn.HC9lGV untouched. No retained owned artifacts, downloads, staging, commits, worktrees, deployments, app restarts or live-provider calls.",
+  "remaining": "Five independent stdlib source comparisons, two independent integration targets, 26 runner-backed integration targets and original Python requirements remain. All 25 runner modules and tracked bytecode are retained. No full Rust/original Python/integration-runner suite, non-Linux, installed/release acceptance, or global retirement approval."
+}

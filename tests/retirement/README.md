@@ -156,6 +156,24 @@ shape. Actual CLI init/refresh, exact expected fields, source-byte and
 authored-state preservation, unsafe-context refusal and relocation cases remain.
 This removes one live oracle dependency; it maps none of the 941 obligations.
 
+## Source dependency-layer closeout — 2026-11-27
+
+The [approved review](reviews/source_dependency_layer.json) closes all 34 remaining
+runner-backed source constructor sites across 25 callers, with 18 fixture/provenance
+pins and eight retired helpers (one regeneration-only). Complete expected bytes and
+native filesystem/fault/CAS/race coverage remain; legacy Python interoperability
+is a historical disposition, not a current qualification. Nine optional freezers
+require explicit verified historical source, never the active runner.
+
+The shared affected gate passed **371 normal / 369 Python-absent tests** in checkout
+and extracted package. Only independent timestamp/tomllib comparisons were excluded
+from the strong gate; both passed normally. Three other independent source
+comparisons are outside that closure. This adds **zero original mappings**:
+90 mapped / 851 unresolved and helper history 4 active / 1 retired / 5 historical
+are unchanged. The 26 runner-backed integration targets and original Python tests
+remain. See the [layer record](../../docs/changelog/2026-11-27-python-retirement-source-layer.md)
+and [phased plan](../../docs/plans/PYTHON_REMOVAL.md), not per-helper gate records.
+
 ## Remaining Scope
 
 The Python helper inventory includes `tests/_*.py` and source-local oracles, but

@@ -613,17 +613,16 @@ fn abort_with(
 }
 
 #[cfg(all(test, unix))]
+#[path = "source_layer.rs"]
+mod source_layer;
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::{
         cell::{Cell, RefCell},
-        io::{Read, Seek, SeekFrom},
-        os::unix::{
-            fs::{MetadataExt, PermissionsExt, symlink},
-            process::CommandExt,
-        },
-        process::{Child, Command, Stdio},
-        time::{Duration, Instant},
+        os::unix::fs::{MetadataExt, PermissionsExt, symlink},
+        time::Duration,
     };
 
     const RAW: &[u8] = b" [ { \"id\":\"t\", \"title\":\"T\", \"status\":\"pending\", \"extension\":[123456789012345678901234567890,-0.0,1e-7,1e20,\"\\u03bb\\ud83e\\udd8a\"] } ]\r\n";
@@ -1315,58 +1314,6 @@ mod tests {
         }
     }
 
-    struct FixtureChild(Option<Child>);
-    impl Drop for FixtureChild {
-        fn drop(&mut self) {
-            if let Some(child) = self.0.as_mut() {
-                // SAFETY: this child owns a separate process group.
-                unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL) };
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
-    }
-
-    fn python(script: &str, args: &[String]) -> String {
-        let mut stdout = tempfile::tempfile().unwrap();
-        let mut stderr = tempfile::tempfile().unwrap();
-        let mut child = FixtureChild(Some(
-            Command::new("python3")
-                .args(["-c", script])
-                .args(args)
-                .env("PYTHONDONTWRITEBYTECODE", "1")
-                .current_dir(env!("CARGO_MANIFEST_DIR"))
-                .process_group(0)
-                .stdout(Stdio::from(stdout.try_clone().unwrap()))
-                .stderr(Stdio::from(stderr.try_clone().unwrap()))
-                .spawn()
-                .unwrap(),
-        ));
-        let deadline = Instant::now() + Duration::from_secs(30);
-        let status = loop {
-            if let Some(status) = child.0.as_mut().unwrap().try_wait().unwrap() {
-                child.0.take();
-                break Some(status);
-            }
-            if Instant::now() >= deadline {
-                break None;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        };
-        drop(child);
-        stdout.seek(SeekFrom::Start(0)).unwrap();
-        stderr.seek(SeekFrom::Start(0)).unwrap();
-        let mut out = String::new();
-        let mut err = String::new();
-        stdout.read_to_string(&mut out).unwrap();
-        stderr.read_to_string(&mut err).unwrap();
-        assert!(
-            status.is_some_and(|s| s.success()),
-            "Python fixture timeout/failure: {err}"
-        );
-        out
-    }
-
     #[test]
     fn live_preparations_still_block_when_source_stale_or_graph_revoked() {
         for state in ["prepared", "stale", "revoked", "clear"] {
@@ -1378,34 +1325,10 @@ mod tests {
                     workspace(Some(RAW))
                 };
                 drop(guard);
-                python(
-                    r#"
-import sys
-from pathlib import Path
-sys.path.insert(0, 'tests')
-from _authority_confirmation import execution_call, action, intent
-from runner import task_attempts as execution
-root, state = Path(sys.argv[1]), sys.argv[2]
-execution_call(root, 'enable', {})
-execution_call(root, 'enroll', {'task_id':'a','rebind_source':False})
-if state == 'revoked':
-    execution_call(root, 'upgrade', {})
-    node = {k:v for k,v in intent().items() if k in ('task_id','owner','acceptance_criteria')}
-    node['depends_on'] = []
-    execution_call(root, 'graph_propose', {'document':{'schema_version':1,'kind':'task-graph','nodes':[node]}})
-    def decide(decision):
-        view = execution.Store(root).read()
-        execution_call(root, 'graph_decide', {'graph_revision':view.current_graph_revision,'decision':decision,'reason':'fixture','expected_graph_digest':view.graphs[view.current_graph_revision]['digest']})
-    decide('approve')
-    execution_call(root, 'prepare_graph', {'task_id':'a','graph_revision':execution.Store(root).read().current_graph_revision})
-    decide('changes-requested')
-elif state != 'clear':
-    action(root, 'prepare')
-    if state == 'stale':
-        (root / 'state/tasks.json').write_bytes(b'[]\n')
-"#,
-                    &[root.path().to_str().unwrap().into(), state.into()],
-                );
+                source_layer::install(root.path(), &format!("execution-{state}"), true);
+                if state == "stale" {
+                    fs::write(root.path().join("state/tasks.json"), b"[]\n").unwrap();
+                }
                 let guard = WorkspaceGuard::existing(root.path(), Duration::ZERO).unwrap();
                 let expected = snapshot_revision(Some(RAW));
                 let io = TestIo::default();
@@ -1434,7 +1357,10 @@ elif state != 'clear':
 
     #[test]
     fn fixed_identity_plan_matches_python_bytes_including_extensions_and_raw_backup() {
-        for source in [None, Some(b" [ ] \r\n".as_slice()), Some(RAW)] {
+        for (index, source) in [None, Some(b" [ ] \r\n".as_slice()), Some(RAW)]
+            .into_iter()
+            .enumerate()
+        {
             let plan = BaselinePlan::new(
                 source.map(<[u8]>::to_vec),
                 source.map(|_| 0o640),
@@ -1442,31 +1368,17 @@ elif state != 'clear':
                 &"b".repeat(32),
             )
             .unwrap();
-            let out = python(
-                r#"
-import sys
-from runner import task_ledger as l, storage
-source = bytes.fromhex(sys.argv[1]) if sys.argv[2] == 'true' else None
-tasks = l._tasks(l._json(source) if source is not None else [])
-w, e = 'a'*32, 'b'*32
-revision = storage.snapshot_revision(source)
-frame = l._envelope(dict(version=1, workspace_id=w, epoch_id=e, sequence=0, previous_digest=None, source_revision=revision, tasks=tasks, revision=l._revision(w,e,0,tasks)))
-manifest = dict(version=1,workspace_id=w,epoch_id=e,source_revision=revision,source_present=source is not None,source_mode=0o640 if source is not None else None,source_length=len(source or b''),source_digest=l._digest(source or b''),baseline_digest=l._digest(frame))
-raw = l._canonical(manifest)+b'\n'
-marker = {k:manifest[k] for k in ('version','workspace_id','epoch_id','baseline_digest')}
-marker['manifest_digest'] = l._digest(raw)
-for item in (frame, raw, l._canonical(marker)+b'\n'):
-    print(item.hex())
-"#,
-                &[
-                    source
-                        .unwrap_or(b"")
-                        .iter()
-                        .map(|b| format!("{b:02x}"))
-                        .collect::<String>(),
-                    source.is_some().to_string(),
-                ],
+            let capture = source_layer::row(&format!("plan-{index}"));
+            let out = capture["stdout"].as_str().unwrap();
+            assert_eq!(
+                capture["input_args"][0],
+                source
+                    .unwrap_or(b"")
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
             );
+            assert_eq!(capture["input_args"][1], source.is_some().to_string());
             let actual = [&plan.frame, &plan.manifest, &plan.marker]
                 .iter()
                 .map(|raw| raw.iter().map(|b| format!("{b:02x}")).collect::<String>())

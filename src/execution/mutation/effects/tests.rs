@@ -1,5 +1,5 @@
 use super::*;
-use std::{cell::Cell, process::Command};
+use std::cell::Cell;
 
 const NOW: &str = "2026-11-02T01:02:03.123456+00:00";
 
@@ -13,18 +13,7 @@ impl Metadata for Fixed {
 
 #[test]
 fn python_effects_and_checked_successors_match_for_both_schemas() {
-    let output = Command::new("python3")
-        .args(["-B", "-c", include_str!("oracle.py")])
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let cases = values::parse(&output.stdout, Profile::Authority).unwrap();
+    let cases = super::super::tests::source_layer::vectors(2);
     assert_eq!(cases.as_array().unwrap().len(), 23);
     for case in cases.as_array().unwrap() {
         let name = text(get(case, "case").unwrap()).unwrap();

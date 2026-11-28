@@ -71,6 +71,57 @@ fn raw(root: &Path) -> Vec<u8> {
     fs::read(root.join("state/tasks.json")).unwrap()
 }
 
+fn initialize_execution(root: &Path, prepare: bool) {
+    use execution::{PreparationInput, WriteOptions};
+    let tasks_revision = selected_tasks(root).unwrap().0;
+    let options = WriteOptions {
+        expected_execution_revision: "execution-disabled:v1",
+        expected_tasks_revision: Some(tasks_revision.as_str()),
+        request_id: "enable",
+        json: true,
+    };
+    assert_eq!(
+        execution::enable_arguments(root, options)
+            .unwrap()
+            .exit_code,
+        0
+    );
+    let history = execution::history(root).unwrap();
+    assert_eq!(
+        execution::enroll_arguments(
+            &[root.to_owned(), PathBuf::from("test-title")],
+            false,
+            WriteOptions {
+                expected_execution_revision: s(&history, "revision"),
+                request_id: "enroll",
+                ..options
+            }
+        )
+        .unwrap()
+        .exit_code,
+        0
+    );
+    if prepare {
+        let intent = tempfile::NamedTempFile::new().unwrap();
+        fs::write(intent.path(), br#"{"schema_version":1,"kind":"task-intent","task_id":"test-title","owner":"Worker_ID","acceptance_criteria":[{"id":"a","text":"evidence"}]}"#).unwrap();
+        let history = execution::history(root).unwrap();
+        assert_eq!(
+            execution::prepare_arguments(
+                &[root.to_owned(), PathBuf::from("test-title")],
+                PreparationInput::Intent(intent.path()),
+                WriteOptions {
+                    expected_execution_revision: s(&history, "revision"),
+                    request_id: "prepare",
+                    ..options
+                }
+            )
+            .unwrap()
+            .exit_code,
+            0
+        );
+    }
+}
+
 #[test]
 fn snapshot_add_order_time_id_and_assign_preserve_extension_values() {
     let root = fixture(false);
@@ -474,22 +525,33 @@ fn binding_context_preserves_resource_errors_and_raw_identity() {
 
 #[test]
 fn authority_admission_precedes_config_errors_like_python_but_still_requires_config() {
+    use sha2::{Digest, Sha256};
+    let corpus_bytes = include_bytes!("../../tests/retirement/fixtures/source_contenders.json");
+    let provenance_bytes =
+        include_bytes!("../../tests/retirement/fixtures/source_contenders_provenance.json");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(corpus_bytes)),
+        "9fcb81a95b6d80055b114d83bd3c7d7fc16d462ddd1969edac0db5aa6763eb39"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(provenance_bytes)),
+        "1418b451d15ec84a7c22afc4f3a8255369b73413360a091cb6a0da2767f957bf"
+    );
+    let corpus: serde_json::Value = serde_json::from_slice(corpus_bytes).unwrap();
+    let provenance: serde_json::Value = serde_json::from_slice(provenance_bytes).unwrap();
+    assert_eq!(corpus["cases"].as_array().unwrap().len(), 14);
+    assert_eq!(provenance["cases"], 14);
+    assert_eq!(provenance["diagnostic_cases"], 12);
+    assert_eq!(provenance["setup_cases"], 2);
+    assert_eq!(provenance["row_sha256"].as_object().unwrap().len(), 14);
     for directory_config in [false, true] {
-        for (case, code, python_message) in [
-            (
-                "snapshot-key",
-                "snapshot_request_id_unsupported",
-                "snapshot-v1 does not provide",
-            ),
-            ("pending", "task_import_pending", "Task import is pending"),
-            (
-                "active-no-key",
-                "ledger_request_id_required",
-                "requires --request-id",
-            ),
-            ("active-bad-key", "invalid_request_key", "request key"),
-            ("corrupt", "invalid_compat_json", "invalid strict JSON"),
-            ("snapshot-revision", "invalid_snapshot_revision", "revision"),
+        for (case, code) in [
+            ("snapshot-key", "snapshot_request_id_unsupported"),
+            ("pending", "task_import_pending"),
+            ("active-no-key", "ledger_request_id_required"),
+            ("active-bad-key", "invalid_request_key"),
+            ("corrupt", "invalid_compat_json"),
+            ("snapshot-revision", "invalid_snapshot_revision"),
         ] {
             let root = fixture(case.starts_with("active"));
             fs::remove_file(root.path().join("coven.json")).unwrap();
@@ -527,33 +589,44 @@ fn authority_admission_precedes_config_errors_like_python_but_still_requires_con
                 code,
                 "{case}, directory config: {directory_config}"
             );
-            let script = r#"
-import sys
-from pathlib import Path
-from runner import coven
-try:
-    coven.add_task(Path(sys.argv[1]), 'Task', expected_revision=sys.argv[2] or None, request_id=sys.argv[3] or None)
-except (Exception, SystemExit) as error:
-    print(type(error).__name__ + ': ' + str(error))
-else:
-    raise AssertionError('invalid request unexpectedly accepted')
-"#;
-            let output = std::process::Command::new("python3")
-                .args(["-c", script])
-                .arg(root.path())
-                .arg(expected.unwrap_or(""))
-                .arg(key.unwrap_or(""))
-                .env("PYTHONDONTWRITEBYTECODE", "1")
-                .current_dir(env!("CARGO_MANIFEST_DIR"))
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
+            // The full historical diagnostic is frozen independently; native
+            // admission still checks the literal error code for every case.
+            let id = format!(
+                "{case}-{}",
+                if directory_config {
+                    "directory"
+                } else {
+                    "missing"
+                }
             );
-            let diagnostic = String::from_utf8(output.stdout).unwrap();
-            assert!(diagnostic.contains(python_message), "{case}: {diagnostic}");
+            let row = corpus["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == id)
+                .unwrap();
+            assert_eq!(row["native_error_code"].as_str().unwrap(), code);
+            let diagnostic = match case {
+                "snapshot-key" => {
+                    "LedgerError: --request-id requires explicit state import-tasks; snapshot-v1 does not provide durable deduplication\n"
+                }
+                "pending" => {
+                    "LedgerError: Task import is pending; inspect and explicitly resume or abort it before task mutations\n"
+                }
+                "active-no-key" => {
+                    "LedgerError: Imported task authority requires --request-id for every add/assign\n"
+                }
+                "active-bad-key" => "LedgerError: invalid request key\n",
+                "corrupt" => {
+                    "LedgerError: invalid strict JSON: Expecting value: line 1 column 1 (char 0)\n"
+                }
+                "snapshot-revision" => {
+                    "StorageError: invalid tasks revision; expected tasks-missing:v1 or tasks-sha256:<64 lowercase hex digits>\n"
+                }
+                _ => unreachable!(),
+            };
+            assert_eq!(row["stdout"].as_str().unwrap(), diagnostic);
+            assert_eq!(row["stderr"].as_str().unwrap(), "");
             assert_eq!(raw(root.path()), before);
             absent(
                 &io,
@@ -1451,40 +1524,9 @@ fn fresh_same_owner_assign_is_not_exempt_from_prepared_execution_guard() {
     for active in [false, true] {
         let root = fixture(active);
         run_add(root.path(), active.then_some("key"), &io()).unwrap();
-        // Generate a real, validated control through the unchanged Python SDK.
-        // This never dispatches a worker or uses any execution/runtime CLI.
-        let script = r#"
-import sys
-from pathlib import Path
-from runner import coven, storage, task_attempts
-root = Path(sys.argv[1])
-store = task_attempts.Store(root)
-with storage.workspace_lock(root, root / 'state/.workspace.lock') as held:
-    for operation, parameters in [
-        ('enable', {}),
-        ('enroll', {'task_id':'test-title','rebind_source':False}),
-        ('prepare', {'task_id':'test-title','intent':{
-            'schema_version':1,'kind':'task-intent','task_id':'test-title',
-            'owner':'Worker_ID','acceptance_criteria':[{'id':'a','text':'evidence'}]}}),
-    ]:
-        view = store.read()
-        store.mutate(operation, parameters,
-            expected_execution_revision=view.revision if view else task_attempts.DISABLED,
-            expected_tasks_revision=coven.read_task_snapshot(root)[0],
-            request_id=operation, source_loader=lambda sid: coven.execution_source(root, sid), lock=held)
-"#;
-        let output = std::process::Command::new("python3")
-            .args(["-c", script])
-            .arg(root.path())
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        // Actual native setup, not a captured native-output golden. Historical
+        // Python setup inputs are retained separately in source_contenders.json.
+        initialize_execution(root.path(), true);
         let before = raw(root.path());
         let io = io();
         let error = mutate(

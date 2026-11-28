@@ -5,11 +5,11 @@ use crate::{
 };
 use std::{
     fs,
-    io::Write,
-    path::PathBuf,
-    process::{Command, Stdio},
     sync::atomic::{AtomicU64, Ordering},
 };
+
+#[path = "tests/source_layer.rs"]
+mod source_layer;
 
 fn parse(s: &str) -> Value {
     values::parse(s.as_bytes(), Profile::Authority).unwrap()
@@ -67,35 +67,8 @@ impl store::Io for Fixed {
         Ok(id(self.0.fetch_add(1, Ordering::SeqCst)))
     }
 }
-fn oracle(request: serde_json::Value) -> Value {
-    let script = PathBuf::from(
-        option_env!("COVEN_GROUPS_ORACLE_ROOT").unwrap_or(env!("CARGO_MANIFEST_DIR")),
-    )
-    .join("src/groups/oracle.py");
-    let mut child = Command::new("python3")
-        .arg("-B")
-        .arg(script)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&request).unwrap())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    values::parse(&output.stdout, Profile::Authority).unwrap()
-}
 fn json(v: &Value) -> serde_json::Value {
-    // Tests with huge endpoint integers pass bindings as raw JSON to Python.
+    // Huge authority integers remain opaque raw JSON in the frozen requests.
     serde_json::from_slice(&v.compact().unwrap()).unwrap()
 }
 
@@ -151,9 +124,13 @@ fn pure_selector_display_source_and_live_pin_validators_match_python() {
             source as fn(&str) -> Result<()>,
         ),
     ] {
-        let expected =
-            oracle(serde_json::json!({"mode":"pure","validator":validator,"values":values}));
-        for (s, e) in values.iter().zip(array(&expected).unwrap()) {
+        let expected = source_layer::batch(
+            &format!("pure-{validator}"),
+            serde_json::json!({"mode":"pure","validator":validator,"values":values}),
+        );
+        assert_eq!(values.len(), array(&expected).unwrap().len());
+        for (i, s) in values.iter().enumerate() {
+            let e = &array(&expected).unwrap()[i];
             assert_eq!(
                 validate(s).is_ok(),
                 matches!(e, Value::Bool(true)),
@@ -182,10 +159,13 @@ fn pure_selector_display_source_and_live_pin_validators_match_python() {
         altered.set_field(key, value).unwrap();
         variants.push(altered);
     }
-    let expected = oracle(
+    let expected = source_layer::batch(
+        "pure-attachment",
         serde_json::json!({"mode":"pure","validator":"attachment","values":variants.iter().map(json).collect::<Vec<_>>()}),
     );
-    for (a, e) in variants.iter().zip(array(&expected).unwrap()) {
+    assert_eq!(variants.len(), array(&expected).unwrap().len());
+    for (i, a) in variants.iter().enumerate() {
+        let e = &array(&expected).unwrap()[i];
         assert_eq!(
             validate_attachment(a).is_ok(),
             matches!(e, Value::Bool(true))
@@ -234,8 +214,7 @@ fn with_terminal(b: &Value, terminal: &str) -> Value {
 #[test]
 fn closed_schema_variants_process_order_and_identity_uniqueness_match_python() {
     let root = workspace();
-    create_group(root.path(), "g", "Group", None).unwrap();
-    add(root.path(), &binding(), "Role", false, None).unwrap();
+    source_layer::comparison_setup(root.path());
     let state = read_groups(root.path()).unwrap().state.unwrap();
     let original = array(get(&state, "groups").unwrap()).unwrap()[0].clone();
     let member = array(get(&original, "members").unwrap()).unwrap()[0].clone();
@@ -290,13 +269,20 @@ fn closed_schema_variants_process_order_and_identity_uniqueness_match_python() {
         .iter()
         .map(|s| String::from_utf8(s.storage().unwrap()).unwrap())
         .collect();
-    let expected = oracle(serde_json::json!({"mode":"validate","values":raws}));
-    for (raw, e) in raws.iter().zip(array(&expected).unwrap()) {
+    let expected = source_layer::batch(
+        "schema",
+        serde_json::json!({"mode":"validate","values":raws}),
+    );
+    assert_eq!(raws.len(), array(&expected).unwrap().len());
+    for (i, raw) in raws.iter().enumerate() {
+        let e = &array(&expected).unwrap()[i];
+        let actual = store::decode(raw.as_bytes());
         assert_eq!(
-            store::decode(raw.as_bytes()).is_ok(),
+            actual.is_ok(),
             matches!(get(e, "accepted").unwrap(), Value::Bool(true)),
             "{raw}"
         );
+        source_layer::validation_result(actual, e);
     }
 }
 
@@ -883,8 +869,13 @@ fn python_timestamp_oracle_quirks_and_invalid_calendar_values() {
             }
         }
     }
-    let expected = oracle(serde_json::json!({"mode":"timestamp","values":cases}));
-    for (case, expected) in cases.iter().zip(array(&expected).unwrap()) {
+    let expected = source_layer::batch(
+        "timestamp",
+        serde_json::json!({"mode":"timestamp","values":cases}),
+    );
+    assert_eq!(cases.len(), array(&expected).unwrap().len());
+    for (i, case) in cases.iter().enumerate() {
+        let expected = &array(&expected).unwrap()[i];
         assert_eq!(
             super::timestamp::validate(case).is_ok(),
             matches!(expected, Value::Bool(true)),
@@ -896,8 +887,7 @@ fn python_timestamp_oracle_quirks_and_invalid_calendar_values() {
 #[test]
 fn authority_schema_and_canonical_hash_match_python_including_arbitrary_integers() {
     let root = workspace();
-    create_group(root.path(), "g", "Group", None).unwrap();
-    add(root.path(), &binding(), "Role", false, None).unwrap();
+    source_layer::comparison_setup(root.path());
     let state = read_groups(root.path()).unwrap().state.unwrap();
     let base = state.storage().unwrap();
     let mut cases = vec![String::from_utf8(base.clone()).unwrap()];
@@ -928,19 +918,19 @@ fn authority_schema_and_canonical_hash_match_python_including_arbitrary_integers
         String::from_utf8(base).unwrap()
     ));
     let bounded_cases = cases[..cases.len() - 1].to_vec();
-    let expected = oracle(serde_json::json!({"mode":"validate","values":bounded_cases}));
-    for (raw, expected) in bounded_cases.iter().zip(array(&expected).unwrap()) {
+    let expected = source_layer::batch(
+        "authority",
+        serde_json::json!({"mode":"validate","values":bounded_cases}),
+    );
+    assert_eq!(bounded_cases.len(), array(&expected).unwrap().len());
+    for (i, raw) in bounded_cases.iter().enumerate() {
+        let expected = &array(&expected).unwrap()[i];
         let actual = store::decode(raw.as_bytes());
         assert_eq!(
             actual.is_ok(),
             matches!(get(expected, "accepted").unwrap(), Value::Bool(true))
         );
-        if let Ok(actual) = actual {
-            assert_eq!(
-                revision(Some(&actual)).unwrap(),
-                text(get(expected, "revision").unwrap()).unwrap()
-            );
-        }
+        source_layer::validation_result(actual, expected);
     }
     assert!(store::decode(cases.last().unwrap().as_bytes()).is_err());
     let nested = format!("{}0{}", "[".repeat(17), "]".repeat(17));
@@ -962,8 +952,7 @@ fn authority_schema_and_canonical_hash_match_python_including_arbitrary_integers
 fn exact_python_mutation_results_bytes_promotions_and_retry_transitions() {
     let root = workspace();
     let io = Fixed::new();
-    // Oracle requests parse the arbitrary endpoint integer themselves, avoiding
-    // serde_json's intentionally narrower numeric representation in test setup.
+    // Frozen requests keep raw authority opaque, avoiding serde narrowing.
     let mut b = binding();
     let mut ep = get(get(&b, "presentation").unwrap(), "endpoint")
         .unwrap()
@@ -992,138 +981,156 @@ fn exact_python_mutation_results_bytes_promotions_and_retry_transitions() {
             .map(|m| text(get(m, "participant_id").unwrap()).unwrap().to_owned())
             .unwrap_or_else(|| id(3));
         let start = io.0.load(Ordering::SeqCst);
-        let (operation, args, result) = match step {
+        let (operation, args) = match step {
             0 | 1 => (
                 "create_group",
                 serde_json::json!({"key":"g","name":"Group"}),
-                mutate(root.path(), "g", None, Operation::Create("Group"), &io),
             ),
             2 | 3 | 13 => (
                 "add_member",
                 serde_json::json!({"group_key":"g","member_key":"m","role":"Role","binding":json(&b)}),
-                mutate(
-                    root.path(),
-                    "g",
-                    None,
-                    Operation::Add(AddMember {
-                        group: "g",
-                        member: "m",
-                        role: "Role",
-                        binding: &b,
-                        rebind: false,
-                        expected_revision: None,
-                    }),
-                    &io,
-                ),
             ),
             4 | 5 | 14 => (
                 "reserve_cycle",
                 serde_json::json!({"group_key":"g","expected_revision":token,"endpoint":json(&ep),"source":"coven","epoch":"one","terminal_ids":terminals,"allow_new_epoch":false}),
-                reserve_with(
-                    root.path(),
-                    ReserveRequest {
-                        group: "g",
-                        expected_revision: &token,
-                        endpoint: &ep,
-                        source: "coven",
-                        epoch: "one",
-                        terminal_ids: &terminals,
-                        allow_new_epoch: false,
-                    },
-                    &io,
-                ),
             ),
             6 | 7 => (
                 "add_member",
                 serde_json::json!({"group_key":"g","member_key":"m","role":"Role","binding":json(&process),"rebind":true}),
-                mutate(
-                    root.path(),
-                    "g",
-                    None,
-                    Operation::Add(AddMember {
-                        group: "g",
-                        member: "m",
-                        role: "Role",
-                        binding: &process,
-                        rebind: true,
-                        expected_revision: None,
-                    }),
-                    &io,
-                ),
             ),
             8 | 9 => (
                 "attach_live",
                 serde_json::json!({"group_key":"g","member_key":"m","attachment":json(&a),"expected_revision":token,"expected_participant_id":participant}),
-                mutate(
-                    root.path(),
-                    "g",
-                    Some(&token),
-                    Operation::Attach(AttachMember {
-                        group: "g",
-                        member: "m",
-                        attachment: &a,
-                        expected_revision: &token,
-                        expected_participant_id: &participant,
-                        reattach: false,
-                    }),
-                    &io,
-                ),
             ),
             10 => (
                 "add_member",
                 serde_json::json!({"group_key":"g","member_key":"m","role":"New role","binding":json(&b),"rebind":true}),
-                mutate(
-                    root.path(),
-                    "g",
-                    None,
-                    Operation::Add(AddMember {
-                        group: "g",
-                        member: "m",
-                        role: "New role",
-                        binding: &b,
-                        rebind: true,
-                        expected_revision: None,
-                    }),
-                    &io,
-                ),
             ),
             11 | 12 => (
                 "remove_member",
                 serde_json::json!({"group_key":"g","member_key":"m"}),
-                mutate(root.path(), "g", None, Operation::Remove("m"), &io),
             ),
             15 => (
                 "reserve_cycle",
                 serde_json::json!({"group_key":"g","expected_revision":token,"endpoint":json(&ep),"source":"coven","epoch":"two","terminal_ids":terminals,"allow_new_epoch":true}),
-                reserve_with(
-                    root.path(),
-                    ReserveRequest {
-                        group: "g",
-                        expected_revision: &token,
-                        endpoint: &ep,
-                        source: "coven",
-                        epoch: "two",
-                        terminal_ids: &terminals,
-                        allow_new_epoch: true,
-                    },
-                    &io,
-                ),
             ),
             _ => (
                 "detach_live",
                 serde_json::json!({"group_key":"g","member_key":"m","expected_revision":token,"expected_participant_id":participant}),
-                mutate(
-                    root.path(),
-                    "g",
-                    Some(&token),
-                    Operation::Detach("m", &participant),
-                    &io,
-                ),
             ),
         };
-        let expected = oracle(
-            serde_json::json!({"mode":"mutation","raw":before.map(|b|String::from_utf8(b).unwrap()),"ids":(start..start+8).map(id).collect::<Vec<_>>(),"action":{"operation":operation,"args":args}}),
-        );
+        let apply = || match step {
+            0 | 1 => mutate(root.path(), "g", None, Operation::Create("Group"), &io),
+            2 | 3 | 13 => mutate(
+                root.path(),
+                "g",
+                None,
+                Operation::Add(AddMember {
+                    group: "g",
+                    member: "m",
+                    role: "Role",
+                    binding: &b,
+                    rebind: false,
+                    expected_revision: None,
+                }),
+                &io,
+            ),
+            4 | 5 | 14 => reserve_with(
+                root.path(),
+                ReserveRequest {
+                    group: "g",
+                    expected_revision: &token,
+                    endpoint: &ep,
+                    source: "coven",
+                    epoch: "one",
+                    terminal_ids: &terminals,
+                    allow_new_epoch: false,
+                },
+                &io,
+            ),
+            6 | 7 => mutate(
+                root.path(),
+                "g",
+                None,
+                Operation::Add(AddMember {
+                    group: "g",
+                    member: "m",
+                    role: "Role",
+                    binding: &process,
+                    rebind: true,
+                    expected_revision: None,
+                }),
+                &io,
+            ),
+            8 | 9 => mutate(
+                root.path(),
+                "g",
+                Some(&token),
+                Operation::Attach(AttachMember {
+                    group: "g",
+                    member: "m",
+                    attachment: &a,
+                    expected_revision: &token,
+                    expected_participant_id: &participant,
+                    reattach: false,
+                }),
+                &io,
+            ),
+            10 => mutate(
+                root.path(),
+                "g",
+                None,
+                Operation::Add(AddMember {
+                    group: "g",
+                    member: "m",
+                    role: "New role",
+                    binding: &b,
+                    rebind: true,
+                    expected_revision: None,
+                }),
+                &io,
+            ),
+            11 | 12 => mutate(root.path(), "g", None, Operation::Remove("m"), &io),
+            15 => reserve_with(
+                root.path(),
+                ReserveRequest {
+                    group: "g",
+                    expected_revision: &token,
+                    endpoint: &ep,
+                    source: "coven",
+                    epoch: "two",
+                    terminal_ids: &terminals,
+                    allow_new_epoch: true,
+                },
+                &io,
+            ),
+            _ => mutate(
+                root.path(),
+                "g",
+                Some(&token),
+                Operation::Detach("m", &participant),
+                &io,
+            ),
+        };
+        let invoked = std::cell::Cell::new(false);
+        let run = |request| {
+            let expected = source_layer::case(&format!("mutation-{step:03}"), request);
+            invoked.set(true);
+            (expected, apply())
+        };
+        let request = serde_json::json!({"mode":"mutation","raw":before.as_ref().map(|b|String::from_utf8(b.clone()).unwrap()),"ids":(start..start+8).map(id).collect::<Vec<_>>(),"action":{"operation":operation,"args":args}});
+        if step == 0 {
+            // Exercise the same preflight path with drift, before any native call.
+            let mut mismatched = request.clone();
+            mismatched["action"]["args"]["name"] = serde_json::json!("drift");
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(mismatched))).is_err()
+            );
+            assert!(!invoked.get());
+            assert_eq!(io.0.load(Ordering::SeqCst), start);
+            assert_eq!(raw(root.path()), before);
+        }
+        let (expected, result) = run(request);
         assert!(
             matches!(get(&expected, "accepted").unwrap(), Value::Bool(true)),
             "oracle rejected step {step}"
@@ -1138,6 +1145,16 @@ fn exact_python_mutation_results_bytes_promotions_and_retry_transitions() {
             raw(root.path()).unwrap(),
             text(get(&expected, "raw").unwrap()).unwrap().as_bytes(),
             "bytes step {step}"
+        );
+        assert_eq!(
+            io.0.load(Ordering::SeqCst),
+            start
+                + match step {
+                    0 => 2,
+                    2 | 13 => 1,
+                    _ => 0,
+                },
+            "UUID consumption step {step}"
         );
     }
 }

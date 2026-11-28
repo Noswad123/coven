@@ -11,17 +11,37 @@ read-only audit, are a separate policy boundary. Removing the legacy implementat
 does not mean the repository must contain no Python files whatsoever. Do not move
 or copy the implementation into test support and call that removal.
 
+## Dependency-layer strategy
+
+The user approved layer-sized batches, not per-helper ceremonies. Run focused
+capture and static implementation work in parallel, then use **one shared review
+and normal / Python-absence / source-package / audit gate** for the layer. Reuse
+build targets after fixes; do not repeat full regression gates or documentation
+records for every module. Preserve assertions, faults, races and complete expected
+bytes; explicitly disposition Python-only contracts rather than deleting tests.
+
+1. **Source-test dependency layer — closed.** All 34 remaining runner-backed
+   constructor sites across 25 source callers are closed; independent Python
+   comparisons are outside this acceptance.
+2. **Integration native-fixture / CLI-workflow layer — next.** Close the 26
+   runner-backed targets as a layer, with focused inventory groups for workspace,
+   actions, ledger, execution, checkpoints and observations. These targets are not
+   presumed trivial or interchangeable.
+3. **Historical-evidence audit cutover and runner deletion — later.** Resolve or
+   explicitly disposition all 941 original obligations, transition the audit's
+   live-source requirements, then satisfy runner-deletion and platform gates.
+
 ## Current snapshot — 2026-11-27
 
 | Measure | Before first removal batch | Current |
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **39** |
-| Rust source files containing those sites | 44 | **29** |
-| Runner-dependent or mixed source caller files | 40 | **25** |
-| Source-local Python files | 25 | **11** |
-| Runner-dependent source-local Python files | 21 | **8** |
+| Direct Python constructor sites in Rust source | 61 | **5** |
+| Rust source files containing those sites | 44 | **5** |
+| Runner-dependent or mixed source caller files | 40 | **0** |
+| Source-local Python files | 25 | **3** |
+| Runner-dependent source-local Python files | 21 | **0** |
 | Python-launching integration targets | 29 | **28** |
 | Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
@@ -37,9 +57,11 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 39 total sites are **not** 39 exclusively runner-backed
-sites; four caller files are independent-only and others can be mixed. New capture
-tools under `tools/` are outside this source/integration metric.
+need manual follow-up. The five remaining source comparisons are independent:
+`unicode.rs`, `cli_operands/tests`, `workspace.rs` (tomllib),
+`checkpoint_guidance/timestamp` and `workspace_commands/python`. The three remaining
+source Python helpers are the worker fixture and the latter two comparisons'
+helpers; all are independent. Capture tools under `tools/` are outside this metric.
 
 ## Completed batches
 
@@ -187,25 +209,37 @@ tools under `tools/` are outside this source/integration metric.
   mapping changed. See the
   [dated evidence](../changelog/2026-11-27-python-retirement-group-command-storage.md).
 
-Cumulatively, twenty-three counted source/integration invocation sites and one known
-variable-executable site have been removed, with fifteen helpers deleted. The
-variable call is deliberately reported separately from the literal regex metric.
-No whole `runner/` module is yet deletable: other modules and
-Python-backed integration parents still import `runner.launch`, among others.
+### Source-test dependency layer — 2026-11-27
 
-## Next cohorts
+The [approved layer review](../../tests/retirement/reviews/source_dependency_layer.json)
+closes all remaining runner-backed source callers: **34 sites in 25 files**, seven
+automatically executed helpers and one projection-regeneration-only helper deleted.
+Nine new optional freezers require verified historical source, with no active-tree
+fallback. The completed group-authority work includes all 178 ordered cases.
 
-1. **Group authority comparisons.** Inspect all five consumers of
-   `src/groups/oracle.py`: 38 pure validators, twelve schema variants, 102 timestamp
-   rows, eight authorities and eighteen sequential mutation steps. Preserve all
-   178 ordered cases, arbitrary integers, exact revisions/results/storage bytes
-   and native limit/invariance checks. Review using the existing deterministic
-   UUID seam for currently random setup inputs before changing those tests;
-   preserve public/SystemIo, fault, CAS and race coverage elsewhere. Remove the
-   helper and its `COVEN_GROUPS_ORACLE_ROOT` lookup only after all consumers close.
-2. Continue through execution/ledger/storage/concurrency and group observation
-   dependencies. Each batch should remove actual callers or close specific
-   original assertions; track those two kinds of progress separately.
+The shared Linux gate passed **580 distinct normal checkout tests** (371 affected
+plus 209 prior regressions). The affected closure passed **371 normal / 369 strong**
+in both checkout and extracted package. Only the independent timestamp and tomllib
+comparisons were excluded from strong isolation; both passed normally. The other
+three independent comparisons are outside this affected closure, not qualified by
+its strong gate. See the [single dated closeout](../changelog/2026-11-27-python-retirement-source-layer.md)
+for preserved concurrency contracts, package corrections and qualification limits.
+
+Cumulatively, **23 + 34 = 57 counted source/integration invocation sites** and one
+known variable-executable site have been removed. **15 + 8 = 23 helpers** were
+deleted, including one regeneration-only helper with no invocation credit. No whole
+`runner/` module is yet deletable: integration parents still import it.
+
+## Next layer
+
+Inventory the **26 runner-backed integration targets** by the workflow groups above,
+including parent harnesses, generated producers, CLI setup and transitive imports.
+Replace dependencies with native fixtures or independently captured evidence while
+retaining original assertions, complete expected bytes, no-effect guards, fault
+ordering and races. Keep explicit Python-only dispositions and genuine gaps visible.
+The two independent integration targets remain separate: all 28 Python-launching
+targets are unchanged by source-layer closure. Dependency removal and accepted
+original-method mappings remain separate measures of progress.
 
 ## Required deletion gates
 

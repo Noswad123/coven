@@ -28,6 +28,50 @@ fn native_source_package_boundary() {
     );
     let listing = String::from_utf8(output.stdout).unwrap();
     let files: BTreeSet<_> = listing.lines().collect();
+    // A lexical regression guard, not a Rust AST or dynamic-execution proof.
+    // These are the only retained source-local Python comparisons, all stdlib-only.
+    let independent_callers = BTreeSet::from([
+        "src/cli_operands/tests.rs",
+        "src/unicode.rs",
+        "src/workspace.rs",
+        "src/workspace_commands/python/tests.rs",
+        "src/checkpoint_guidance/timestamp/tests.rs",
+    ]);
+    let mut callers = BTreeSet::new();
+    for file in files
+        .iter()
+        .filter(|file| file.starts_with("src/") && file.ends_with(".rs"))
+    {
+        let compact: String = std::fs::read_to_string(root.join(file))
+            .unwrap()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let sites = compact.matches("Command::new(\"python3\")").count()
+            + compact.matches("Command::new(\"python\")").count();
+        if sites != 0 {
+            assert_eq!(sites, 1, "unexpected Python source sites: {file}");
+            assert!(
+                independent_callers.contains(file),
+                "legacy Python caller: {file}"
+            );
+            callers.insert(*file);
+        }
+    }
+    assert_eq!(callers, independent_callers);
+    assert_eq!(
+        files
+            .iter()
+            .filter(|file| file.starts_with("src/") && file.ends_with(".py"))
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "src/workers/fixture.py",
+            "src/workspace_commands/python/oracle.py",
+            "src/checkpoint_guidance/timestamp/oracle.py",
+        ]),
+        "only the three independent source helpers remain"
+    );
     // Frozen evidence replaces every active consumer of these retired helpers.
     for retired in [
         "src/launch/oracle.py",
@@ -42,6 +86,14 @@ fn native_source_package_boundary() {
         "src/group_publisher/counter_oracle.py",
         "src/group_publisher/oracle.py",
         "src/group_commands/oracle.py",
+        "src/groups/oracle.py",
+        "src/execution/mutation/oracle.py",
+        "src/execution/mutation/graphs/oracle.py",
+        "src/execution/mutation/effects/oracle.py",
+        "src/execution/mutation/upgrade/oracle.py",
+        "src/execution/mutation/capacity/oracle.py",
+        "src/execution/inspection/projection/oracle.py",
+        "src/init/mixed_overlap.py",
         "src/workspace_assets/oracle.py",
         "src/workspace_assets/init_oracle.py",
         "tests/_checkpoint_parity.py",
@@ -115,6 +167,17 @@ fn native_source_package_boundary() {
         "src/group_publisher/tests/engine_frozen.rs",
         "src/group_commands/tests/frozen.rs",
         "src/group_publisher/tests/counter_frozen.rs",
+        "src/groups/tests/source_layer.rs",
+        "src/execution/mutation/tests/source_layer.rs",
+        "src/execution/mutation/capacity/newprivate_source_layer.rs",
+        "src/ledger/source_layer.rs",
+        "src/task_mutation/tests/contender.rs",
+        "src/actions/mutation/tests/frozen.rs",
+        "src/checkpoint_guidance/tests/frozen.rs",
+        "src/workspace/source_fixture.rs",
+        "src/state_commands/report_fixture.rs",
+        "src/lead/tests/frozen.rs",
+        "src/group_live/tests/frozen.rs",
         "src/workspace_assets/role.txt",
         "src/workspace_assets/starter.txt",
         "src/workspace_assets/fixture.rs",
@@ -150,6 +213,25 @@ fn native_source_package_boundary() {
         "tests/retirement/fixtures/group_commands.json",
         "tests/retirement/fixtures/group_commands_provenance.json",
         "tests/retirement/reviews/group_commands_oracle.json",
+        "tests/retirement/fixtures/source_groups.json",
+        "tests/retirement/fixtures/source_groups_provenance.json",
+        "tests/retirement/fixtures/source_mutation_effects.json",
+        "tests/retirement/fixtures/source_mutation_effects_provenance.json",
+        "tests/retirement/fixtures/source_execution_support.json",
+        "tests/retirement/fixtures/source_execution_support_provenance.json",
+        "tests/retirement/fixtures/source_ledger.json",
+        "tests/retirement/fixtures/source_ledger_provenance.json",
+        "tests/retirement/fixtures/source_contenders.json",
+        "tests/retirement/fixtures/source_contenders_provenance.json",
+        "tests/retirement/fixtures/source_actions.json",
+        "tests/retirement/fixtures/source_actions_provenance.json",
+        "tests/retirement/fixtures/source_workspace.json",
+        "tests/retirement/fixtures/source_workspace_provenance.json",
+        "tests/retirement/fixtures/source_lead_init.json",
+        "tests/retirement/fixtures/source_lead_init_provenance.json",
+        "tests/retirement/fixtures/source_live_observation.json",
+        "tests/retirement/fixtures/source_live_observation_provenance.json",
+        "tests/retirement/reviews/source_dependency_layer.json",
         "tests/retirement/reviews/repository_record_oracle.json",
         "tests/retirement/reviews/execution_source_oracle.json",
         "tests/retirement/reviews/history_rendering_oracle.json",

@@ -1,13 +1,13 @@
 use super::*;
 use std::{
     fs,
-    io::{BufRead, BufReader, Write},
     os::unix::{
         fs::{MetadataExt, PermissionsExt, symlink},
         net::UnixListener,
     },
-    process::{Command, Stdio},
 };
+#[path = "../../task_mutation/tests/contender.rs"]
+mod contender;
 
 fn maintenance(root: &Path) -> Result<WorkspaceGuard> {
     WorkspaceGuard::execution_maintenance(root, Duration::ZERO)
@@ -264,55 +264,25 @@ fn maintenance_tokens_keep_root_pid_and_thread_validation() {
 
 #[test]
 fn python_and_maintenance_exclude_each_other_and_process_death_releases() {
+    // Historical name, not live Python qualification: use an independent libc
+    // contender for the retained runtime lock/process-death contract.
     let root = tempfile::tempdir().unwrap();
     let guard = maintenance(root.path()).unwrap();
     let inode = fs::metadata(root.path().join("state/.workspace.lock"))
         .unwrap()
         .ino();
-    let mut child = Command::new("python3")
-        .args([
-            "-c",
-            r#"
-import sys
-from pathlib import Path
-from runner import storage
-root = Path(sys.argv[1])
-lock = root / 'state/.workspace.lock'
-try:
-    with storage.workspace_lock(root, lock, timeout=0):
-        raise AssertionError('acquired native-owned lock')
-except storage.LockBusy:
-    print('BUSY', flush=True)
-assert sys.stdin.readline() == 'acquire\n'
-with storage.workspace_lock(root, lock, timeout=0):
-    print('HELD', flush=True)
-    sys.stdin.readline()
-"#,
-        ])
-        .arg(root.path())
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut output = BufReader::new(child.stdout.take().unwrap());
-    let mut line = String::new();
-    output.read_line(&mut line).unwrap();
-    assert_eq!(line, "BUSY\n");
+    let mut child = contender::Process::spawn(
+        concat!(module_path!(), "::independent_maintenance_child"),
+        root.path(),
+        "maintenance",
+    );
+    assert_eq!(child.line(), format!("busy:{inode}"));
     drop(guard);
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(b"acquire\n")
-        .unwrap();
-    line.clear();
-    output.read_line(&mut line).unwrap();
-    assert_eq!(line, "HELD\n");
+    child.send(b"release\n");
+    assert_eq!(child.line(), format!("held:{inode}"));
     let result = maintenance(root.path());
-    child.kill().unwrap();
-    child.wait().unwrap();
+    child.child.kill().unwrap();
+    assert!(!child.wait().success());
     assert_eq!(result.err().unwrap().code(), "workspace_lock_busy");
     drop(maintenance(root.path()).unwrap());
     assert_eq!(
@@ -321,4 +291,20 @@ with storage.workspace_lock(root, lock, timeout=0):
             .ino(),
         inode
     );
+}
+
+#[test]
+#[ignore = "IPC child entry; exercised by python_and_maintenance_exclude_each_other_and_process_death_releases"]
+fn independent_maintenance_child() {
+    let root = std::env::var_os("COVEN_SOURCE_CONTENDER_ROOT").unwrap();
+    let path = Path::new(&root).join("state/.workspace.lock");
+    let file = contender::open(&path);
+    let inode = file.metadata().unwrap().ino();
+    assert!(!contender::lock(&file, true, true));
+    contender::signal(&format!("busy:{inode}"));
+    contender::receive();
+    assert!(contender::lock(&file, true, true));
+    assert_eq!(fs::metadata(path).unwrap().ino(), inode);
+    contender::signal(&format!("held:{inode}"));
+    contender::receive();
 }

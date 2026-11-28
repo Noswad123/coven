@@ -1,33 +1,49 @@
 use super::*;
 use crate::execution::mutation::delivery;
-use std::{process::Command, sync::OnceLock};
+use std::sync::OnceLock;
+
+#[path = "newprivate_source_layer.rs"]
+mod source_layer;
 
 const NOW: &str = "9999-12-31T23:59:59.123456-23:59";
 
 fn fixtures() -> &'static [Value] {
     static FIXTURES: OnceLock<Vec<Value>> = OnceLock::new();
     FIXTURES.get_or_init(|| {
-        let output = Command::new("python3")
-            .args([
-                "-B",
-                concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/src/execution/mutation/capacity/oracle.py"
-                ),
-            ])
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+        let corpus_bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/retirement/fixtures/source_execution_support.json"
+        ));
+        let provenance_bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/retirement/fixtures/source_execution_support_provenance.json"
+        ));
+        assert_eq!(
+            canonical::digest(corpus_bytes),
+            "3a3d000c7e7e38496687511af093c8172d378eab70f05faa127caa2b3e926134"
         );
-        values::parse(&output.stdout, Profile::Authority)
+        assert_eq!(
+            canonical::digest(provenance_bytes),
+            "5631124181a36750c20aabe89f85fdc673c19d4f7c97fdd60e4fd865bc1fc742"
+        );
+        let corpus = values::parse(corpus_bytes, Profile::Authority).unwrap();
+        let row = &get(&corpus, "cases").unwrap().as_array().unwrap()[0];
+        assert_eq!(
+            text(get(row, "id").unwrap()).unwrap(),
+            "capacity-reviewed-3-6"
+        );
+        let stdout = text(get(row, "stdout").unwrap()).unwrap().as_bytes();
+        assert_eq!(
+            canonical::digest(stdout),
+            text(get(row, "stdout_sha256").unwrap()).unwrap()
+        );
+        let fixtures = values::parse(stdout, Profile::Authority)
             .unwrap()
             .as_array()
             .unwrap()
-            .to_vec()
+            .to_vec();
+        assert_eq!(fixtures.len(), 2);
+        fixtures
     })
 }
 
@@ -338,24 +354,7 @@ fn six_task_fresh_graph_fits_and_already_revoked_is_growth() {
 
 #[test]
 fn coordinator_spends_review_reserve_once_but_protects_active_cancellations() {
-    let output = Command::new("python3")
-        .args([
-            "-B",
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/execution/mutation/capacity/oracle.py"
-            ),
-            "--near-nodes",
-        ])
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let control = values::parse(&output.stdout, Profile::Authority).unwrap();
+    let control = source_layer::near_nodes();
     let (view, length, work) = measured(&control);
     assert_eq!(escape_count(&view).unwrap(), 4);
     assert_eq!(

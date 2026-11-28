@@ -3,36 +3,18 @@ use std::{
     cell::{Cell, RefCell},
     fs,
     io::Write,
-    process::{Command, Stdio},
+    process::Command,
     sync::{
         Arc, Barrier,
         atomic::{AtomicUsize, Ordering},
     },
 };
 
+#[path = "tests/frozen.rs"]
+mod frozen;
+
 fn parsed(output: CommandResult) -> Value {
     values::parse(output.body.as_bytes(), Profile::Authority).unwrap()
-}
-fn oracle(root: &Path, script: &str, input: &[u8]) -> Vec<u8> {
-    let mut child = Command::new("python3")
-        .args(["-B", "-c", script])
-        .arg(root)
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .env("PYTHONINTMAXSTRDIGITS", "4300")
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.take().unwrap().write_all(input).unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output.stdout
 }
 pub(super) fn fixture() -> tempfile::TempDir {
     let temp = tempfile::tempdir().unwrap();
@@ -174,24 +156,25 @@ struct Reviewed {
     manifest: String,
     checkpoint: String,
     decision: String,
+    before: Vec<u8>,
 }
 fn reviewed(root: &Path) -> Reviewed {
+    let before = fs::read(root.join(CONTROL)).unwrap();
     let preparation = parsed(prepare_with(root, true, &Fake::default()).unwrap());
     let id = text(&preparation, "action_id").unwrap().to_owned();
     let cp = text(&preparation, "checkpoint").unwrap();
-    let view = oracle(
-        root,
-        "import json,sys;from pathlib import Path;from runner import checkpoints\nw=Path(sys.argv[1]); cp=json.load(sys.stdin); p=w/'checkpoints'/f'{cp}.md'; raw,view=checkpoints.prepare(cp,p.read_bytes(),'approved','reviewed',decision_id='eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',decided_at='now',source='cli');p.write_bytes(raw);print(json.dumps(view.to_dict()))",
-        &string(cp).canonical().unwrap(),
-    );
-    let view = parse_authority(&view).unwrap();
+    assert_eq!(cp, format!("runtime-launch-{id}"));
+    let pending = frozen::prepared(root, &id, &before);
+    let manifest = frozen::manifest(root, &id, &before);
+    assert_eq!(text(&preparation, "manifest_digest").unwrap(), manifest);
+    let raw = frozen::approve(cp, &pending, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "reviewed");
+    fs::write(root.join(format!("checkpoints/{cp}.md")), &raw).unwrap();
     Reviewed {
         id,
-        manifest: text(&preparation, "manifest_digest").unwrap().to_owned(),
-        checkpoint: text(&view, "revision").unwrap().to_owned(),
-        decision: text(get(&view, "decision").unwrap(), "decision_id")
-            .unwrap()
-            .to_owned(),
+        manifest,
+        checkpoint: frozen::revision("snapshot", cp, &raw),
+        decision: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into(),
+        before,
     }
 }
 fn submit_with(root: &Path, review: &Reviewed, io: &impl Io) -> Result<CommandResult> {
@@ -215,15 +198,12 @@ pub(super) fn activated() -> tempfile::TempDir {
 fn inventory_plan_checkpoint_and_historical_read_match_python_exactly() {
     let temp = activated();
     let root = temp.path();
+    let before = fs::read(root.join(CONTROL)).unwrap();
     let prepared = parsed(prepare_with(root, true, &Fake::default()).unwrap());
     let id = text(&prepared, "action_id").unwrap();
     let bundle_raw = fs::read(root.join(format!("state/actions/{id}.json"))).unwrap();
     let bundle = parse_authority(&bundle_raw).unwrap();
-    let oracle_bytes = oracle(
-        root,
-        "import json,sys;from pathlib import Path;from runner import coven,actions\nw=Path(sys.argv[1]);b=json.load(sys.stdin);i=coven.runtime_launch_inputs(w);assert i==b['inputs'];assert coven.frozen_launch_plan(actions.ActionStore(w).read_control(),b['action_id'],i)==b['plan'];sys.stdout.buffer.write(actions.checkpoint_bytes(b))",
-        &bundle_raw,
-    );
+    let oracle_bytes = frozen::prepared(root, id, &before);
     assert_eq!(
         oracle_bytes,
         fs::read(root.join(format!("checkpoints/runtime-launch-{id}.md"))).unwrap()
@@ -270,8 +250,14 @@ fn completed_failed_and_known_retries_never_execute_again() {
         let temp = activated();
         let root = temp.path();
         let review = reviewed(root);
+        let pre_transport = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = pre_transport.clone();
+        let path = root.to_owned();
         let io = Fake {
             failed,
+            during: Some(Box::new(move |_| {
+                *captured.lock().unwrap() = fs::read(path.join(CONTROL)).unwrap();
+            })),
             ..Fake::default()
         };
         let first = submit_with(root, &review, &io).unwrap();
@@ -287,11 +273,7 @@ fn completed_failed_and_known_retries_never_execute_again() {
             get(&first, "claim").unwrap().canonical().unwrap(),
             get(&repeat, "claim").unwrap().canonical().unwrap()
         );
-        oracle(
-            root,
-            "import sys,json;from pathlib import Path;from runner import actions\ns=actions.ActionStore(Path(sys.argv[1]));s.read_control();s.read_bundle(json.load(sys.stdin))",
-            &string(&review.id).canonical().unwrap(),
-        );
+        frozen::completed(root, &review, failed, &pre_transport.lock().unwrap());
     }
 }
 #[test]
@@ -681,6 +663,7 @@ fn crash_child() {
         manifest: std::env::var("COVEN_ACTION_CRASH_MANIFEST").unwrap(),
         checkpoint: std::env::var("COVEN_ACTION_CRASH_CHECKPOINT").unwrap(),
         decision: std::env::var("COVEN_ACTION_CRASH_DECISION").unwrap(),
+        before: Vec::new(),
     };
     let io = Fake {
         during: Some(Box::new(|_| std::process::exit(73))),
@@ -725,21 +708,13 @@ fn process_death_after_claim_is_permanently_consumed() {
 fn imported_task_authority_and_projection_health_match_oracle() {
     let temp = fixture();
     let root = temp.path();
-    oracle(
-        root,
-        "import sys;from pathlib import Path;from runner import coven\nw=Path(sys.argv[1]);r=coven.read_task_snapshot(w)[0];coven.main(['state','import-tasks',str(w),'--expect-revision',r,'--json'])",
-        b"",
-    );
+    frozen::import_tasks(root);
     enable_with(root, true, &Fake::default()).unwrap();
     let captured = inputs::capture(root).unwrap();
-    let python = oracle(
-        root,
-        "import sys,json;from pathlib import Path;from runner import coven;print(json.dumps(coven.runtime_launch_inputs(Path(sys.argv[1]))))",
-        b"",
-    );
+    let expected = frozen::imported_inputs(root);
     assert_eq!(
         captured.inventory.canonical().unwrap(),
-        parse_authority(&python).unwrap().canonical().unwrap()
+        parse_authority(&expected).unwrap().canonical().unwrap()
     );
     fs::write(root.join("state/tasks.json"), b"[ ]\n").unwrap();
     assert_eq!(
@@ -821,16 +796,20 @@ fn reapproving_an_edited_scope_cannot_authorize_the_bundle() {
     let temp = activated();
     let root = temp.path();
     let mut review = reviewed(root);
-    let view = oracle(
-        root,
-        "import sys,json;from pathlib import Path;from runner import checkpoints\nw=Path(sys.argv[1]);i=json.load(sys.stdin);cp='runtime-launch-'+i;p=w/'checkpoints'/f'{cp}.md';original=p.read_bytes();raw,view=checkpoints.prepare(cp,original.replace(b'unrestricted',b'read-only'),'approved','changed scope',decision_id='ffffffffffffffffffffffffffffffff',decided_at='now',source='cli');p.write_bytes(raw);print(json.dumps(view.to_dict()))",
-        &string(&review.id).canonical().unwrap(),
-    );
-    let view = parse_authority(&view).unwrap();
-    review.checkpoint = text(&view, "revision").unwrap().to_owned();
-    review.decision = text(get(&view, "decision").unwrap(), "decision_id")
+    let cp = format!("runtime-launch-{}", review.id);
+    let path = root.join(format!("checkpoints/{cp}.md"));
+    let edited = fs::read_to_string(&path)
         .unwrap()
-        .to_owned();
+        .replace("unrestricted", "read-only");
+    let raw = frozen::approve(
+        &cp,
+        edited.as_bytes(),
+        "ffffffffffffffffffffffffffffffff",
+        "changed scope",
+    );
+    fs::write(path, &raw).unwrap();
+    review.checkpoint = frozen::revision("snapshot", &cp, &raw);
+    review.decision = "ffffffffffffffffffffffffffffffff".into();
     let io = Fake::default();
     assert_eq!(
         submit_with(root, &review, &io).unwrap_err().code(),
@@ -935,6 +914,7 @@ fn environment_child() {
         manifest: std::env::var("COVEN_ACTION_ENV_MANIFEST").unwrap(),
         checkpoint: std::env::var("COVEN_ACTION_ENV_CHECKPOINT").unwrap(),
         decision: std::env::var("COVEN_ACTION_ENV_DECISION").unwrap(),
+        before: Vec::new(),
     };
     let io = Fake::default();
     let attempt = submit_with(Path::new(&root), &review, &io);
@@ -1091,31 +1071,19 @@ fn native_unknown_acknowledgement_and_known_retry_match_python_transitions() {
     let native =
         parsed(acknowledge_with(root, &review.id, claim_id, true, &Fake::default()).unwrap());
     let native_control = fs::read(root.join(CONTROL)).unwrap();
-    // Reuse precisely the same consumed identities, on a disposable oracle root.
+    // Compare the frozen transition against precisely the same consumed PRE-state.
     fs::write(root.join(CONTROL), before).unwrap();
-    let request = object(vec![
-        ("id", string(&review.id)),
-        ("claim", string(claim_id)),
-        ("manifest", string(&review.manifest)),
-        ("checkpoint", string(&review.checkpoint)),
-        ("decision", string(&review.decision)),
-    ])
-    .unwrap();
-    let python = oracle(
-        root,
-        "import sys,json;from pathlib import Path;from runner import actions,storage\nw=Path(sys.argv[1]);r=json.load(sys.stdin);s=actions.ActionStore(w)\nwith storage.workspace_lock(w,w/'state/.workspace.lock') as lock:\n a=s.acknowledge_unknown(r['id'],r['claim'],lock);b,replayed=s.claim(r['id'],r['manifest'],r['checkpoint'],r['decision'],{},lock);assert a==b and replayed;print(json.dumps(a))",
-        &request.canonical().unwrap(),
-    );
+    let expected = frozen::acknowledged(root, &review, claim_id);
     assert_eq!(
         get(&native, "claim").unwrap().canonical().unwrap(),
-        parse_authority(&python).unwrap().canonical().unwrap()
+        parse_authority(&expected).unwrap().canonical().unwrap()
     );
     assert_eq!(native_control, fs::read(root.join(CONTROL)).unwrap());
     let retry = Fake::default();
     let repeated = parsed(submit_with(root, &review, &retry).unwrap());
     assert_eq!(
         get(&repeated, "claim").unwrap().canonical().unwrap(),
-        parse_authority(&python).unwrap().canonical().unwrap()
+        parse_authority(&expected).unwrap().canonical().unwrap()
     );
     assert_eq!(retry.executes.get(), 0);
 }

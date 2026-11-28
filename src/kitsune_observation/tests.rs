@@ -1,4 +1,7 @@
 use super::*;
+#[path = "../group_live/tests/frozen.rs"]
+#[allow(dead_code)]
+mod frozen;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 
@@ -547,9 +550,8 @@ fn native_strict_api_socket_fixture() {
 }
 
 #[test]
-fn python_b_parent_oracle_contract_and_process_parity() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
+fn frozen_parent_oracle_contract_and_process_parity() {
+    let corpus = frozen::Corpus::new();
     let mut cases = vec![];
     for mut s in [strict(), generic()] {
         for malformed in [false, true] {
@@ -578,67 +580,25 @@ fn python_b_parent_oracle_contract_and_process_parity() {
     let mut bad = strict();
     bad["agents"][0]["revision"] = json!(1.0);
     cases.push(json!({"kind":"snapshot","generic":false,"result":snapshot(bad)}));
-    let expected: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let r = reply(case["result"].clone());
-            if case["kind"] == "process" {
-                match schema::processes(&r, "opaque:p") {
-                    Ok(v) => json!(v),
-                    Err(e) => json!({"error":e.code}),
-                }
-            } else {
-                match schema::snapshot(&r, case["generic"].as_bool().unwrap()) {
-                    Ok(_) => json!("ok"),
-                    Err(e) => json!({"error":e.code}),
-                }
+    assert_eq!(cases.len(), 16);
+    for (i, case) in cases.iter().enumerate() {
+        let id = format!("kitsune-{i:02}");
+        corpus.check(&id, case.clone());
+        let expected = corpus.expected(&id);
+        let r = reply(case["result"].clone());
+        let actual = if case["kind"] == "process" {
+            match schema::processes(&r, "opaque:p") {
+                Ok(v) => json!(v),
+                Err(e) => json!({"error":e.code}),
             }
-        })
-        .collect();
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .find(|path| path.join("runner/kitsune_observation.py").is_file())
-        .expect("checkout observation oracle")
-        .canonicalize()
-        .unwrap();
-    let mut child = Command::new("python3")
-        .args([
-            "-B",
-            "-c",
-            r#"
-import json,sys
-sys.path.insert(0,sys.argv[1])
-from runner import kitsune_observation as o, kitsune_process_observation as p
-out=[]
-for case in json.load(sys.stdin):
-    payload=json.dumps({'id':'test','result':case['result']}).encode()
-    try:
-        if case['kind']=='process': value=p._processes(payload,'test','opaque:p')
-        else:
-            (o._pane_snapshot if case['generic'] else o._snapshot)(payload,'test')
-            value='ok'
-        out.append(value)
-    except o._Failure as e: out.append({'error':e.code})
-json.dump(out,sys.stdout)
-"#,
-        ])
-        .arg(root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&cases).unwrap())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
-        json!(expected)
-    );
+        } else {
+            match schema::snapshot(&r, case["generic"].as_bool().unwrap()) {
+                Ok(_) => json!("ok"),
+                Err(e) => json!({"error":e.code}),
+            }
+        };
+        assert_eq!(actual, expected, "{id}");
+    }
 }
 
 fn reply_with_native_integer(result: Value, integer: &str) -> observation_socket::Reply {
@@ -774,13 +734,11 @@ fn unused_layout_contents_are_ignored_only_after_shape_checks() {
 
 #[cfg(unix)]
 #[test]
-fn native_failed_endpoint_reports_match_python_parent_resolution() {
-    use std::io::Write;
+fn native_failed_endpoint_reports_match_frozen_parent_resolution() {
     use std::os::unix::{
         fs::{PermissionsExt, symlink},
         net::UnixListener,
     };
-    use std::process::{Command, Stdio};
 
     let directory = tempfile::tempdir().unwrap();
     let real = directory.path().join("real");
@@ -802,9 +760,9 @@ fn native_failed_endpoint_reports_match_python_parent_resolution() {
     )
     .unwrap();
 
-    let mut cases = Vec::new();
-    let mut expected = Vec::new();
-    for parent in [&real, &alias] {
+    let corpus = frozen::Corpus::new();
+    let mut count = 0;
+    for (parent_name, parent) in [("real", &real), ("alias", &alias)] {
         for (leaf, diagnostic) in [
             ("missing.sock", "io_error"),
             ("regular", "unsafe_endpoint"),
@@ -815,6 +773,27 @@ fn native_failed_endpoint_reports_match_python_parent_resolution() {
             for process_mode in [false, true] {
                 let mut r = request(process_mode);
                 r.socket = parent.join(leaf).to_str().unwrap().into();
+                let id = format!(
+                    "endpoint-{parent_name}-{}-{}",
+                    leaf.split('/').next().unwrap(),
+                    u8::from(process_mode)
+                );
+                let selected = format!("{}/{parent_name}/{leaf}", corpus.root());
+                corpus.check(&id, json!({"socket":selected,"process":process_mode}));
+                let mut expected = corpus.expected(&id);
+                assert_eq!(expected["endpoint"]["selected"], selected);
+                assert_eq!(
+                    expected["endpoint"]["resolved"],
+                    format!("{}/real/{}", corpus.root(), leaf.replace("/./", "/"))
+                );
+                expected["endpoint"]["selected"] = json!(r.socket);
+                expected["endpoint"]["resolved"] = json!(
+                    real.canonicalize()
+                        .unwrap()
+                        .join(leaf.replace("/./", "/"))
+                        .to_str()
+                        .unwrap()
+                );
                 let report = inspect(&r).unwrap();
                 let endpoint = json!({"selected":r.socket,"resolved":real.canonicalize().unwrap().join(leaf.replace("/./","/")).to_str().unwrap(),"device":null,"inode":null});
                 assert_eq!(report["endpoint"], endpoint);
@@ -828,49 +807,15 @@ fn native_failed_endpoint_reports_match_python_parent_resolution() {
                     }],
                     json!([])
                 );
-                expected.push(json!({"endpoint":report["endpoint"],"assessment":report["assessment"],"diagnostics":report["diagnostics"]}));
-                cases.push(json!({"socket":r.socket,"process":process_mode}));
+                assert_eq!(
+                    json!({"endpoint":report["endpoint"],"assessment":report["assessment"],"diagnostics":report["diagnostics"]}),
+                    expected
+                );
+                count += 1;
             }
         }
     }
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .find(|path| path.join("runner/kitsune_observation.py").is_file())
-        .expect("checkout observation oracle")
-        .canonicalize()
-        .unwrap();
-    let mut child = Command::new("python3")
-        .args([
-            "-B",
-            "-c",
-            r#"
-import json,sys
-sys.path.insert(0,sys.argv[1])
-from runner import kitsune_observation as o, kitsune_process_observation as p
-reports=[]
-for case in json.load(sys.stdin):
-    report=p.inspect(case['socket'],'opaque:p') if case['process'] else o.inspect(case['socket'])
-    reports.append({k:report[k] for k in ('endpoint','assessment','diagnostics')})
-json.dump(reports,sys.stdout)
-"#,
-        ])
-        .arg(root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&cases).unwrap())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
-        json!(expected)
-    );
+    assert_eq!(count, 20);
     private_listener.set_nonblocking(true).unwrap();
     unsafe_listener.set_nonblocking(true).unwrap();
     assert_eq!(

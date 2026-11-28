@@ -141,91 +141,32 @@ fn confirm_with(
 }
 
 #[cfg(all(test, unix))]
+#[path = "source_layer.rs"]
+mod source_layer;
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::{
         cell::RefCell,
         collections::BTreeMap,
-        io::{Read, Seek, SeekFrom},
-        os::unix::{
-            fs::{MetadataExt, symlink},
-            process::CommandExt,
-        },
+        os::unix::fs::{MetadataExt, symlink},
         path::PathBuf,
-        process::{Child, Command, Stdio},
-        time::{Duration, Instant},
+        time::Duration,
     };
-
-    struct FixtureChild(Option<Child>);
-    impl Drop for FixtureChild {
-        fn drop(&mut self) {
-            if let Some(child) = self.0.as_mut() {
-                // SAFETY: process_group(0) isolates this owned child's group.
-                // Kill descendants too, then reap before fixture cleanup.
-                unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL) };
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
-    }
 
     fn fixture(present: bool, sequence: usize) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
-        // Anonymous files outside the workspace cannot fill a diagnostic pipe.
-        let mut stdout = tempfile::tempfile().unwrap();
-        let mut stderr = tempfile::tempfile().unwrap();
-        let mut child = FixtureChild(Some(Command::new("python3")
-            .args(["-c", r#"
-import contextlib, io, sys
-from pathlib import Path
-from runner import coven
-root = Path(sys.argv[1])
-def invoke(*args):
-    with contextlib.redirect_stdout(io.StringIO()):
-        status = coven.main(list(map(str, args)))
-    assert status == 0, (args, status)
-invoke('init', root, '--blank', '--agents', 'operator')
-if sys.argv[2] == 'false':
-    (root / 'state/tasks.json').unlink()
-invoke('state', 'import-tasks', root, '--expect-revision', coven.read_task_snapshot(root)[0], '--json')
-for i in range(int(sys.argv[3])):
-    invoke('task', 'add', root, f'Task {i}', '--request-id', f'add-{i}', '--json')
-"#])
-            .arg(root.path())
-            .arg(present.to_string())
-            .arg(sequence.to_string())
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .env("COVEN_MULTIPLEXER", "")
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .process_group(0)
-            .stdout(Stdio::from(stdout.try_clone().unwrap()))
-            .stderr(Stdio::from(stderr.try_clone().unwrap()))
-            .spawn()
-            .unwrap()));
-        let deadline = Instant::now() + Duration::from_secs(60);
-        let status = loop {
-            if let Some(status) = child.0.as_mut().unwrap().try_wait().unwrap() {
-                // try_wait already reaped the completed child.
-                child.0.take();
-                break Some(status);
-            }
-            if Instant::now() >= deadline {
-                break None;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        };
-        drop(child);
-        stdout.seek(SeekFrom::Start(0)).unwrap();
-        stderr.seek(SeekFrom::Start(0)).unwrap();
-        let mut out = String::new();
-        let mut err = String::new();
-        stdout.read_to_string(&mut out).unwrap();
-        stderr.read_to_string(&mut err).unwrap();
-        assert!(
-            status.is_some(),
-            "Python fixture exceeded 60-second deadline\n{out}\n{err}"
+        assert!([0, 3].contains(&sequence));
+        source_layer::install(
+            root.path(),
+            &format!("confirmation-{present}-{sequence}"),
+            false,
         );
-        assert!(status.unwrap().success(), "{out}\n{err}");
+        source_layer::assert_view(
+            &format!("confirmation-{present}-{sequence}"),
+            &read(root.path()).unwrap().unwrap(),
+        );
         root
     }
 

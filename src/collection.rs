@@ -545,21 +545,12 @@ mod tests {
     fn activated_authority_between_preflight_and_lock_makes_old_binding_stale() {
         let fixture = Fixture::new();
         let prepared = fixture.prepare();
-        let code = "from runner import coven;from pathlib import Path;import sys;w=sys.argv[1];r=coven.read_task_snapshot(Path(w))[0];raise SystemExit(coven.main(['state','import-tasks',w,'--expect-revision',r,'--json']))";
-        let output = std::process::Command::new("python3")
-            .arg("-c")
-            .arg(code)
-            .arg(&fixture.root)
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .env("COVEN_MULTIPLEXER", "")
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        // Activate only after preflight, before collection acquires its guard.
+        {
+            let guard = WorkspaceGuard::acquire(&fixture.root, Duration::ZERO).unwrap();
+            let report = ledger::import_tasks(&fixture.root, &fixture.revision, &guard).unwrap();
+            assert_eq!(report.durability(), ledger::ActivationDurability::Confirmed);
+        }
         assert_eq!(
             prepared.finish(&SystemEvidenceIo).err().unwrap().code(),
             "stale_handoff_task_revision"

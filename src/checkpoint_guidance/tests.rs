@@ -2,6 +2,9 @@ use super::*;
 use crate::values::{self, Profile};
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
+#[path = "tests/frozen.rs"]
+mod frozen;
+
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::write(
@@ -28,22 +31,7 @@ fn parse(text: &str) -> Value {
 }
 
 fn approved(id: &str) -> String {
-    // Test-only fixture preparation; production never invokes Python/providers.
-    let output = std::process::Command::new("python3")
-        .args(["-B", "-c", concat!(
-            "import sys; from runner import checkpoints\n",
-            "data=b'# Plan\\nStatus: pending\\n## User decision\\n- [ ] Approved\\n'\n",
-            "data,_=checkpoints.prepare(sys.argv[1],data,'approved','',decision_id='1'*32,decided_at='test',source='cli')\n",
-            "sys.stdout.buffer.write(data)"
-        ), id])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap()
+    frozen::approved(id)
 }
 
 #[test]

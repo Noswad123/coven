@@ -979,83 +979,34 @@ fn actual_unicode_path_pretty_ascii_boundary_and_reserve_precede_publication() {
 }
 
 #[cfg(unix)]
-fn python_report(root: &Path, mode: &str, pretty: bool) -> String {
-    use std::{
-        io::{Read, Seek, SeekFrom},
-        process::{Child, Command},
-        time::Instant,
-    };
-    struct Reap(Child);
-    impl Drop for Reap {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-    let mut stdout = tempfile::tempfile().unwrap();
-    let mut stderr = tempfile::tempfile().unwrap();
-    let script = r#"
-import json,sys
-from pathlib import Path
-from runner import coven
-value=coven.task_inspection(Path(sys.argv[1]))
-mode=sys.argv[2]
-if mode!='inspect':
- value['outcome']='committed' if mode=='import' else 'recovered'
- if mode=='resume': value['recovery']={'import_resumed':True}
- if mode=='repair': value['recovery']={'status':'current','backup_path':None}
- value['warnings']=[]
-print(json.dumps(value,ensure_ascii=True,indent=2) if sys.argv[3]=='pretty' else json.dumps(value,ensure_ascii=True,separators=(',',':')))
-"#;
-    let mut child = Reap(
-        Command::new("python3")
-            .args(["-c", script])
-            .arg(root)
-            .arg(mode)
-            .arg(if pretty { "pretty" } else { "compact" })
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .env("COVEN_MULTIPLEXER", "")
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .stdout(stdout.try_clone().unwrap())
-            .stderr(stderr.try_clone().unwrap())
-            .spawn()
-            .unwrap(),
-    );
-    let deadline = Instant::now() + Duration::from_secs(15);
-    let status = loop {
-        if let Some(status) = child.0.try_wait().unwrap() {
-            break status;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "Python state oracle exceeded watchdog"
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    };
-    stdout.seek(SeekFrom::Start(0)).unwrap();
-    stderr.seek(SeekFrom::Start(0)).unwrap();
-    let mut out = String::new();
-    let mut err = String::new();
-    stdout.take(1_048_576).read_to_string(&mut out).unwrap();
-    stderr.take(8192).read_to_string(&mut err).unwrap();
-    assert!(status.success(), "{err}");
-    out.strip_suffix('\n').unwrap().to_owned()
-}
+#[path = "report_fixture.rs"]
+mod report_fixture;
 
 #[test]
 #[cfg(unix)]
 fn exact_normal_json_and_pretty_match_bounded_python_oracle() {
     for pretty in [false, true] {
         let root = seeded();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(
+            root.path().join("state/tasks.json"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let captured = report_fixture::snapshot(root.path(), pretty);
         let native = inspect_arguments(root.path(), !pretty).unwrap();
-        assert_eq!(native.stdout, python_report(root.path(), "inspect", pretty));
+        assert_eq!(native.stdout, captured);
         let expected = snapshot(root.path()).unwrap().0;
         let native = import_arguments(root.path(), &expected, !pretty).unwrap();
-        assert_eq!(native.stdout, python_report(root.path(), "import", pretty));
+        let reports = report_fixture::Reports::bind(root.path());
+        assert_eq!(native.stdout, reports.expected("import", pretty));
+        reports.check(root.path(), false);
         let native =
             recover_arguments(root.path(), RecoveryMode::RepairProjection, None, !pretty).unwrap();
-        assert_eq!(native.stdout, python_report(root.path(), "repair", pretty));
+        assert_eq!(native.stdout, reports.expected("repair", pretty));
+        reports.check(root.path(), false);
         fs::remove_file(root.path().join(ledger::MARKER)).unwrap();
+        reports.check(root.path(), true);
         let native = recover_arguments(
             root.path(),
             RecoveryMode::ResumeImport,
@@ -1063,6 +1014,7 @@ fn exact_normal_json_and_pretty_match_bounded_python_oracle() {
             !pretty,
         )
         .unwrap();
-        assert_eq!(native.stdout, python_report(root.path(), "resume", pretty));
+        assert_eq!(native.stdout, reports.expected("resume", pretty));
+        reports.check(root.path(), false);
     }
 }

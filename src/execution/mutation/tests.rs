@@ -1,6 +1,8 @@
 use super::*;
 use std::cell::{Cell, RefCell};
 
+pub(super) mod source_layer;
+
 const ATTEMPT: &str = "ffffffffffffffffffffffffffffffff";
 const CANCEL: &str = "dddddddddddddddddddddddddddddddd";
 const NOW: &str = "2026-11-02T01:02:03.123456+00:00";
@@ -782,18 +784,8 @@ fn admitted_diagnostic_slot_is_bounded_json_safe_and_does_not_match_reason() {
 
 #[test]
 fn python_v1_v2_standalone_byte_goldens_include_uuid_time_and_envelope() {
-    let output = std::process::Command::new("python3")
-        .args(["-B", "src/execution/mutation/oracle.py"])
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let vectors = values::parse(&output.stdout, Profile::Authority).unwrap();
+    let vectors = source_layer::vectors(0);
+    assert_eq!(vectors.as_array().unwrap().len(), 2);
     for vector in vectors.as_array().unwrap() {
         for json in [false, true] {
             let root = fixture(get(vector, "control").unwrap());
@@ -809,6 +801,12 @@ fn python_v1_v2_standalone_byte_goldens_include_uuid_time_and_envelope() {
                 )
                 .unwrap();
             assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                get(vector, "rendered").unwrap().as_array().unwrap()[usize::from(json)]
+                    .as_str()
+                    .unwrap()
+            );
             assert_eq!(
                 parsed(&output).canonical().unwrap(),
                 get(vector, "expected").unwrap().canonical().unwrap()
@@ -828,6 +826,20 @@ fn python_v1_v2_standalone_byte_goldens_include_uuid_time_and_envelope() {
                 )
                 .unwrap();
             assert_eq!(retry.exit_code, 0);
+            assert_eq!(
+                parsed(&retry).canonical().unwrap(),
+                get(vector, "retry").unwrap().canonical().unwrap()
+            );
+            assert_eq!(
+                retry.stdout,
+                get(vector, "retry_rendered").unwrap().as_array().unwrap()[usize::from(json)]
+                    .as_str()
+                    .unwrap()
+            );
+            assert_eq!(
+                bytes(root.path()),
+                text(get(vector, "persisted").unwrap()).unwrap().as_bytes()
+            );
             assert!(matches!(
                 field(&parsed(&retry), &["delivery", "replayed"]),
                 Value::Bool(true)

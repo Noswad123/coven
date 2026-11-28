@@ -1,6 +1,6 @@
-use super::super::super::{Profile, apply_successor, validated, values};
+use super::super::super::{apply_successor, validated};
 use super::*;
-use std::{cell::Cell, process::Command};
+use std::cell::Cell;
 
 struct Ids(Cell<usize>);
 impl Metadata for Ids {
@@ -12,18 +12,7 @@ impl Metadata for Ids {
 }
 
 fn vectors() -> Value {
-    let output = Command::new("python3")
-        .args(["-B", "src/execution/mutation/graphs/oracle.py"])
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    values::parse(&output.stdout, Profile::Authority).unwrap()
+    super::super::tests::source_layer::vectors(1)
 }
 
 fn operation(value: &Value) -> Operation {
@@ -40,7 +29,7 @@ fn operation(value: &Value) -> Operation {
 fn python_graph_effects_and_authoritative_successors_match() {
     let vectors = vectors();
     let cases = vectors.as_array().unwrap();
-    assert!(cases.len() >= 20);
+    assert_eq!(cases.len(), 25);
     for case in cases {
         let label = text(get(case, "label").unwrap()).unwrap();
         let mut control = get(case, "control").unwrap().clone();

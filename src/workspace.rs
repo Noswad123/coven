@@ -417,6 +417,12 @@ pub(crate) fn split_optional_workspace(items: &[PathBuf]) -> Result<(PathBuf, &[
 mod tests {
     use super::*;
     use crate::checkpoint_workspace::inspect_root;
+    mod source_fixture {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/workspace/source_fixture.rs"
+        ));
+    }
 
     fn minimal() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -786,19 +792,17 @@ mod tests {
                 Some("invalid_workspace_toml"),
             ),
         ];
-        for (text, code) in cases {
+        for (index, (text, code)) in cases.into_iter().enumerate() {
+            let captured = source_fixture::case(&format!("runtime-{index}"));
+            assert_eq!(captured["inputs"]["coven.toml"], text);
             fs::write(root.path().join("coven.toml"), text).unwrap();
             assert_eq!(
                 read_team(root.path()).err().map(|error| error.code()),
                 code,
                 "{text}"
             );
-            let output = std::process::Command::new("python3")
-                .args(["-c", "import contextlib,io,sys;from pathlib import Path;from runner import coven\ntry:\n with contextlib.redirect_stderr(io.StringIO()): coven.read_team_config(Path(sys.argv[1]))\nexcept (SystemExit,ValueError,OverflowError): sys.exit(1)"])
-                .arg(root.path()).env("PYTHONDONTWRITEBYTECODE", "1").env("COVEN_MULTIPLEXER", "")
-                .current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
             assert_eq!(
-                output.status.success(),
+                captured["exit_status"] == 0,
                 code.is_none(),
                 "Python runtime oracle: {text}"
             );
@@ -807,16 +811,11 @@ mod tests {
 
     #[test]
     fn inventories_match_python_constants_exactly() {
-        let output = std::process::Command::new("python3")
-            .args(["-c", "import json;from runner import coven;print(json.dumps([coven.MANAGED_DIRECTORIES,coven.MANAGED_FILES]))"])
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let expected: Vec<Vec<String>> = serde_json::from_slice(&output.stdout).unwrap();
+        let captured = source_fixture::case("inventories");
+        assert_eq!(captured["exit_status"], 0);
+        assert_eq!(captured["stderr"], "");
+        let expected: Vec<Vec<String>> =
+            serde_json::from_str(captured["stdout"].as_str().unwrap()).unwrap();
         assert_eq!(expected[0], DIRECTORIES);
         assert_eq!(expected[1], FILES);
     }
@@ -976,15 +975,13 @@ mod tests {
     fn imported() -> (tempfile::TempDir, PathBuf) {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("workspace");
-        let output = std::process::Command::new("python3")
-            .args(["-c", "from runner import coven;import sys;from pathlib import Path;w=sys.argv[1];coven.main(['init',w,'--blank','--agents','operator']);r=coven.read_task_snapshot(Path(w))[0];coven.main(['state','import-tasks',w,'--expect-revision',r,'--json'])"])
-            .arg(&root).env("PYTHONDONTWRITEBYTECODE", "1").env("COVEN_MULTIPLEXER", "")
-            .current_dir(env!("CARGO_MANIFEST_DIR")).output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let captured = source_fixture::case("ledger-empty");
+        for (path, raw) in captured["artifacts"].as_object().unwrap() {
+            let target = root.join(path);
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::write(target, raw.as_str().unwrap().as_bytes()).unwrap();
+        }
+        assert!(ledger::read(&root).unwrap().is_some());
         (temp, root)
     }
 

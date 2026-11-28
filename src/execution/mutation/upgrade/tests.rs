@@ -518,40 +518,42 @@ fn symlink_and_type_collisions_are_refused_without_touching_targets() {
 
 #[test]
 fn python_upgrade_oracle_matches_base_effect_raw_backup_and_mode() {
-    use std::process::{Command, Stdio};
     let (dir, control, raw, guard) = fixture();
-    let plan = planned(dir.path(), &control);
-    let input =
-        serde_json::json!({"raw": String::from_utf8(raw.clone()).unwrap(), "mode": plan.mode});
-    let mut child = Command::new("python3")
-        .args([
-            "-I",
-            "-B",
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/execution/mutation/upgrade/oracle.py"
-            ),
-        ])
-        .env_remove("PYTHONPATH")
-        .env_remove("PYTHONHOME")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(&input).unwrap())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+    let corpus_bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/retirement/fixtures/source_execution_support.json"
+    ));
+    let provenance_bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/retirement/fixtures/source_execution_support_provenance.json"
+    ));
+    assert_eq!(
+        canonical::digest(corpus_bytes),
+        "3a3d000c7e7e38496687511af093c8172d378eab70f05faa127caa2b3e926134"
     );
-    let oracle = values::parse(&output.stdout, Profile::Authority).unwrap();
+    assert_eq!(
+        canonical::digest(provenance_bytes),
+        "5631124181a36750c20aabe89f85fdc673c19d4f7c97fdd60e4fd865bc1fc742"
+    );
+    let corpus = values::parse(corpus_bytes, Profile::Authority).unwrap();
+    let row = &get(&corpus, "cases").unwrap().as_array().unwrap()[1];
+    assert_eq!(text(get(row, "id").unwrap()).unwrap(), "upgrade-raw-0640");
+    let input = get(row, "input").unwrap();
+    assert_eq!(raw, text(get(input, "raw").unwrap()).unwrap().as_bytes());
+    // Bind the native plan to the exact captured mode, independent of umask.
+    let file = platform::open_readonly(&dir.path().join(CONTROL)).unwrap();
+    platform::apply_replacement_mode(&file, 0o640).unwrap();
+    let plan = planned(dir.path(), &control);
+    equal(
+        &integer(plan.mode as usize).unwrap(),
+        get(input, "mode").unwrap(),
+    );
+    let stdout = text(get(row, "stdout").unwrap()).unwrap().as_bytes();
+    assert_eq!(
+        canonical::digest(stdout),
+        text(get(row, "stdout_sha256").unwrap()).unwrap()
+    );
+    let oracle = values::parse(stdout, Profile::Authority).unwrap();
     equal(&plan.control, get(&oracle, "control").unwrap());
     equal(&plan.effect, get(&oracle, "effect").unwrap());
     plan.publish(dir.path(), &guard).unwrap();

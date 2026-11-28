@@ -1,69 +1,18 @@
 use super::*;
+#[path = "../source_layer.rs"]
+mod source_layer;
+
 use std::{
     cell::{Cell, RefCell},
     collections::BTreeMap,
-    io::{Read, Seek, SeekFrom},
-    os::unix::{
-        fs::{MetadataExt, PermissionsExt, symlink},
-        process::CommandExt,
-    },
-    process::{Child, Command, Stdio},
-    time::{Duration, Instant},
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
+    time::Duration,
 };
 
-struct FixtureChild(Option<Child>);
-impl Drop for FixtureChild {
-    fn drop(&mut self) {
-        if let Some(child) = &mut self.0 {
-            // SAFETY: this owned fixture has its own process group.
-            unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL) };
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-}
 fn fixture() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
-    let mut out = tempfile::tempfile().unwrap();
-    let mut err = tempfile::tempfile().unwrap();
-    let mut child = FixtureChild(Some(Command::new("python3").args(["-c", r#"
-import contextlib, io, sys
-from pathlib import Path
-from runner import coven
-root = Path(sys.argv[1])
-def invoke(*args):
-    with contextlib.redirect_stdout(io.StringIO()):
-        status = coven.main(list(map(str, args)))
-    assert status == 0, (args, status)
-invoke('init', root, '--blank', '--agents', 'operator')
-invoke('state', 'import-tasks', root, '--expect-revision', coven.read_task_snapshot(root)[0], '--json')
-invoke('task', 'add', root, 'Secret task title', '--request-id', 'task-1', '--json')
-"#]).arg(root.path()).env("PYTHONDONTWRITEBYTECODE", "1").env("COVEN_MULTIPLEXER", "")
-        .current_dir(env!("CARGO_MANIFEST_DIR")).process_group(0)
-        .stdout(Stdio::from(out.try_clone().unwrap())).stderr(Stdio::from(err.try_clone().unwrap())).spawn().unwrap()));
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let status = loop {
-        if let Some(status) = child.0.as_mut().unwrap().try_wait().unwrap() {
-            child.0.take();
-            break Some(status);
-        }
-        if Instant::now() >= deadline {
-            break None;
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    };
-    drop(child);
-    out.seek(SeekFrom::Start(0)).unwrap();
-    err.seek(SeekFrom::Start(0)).unwrap();
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    out.read_to_string(&mut stdout).unwrap();
-    err.read_to_string(&mut stderr).unwrap();
-    assert!(
-        status.is_some(),
-        "Python fixture timeout\n{stdout}\n{stderr}"
-    );
-    assert!(status.unwrap().success(), "{stdout}\n{stderr}");
+    source_layer::install(root.path(), "repair", false);
+    source_layer::assert_view("repair", &read(root.path()).unwrap().unwrap());
     root
 }
 
@@ -269,11 +218,7 @@ fn current_still_confirms_and_authority_uncertain_never_touches_projection() {
 fn raw_backups_missing_empty_invalid_utf8_and_full_32m_preserve_exact_bytes_and_modes() {
     let root = fixture();
     let guard = WorkspaceGuard::existing(root.path(), Duration::ZERO).unwrap();
-    let expected = read(root.path())
-        .unwrap()
-        .unwrap()
-        .projection_bytes()
-        .unwrap();
+    let expected = source_layer::projection("repair");
     // Current configuration and execution policy are deliberately not SDK gates.
     fs::write(root.path().join("coven.json"), b"invalid config").unwrap();
     fs::create_dir_all(root.path().join("state/execution")).unwrap();
@@ -321,17 +266,12 @@ fn raw_backups_missing_empty_invalid_utf8_and_full_32m_preserve_exact_bytes_and_
         if let Some(raw) = &raw {
             assert_eq!(fs::read(backup.join("tasks.bytes")).unwrap(), *raw);
         }
-        let metadata = Value::object(vec![
-            ("version".into(), Value::integer("1").unwrap()),
-            ("missing".into(), Value::Bool(raw.is_none())),
-            (
-                "revision".into(),
-                Value::String(snapshot_revision(raw.as_deref())),
-            ),
-        ])
-        .unwrap()
-        .storage()
-        .unwrap();
+        let metadata = format!(
+            "{{\n  \"version\": 1,\n  \"missing\": {},\n  \"revision\": \"{}\"\n}}\n",
+            raw.is_none(),
+            source_layer::snapshot_revision(raw.as_deref())
+        )
+        .into_bytes();
         assert_eq!(fs::read(backup.join("metadata.json")).unwrap(), metadata);
         for entry in fs::read_dir(backup).unwrap() {
             assert_eq!(

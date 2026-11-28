@@ -1,4 +1,7 @@
 use super::*;
+#[path = "tests/frozen.rs"]
+#[allow(dead_code)]
+mod frozen;
 use std::{
     cell::{Cell, RefCell},
     os::unix::fs::PermissionsExt,
@@ -66,36 +69,17 @@ fn workspace_with_stats(stats: Option<&str>) -> (tempfile::TempDir, String) {
         "instances":[{"instance_id":INSTANCE,"sessions":[{"session_id":"selected","activity":"unknown"}]}]});
     std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-    // Have the legacy oracle construct a valid declaration-only binding. No native calls.
-    let script = r#"
-import sys
-from runner import groups
-from pathlib import Path
-root=Path(sys.argv[1])
-groups.create_group(root,'review','Review')
-binding={'adapter':'kitsune','endpoint':{'path':'/tmp/unused.sock','device':1,'inode':2},'terminal_id':'terminal',
- 'pane_id_at_binding':'pane','native_agent_ref':None,'bound_at':'2026-10-24T12:00:00+00:00'}
-if len(sys.argv)>2:
-    binding['endpoint'].update(device=int(sys.argv[2]),inode=int(sys.argv[2]))
-from runner import group_publisher as p
-binding=p.binding_from_snapshot({'endpoint':binding['endpoint'],'observed_at':binding['bound_at'],
- 'agents':[{'pane_id':'pane','terminal_id':'terminal','workspace_id':'w','tab_id':'t','agent':'djinn','agent_session':None}]},'pane')
-groups.add_member(root,'review','member','Reviewer',binding)
-"#;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .find(|p| p.join("runner").is_dir())
-        .unwrap();
-    let output = std::process::Command::new("python3")
-        .args(["-B", "-c", script, dir.path().to_str().unwrap()])
-        .args(stats)
-        .current_dir(root)
-        .output()
-        .unwrap();
+    if let Some(stats) = stats {
+        assert_eq!(stats, "1234567890".repeat(10));
+    }
+    // Complete historical create/binding/add predecessor, not a native-output golden.
+    let seed = frozen::Corpus::new().seed(stats.is_some(), false);
+    std::fs::write(dir.path().join("state/groups.json"), seed).unwrap();
     assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+        groups::read_groups(dir.path())
+            .unwrap()
+            .member("review", "member")
+            .is_ok()
     );
     (dir, path)
 }
@@ -422,41 +406,29 @@ fn accepted_is_strict_about_adapter_row_and_whole_selected_source() {
 }
 
 #[test]
-fn python_b_closed_oracle_status_semantics() {
+fn frozen_closed_oracle_status_semantics() {
     let (dir, file) = workspace();
-    attach_with_clock(dir.path(), request(&file), &ClockHook::new()).unwrap();
-    let script = r#"
-import json,sys
-from unittest.mock import patch
-from pathlib import Path
-from runner import djinn_live_observation as live, group_live
-class Clock:
-    def monotonic(self): return 0
-    def time(self): return 1792861200.1
-with patch.object(live,'time',Clock()), patch.object(group_live,'time',Clock()):
-    print(json.dumps(group_live.status(Path(sys.argv[1]),'review')))
-"#;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .find(|p| p.join("runner").is_dir())
-        .unwrap();
-    let output = std::process::Command::new("python3")
-        .args(["-B", "-c", script, dir.path().to_str().unwrap()])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+    let corpus = frozen::Corpus::new();
+    let source = std::fs::read(&file).unwrap();
+    let value: Value = serde_json::from_slice(&source).unwrap();
+    corpus.check(
+        "group-status",
+        json!({"file":format!("{}/{RUNTIME}.json", corpus.root()), "value":value}),
     );
-    let mut python: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let (expected, expected_raw) = corpus.group("group-status", &file, None);
+    let mut python: Value = serde_json::from_slice(&expected).unwrap();
+    attach_with_clock(dir.path(), request(&file), &ClockHook::new()).unwrap();
+    assert_eq!(
+        std::fs::read(dir.path().join("state/groups.json")).unwrap(),
+        expected_raw
+    );
     let mut native = status_with_clock(dir.path(), "review", None, 1.0, &ClockHook::new()).unwrap();
     for key in ["started_at", "observed_at", "duration_ms"] {
         python.as_object_mut().unwrap().remove(key);
         native.as_object_mut().unwrap().remove(key);
     }
     assert_eq!(native, python);
+    assert_eq!(std::fs::read(&file).unwrap(), source);
 }
 
 #[test]
@@ -571,16 +543,18 @@ fn arbitrary_precision_unused_endpoint_stats_never_cross_report_or_mutation_code
 }
 
 #[test]
-fn python_b_attach_exact_authority_and_raw_result_bytes_preserve_metadata_order() {
+fn frozen_attach_exact_authority_and_raw_result_bytes_preserve_metadata_order() {
     let huge = "1234567890".repeat(10);
     for stats in [None, Some(huge.as_str())] {
         let (dir, file) = workspace_with_stats(stats);
+        let corpus = frozen::Corpus::new();
+        let source = std::fs::read(&file).unwrap();
+        let value: Value = serde_json::from_slice(&source).unwrap();
+        let state_path = dir.path().join("state/groups.json");
         let before = groups::read_groups(dir.path()).unwrap();
         let binding = authority_field(before.member("review", "member").unwrap(), "binding")
             .unwrap()
             .clone();
-        // Generate the participant natively, then give Python these exact bytes:
-        // no UUID, field order, binding, endpoint integer, or timestamp masking.
         groups::remove_member(dir.path(), "review", "member", None).unwrap();
         groups::add_member(
             dir.path(),
@@ -594,64 +568,33 @@ fn python_b_attach_exact_authority_and_raw_result_bytes_preserve_metadata_order(
             },
         )
         .unwrap();
-        let oracle = tempfile::tempdir().unwrap();
-        std::fs::create_dir(oracle.path().join("state")).unwrap();
-        std::fs::write(oracle.path().join("coven.json"), b"not parsed by groups").unwrap();
-        let state_path = dir.path().join("state/groups.json");
-        std::fs::write(
-            oracle.path().join("state/groups.json"),
-            std::fs::read(&state_path).unwrap(),
-        )
-        .unwrap();
-        let script = r#"
-import datetime,json,sys
-from pathlib import Path
-from unittest.mock import patch
-from runner import djinn_live_observation as live,group_live
-class Clock:
-    def monotonic(self): return 0
-    def time(self): return 1792861200.1
-class FixedDateTime(datetime.datetime):
-    @classmethod
-    def now(cls,tz=None):
-        return cls(2026,10,24,12,0,0,tzinfo=datetime.timezone.utc)
-with patch.object(live,'time',Clock()),patch.object(group_live.datetime,'datetime',FixedDateTime):
-    result=group_live.attach(Path(sys.argv[1]),'review','member',*sys.argv[2:],reattach=True)
-sys.stdout.buffer.write((json.dumps(result,ensure_ascii=False,allow_nan=False,indent=2)+'\n').encode())
-"#;
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .find(|p| p.join("runner").is_dir())
-            .unwrap();
-        // The second identical attach must preserve existing metadata bytes too.
-        for _ in 0..2 {
-            let output = std::process::Command::new("python3")
-                .args([
-                    "-B",
-                    "-c",
-                    script,
-                    oracle.path().to_str().unwrap(),
-                    &file,
-                    RUNTIME,
-                    INSTANCE,
-                    "selected",
-                ])
-                .current_dir(root)
-                .output()
+        let before = groups::read_groups(dir.path()).unwrap();
+        let participant =
+            authority_field(before.member("review", "member").unwrap(), "participant_id")
+                .unwrap()
+                .as_str()
                 .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
+        // Check the independently captured predecessor before either attach. Only
+        // the freshly generated input UUID is bound, never result bytes or revision.
+        assert_eq!(
+            std::fs::read(&state_path).unwrap(),
+            corpus.predecessor(stats.is_some(), participant)
+        );
+        // The second identical attach must preserve existing metadata bytes too.
+        for attempt in 0..2 {
+            let id = format!("attach-{}-{attempt}", u8::from(stats.is_some()));
+            corpus.check(
+                &id,
+                json!({"huge":stats.is_some(),"attempt":attempt,
+                "file":format!("{}/{RUNTIME}.json", corpus.root()), "value":value}),
             );
+            let (expected, expected_raw) = corpus.group(&id, &file, Some(participant));
             let mut selected = request(&file);
             selected.reattach = true;
             let native = attach_with_clock(dir.path(), selected, &ClockHook::new()).unwrap();
-            assert_eq!(native.storage().unwrap(), output.stdout);
-            assert_eq!(
-                std::fs::read(&state_path).unwrap(),
-                std::fs::read(oracle.path().join("state/groups.json")).unwrap()
-            );
+            assert_eq!(native.storage().unwrap(), expected);
+            assert_eq!(std::fs::read(&state_path).unwrap(), expected_raw);
+            assert_eq!(std::fs::read(&file).unwrap(), source);
             let member = authority_field(&native, "member").unwrap();
             let attachment = authority_field(member, "live_attachment").unwrap();
             assert_eq!(

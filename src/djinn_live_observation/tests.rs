@@ -1,4 +1,7 @@
 use super::*;
+#[path = "../group_live/tests/frozen.rs"]
+#[allow(dead_code)]
+mod frozen;
 use serde_json::json;
 use std::{
     cell::Cell,
@@ -235,19 +238,10 @@ fn closed_whole_schema_types_duplicates_bounds_and_unselected_corruption() {
 }
 
 #[test]
-fn python_b_closed_oracle_schema_and_observer_semantics() {
-    // Python is a test oracle only. No application startup, source discovery, or provider.
+fn frozen_closed_oracle_schema_and_observer_semantics() {
+    use std::os::unix::fs::MetadataExt;
     let (_dir, request) = source();
-    let script = r#"
-import json,sys
-from unittest.mock import patch
-from runner import djinn_live_observation as live
-class Clock:
-    def monotonic(self): return 0
-    def time(self): return 1792861200.1
-with patch.object(live, 'time', Clock()):
-    print(json.dumps(live.inspect(*sys.argv[1:])))
-"#;
+    let corpus = frozen::Corpus::new();
     let mut cases = Vec::new();
     for activity in ["busy", "unknown", "idle"] {
         let mut value = fixture();
@@ -280,61 +274,108 @@ with patch.object(live, 'time', Clock()):
         .unwrap()
         .push(json!({"session_id":"other","activity":"idle"}));
     cases.push(case);
-    for value in cases {
+    assert_eq!(cases.len(), 16);
+    for (i, value) in cases.into_iter().enumerate() {
+        let id = format!("djinn-{i:02}");
+        corpus.check(&id, json!({"value":value,"mode":0o600}));
         std::fs::write(&request.file, serde_json::to_vec(&value).unwrap()).unwrap();
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .find(|p| p.join("runner").is_dir())
-            .unwrap();
-        let output = std::process::Command::new("python3")
-            .args([
-                "-B",
-                "-c",
-                script,
-                &request.file,
-                RUNTIME,
-                INSTANCE,
-                "selected",
-            ])
-            .current_dir(root)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+        let before = std::fs::read(&request.file).unwrap();
+        let metadata = std::fs::symlink_metadata(&request.file).unwrap();
+        assert!(metadata.is_file());
+        assert_eq!(metadata.mode() & 0o7777, 0o600);
+        assert_eq!(metadata.uid(), unsafe { libc::getuid() });
+        assert_eq!(metadata.nlink(), 1);
+        let mut python = corpus.expected(&id);
+        assert_eq!(
+            python["file"]["selected_path"],
+            format!("{}/{RUNTIME}.json", corpus.root())
         );
-        let mut python: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            python["file"]["resolved_path"],
+            python["file"]["selected_path"]
+        );
+        assert!(python["file"]["device"].is_u64());
+        assert!(python["file"]["inode"].is_u64());
+        python["file"]["selected_path"] = json!(request.file);
+        python["file"]["resolved_path"] = json!(
+            std::fs::canonicalize(&request.file)
+                .unwrap()
+                .to_str()
+                .unwrap()
+        );
+        python["file"]["device"] = json!(metadata.dev());
+        python["file"]["inode"] = json!(metadata.ino());
         let mut native = inspect_with_clock(&request, &TestClock::new(0)).unwrap();
         for field in ["started_at", "observed_at", "duration_ms"] {
             python.as_object_mut().unwrap().remove(field);
             native.as_object_mut().unwrap().remove(field);
         }
         assert_eq!(native, python);
+        assert_eq!(std::fs::read(&request.file).unwrap(), before);
+        let after = std::fs::symlink_metadata(&request.file).unwrap();
+        assert_eq!(
+            (
+                after.dev(),
+                after.ino(),
+                after.mode(),
+                after.uid(),
+                after.nlink(),
+                after.len(),
+                after.mtime(),
+                after.ctime(),
+                after.mtime_nsec(),
+                after.ctime_nsec()
+            ),
+            (
+                metadata.dev(),
+                metadata.ino(),
+                metadata.mode(),
+                metadata.uid(),
+                metadata.nlink(),
+                metadata.len(),
+                metadata.mtime(),
+                metadata.ctime(),
+                metadata.mtime_nsec(),
+                metadata.ctime_nsec()
+            )
+        );
     }
     // Policy failures preserve the same checked file metadata without decoding.
     for mode in [0o600, 0o640] {
+        let id = format!("djinn-mode-{mode:o}");
+        corpus.check(&id, json!({"value":{},"mode":mode}));
         std::fs::write(&request.file, b"{}").unwrap();
         std::fs::set_permissions(&request.file, std::fs::Permissions::from_mode(mode)).unwrap();
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .find(|p| p.join("runner").is_dir())
-            .unwrap();
-        let output = std::process::Command::new("python3")
-            .args([
-                "-B",
-                "-c",
-                script,
-                &request.file,
-                RUNTIME,
-                INSTANCE,
-                "selected",
-            ])
-            .current_dir(root)
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        let python: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let metadata = std::fs::symlink_metadata(&request.file).unwrap();
+        assert!(metadata.is_file());
+        assert_eq!(metadata.mode() & 0o7777, mode);
+        assert_eq!(metadata.uid(), unsafe { libc::getuid() });
+        assert_eq!(metadata.nlink(), 1);
+        let mut python = corpus.expected(&id);
+        assert_eq!(
+            python["file"]["selected_path"],
+            format!("{}/{RUNTIME}.json", corpus.root())
+        );
+        assert_eq!(
+            python["file"]["resolved_path"],
+            python["file"]["selected_path"]
+        );
+        python["file"]["selected_path"] = json!(request.file);
+        python["file"]["resolved_path"] = json!(
+            std::fs::canonicalize(&request.file)
+                .unwrap()
+                .to_str()
+                .unwrap()
+        );
+        if mode == 0o600 {
+            assert!(python["file"]["device"].is_u64());
+            assert!(python["file"]["inode"].is_u64());
+            python["file"]["device"] = json!(metadata.dev());
+            python["file"]["inode"] = json!(metadata.ino());
+        } else {
+            assert!(python["file"]["device"].is_null());
+            assert!(python["file"]["inode"].is_null());
+        }
         let native = inspect_with_clock(&request, &TestClock::new(0)).unwrap();
         for key in [
             "file",
@@ -346,6 +387,34 @@ with patch.object(live, 'time', Clock()):
         ] {
             assert_eq!(native[key], python[key]);
         }
+        assert_eq!(std::fs::read(&request.file).unwrap(), b"{}");
+        let after = std::fs::symlink_metadata(&request.file).unwrap();
+        assert_eq!(
+            (
+                after.dev(),
+                after.ino(),
+                after.mode(),
+                after.uid(),
+                after.nlink(),
+                after.len(),
+                after.mtime(),
+                after.ctime(),
+                after.mtime_nsec(),
+                after.ctime_nsec()
+            ),
+            (
+                metadata.dev(),
+                metadata.ino(),
+                metadata.mode(),
+                metadata.uid(),
+                metadata.nlink(),
+                metadata.len(),
+                metadata.mtime(),
+                metadata.ctime(),
+                metadata.mtime_nsec(),
+                metadata.ctime_nsec()
+            )
+        );
     }
 }
 

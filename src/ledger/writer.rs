@@ -266,9 +266,13 @@ pub(crate) fn event_fields(view: &View) -> Result<Value> {
 }
 
 #[cfg(test)]
+#[path = "source_layer.rs"]
+mod source_layer;
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::{cell::RefCell, process::Command, time::Duration};
+    use std::{cell::RefCell, time::Duration};
 
     fn json(raw: &str) -> Value {
         values::parse(raw.as_bytes(), Profile::Authority).unwrap()
@@ -705,39 +709,36 @@ mod tests {
 
     #[test]
     fn canonical_frame_and_projection_match_python_with_deterministic_mutation_id() {
-        let (root, guard, view) = fixture();
+        // Only this byte oracle needs fixed captured predecessor identities.
+        // All native reload, publication, and projection operations remain live.
+        let root = tempfile::tempdir().unwrap();
+        source_layer::install(root.path(), "writer", false);
+        let guard = WorkspaceGuard::existing(root.path(), Duration::ZERO).unwrap();
+        let view = super::super::read(root.path()).unwrap().unwrap();
+        source_layer::assert_view("writer", &view);
         let binding = RequestBinding::add("Task", None, "", Some(&view.revision)).unwrap();
-        let output = Command::new("python3")
-            .args([
-                "-c",
-                r#"
-import json, sys
-from runner import task_ledger as l
-v = l.LedgerStore(sys.argv[1]).read()
-b, t = json.loads(sys.argv[2]), json.loads(sys.argv[3])
-s = v.sequence + 1
-r = dict(outcome='committed', mutation_id='d'*32, task=t, before_revision=v.revision,
-         after_revision=l._revision(v.workspace_id, v.epoch_id, s, v.tasks + [t]), sequence=s)
-p = dict(version=1, workspace_id=v.workspace_id, epoch_id=v.epoch_id, sequence=s,
-         previous_digest=v.head_digest, request_id='add:1', binding=b, result=r)
-raw = l._envelope(p)
-c = l._apply(v, l._payload(raw), l._digest(raw))
-print(json.dumps(dict(frame=raw.decode(), projection=c.projection_bytes.decode())))
-"#,
-            ])
-            .arg(root.path())
-            .arg(std::str::from_utf8(&binding.0).unwrap())
-            .arg(String::from_utf8(task().compact().unwrap()).unwrap())
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+        let capture = source_layer::row("writer");
+        let expected_binding = values::parse(
+            capture["input_args"][1].as_str().unwrap().as_bytes(),
+            Profile::Authority,
+        )
+        .unwrap();
+        assert_eq!(binding.0, expected_binding.canonical().unwrap());
+        assert_eq!(
+            task().canonical().unwrap(),
+            values::parse(
+                capture["input_args"][2].as_str().unwrap().as_bytes(),
+                Profile::Authority
+            )
+            .unwrap()
+            .canonical()
+            .unwrap()
         );
-        let python = values::parse(&output.stdout, Profile::Authority).unwrap();
+        let python = values::parse(
+            capture["stdout"].as_str().unwrap().as_bytes(),
+            Profile::Authority,
+        )
+        .unwrap();
         let io = Spy::default();
         let committed = run(&view, &guard, &binding, &io).unwrap();
         assert_eq!(
@@ -760,7 +761,11 @@ print(json.dumps(dict(frame=raw.decode(), projection=c.projection_bytes.decode()
         assert_eq!(*io.trace.borrow(), ["guard", "reload", "replace"]);
         assert_eq!(
             fs::read(root.path().join("state/tasks.json")).unwrap(),
-            committed.view.projection_bytes().unwrap()
+            get(&python, "projection")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .as_bytes()
         );
     }
 

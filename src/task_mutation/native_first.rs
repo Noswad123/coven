@@ -1,92 +1,10 @@
-//! A real Python preparer contends with a native-first writer, never an in-process
-//! reentrant lock or a manufactured execution permission.
+//! A real native preparer contends with a native-first writer. The historical
+//! Python-specific qualification is retained evidence, not a live claim.
 use super::*;
-use std::{
-    cell::RefCell,
-    fs::File,
-    io::{Read, Seek, SeekFrom},
-    os::unix::{fs::MetadataExt, process::CommandExt},
-    process::{Child, Command, ExitStatus, Stdio},
-    rc::Rc,
-    thread,
-    time::Instant,
-};
+use std::{cell::RefCell, os::unix::fs::MetadataExt, rc::Rc, thread, time::Instant};
 
-// Anonymous file-backed diagnostics cannot fill a pipe while the native guard
-// waits for readiness. Every child has a deadline and its own cleanup group.
-struct PythonProcess {
-    child: Child,
-    stdout: File,
-    stderr: File,
-}
-impl PythonProcess {
-    fn spawn(mode: &str, root: &Path, ipc: &Path) -> Self {
-        let stdout = tempfile::tempfile().unwrap();
-        let stderr = tempfile::tempfile().unwrap();
-        let child = Command::new("python3")
-            .args(["-c", SCRIPT, mode])
-            .arg(root)
-            .arg(ipc)
-            .env("PYTHONDONTWRITEBYTECODE", "1")
-            .env("COVEN_MULTIPLEXER", "")
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .stdin(Stdio::null())
-            .stdout(stdout.try_clone().unwrap())
-            .stderr(stderr.try_clone().unwrap())
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        Self {
-            child,
-            stdout,
-            stderr,
-        }
-    }
-    fn diagnostics(&mut self) -> String {
-        let mut bytes = Vec::new();
-        for file in [&mut self.stdout, &mut self.stderr] {
-            file.seek(SeekFrom::Start(0)).unwrap();
-            file.take(16 * 1024).read_to_end(&mut bytes).unwrap();
-        }
-        String::from_utf8_lossy(&bytes).into_owned()
-    }
-    fn wait(&mut self) -> ExitStatus {
-        let deadline = Instant::now() + Duration::from_secs(15);
-        loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
-                return status;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "Python fixture timed out: {}",
-                self.diagnostics()
-            );
-            thread::sleep(Duration::from_millis(10));
-        }
-    }
-    fn success(&mut self) {
-        let status = self.wait();
-        assert!(
-            status.success(),
-            "Python fixture failed: {}",
-            self.diagnostics()
-        );
-    }
-}
-impl Drop for PythonProcess {
-    fn drop(&mut self) {
-        if self
-            .child
-            .try_wait()
-            .map_or(true, |status| status.is_none())
-        {
-            // SAFETY: process_group(0) created this owned child's isolated group.
-            unsafe { libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL) };
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-        }
-    }
-}
+#[path = "tests/contender.rs"]
+mod contender;
 
 fn read_ipc(ipc: &Path, name: &str) -> Value {
     let bytes = fs::read(ipc.join(name)).unwrap();
@@ -100,7 +18,12 @@ fn native_first_assignment_makes_queued_python_preparation_stale_on_both_backend
         let root = fixture(active);
         run_add(root.path(), active.then_some("add"), &io()).unwrap();
         let ipc = tempfile::tempdir().unwrap();
-        PythonProcess::spawn("initialize", root.path(), ipc.path()).success();
+        initialize_execution(root.path(), false);
+        fs::write(
+            root.path().join("contender-ipc"),
+            ipc.path().as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
         let control = root.path().join("state/execution/control.json");
         let frozen_control = fs::read(&control).unwrap();
         let frozen_history = execution::history(root.path()).unwrap();
@@ -126,19 +49,18 @@ fn native_first_assignment_makes_queued_python_preparation_stale_on_both_backend
         let test_io = TaskIo {
             held_hook: Some(Box::new(move |guard| {
                 guard.validate_for(guard.root()).unwrap();
-                let mut child = PythonProcess::spawn("prepare", guard.root(), &ipc_path);
+                let mut child = contender::Process::spawn(
+                    concat!(module_path!(), "::queued_native_preparation_child"),
+                    guard.root(),
+                    "prepare",
+                );
                 let deadline = Instant::now() + Duration::from_secs(5);
                 while !ipc_path.join("ready.json").exists() {
                     assert!(
                         child.child.try_wait().unwrap().is_none(),
-                        "preparer exited before readiness: {}",
-                        child.diagnostics()
+                        "preparer exited before readiness"
                     );
-                    assert!(
-                        Instant::now() < deadline,
-                        "preparer readiness timed out: {}",
-                        child.diagnostics()
-                    );
+                    assert!(Instant::now() < deadline, "preparer readiness timed out");
                     thread::sleep(Duration::from_millis(10));
                 }
                 let ready = read_ipc(&ipc_path, "ready.json");
@@ -156,6 +78,8 @@ fn native_first_assignment_makes_queued_python_preparation_stale_on_both_backend
                 assert!(!ipc_path.join("acquired.json").exists());
                 assert!(!ipc_path.join("outcome.json").exists());
                 assert!(child.child.try_wait().unwrap().is_none());
+                assert_eq!(child.line(), "queued");
+                child.send(b"release\n");
                 assert_eq!(
                     fs::read(guard.root().join("state/execution/control.json")).unwrap(),
                     expected_control
@@ -178,14 +102,17 @@ fn native_first_assignment_makes_queued_python_preparation_stale_on_both_backend
         assert_eq!(count(&test_io, "held"), 1);
         assert_eq!(s(status(&result), "outcome"), "committed");
         assert!(warnings(&result).is_empty());
-        preparer
-            .borrow_mut()
-            .as_mut()
-            .expect("held hook started the real preparer")
-            .success();
+        assert!(
+            preparer
+                .borrow_mut()
+                .as_mut()
+                .expect("held hook started the real preparer")
+                .wait()
+                .success()
+        );
         let outcome = read_ipc(ipc.path(), "outcome.json");
-        assert_eq!(s(&outcome, "error_type"), "AttemptError");
-        assert_eq!(s(&outcome, "error"), "tasks revision conflict");
+        assert_eq!(s(&outcome, "error_type"), "NativeError");
+        assert_eq!(s(&outcome, "error"), "execution_tasks_revision_conflict");
         assert_eq!(s(&outcome, "owner"), "other");
         assert_eq!(
             s(&outcome, "execution_revision"),
@@ -262,71 +189,93 @@ fn native_first_assignment_makes_queued_python_preparation_stale_on_both_backend
     }
 }
 
-const SCRIPT: &str = r#"
-import copy, fcntl, json, os, sys
-from pathlib import Path
-from runner import coven, storage, task_attempts
-mode, root, ipc = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
-store = task_attempts.Store(root)
-def signal(name, value):
-    temporary = ipc / (name + '.tmp')
-    temporary.write_text(json.dumps(value), encoding='utf-8')
-    os.replace(temporary, ipc / (name + '.json'))
-if mode == 'initialize':
-    with storage.workspace_lock(root, root / 'state/.workspace.lock') as held:
-        for operation, parameters in [('enable', {}), ('enroll', {'task_id':'test-title', 'rebind_source':False})]:
-            view = store.read()
-            store.mutate(operation, parameters,
-                expected_execution_revision=view.revision if view else task_attempts.DISABLED,
-                expected_tasks_revision=coven.read_task_snapshot(root)[0], request_id=operation,
-                source_loader=lambda sid: coven.execution_source(root, sid), lock=held)
-    assert not store.read().attempts
-else:
-    view = store.read()
-    source = coven.execution_source(root, view.snapshot_source_id)
-    task = copy.deepcopy(next(t for t in source['tasks'] if t['id'] == 'test-title'))
-    expected_execution, expected_tasks = view.revision, source['revision']
-    path = root / 'state/.workspace.lock'
-    inode = path.stat().st_ino
-    fd = storage._open_regular(path, os.O_RDWR)
-    try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            contended = True
-        else:
-            raise AssertionError('native writer did not hold the persistent lock')
-    finally:
-        os.close(fd)
-    signal('ready', {'task':task, 'tasks_revision':expected_tasks,
-        'execution_revision':expected_execution, 'lock_contended':contended, 'lock_inode':inode})
-    with storage.workspace_lock(root, path, timeout=5.0) as held:
-        assert path.stat().st_ino == inode
-        signal('acquired', {'lock_inode':inode})
-        observed = []
-        def fresh_source(sid):
-            current = coven.execution_source(root, sid)
-            observed.append(current)
-            return current
-        try:
-            store.mutate('prepare', {'task_id':'test-title', 'intent':{
-                'schema_version':1, 'kind':'task-intent', 'task_id':'test-title', 'owner':task['owner'],
-                'acceptance_criteria':[{'id':'a', 'text':'explicit evidence'}]}},
-                expected_execution_revision=expected_execution, expected_tasks_revision=expected_tasks,
-                request_id='queued-prepare', source_loader=fresh_source, lock=held)
-        except task_attempts.AttemptError as error:
-            assert str(error) == 'tasks revision conflict', str(error)
-            assert len(observed) == 1
-            assert observed[0]['revision'] != expected_tasks
-            assert observed[0]['identity'] == source['identity']
-            current = store.read()
-            assert current.revision == expected_execution
-            assert not current.attempts
-            assert 'queued-prepare' not in current.receipts
-            signal('outcome', {'error_type':type(error).__name__, 'error':str(error),
-                'tasks_revision':observed[0]['revision'], 'execution_revision':current.revision,
-                'owner':next(t['owner'] for t in observed[0]['tasks'] if t['id'] == 'test-title'),
-                'attempt_count':len(current.attempts), 'prepare_receipt':'queued-prepare' in current.receipts})
-        else:
-            raise AssertionError('queued preparation unexpectedly succeeded with stale task pins')
-"#;
+fn publish(ipc: &Path, name: &str, value: Value) {
+    let temporary = ipc.join(format!("{name}.tmp"));
+    fs::write(&temporary, value.compact().unwrap()).unwrap();
+    fs::rename(temporary, ipc.join(format!("{name}.json"))).unwrap();
+}
+
+#[test]
+#[ignore = "IPC child entry; exercised by native_first_assignment_makes_queued_python_preparation_stale_on_both_backends"]
+fn queued_native_preparation_child() {
+    let root = PathBuf::from(std::env::var_os("COVEN_SOURCE_CONTENDER_ROOT").unwrap());
+    let ipc = fs::read_to_string(root.join("contender-ipc"))
+        .map(PathBuf::from)
+        .unwrap();
+    let history = execution::history(&root).unwrap();
+    let execution_revision = s(&history, "revision").to_owned();
+    let (tasks_revision, tasks) = selected_tasks(&root).unwrap();
+    let task = tasks.as_array().unwrap()[0].clone();
+    let lock_path = root.join("state/.workspace.lock");
+    let file = contender::open(&lock_path);
+    let inode = file.metadata().unwrap().ino();
+    assert!(!contender::lock(&file, true, true));
+    publish(
+        &ipc,
+        "ready",
+        object(vec![
+            ("task", task),
+            ("tasks_revision", text(&tasks_revision)),
+            ("execution_revision", text(&execution_revision)),
+            ("lock_contended", Value::Bool(true)),
+            ("lock_inode", Value::integer(&inode.to_string()).unwrap()),
+        ])
+        .unwrap(),
+    );
+    contender::signal("queued");
+    contender::receive();
+    assert!(contender::lock(&file, true, false));
+    assert_eq!(fs::metadata(lock_path).unwrap().ino(), inode);
+    publish(
+        &ipc,
+        "acquired",
+        object(vec![(
+            "lock_inode",
+            Value::integer(&inode.to_string()).unwrap(),
+        )])
+        .unwrap(),
+    );
+    drop(file);
+    let intent = ipc.join("intent.json");
+    fs::write(&intent, br#"{"schema_version":1,"kind":"task-intent","task_id":"test-title","owner":"Worker_ID","acceptance_criteria":[{"id":"a","text":"explicit evidence"}]}"#).unwrap();
+    let result = execution::prepare_arguments(
+        &[root.clone(), PathBuf::from("test-title")],
+        execution::PreparationInput::Intent(&intent),
+        execution::WriteOptions {
+            expected_execution_revision: &execution_revision,
+            expected_tasks_revision: Some(&tasks_revision),
+            request_id: "queued-prepare",
+            json: true,
+        },
+    );
+    let error = result.err().expect("stale preparation must fail");
+    assert_eq!(error.code(), "execution_tasks_revision_conflict");
+    let current = execution::history(&root).unwrap();
+    let (revision, tasks) = selected_tasks(&root).unwrap();
+    let attempts = get(&current, "attempts")
+        .as_object()
+        .unwrap()
+        .entries()
+        .len();
+    let control = fs::read_to_string(root.join("state/execution/control.json")).unwrap();
+    publish(
+        &ipc,
+        "outcome",
+        object(vec![
+            ("error_type", text("NativeError")),
+            ("error", text(error.code())),
+            ("tasks_revision", text(revision)),
+            ("execution_revision", get(&current, "revision").clone()),
+            ("owner", get(&tasks.as_array().unwrap()[0], "owner").clone()),
+            (
+                "attempt_count",
+                Value::integer(&attempts.to_string()).unwrap(),
+            ),
+            (
+                "prepare_receipt",
+                Value::Bool(control.contains("queued-prepare")),
+            ),
+        ])
+        .unwrap(),
+    );
+}

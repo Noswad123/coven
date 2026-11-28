@@ -237,13 +237,19 @@ report/write comparisons and validating all 88 publisher tests without Python in
 checkout and extracted package. The subsequent
 [group-command storage batch](../changelog/2026-11-27-python-retirement-group-command-storage.md)
 preserved all three raw-storage/hash/revision/binding comparisons and verified all
-six group-command tests without Python in checkout and extracted package. Other
-group-authority and integration oracles remain active.
-The current inventory has 25 runner-dependent/mixed source
-caller files and 26 runner-backed integration targets;
-these counts do not include every
-variable executable or generated-script path. No additional original-method mapping
-was claimed.
+six group-command tests without Python in checkout and extracted package.
+The subsequent [source dependency-layer closeout](../changelog/2026-11-27-python-retirement-source-layer.md)
+closes all 34 remaining runner-backed source sites in 25 callers, deleting seven
+automatic helpers and one regeneration-only helper. Current source inventory is
+five independent Python comparisons and three independent helpers, with zero
+runner-dependent source callers/helpers. The affected closure passed 371 normal /
+369 Python-absent tests in checkout and extracted package; this is scoped Linux
+evidence, not a full-suite or current Python-interoperability claim. Next is the
+26-target runner-backed integration layer; two independent integration targets,
+all 25 runner modules and tracked bytecode remain. Original status stays
+90 mapped / 851 unresolved. The [removal plan](PYTHON_REMOVAL.md) defines shared
+layer gates and later historical-audit/deletion obligations; lexical counts do not
+cover every variable executable or generated script.
 These tools are development-only; relocating/deleting the oracle is not coverage.
 
 The current active-oracle pin has a separate hash-linked, independently reviewed
