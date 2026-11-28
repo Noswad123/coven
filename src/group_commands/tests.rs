@@ -1,5 +1,7 @@
 use super::*;
 
+mod frozen;
+
 fn binding_fixture(process: bool, native: bool) -> serde_json::Value {
     let mut value = serde_json::json!({
         "presentation": {"adapter":"kitsune", "endpoint":{"path":"/fixture/api.sock",
@@ -27,11 +29,8 @@ fn binding_fixture(process: bool, native: bool) -> serde_json::Value {
 
 fn raw_storage_oracle(process: bool, native: bool) {
     use sha2::{Digest, Sha256};
-    use std::{
-        io::Write,
-        process::{Command, Stdio},
-    };
 
+    let captured = frozen::case(process, native);
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("coven.json"), "not team JSON").unwrap();
     std::fs::create_dir(root.path().join("state")).unwrap();
@@ -39,6 +38,7 @@ fn raw_storage_oracle(process: bool, native: bool) {
     let path = root.path().join("state/groups.json");
     let seed = std::fs::read_to_string(&path).unwrap();
     let produced = binding_fixture(process, native);
+    let identities = captured.check_input(seed.as_bytes(), &produced);
     let binding = observation::fresh_binding(&produced).unwrap();
     let result = groups::add_member(
         root.path(),
@@ -54,46 +54,15 @@ fn raw_storage_oracle(process: bool, native: bool) {
     .unwrap();
     let member = field(&result, "member").unwrap();
     let participant = field(member, "participant_id").unwrap().as_str().unwrap();
-    let mut child = Command::new("python3")
-        .arg("-B")
-        .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/group_commands/oracle.py"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(
-            &serde_json::to_vec(&serde_json::json!({
-                "seed":seed,"produced":produced,"participant":participant,"process":process,
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let expected: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let expected = captured.bind(&identities, participant);
     let raw = std::fs::read(path).unwrap();
-    assert_eq!(raw, expected["raw"].as_str().unwrap().as_bytes());
-    assert_eq!(
-        format!("{:x}", Sha256::digest(&raw)),
-        expected["sha256"].as_str().unwrap()
-    );
+    assert_eq!(raw, expected.raw);
+    assert_eq!(format!("{:x}", Sha256::digest(&raw)), expected.sha256);
     assert_eq!(
         field(&result, "revision").unwrap().as_str().unwrap(),
-        expected["revision"].as_str().unwrap()
+        expected.revision
     );
-    assert_eq!(
-        binding.compact().unwrap(),
-        expected["binding"].as_str().unwrap().as_bytes()
-    );
+    assert_eq!(binding.compact().unwrap(), expected.binding.as_bytes());
 }
 
 #[test]

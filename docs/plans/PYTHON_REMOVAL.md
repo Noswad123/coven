@@ -17,11 +17,11 @@ or copy the implementation into test support and call that removal.
 | --- | ---: | ---: |
 | Original requirements with accepted native mappings | 67 | **90** |
 | Original requirements still unresolved | 874 | **851** |
-| Direct Python constructor sites in Rust source | 61 | **40** |
-| Rust source files containing those sites | 44 | **30** |
-| Runner-dependent or mixed source caller files | 40 | **26** |
-| Source-local Python files | 25 | **12** |
-| Runner-dependent source-local Python files | 21 | **9** |
+| Direct Python constructor sites in Rust source | 61 | **39** |
+| Rust source files containing those sites | 44 | **29** |
+| Runner-dependent or mixed source caller files | 40 | **25** |
+| Source-local Python files | 25 | **11** |
+| Runner-dependent source-local Python files | 21 | **8** |
 | Python-launching integration targets | 29 | **28** |
 | Runner-backed integration targets | 27 | **26** |
 | Legacy runner modules / tracked bytecode files | 25 / 1 | **25 / 1** |
@@ -37,7 +37,7 @@ Constructor counts are lexical, not complete execution counts. They use the
 auditor's comment-aware Rust tokenization and
 `Command::new\(\s*"python(?:3)?"\s*\)` matches in source/test files. Variable
 executables, generated shebangs, macros, shell indirection and transitive helpers
-need manual follow-up. The 40 total sites are **not** 40 exclusively runner-backed
+need manual follow-up. The 39 total sites are **not** 39 exclusively runner-backed
 sites; four caller files are independent-only and others can be mixed. New capture
 tools under `tools/` are outside this source/integration metric.
 
@@ -173,21 +173,36 @@ tools under `tools/` are outside this source/integration metric.
   requirement mappings. See the
   [dated evidence](../changelog/2026-11-27-python-retirement-group-publisher-engine.md).
 
-Cumulatively, twenty-two counted source/integration invocation sites and one known
-variable-executable site have been removed, with fourteen helpers deleted. The
+### Fresh group-command binding/storage — 2026-11-27
+
+- Replaced all three original snapshot-null, snapshot-native and process-null
+  comparisons, retaining exact storage bytes, SHA-256, authority revision and
+  compact binding. No fourth matrix cell was invented.
+- Native public create/add, original producer and complete pre-mutation seed
+  remain. Only fifteen reviewed expected-side UUID spans vary; expected revisions
+  use independently checked bounded canonical content, not production hash output.
+- Deleted the helper after closing its sole caller. All six group-command tests
+  pass without Python in checkout and extracted package, retaining unknown-field,
+  large-integer/render and mutation exit-code guards. No production code or original
+  mapping changed. See the
+  [dated evidence](../changelog/2026-11-27-python-retirement-group-command-storage.md).
+
+Cumulatively, twenty-three counted source/integration invocation sites and one known
+variable-executable site have been removed, with fifteen helpers deleted. The
 variable call is deliberately reported separately from the literal regex metric.
 No whole `runner/` module is yet deletable: other modules and
 Python-backed integration parents still import `runner.launch`, among others.
 
 ## Next cohorts
 
-1. **Fresh group-command binding/storage.** Close the three calls to
-   `src/group_commands/oracle.py`: snapshot with null/full native reference and
-   process binding with null reference. Preserve exact raw storage bytes, byte
-   hash, authority revision and compact binding. Review generated identities and
-   independent hash/revision reconstruction; do not invent a fourth matrix cell.
-   Keep all six native tests, including unknown-field, large-integer and exit-code
-   guards. The broader group authority/concurrency oracle remains separate.
+1. **Group authority comparisons.** Inspect all five consumers of
+   `src/groups/oracle.py`: 38 pure validators, twelve schema variants, 102 timestamp
+   rows, eight authorities and eighteen sequential mutation steps. Preserve all
+   178 ordered cases, arbitrary integers, exact revisions/results/storage bytes
+   and native limit/invariance checks. Review using the existing deterministic
+   UUID seam for currently random setup inputs before changing those tests;
+   preserve public/SystemIo, fault, CAS and race coverage elsewhere. Remove the
+   helper and its `COVEN_GROUPS_ORACLE_ROOT` lookup only after all consumers close.
 2. Continue through execution/ledger/storage/concurrency and group observation
    dependencies. Each batch should remove actual callers or close specific
    original assertions; track those two kinds of progress separately.

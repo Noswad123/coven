@@ -234,8 +234,12 @@ five-test native publisher module without Python in checkout and extracted
 package. The [static/live engine batch](../changelog/2026-11-27-python-retirement-group-publisher-engine.md)
 then closed both remaining publisher oracle consumers, preserving all sixteen
 report/write comparisons and validating all 88 publisher tests without Python in
-checkout and extracted package. Other group-command/authority oracles remain.
-The current inventory has 26 runner-dependent/mixed source
+checkout and extracted package. The subsequent
+[group-command storage batch](../changelog/2026-11-27-python-retirement-group-command-storage.md)
+preserved all three raw-storage/hash/revision/binding comparisons and verified all
+six group-command tests without Python in checkout and extracted package. Other
+group-authority and integration oracles remain active.
+The current inventory has 25 runner-dependent/mixed source
 caller files and 26 runner-backed integration targets;
 these counts do not include every
 variable executable or generated-script path. No additional original-method mapping

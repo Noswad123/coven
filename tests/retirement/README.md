@@ -596,6 +596,31 @@ retired / 5 historical**; no assertion-substitution batch or mapping is added.
 See the [dated record](../../docs/changelog/2026-11-27-python-retirement-group-publisher-engine.md)
 and [removal plan](../../docs/plans/PYTHON_REMOVAL.md) for evidence and next scope.
 
+## Fresh group-command binding/storage oracle removal — 2026-11-27
+
+`reviews/group_commands_oracle.json` records independent review and parent
+acceptance of the sole storage-helper retirement. Exactly three original cases
+remain: snapshot/null reference, snapshot/full native reference and process/null
+reference. Complete raw storage bytes, storage SHA-256, authority revision and
+compact binding still compare; no fourth case or original mapping is invented.
+
+Native public create/add and the original producer remain. Complete seed and
+produced input are checked before binding/addition. Only fifteen expected-side UUID
+token spans vary: two seed IDs and three stored IDs per case. The participant ID
+comes only from the same result field the original Python helper accepted; no
+actual storage/hash/revision supplies expectations. Expected hashes use expected
+bytes only, and bounded independent canonical-content/domain hashing is checked
+against all three literal historical baselines before UUID binding.
+
+All six group-command tests pass without Python in checkout and extracted package,
+retaining the original fifteen unknown-field cases, huge-integer/render and
+delivery exit-code guards. Package tests and 53 audit-tool tests passed; original
+requirements remain **90 mapped / 851 unresolved**, and independent-helper history
+**4 active / 1 retired / 5 historical**. This is neither an assertion-substitution
+batch nor whole group-authority/integration closure. See the
+[dated record](../../docs/changelog/2026-11-27-python-retirement-group-command-storage.md)
+and [removal plan](../../docs/plans/PYTHON_REMOVAL.md).
+
 ## Worker parser/report unit-oracle removal — 2026-11-25
 
 `reviews/worker_readiness_oracles.json` records independent review and narrow parent

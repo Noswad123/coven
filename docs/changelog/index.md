@@ -10,6 +10,8 @@
 
 ## Maintenance and retirement
 
+- [2026-11-27 — Fresh group-command binding/storage oracle removal](2026-11-27-python-retirement-group-command-storage.md)
+  — three exact storage/hash/revision/binding comparisons retained; six tests run without Python.
 - [2026-11-27 — Group publisher static/live engine oracle removal](2026-11-27-python-retirement-group-publisher-engine.md)
   — sixteen complete report/write cases preserved; all 88 publisher tests run without Python.
 - [2026-11-27 — Group publication counter oracle removal](2026-11-27-python-retirement-group-counter.md)
